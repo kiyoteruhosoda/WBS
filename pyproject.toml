@@ -1,0 +1,29 @@
+[project]
+name = "fastapitemplate"
+version = "0.1.0"
+description = "FastAPI + SQLite template – Clean Architecture / DDD"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.136.1",
+    "prometheus-fastapi-instrumentator>=7.1.0",
+    "uvicorn[standard]>=0.47.0",
+]
+
+[dependency-groups]
+dev = [
+    "httpx>=0.28.1",
+    "pytest>=9.0.3",
+    "ruff>=0.11.0",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths  = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+ignore = ["E501"]
