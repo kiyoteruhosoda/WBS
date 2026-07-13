@@ -1,36 +1,14 @@
 from __future__ import annotations
 
-from datetime import date, datetime
-from decimal import Decimal
+from datetime import date
 
 from sqlalchemy.orm import Session
 
 from src.application.dto.task_dto import CreateTaskDTO, UpdateTaskDTO
 from src.domain.entities.task import Task
-from src.domain.exceptions import InvalidStatusTransitionError, NotFoundError
+from src.domain.exceptions import NotFoundError
 from src.domain.repositories.task_repository import TaskRepository
-from src.domain.value_objects.task_status import TaskStatus
 from src.infrastructure.repositories.task_repository import SqlAlchemyTaskRepository
-
-VALID_TRANSITIONS: dict[TaskStatus, list[TaskStatus]] = {
-    TaskStatus.TODO: [TaskStatus.DOING, TaskStatus.CANCELLED],
-    TaskStatus.DOING: [TaskStatus.DONE, TaskStatus.WAITING],
-    TaskStatus.WAITING: [TaskStatus.DOING],
-    TaskStatus.DONE: [TaskStatus.TODO, TaskStatus.DOING, TaskStatus.WAITING],
-    TaskStatus.CANCELLED: [TaskStatus.TODO],
-}
-
-
-def _compute_progress(actual: float, remaining: Decimal | None, status: TaskStatus) -> float:
-    if status == TaskStatus.DONE:
-        return 100.0
-    remaining_f = float(remaining) if remaining is not None else 0.0
-    if actual == 0 and remaining_f == 0:
-        return 0.0
-    total = actual + remaining_f
-    if total == 0:
-        return 0.0
-    return round(actual / total * 100, 1)
 
 
 class TaskUseCases:
@@ -42,8 +20,8 @@ class TaskUseCases:
         tasks = self._repo.find_all(user_id, filters)
         return [self._enrich(t) for t in tasks]
 
-    def get_task(self, task_id: int) -> dict:
-        task = self._repo.find_by_id(task_id)
+    def get_task(self, task_id: int, user_id: int) -> dict:
+        task = self._repo.find_by_id_for_user(task_id, user_id)
         if task is None:
             raise NotFoundError("Task", task_id)
         return self._enrich(task)
@@ -69,8 +47,8 @@ class TaskUseCases:
         self._session.commit()
         return self._enrich(saved)
 
-    def update_task(self, task_id: int, dto: UpdateTaskDTO) -> dict:
-        task = self._repo.find_by_id(task_id)
+    def update_task(self, task_id: int, user_id: int, dto: UpdateTaskDTO) -> dict:
+        task = self._repo.find_by_id_for_user(task_id, user_id)
         if task is None:
             raise NotFoundError("Task", task_id)
         if dto.title is not None:
@@ -82,7 +60,7 @@ class TaskUseCases:
         if dto.urgency is not None:
             task.urgency = dto.urgency
         if dto.status is not None:
-            self._apply_status_transition(task, dto.status)
+            task.change_status(dto.status)
         if dto.start_date is not None:
             task.start_date = dto.start_date
         if dto.due_date is not None:
@@ -101,32 +79,18 @@ class TaskUseCases:
         self._session.commit()
         return self._enrich(saved)
 
-    def delete_task(self, task_id: int) -> None:
-        task = self._repo.find_by_id(task_id)
+    def delete_task(self, task_id: int, user_id: int) -> None:
+        task = self._repo.find_by_id_for_user(task_id, user_id)
         if task is None:
             raise NotFoundError("Task", task_id)
-        self._repo.soft_delete(task_id)
+        self._repo.soft_delete(task_id, user_id)
         self._session.commit()
-
-    def _apply_status_transition(self, task: Task, new_status: TaskStatus) -> None:
-        if task.status == new_status:
-            return
-        allowed = VALID_TRANSITIONS.get(task.status, [])
-        if new_status not in allowed:
-            raise InvalidStatusTransitionError(task.status.value, new_status.value)
-        if new_status == TaskStatus.DONE:
-            task.completed_at = datetime.utcnow()
-            task.remaining_hours = Decimal("0")
-        elif task.status == TaskStatus.DONE:
-            task.completed_at = None
-        task.status = new_status
 
     def _enrich(self, task: Task) -> dict:
         actual = self._repo.get_actual_hours(task.id)
         today = date.today()
-        overdue_days = max((today - task.due_date).days, 0) if task.due_date and task.status not in (TaskStatus.DONE, TaskStatus.CANCELLED) else 0
-        priority_score = task.priority * 100 + task.urgency * 80 + min(overdue_days, 7) * 100
-        progress = _compute_progress(actual, task.remaining_hours, task.status)
+        priority_score = task.priority_score(today)
+        progress = task.progress_percent(actual)
         return {
             "id": task.id,
             "user_id": task.user_id,

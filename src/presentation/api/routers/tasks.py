@@ -64,7 +64,7 @@ def create_task(body: TaskCreateRequest, db: DbDep) -> TaskResponse:
 @router.get("/{task_id}", response_model=TaskResponse)
 def get_task(task_id: int, db: DbDep) -> TaskResponse:
     uc = get_use_case(db)
-    return TaskResponse(**uc.get_task(task_id))
+    return TaskResponse(**uc.get_task(task_id, USER_ID))
 
 
 @router.put("/{task_id}", response_model=TaskResponse)
@@ -84,7 +84,7 @@ def update_task(task_id: int, body: TaskUpdateRequest, db: DbDep) -> TaskRespons
         parent_task_id=body.parent_task_id,
         milestone_id=body.milestone_id,
     )
-    return TaskResponse(**uc.update_task(task_id, dto))
+    return TaskResponse(**uc.update_task(task_id, USER_ID, dto))
 
 
 @router.patch("/{task_id}", response_model=TaskResponse)
@@ -95,4 +95,4 @@ def patch_task(task_id: int, body: TaskUpdateRequest, db: DbDep) -> TaskResponse
 @router.delete("/{task_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_task(task_id: int, db: DbDep) -> None:
     uc = get_use_case(db)
-    uc.delete_task(task_id)
+    uc.delete_task(task_id, USER_ID)

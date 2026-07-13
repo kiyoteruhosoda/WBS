@@ -21,6 +21,15 @@ class SqlAlchemyTaskRepository(TaskRepository):
             return None
         return self._to_entity(model)
 
+    def find_by_id_for_user(self, task_id: int, user_id: int) -> Task | None:
+        stmt = select(TaskModel).where(
+            TaskModel.id == task_id,
+            TaskModel.user_id == user_id,
+            TaskModel.deleted_at.is_(None),
+        )
+        model = self._session.scalar(stmt)
+        return self._to_entity(model) if model is not None else None
+
     def find_all(self, user_id: int, filters: dict) -> list[Task]:
         stmt = select(TaskModel).where(
             TaskModel.user_id == user_id,
@@ -67,8 +76,14 @@ class SqlAlchemyTaskRepository(TaskRepository):
             self._session.flush()
             return self._to_entity(model)
 
-    def soft_delete(self, task_id: int) -> None:
-        model = self._session.get(TaskModel, task_id)
+    def soft_delete(self, task_id: int, user_id: int | None = None) -> None:
+        stmt = select(TaskModel).where(
+            TaskModel.id == task_id,
+            TaskModel.deleted_at.is_(None),
+        )
+        if user_id is not None:
+            stmt = stmt.where(TaskModel.user_id == user_id)
+        model = self._session.scalar(stmt)
         if model:
             model.deleted_at = datetime.utcnow()
             self._session.flush()
