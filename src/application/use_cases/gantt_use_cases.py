@@ -1,8 +1,12 @@
 from __future__ import annotations
+
 from sqlalchemy.orm import Session
-from src.infrastructure.repositories.task_repository import SqlAlchemyTaskRepository
-from src.infrastructure.repositories.task_dependency_repository import SqlAlchemyTaskDependencyRepository
+
 from src.application.use_cases.task_use_cases import TaskUseCases
+from src.infrastructure.repositories.task_dependency_repository import (
+    SqlAlchemyTaskDependencyRepository,
+)
+from src.infrastructure.repositories.task_repository import SqlAlchemyTaskRepository
 
 
 class GanttUseCases:

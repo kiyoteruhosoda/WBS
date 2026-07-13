@@ -1,6 +1,9 @@
 from __future__ import annotations
+
 from datetime import datetime
+
 from pydantic import BaseModel
+
 from src.domain.value_objects.dependency_type import DependencyType
 
 

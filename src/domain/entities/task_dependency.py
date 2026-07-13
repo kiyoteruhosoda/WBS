@@ -1,7 +1,10 @@
 from __future__ import annotations
+
 from dataclasses import dataclass
 from datetime import datetime
+
 from src.domain.value_objects.dependency_type import DependencyType
+
 
 @dataclass
 class TaskDependency:

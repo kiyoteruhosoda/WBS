@@ -1,10 +1,13 @@
 from __future__ import annotations
+
 from datetime import date, timedelta
+
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
-from sqlalchemy import select, func
+
+from src.application.use_cases.task_use_cases import TaskUseCases
 from src.domain.value_objects.task_status import TaskStatus
 from src.infrastructure.database.models import TaskModel, WorkLogModel
-from src.application.use_cases.task_use_cases import TaskUseCases
 from src.infrastructure.repositories.task_repository import SqlAlchemyTaskRepository
 
 

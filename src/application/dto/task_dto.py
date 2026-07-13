@@ -1,8 +1,11 @@
 from __future__ import annotations
+
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date
 from decimal import Decimal
+
 from src.domain.value_objects.task_status import TaskStatus
+
 
 @dataclass
 class CreateTaskDTO:

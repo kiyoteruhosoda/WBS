@@ -1,5 +1,7 @@
 from __future__ import annotations
+
 from sqlalchemy.orm import Session
+
 from src.application.dto.milestone_dto import CreateMilestoneDTO, UpdateMilestoneDTO
 from src.domain.entities.milestone import Milestone
 from src.domain.exceptions import NotFoundError

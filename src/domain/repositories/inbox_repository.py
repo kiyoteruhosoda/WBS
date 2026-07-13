@@ -1,6 +1,9 @@
 from __future__ import annotations
+
 from abc import ABC, abstractmethod
+
 from src.domain.entities.inbox_item import InboxItem
+
 
 class InboxRepository(ABC):
     @abstractmethod

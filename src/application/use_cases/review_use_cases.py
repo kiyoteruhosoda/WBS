@@ -1,9 +1,12 @@
 from __future__ import annotations
+
 from datetime import date, datetime, timedelta
+
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
-from sqlalchemy import select, func
+
 from src.domain.value_objects.task_status import TaskStatus
-from src.infrastructure.database.models import TaskModel, WorkLogModel, CategoryModel
+from src.infrastructure.database.models import CategoryModel, TaskModel, WorkLogModel
 
 
 class ReviewUseCases:

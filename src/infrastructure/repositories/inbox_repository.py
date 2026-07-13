@@ -1,7 +1,10 @@
 from __future__ import annotations
+
 from datetime import datetime
-from sqlalchemy.orm import Session
+
 from sqlalchemy import select
+from sqlalchemy.orm import Session
+
 from src.domain.entities.inbox_item import InboxItem
 from src.domain.repositories.inbox_repository import InboxRepository
 from src.infrastructure.database.models import InboxItemModel

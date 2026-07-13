@@ -1,9 +1,15 @@
 from __future__ import annotations
+
 from fastapi import APIRouter, status
+
 from src.application.dto.milestone_dto import CreateMilestoneDTO, UpdateMilestoneDTO
 from src.application.use_cases.milestone_use_cases import MilestoneUseCases
 from src.presentation.api.dependencies import DbDep
-from src.presentation.api.schemas.milestone_schemas import MilestoneCreateRequest, MilestoneUpdateRequest, MilestoneResponse
+from src.presentation.api.schemas.milestone_schemas import (
+    MilestoneCreateRequest,
+    MilestoneResponse,
+    MilestoneUpdateRequest,
+)
 
 router = APIRouter(prefix="/milestones", tags=["milestones"])
 USER_ID = 1

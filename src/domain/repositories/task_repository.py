@@ -1,6 +1,9 @@
 from __future__ import annotations
+
 from abc import ABC, abstractmethod
+
 from src.domain.entities.task import Task
+
 
 class TaskRepository(ABC):
     @abstractmethod

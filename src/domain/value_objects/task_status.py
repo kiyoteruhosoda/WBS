@@ -1,7 +1,9 @@
 from __future__ import annotations
+
 import enum
 
-class TaskStatus(str, enum.Enum):
+
+class TaskStatus(enum.StrEnum):
     TODO = "TODO"
     DOING = "DOING"
     WAITING = "WAITING"

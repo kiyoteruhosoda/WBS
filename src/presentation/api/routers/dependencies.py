@@ -1,9 +1,15 @@
 from __future__ import annotations
+
 from fastapi import APIRouter, status
+
 from src.application.use_cases.dependency_use_cases import DependencyUseCases
-from src.presentation.api.dependencies import DbDep
-from src.presentation.api.schemas.dependency_schemas import DependencyCreateRequest, DependencyResponse, TaskDependenciesResponse
 from src.domain.value_objects.dependency_type import DependencyType
+from src.presentation.api.dependencies import DbDep
+from src.presentation.api.schemas.dependency_schemas import (
+    DependencyCreateRequest,
+    DependencyResponse,
+    TaskDependenciesResponse,
+)
 
 router = APIRouter(prefix="/tasks", tags=["dependencies"])
 

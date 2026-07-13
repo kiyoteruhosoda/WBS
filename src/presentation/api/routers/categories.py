@@ -1,9 +1,15 @@
 from __future__ import annotations
+
 from fastapi import APIRouter, status
+
 from src.application.dto.category_dto import CreateCategoryDTO, UpdateCategoryDTO
 from src.application.use_cases.category_use_cases import CategoryUseCases
 from src.presentation.api.dependencies import DbDep
-from src.presentation.api.schemas.category_schemas import CategoryCreateRequest, CategoryUpdateRequest, CategoryResponse
+from src.presentation.api.schemas.category_schemas import (
+    CategoryCreateRequest,
+    CategoryResponse,
+    CategoryUpdateRequest,
+)
 
 router = APIRouter(prefix="/categories", tags=["categories"])
 USER_ID = 1

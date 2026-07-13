@@ -1,7 +1,10 @@
 from __future__ import annotations
+
 from datetime import datetime
+
 from sqlalchemy.orm import Session
-from src.application.dto.inbox_dto import CreateInboxItemDTO, ConvertInboxItemDTO
+
+from src.application.dto.inbox_dto import ConvertInboxItemDTO, CreateInboxItemDTO
 from src.domain.entities.inbox_item import InboxItem
 from src.domain.exceptions import NotFoundError
 from src.infrastructure.repositories.inbox_repository import SqlAlchemyInboxRepository
@@ -41,7 +44,6 @@ class InboxUseCases:
         if item is None:
             raise NotFoundError("InboxItem", item_id)
         from src.domain.entities.task import Task
-        from src.domain.value_objects.task_status import TaskStatus
         task = Task(
             id=None,
             user_id=item.user_id,

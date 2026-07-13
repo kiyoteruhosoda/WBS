@@ -1,7 +1,10 @@
 from __future__ import annotations
+
 from datetime import datetime
-from sqlalchemy.orm import Session
+
 from sqlalchemy import select
+from sqlalchemy.orm import Session
+
 from src.domain.entities.milestone import Milestone
 from src.domain.repositories.milestone_repository import MilestoneRepository
 from src.infrastructure.database.models import MilestoneModel

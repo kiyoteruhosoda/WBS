@@ -1,9 +1,15 @@
 from __future__ import annotations
+
 from fastapi import APIRouter, status
+
 from src.application.dto.task_dto import CreateTaskDTO, UpdateTaskDTO
 from src.application.use_cases.task_use_cases import TaskUseCases
 from src.presentation.api.dependencies import DbDep
-from src.presentation.api.schemas.task_schemas import TaskCreateRequest, TaskUpdateRequest, TaskResponse
+from src.presentation.api.schemas.task_schemas import (
+    TaskCreateRequest,
+    TaskResponse,
+    TaskUpdateRequest,
+)
 
 router = APIRouter(prefix="/tasks", tags=["tasks"])
 USER_ID = 1

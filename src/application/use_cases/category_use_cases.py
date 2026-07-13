@@ -1,5 +1,7 @@
 from __future__ import annotations
+
 from sqlalchemy.orm import Session
+
 from src.application.dto.category_dto import CreateCategoryDTO, UpdateCategoryDTO
 from src.domain.entities.category import Category
 from src.domain.exceptions import NotFoundError

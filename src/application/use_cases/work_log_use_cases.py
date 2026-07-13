@@ -1,5 +1,7 @@
 from __future__ import annotations
+
 from sqlalchemy.orm import Session
+
 from src.application.dto.work_log_dto import CreateWorkLogDTO, UpdateWorkLogDTO
 from src.domain.entities.work_log import WorkLog
 from src.domain.exceptions import NotFoundError

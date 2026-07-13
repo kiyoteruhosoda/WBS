@@ -1,7 +1,10 @@
 from __future__ import annotations
+
 from datetime import datetime
-from sqlalchemy.orm import Session
+
 from sqlalchemy import select
+from sqlalchemy.orm import Session
+
 from src.domain.entities.work_log import WorkLog
 from src.domain.repositories.work_log_repository import WorkLogRepository
 from src.infrastructure.database.models import WorkLogModel

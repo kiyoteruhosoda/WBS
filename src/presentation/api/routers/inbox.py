@@ -1,9 +1,15 @@
 from __future__ import annotations
+
 from fastapi import APIRouter, status
-from src.application.dto.inbox_dto import CreateInboxItemDTO, ConvertInboxItemDTO
+
+from src.application.dto.inbox_dto import ConvertInboxItemDTO, CreateInboxItemDTO
 from src.application.use_cases.inbox_use_cases import InboxUseCases
 from src.presentation.api.dependencies import DbDep
-from src.presentation.api.schemas.inbox_schemas import InboxItemCreateRequest, InboxItemConvertRequest, InboxItemResponse
+from src.presentation.api.schemas.inbox_schemas import (
+    InboxItemConvertRequest,
+    InboxItemCreateRequest,
+    InboxItemResponse,
+)
 from src.presentation.api.schemas.task_schemas import TaskResponse
 
 router = APIRouter(prefix="/inbox", tags=["inbox"])

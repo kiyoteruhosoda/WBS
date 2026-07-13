@@ -1,7 +1,10 @@
 from __future__ import annotations
+
 import os
+
 from sqlalchemy import create_engine, text
-from sqlalchemy.orm import sessionmaker, Session
+from sqlalchemy.orm import Session, sessionmaker
+
 from src.infrastructure.database.models import Base
 
 _engine = None

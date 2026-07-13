@@ -1,9 +1,13 @@
 from __future__ import annotations
+
 from sqlalchemy.orm import Session
+
 from src.domain.entities.task_dependency import TaskDependency
-from src.domain.exceptions import NotFoundError, CyclicDependencyError
+from src.domain.exceptions import CyclicDependencyError, NotFoundError
 from src.domain.value_objects.dependency_type import DependencyType
-from src.infrastructure.repositories.task_dependency_repository import SqlAlchemyTaskDependencyRepository
+from src.infrastructure.repositories.task_dependency_repository import (
+    SqlAlchemyTaskDependencyRepository,
+)
 from src.infrastructure.repositories.task_repository import SqlAlchemyTaskRepository
 
 

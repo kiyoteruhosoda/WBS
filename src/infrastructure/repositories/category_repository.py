@@ -1,7 +1,10 @@
 from __future__ import annotations
+
 from datetime import datetime
-from sqlalchemy.orm import Session
+
 from sqlalchemy import select
+from sqlalchemy.orm import Session
+
 from src.domain.entities.category import Category
 from src.domain.repositories.category_repository import CategoryRepository
 from src.infrastructure.database.models import CategoryModel

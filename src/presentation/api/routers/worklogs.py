@@ -1,9 +1,15 @@
 from __future__ import annotations
+
 from fastapi import APIRouter, status
+
 from src.application.dto.work_log_dto import CreateWorkLogDTO, UpdateWorkLogDTO
 from src.application.use_cases.work_log_use_cases import WorkLogUseCases
 from src.presentation.api.dependencies import DbDep
-from src.presentation.api.schemas.work_log_schemas import WorkLogCreateRequest, WorkLogUpdateRequest, WorkLogResponse
+from src.presentation.api.schemas.work_log_schemas import (
+    WorkLogCreateRequest,
+    WorkLogResponse,
+    WorkLogUpdateRequest,
+)
 
 router = APIRouter(prefix="/work-logs", tags=["work-logs"])
 USER_ID = 1

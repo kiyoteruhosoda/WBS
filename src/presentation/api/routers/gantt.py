@@ -1,5 +1,7 @@
 from __future__ import annotations
+
 from fastapi import APIRouter
+
 from src.application.use_cases.gantt_use_cases import GanttUseCases
 from src.presentation.api.dependencies import DbDep
 

@@ -1,9 +1,11 @@
 from datetime import UTC, datetime
 from typing import Annotated
+
 from fastapi import APIRouter, Depends, Request, status
 from fastapi.responses import JSONResponse
-from sqlalchemy.orm import Session
 from sqlalchemy import text
+from sqlalchemy.orm import Session
+
 from src.presentation.api.dependencies import get_db
 from src.presentation.api.schemas.ops import InfoResponse, LivenessResponse, ReadinessResponse
 

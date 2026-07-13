@@ -1,5 +1,7 @@
 from __future__ import annotations
+
 from fastapi import APIRouter
+
 from src.application.use_cases.dashboard_use_cases import DashboardUseCases
 from src.presentation.api.dependencies import DbDep
 

@@ -1,6 +1,9 @@
 from __future__ import annotations
+
 from abc import ABC, abstractmethod
+
 from src.domain.entities.work_log import WorkLog
+
 
 class WorkLogRepository(ABC):
     @abstractmethod

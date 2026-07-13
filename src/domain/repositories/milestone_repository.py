@@ -1,6 +1,9 @@
 from __future__ import annotations
+
 from abc import ABC, abstractmethod
+
 from src.domain.entities.milestone import Milestone
+
 
 class MilestoneRepository(ABC):
     @abstractmethod
