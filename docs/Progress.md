@@ -42,6 +42,10 @@ MVP スコープ（10章）から起こしたもの。
 | 23 | T23 | Inbox 画面 | ⬜未着手 | 小 | 中 | 小 | 中 |
 | 24 | T24 | マイルストーン画面 | ⬜未着手 | 小 | 中 | 小 | 中 |
 | 25 | T25 | 週次レビュー画面 | ⬜未着手 | 小 | 中 | 小 | 中 |
+| 26 | T26 | Docker Compose 構成の分離（web / api(RESTful) / db の3コンテナ化） | ⬜未着手 | 大 | 大 | 中 | 大 |
+| 27 | T27 | DB バックエンドの DI 化（MariaDB / SQLite を注入で切替。テストは SQLite） | ⬜未着手 | 大 | 大 | 中 | 中 |
+| 28 | T28 | デプロイ用スクリプト整備（reset / migrate / app モードで DB・ストレージ状態を更新） | ⬜未着手 | 大 | 大 | 中 | 大 |
+| 29 | T29 | ゼロコンフィグ起動（何も設定しなくてもログイン画面が表示される） | ⬜未着手 | 大 | 大 | 中 | 中 |
 
 ## 詳細
 
@@ -51,3 +55,21 @@ MVP スコープ（10章）から起こしたもの。
    トリガー `trg_tasks_before_update` を DB 側に置くかアプリ層で再現するかは本タスク着手時に確定する。
 2. **T4（今日のタスク）** — 抽出条件は設計書 5.3、bucket 分類とスコア計算を含む。ビューを
    使わない場合は同等のクエリをリポジトリ層で実装する。
+3. **T26（Compose 分離）** — 現状は単一 `Dockerfile` のみ。web（フロント配信）/ api（RESTful
+   バックエンド）/ db（MariaDB）をコンテナ分割し `docker-compose.yml` で束ねる。db は
+   スキーマを焼き込まない素の MariaDB（UTC 固定）とし、スキーマ構築は api コンテナ起動時の
+   マイグレーションで行う。FlaskApp の `docker-compose.yml` / `scripts/entrypoint.sh` /
+   `db/Dockerfile` を参考にする。
+4. **T27（DB の DI 化）** — 接続先（MariaDB / SQLite）を `settings` の DB URL と DI で切替え、
+   Domain / Application 層は接続実装に依存しない。テスト（`tests/unit` `tests/integration`）は
+   SQLite を使う。`BigInteger` は既存方針どおり `with_variant(Integer, "sqlite")`、ENUM は
+   `native_enum=False` を守り両バックエンドで動くようにする。
+5. **T28（デプロイスクリプト）** — FlaskApp の `scripts/`（`deploy.sh` / `entrypoint.sh` /
+   `run_db_migrations.py` / `seed_master_data.py`）を参考に、`app` / `migrate` / `reset` の
+   3モードを用意する。`app`=アプリのみ更新、`migrate`=`alembic upgrade head`（既存データ保持）、
+   `reset`=DB・ストレージを削除して init_master + seed_master_data で再構築（破壊的）。
+   `scripts/README.md` に現在の挙動を記載する。
+6. **T29（ゼロコンフィグ起動）** — `.env` 不在でも `docker-compose.yml` の `${VAR:-default}` と
+   `system_settings_defaults.py` の既定値で起動し、初期管理者（`shared/domain/auth/master_data.py`）
+   が seed されて **何も設定しなくてもログイン画面が出る**状態にする。既定資格情報は開発向けである
+   ことを README に明記する。
