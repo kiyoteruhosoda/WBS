@@ -1,65 +1,52 @@
-# fastapitemplate
+# Task Scheduler
 
-FastAPI + SQLite のテンプレートです。  
-ローカル開発は `uv`、デプロイはそのまま Docker で実行できます。
+個人・小規模プロジェクト向けの WBS / タスク管理 MVP です。DDD を意識し、Domain 層に状態遷移・スコア算出などの業務ルールを寄せ、Presentation 層は REST API として公開します。
 
-## 技術スタック
+## 実装済み
 
-- Python 3.12
-- FastAPI (OpenAPI は `/docs` と `/openapi.json`)
-- SQLite
-- uv (依存管理・実行)
-- Docker
+- タスク、カテゴリ、マイルストーン、作業ログ、依存関係、Inbox のスキーマ初期化
+- タスク CRUD、論理削除、DONE 遷移時の完了時刻・残工数更新
+- 進捗率、期限超過日数、優先度スコア、今日のタスク抽出
+- DFS による依存関係の循環検出
+- Dashboard / Today / Gantt / Weekly review 用 API
+- React 18 + TypeScript + MUI + Vite + React Query + Router のフロントエンド基盤
+- web / api / db の Docker Compose 分離
+- `app` / `migrate` / `reset` モードの起動スクリプト
+- `.env` 不在でも起動できる開発向けデフォルト設定
 
-## ローカル開発 (uv)
+## ローカル開発
 
 ```bash
-# uv が未インストールの場合
-pip install --user uv
-
-# 依存関係をインストール
 uv sync
-
-# 開発サーバー起動
 uv run uvicorn main:app --reload
 ```
 
-アクセス:
+API: <http://127.0.0.1:8000/docs>
 
-- API: http://127.0.0.1:8000
-- Swagger UI: http://127.0.0.1:8000/docs
-- OpenAPI JSON: http://127.0.0.1:8000/openapi.json
-
-## API サンプル
+## Docker Compose
 
 ```bash
-# ヘルスチェック
-curl http://127.0.0.1:8000/health
-
-# アイテム作成
-curl -X POST http://127.0.0.1:8000/items \
-  -H "Content-Type: application/json" \
-  -d '{"name":"sample"}'
-
-# アイテム一覧
-curl http://127.0.0.1:8000/items
+docker compose up --build
 ```
 
-SQLite ファイルは実行ディレクトリの `app.db` に作成されます。
+- Web: <http://127.0.0.1:8080>
+- API: <http://127.0.0.1:8000/docs>
+- DB: MariaDB 10.11（UTC）
+
+`.env` がなくても `${VAR:-default}` により起動します。初期ユーザーは開発用の `local@example.com` / `local-dev-password` を想定しています。本番では必ず環境変数で変更してください。
+
+## API 例
+
+```bash
+curl -X POST http://127.0.0.1:8000/tasks \
+  -H "Content-Type: application/json" \
+  -d '{"title":"設計レビュー","priority":5,"urgency":4}'
+
+curl http://127.0.0.1:8000/today-tasks
+```
 
 ## テスト
 
 ```bash
 uv run pytest
 ```
-
-## Docker デプロイ
-
-```bash
-docker build -t fastapitemplate .
-docker run --rm -p 8000:8000 -v $(pwd)/app.db:/app/app.db fastapitemplate
-```
-
-Docker 起動後:
-
-- http://127.0.0.1:8000/docs

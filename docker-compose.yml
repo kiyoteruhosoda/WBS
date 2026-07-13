@@ -1,0 +1,28 @@
+services:
+  db:
+    image: mariadb:10.11
+    environment:
+      MARIADB_ROOT_PASSWORD: ${MARIADB_ROOT_PASSWORD:-rootpass}
+      MARIADB_DATABASE: ${MARIADB_DATABASE:-task_scheduler}
+      MARIADB_USER: ${MARIADB_USER:-wbs}
+      MARIADB_PASSWORD: ${MARIADB_PASSWORD:-wbspass}
+      TZ: UTC
+    ports: ["${DB_PORT:-3306}:3306"]
+    volumes: ["db-data:/var/lib/mysql"]
+  api:
+    build: .
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-sqlite:////app/data/app.db}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-local@example.com}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-local-dev-password}
+    volumes: ["api-data:/app/data"]
+    ports: ["${API_PORT:-8000}:8000"]
+    depends_on: [db]
+    command: ["/app/scripts/entrypoint.sh", "${APP_MODE:-app}"]
+  web:
+    build: ./frontend
+    ports: ["${WEB_PORT:-8080}:80"]
+    depends_on: [api]
+volumes:
+  db-data:
+  api-data:
