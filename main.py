@@ -8,7 +8,7 @@ from prometheus_fastapi_instrumentator import Instrumentator
 from src.infrastructure.build_info import load_build_info
 from src.infrastructure.database.connection import init_db
 from src.infrastructure.logging.structured_logger import setup_logging
-from src.presentation.api.routers import admin, health, items, ops
+from src.presentation.api.routers import admin, health, ops
 from src.presentation.middleware.logging_middleware import RequestLoggingMiddleware
 
 
@@ -43,7 +43,6 @@ def create_app(db_path: str = "app.db") -> FastAPI:
     app.include_router(health.router)
     app.include_router(ops.router)
     app.include_router(admin.router)
-    app.include_router(items.router)
     return app
 
 
