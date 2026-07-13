@@ -8,11 +8,7 @@ def get_connection(db_path: str) -> sqlite3.Connection:
 
 
 def init_db(db_path: str) -> None:
+    # スキーマは Alembic マイグレーションで管理する（設計書 DDL 管理方針）。
+    # ここでは接続の初期化のみ行い、テーブル定義は持たない。
     with get_connection(db_path) as conn:
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS items (
-                id   INTEGER PRIMARY KEY AUTOINCREMENT,
-                name TEXT    NOT NULL
-            )
-        """)
         conn.commit()
