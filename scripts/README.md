@@ -17,4 +17,4 @@
 ./scripts/build.sh --target docker # docker compose build
 ```
 
-高速化したい場合は `--skip-tests` や `--skip-frontend-install` を指定できます。
+高速化したい場合は `--skip-tests` や `--skip-frontend-install` を指定できます。backend build は `uv` があれば `uv run`、なければ実行中の Python の `python -m ruff` / `python -m pytest` にフォールバックします。

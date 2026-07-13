@@ -9,7 +9,9 @@ from __future__ import annotations
 
 import argparse
 import os
+import shutil
 import subprocess
+import sys
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -20,11 +22,29 @@ FRONTEND = ROOT / "frontend"
 
 
 @dataclass(frozen=True)
+class Toolchain:
+    """Resolve external build tools without assuming uv is installed."""
+
+    python: str
+    uv: str | None
+
+    @classmethod
+    def detect(cls) -> Toolchain:
+        return cls(python=sys.executable, uv=shutil.which("uv"))
+
+    def python_module(self, module: str, *args: str) -> tuple[str, ...]:
+        if self.uv:
+            return (self.uv, "run", module, *args)
+        return (self.python, "-m", module, *args)
+
+
+@dataclass(frozen=True)
 class BuildContext:
     target: str
     skip_tests: bool
     skip_frontend_install: bool
     env: dict[str, str]
+    toolchain: Toolchain
 
 
 class BuildStep(ABC):
@@ -48,7 +68,14 @@ class BuildStep(ABC):
             return
         command = list(self.command(context))
         print(f"\n==> {self.name}: {' '.join(command)}", flush=True)
-        subprocess.run(command, cwd=self.cwd(), env=context.env, check=True)
+        try:
+            subprocess.run(command, cwd=self.cwd(), env=context.env, check=True)
+        except FileNotFoundError as exc:
+            missing = exc.filename or command[0]
+            raise SystemExit(
+                f"Required command not found: {missing}. "
+                "Install the tool or choose a target that does not need it."
+            ) from exc
 
 
 class BackendStep(BuildStep):
@@ -68,7 +95,7 @@ class RuffCheck(BackendStep):
     name = "backend lint"
 
     def command(self, context: BuildContext) -> Sequence[str]:
-        return ("uv", "run", "ruff", "check", ".")
+        return context.toolchain.python_module("ruff", "check", ".")
 
 
 class Pytest(BackendStep):
@@ -78,7 +105,7 @@ class Pytest(BackendStep):
         return super().supports(context) and not context.skip_tests
 
     def command(self, context: BuildContext) -> Sequence[str]:
-        return ("uv", "run", "pytest")
+        return context.toolchain.python_module("pytest")
 
 
 class FrontendInstall(FrontendStep):
@@ -137,6 +164,7 @@ def main() -> None:
         skip_tests=args.skip_tests,
         skip_frontend_install=args.skip_frontend_install,
         env={**os.environ, "PYTHONUNBUFFERED": "1"},
+        toolchain=Toolchain.detect(),
     )
     steps: tuple[BuildStep, ...] = (
         RuffCheck(),
