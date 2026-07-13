@@ -1,3 +1,4 @@
+import os
 import sqlite3
 
 _MEMORY_CONNECTIONS: dict[str, sqlite3.Connection] = {}
@@ -16,6 +17,18 @@ def get_connection(db_path: str) -> sqlite3.Connection:
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
     return conn
+
+
+def resolve_db_path(default: str = "app.db") -> str:
+    explicit_path = os.getenv("SQLITE_PATH")
+    if explicit_path:
+        return explicit_path
+    database_url = os.getenv("DATABASE_URL")
+    if database_url and database_url.startswith("sqlite:////"):
+        return "/" + database_url.removeprefix("sqlite:////")
+    if database_url and database_url.startswith("sqlite:///"):
+        return database_url.removeprefix("sqlite:///")
+    return default
 
 
 def init_db(db_path: str) -> None:

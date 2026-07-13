@@ -1,6 +1,7 @@
 import sqlite3
 from datetime import UTC, date, datetime, timedelta
 from typing import Annotated, Any
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
@@ -20,6 +21,15 @@ def _row(r: sqlite3.Row) -> dict[str, Any]:
     return dict(r)
 
 
+def _today(conn: sqlite3.Connection, user_id: int = 1) -> date:
+    timezone = conn.execute("SELECT timezone FROM users WHERE id=?", (user_id,)).fetchone()
+    timezone_name = timezone["timezone"] if timezone else "UTC"
+    try:
+        return datetime.now(ZoneInfo(timezone_name)).date()
+    except ZoneInfoNotFoundError:
+        return datetime.now(UTC).date()
+
+
 class CategoryIn(BaseModel):
     name: str
     color: str | None = None
@@ -28,7 +38,7 @@ class CategoryIn(BaseModel):
 
 class MilestoneIn(BaseModel):
     name: str
-    due_date: str | None = None
+    due_date: date | None = None
     description: str | None = None
 
 
@@ -38,8 +48,8 @@ class TaskIn(BaseModel):
     priority: int = Field(3, ge=1, le=5)
     urgency: int = Field(3, ge=1, le=5)
     status: str = "TODO"
-    start_date: str | None = None
-    due_date: str | None = None
+    start_date: date | None = None
+    due_date: date | None = None
     estimated_hours: float | None = Field(None, ge=0)
     remaining_hours: float | None = Field(None, ge=0)
     memo: str | None = None
@@ -49,7 +59,7 @@ class TaskIn(BaseModel):
 
 class WorkLogIn(BaseModel):
     task_id: int
-    work_date: str
+    work_date: date
     hours: float = Field(..., gt=0, le=24)
     memo: str | None = None
 
@@ -88,7 +98,6 @@ def _patch(conn: sqlite3.Connection, table: str, id: int, data: dict[str, Any]) 
         f"SELECT 1 FROM {table} WHERE id=? AND deleted_at IS NULL", (id,)
     ).fetchone():
         raise HTTPException(404, "not found")
-    data = {k: v for k, v in data.items() if v is not None}
     if data:
         data["updated_at"] = _now()
         conn.execute(
@@ -132,12 +141,12 @@ def milestones(conn: Db):
 
 @router.post("/milestones", status_code=201)
 def create_milestone(body: MilestoneIn, conn: Db):
-    return _insert(conn, "milestones", body.model_dump() | {"user_id": 1})
+    return _insert(conn, "milestones", body.model_dump(mode="json") | {"user_id": 1})
 
 
 @router.put("/milestones/{id}")
 def update_milestone(id: int, body: MilestoneIn, conn: Db):
-    return _patch(conn, "milestones", id, body.model_dump())
+    return _patch(conn, "milestones", id, body.model_dump(mode="json", exclude_unset=True))
 
 
 @router.delete("/milestones/{id}")
@@ -159,16 +168,16 @@ def tasks(conn: Db, status_: str | None = Query(None, alias="status")):
 
 @router.post("/tasks", status_code=201)
 def create_task(body: TaskIn, conn: Db):
-    return _summary(conn, _insert(conn, "tasks", body.model_dump() | {"user_id": 1}))
+    return _summary(conn, _insert(conn, "tasks", body.model_dump(mode="json") | {"user_id": 1}))
 
 
 @router.put("/tasks/{id}")
 def update_task(id: int, body: TaskIn, conn: Db):
-    data = body.model_dump()
+    data = body.model_dump(mode="json", exclude_unset=True)
     old = conn.execute("SELECT status FROM tasks WHERE id=?", (id,)).fetchone()
     if data.get("status") == "DONE" and old and old["status"] != "DONE":
         data |= {"completed_at": _now(), "remaining_hours": 0}
-    elif old and old["status"] == "DONE" and data.get("status") != "DONE":
+    elif "status" in data and old and old["status"] == "DONE" and data["status"] != "DONE":
         data["completed_at"] = None
     return _summary(conn, _patch(conn, "tasks", id, data))
 
@@ -180,7 +189,7 @@ def delete_task(id: int, conn: Db):
 
 @router.post("/work-logs", status_code=201)
 def create_work_log(body: WorkLogIn, conn: Db):
-    return _insert(conn, "work_logs", body.model_dump() | {"user_id": 1})
+    return _insert(conn, "work_logs", body.model_dump(mode="json") | {"user_id": 1})
 
 
 @router.get("/work-logs")
@@ -233,20 +242,20 @@ def convert_inbox(id: int, conn: Db):
 
 @router.get("/today-tasks")
 def today_tasks(conn: Db):
-    today = date.today()
+    today = _today(conn)
     rows = []
     for r in conn.execute(
         "SELECT * FROM tasks WHERE deleted_at IS NULL AND status NOT IN ('DONE','CANCELLED')"
     ):
         b = today_bucket(r["status"], r["start_date"], r["due_date"], today)
         if b:
-            rows.append(_summary(conn, r) | {"bucket": b})
+            rows.append(_summary(conn, r, today) | {"bucket": b})
     return sorted(rows, key=lambda x: x["score"], reverse=True)
 
 
 @router.get("/dashboard")
 def dashboard(conn: Db):
-    today = date.today()
+    today = _today(conn)
     week_ago = (today - timedelta(days=6)).isoformat()
     total = conn.execute("SELECT COUNT(*) c FROM tasks WHERE deleted_at IS NULL").fetchone()["c"]
     open_ = conn.execute(
@@ -281,13 +290,15 @@ def weekly_review(conn: Db):
     return dashboard(conn)["kpi"]
 
 
-def _summary(conn: sqlite3.Connection, r: sqlite3.Row | dict[str, Any]) -> dict[str, Any]:
+def _summary(
+    conn: sqlite3.Connection, r: sqlite3.Row | dict[str, Any], today: date | None = None
+) -> dict[str, Any]:
     d = dict(r)
     actual = conn.execute(
         "SELECT COALESCE(SUM(hours),0) h FROM work_logs WHERE task_id=? AND deleted_at IS NULL",
         (d["id"],),
     ).fetchone()["h"]
-    od = overdue_days(d.get("due_date"), d["status"], date.today())
+    od = overdue_days(d.get("due_date"), d["status"], today or _today(conn, d.get("user_id", 1)))
     return d | {
         "actual_hours": actual,
         "progress_percent": progress_percent(d["status"], actual, d.get("remaining_hours")),

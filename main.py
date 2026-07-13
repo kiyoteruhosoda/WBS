@@ -6,14 +6,15 @@ from fastapi import FastAPI
 from prometheus_fastapi_instrumentator import Instrumentator
 
 from src.infrastructure.build_info import load_build_info
-from src.infrastructure.database.connection import init_db
+from src.infrastructure.database.connection import init_db, resolve_db_path
 from src.infrastructure.logging.structured_logger import setup_logging
 from src.presentation.api.routers import admin, health, ops, wbs
 from src.presentation.middleware.logging_middleware import RequestLoggingMiddleware
 
 
-def create_app(db_path: str = "app.db") -> FastAPI:
+def create_app(db_path: str | None = None) -> FastAPI:
     setup_logging()
+    db_path = db_path or resolve_db_path()
 
     build_info = load_build_info()
 
