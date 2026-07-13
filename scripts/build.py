@@ -144,9 +144,39 @@ class FrontendInstall(FrontendStep):
     def supports(self, context: BuildContext) -> bool:
         return super().supports(context) and not context.skip_frontend_install
 
+    def install_commands(self) -> tuple[tuple[str, ...], ...]:
+        if (FRONTEND / "package-lock.json").exists():
+            return (("npm", "ci"), ("npm", "install"))
+        return (("npm", "install"),)
+
     def command(self, context: BuildContext) -> Sequence[str]:
-        install_command = "ci" if (FRONTEND / "package-lock.json").exists() else "install"
-        return ("npm", install_command)
+        return self.install_commands()[0]
+
+    def run(self, context: BuildContext) -> None:
+        if not self.supports(context):
+            return
+        commands = self.install_commands()
+        for index, command in enumerate(commands):
+            print(f"\n==> {self.name}: {' '.join(command)}", flush=True)
+            try:
+                subprocess.run(command, cwd=self.cwd(), env=context.env, check=True)
+                return
+            except FileNotFoundError as exc:
+                missing = exc.filename or command[0]
+                raise SystemExit(
+                    f"Required command not found: {missing}. "
+                    "Install the tool or choose a target that does not need it."
+                ) from exc
+            except subprocess.CalledProcessError as exc:
+                if index + 1 < len(commands):
+                    print(
+                        "npm ci failed; falling back to npm install to refresh frontend lockfile.",
+                        flush=True,
+                    )
+                    continue
+                raise SystemExit(
+                    f"Build step failed: {self.name} (exit code {exc.returncode})"
+                ) from exc
 
 
 class FrontendBuild(FrontendStep):
