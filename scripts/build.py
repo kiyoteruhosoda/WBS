@@ -20,6 +20,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 FRONTEND = ROOT / "frontend"
+DEFAULT_ARTIFACT_DIR = ROOT / "dist" / "deploy"
 
 
 @dataclass(frozen=True)
@@ -49,6 +50,16 @@ class BuildContext:
     skip_frontend_install: bool
     env: dict[str, str]
     toolchain: Toolchain
+    app_version: str
+    artifact_dir: Path
+
+    @property
+    def api_image(self) -> str:
+        return f"wbs-api:{self.app_version}"
+
+    @property
+    def web_image(self) -> str:
+        return f"wbs-web:{self.app_version}"
 
 
 class BuildStep(ABC):
@@ -159,19 +170,110 @@ class DockerBuild(BuildStep):
     name = "docker compose build"
 
     def supports(self, context: BuildContext) -> bool:
-        return context.target == "docker"
+        return context.target in {"docker", "deploy"}
 
     def command(self, context: BuildContext) -> Sequence[str]:
-        return ("docker", "compose", "build")
+        return ("docker", "compose", "build", "api", "web")
+
+
+class DockerSave(BuildStep):
+    name = "docker image export"
+
+    def supports(self, context: BuildContext) -> bool:
+        return context.target == "deploy"
+
+    def command(self, context: BuildContext) -> Sequence[str]:
+        context.artifact_dir.mkdir(parents=True, exist_ok=True)
+        return (
+            "docker",
+            "save",
+            "-o",
+            str(context.artifact_dir / "wbs-images.tar"),
+            context.api_image,
+            context.web_image,
+        )
+
+
+class DeployBundle(BuildStep):
+    name = "deploy bundle"
+
+    def supports(self, context: BuildContext) -> bool:
+        return context.target == "deploy"
+
+    def command(self, context: BuildContext) -> Sequence[str]:
+        return ("write-deploy-bundle", str(context.artifact_dir))
+
+    def run(self, context: BuildContext) -> None:
+        if not self.supports(context):
+            return
+        context.artifact_dir.mkdir(parents=True, exist_ok=True)
+        compose = context.artifact_dir / "docker-compose.yml"
+        compose.write_text(
+            f"""services:
+  api:
+    image: {context.api_image}
+    environment:
+      DATABASE_URL: ${{DATABASE_URL:-sqlite:////app/data/app.db}}
+      ADMIN_EMAIL: ${{ADMIN_EMAIL:-local@example.com}}
+      ADMIN_PASSWORD: ${{ADMIN_PASSWORD:-local-dev-password}}
+    volumes:
+      - api-data:/app/data
+    ports:
+      - "${{API_PORT:-8000}}:8000"
+    command: ["/app/scripts/entrypoint.sh", "${{APP_MODE:-app}}"]
+  web:
+    image: {context.web_image}
+    ports:
+      - "${{WEB_PORT:-8080}}:80"
+    depends_on:
+      - api
+volumes:
+  api-data:
+""",
+            encoding="utf-8",
+        )
+        entrypoint = context.artifact_dir / "entrypoint.sh"
+        entrypoint.write_text(
+            """#!/usr/bin/env sh
+set -eu
+SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+IMAGE_TAR=${IMAGE_TAR:-$SCRIPT_DIR/wbs-images.tar}
+COMPOSE_FILE=${COMPOSE_FILE:-$SCRIPT_DIR/docker-compose.yml}
+
+docker load -i "$IMAGE_TAR"
+docker compose -f "$COMPOSE_FILE" up -d
+""",
+            encoding="utf-8",
+        )
+        entrypoint.chmod(0o755)
+        readme = context.artifact_dir / "README.md"
+        readme.write_text(
+            f"""# WBS deploy bundle
+
+Copy this directory to the deployment host and run:
+
+```bash
+./entrypoint.sh
+```
+
+The script loads `wbs-images.tar` and starts the containers with Docker Compose.
+
+Images:
+- `{context.api_image}`
+- `{context.web_image}`
+""",
+            encoding="utf-8",
+        )
+        print(f"\n==> {self.name}: wrote {context.artifact_dir}", flush=True)
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Build WBS API, web, or Docker images.")
     parser.add_argument(
         "--target",
-        choices=("all", "api", "web", "docker"),
+        choices=("all", "api", "web", "docker", "deploy"),
         default="all",
-        help="Build target. Defaults to all local build targets.",
+        help="Build target. Defaults to all local build targets. Use deploy to export Docker images and host entrypoint.",
     )
     parser.add_argument(
         "--skip-tests",
@@ -181,7 +283,18 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--skip-frontend-install",
         action="store_true",
-        help="Skip npm install/npm ci when node_modules is already prepared.",
+        help="Skip npm install when node_modules is already prepared.",
+    )
+    parser.add_argument(
+        "--app-version",
+        default=os.getenv("APP_VERSION", "local"),
+        help="Docker image tag used by docker/deploy targets.",
+    )
+    parser.add_argument(
+        "--artifact-dir",
+        type=Path,
+        default=DEFAULT_ARTIFACT_DIR,
+        help="Directory for deploy artifacts produced by --target deploy.",
     )
     return parser.parse_args()
 
@@ -194,6 +307,8 @@ def main() -> None:
         skip_frontend_install=args.skip_frontend_install,
         env={**os.environ, "PYTHONUNBUFFERED": "1"},
         toolchain=Toolchain.detect(),
+        app_version=args.app_version,
+        artifact_dir=args.artifact_dir,
     )
     steps: tuple[BuildStep, ...] = (
         BackendDependencies(),
@@ -202,6 +317,8 @@ def main() -> None:
         FrontendInstall(),
         FrontendBuild(),
         DockerBuild(),
+        DockerSave(),
+        DeployBundle(),
     )
     for step in steps:
         step.run(context)
