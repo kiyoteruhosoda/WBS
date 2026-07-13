@@ -8,6 +8,7 @@ pipeline can grow without turning into a long procedural shell script.
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import os
 import shutil
 import subprocess
@@ -36,6 +37,9 @@ class Toolchain:
         if self.uv:
             return (self.uv, "run", module, *args)
         return (self.python, "-m", module, *args)
+
+    def has_modules(self, *modules: str) -> bool:
+        return all(importlib.util.find_spec(module) is not None for module in modules)
 
 
 @dataclass(frozen=True)
@@ -76,6 +80,8 @@ class BuildStep(ABC):
                 f"Required command not found: {missing}. "
                 "Install the tool or choose a target that does not need it."
             ) from exc
+        except subprocess.CalledProcessError as exc:
+            raise SystemExit(f"Build step failed: {self.name} (exit code {exc.returncode})") from exc
 
 
 class BackendStep(BuildStep):
@@ -89,6 +95,30 @@ class FrontendStep(BuildStep):
 
     def cwd(self) -> Path:
         return FRONTEND
+
+
+class BackendDependencies(BackendStep):
+    name = "backend dependencies"
+
+    def supports(self, context: BuildContext) -> bool:
+        return (
+            super().supports(context)
+            and context.toolchain.uv is None
+            and not context.toolchain.has_modules("ruff", "pytest", "httpx")
+        )
+
+    def command(self, context: BuildContext) -> Sequence[str]:
+        return (
+            context.toolchain.python,
+            "-m",
+            "pip",
+            "install",
+            "-e",
+            ".",
+            "ruff>=0.11.0",
+            "pytest>=9.0.3",
+            "httpx>=0.28.1",
+        )
 
 
 class RuffCheck(BackendStep):
@@ -167,6 +197,7 @@ def main() -> None:
         toolchain=Toolchain.detect(),
     )
     steps: tuple[BuildStep, ...] = (
+        BackendDependencies(),
         RuffCheck(),
         Pytest(),
         FrontendInstall(),
