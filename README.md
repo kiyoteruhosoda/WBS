@@ -45,6 +45,17 @@ curl -X POST http://127.0.0.1:8000/tasks \
 curl http://127.0.0.1:8000/today-tasks
 ```
 
+## ビルド
+
+```bash
+./scripts/build.sh
+```
+
+- `--target api`: backend lint / test のみ実行
+- `--target web`: frontend install / build のみ実行
+- `--target docker`: `docker compose build` を実行
+- `--skip-tests` / `--skip-frontend-install`: ローカル開発時の高速化オプション
+
 ## テスト
 
 ```bash
