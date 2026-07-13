@@ -1,18 +1,19 @@
-import sqlite3
+from __future__ import annotations
+
 from collections.abc import Generator
 from typing import Annotated
 
-from fastapi import Depends, Request
+from fastapi import Depends
+from sqlalchemy.orm import Session
 
-from src.infrastructure.database.connection import get_connection
+from src.infrastructure.database.session import get_db_session
 
 
-def get_db(request: Request) -> Generator[sqlite3.Connection, None, None]:
-    conn = get_connection(request.app.state.db_path)
+def get_db() -> Generator[Session, None, None]:
+    session = get_db_session()
     try:
-        yield conn
+        yield session
     finally:
-        conn.close()
+        session.close()
 
-
-DbDep = Annotated[sqlite3.Connection, Depends(get_db)]
+DbDep = Annotated[Session, Depends(get_db)]

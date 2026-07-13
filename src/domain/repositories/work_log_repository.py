@@ -1,0 +1,16 @@
+from __future__ import annotations
+
+from abc import ABC, abstractmethod
+
+from src.domain.entities.work_log import WorkLog
+
+
+class WorkLogRepository(ABC):
+    @abstractmethod
+    def find_by_id(self, work_log_id: int) -> WorkLog | None: ...
+    @abstractmethod
+    def find_by_task(self, task_id: int) -> list[WorkLog]: ...
+    @abstractmethod
+    def save(self, work_log: WorkLog) -> WorkLog: ...
+    @abstractmethod
+    def soft_delete(self, work_log_id: int) -> None: ...
