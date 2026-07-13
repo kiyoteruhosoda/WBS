@@ -55,7 +55,7 @@ curl http://127.0.0.1:8000/today-tasks
 - `--target web`: frontend install / build のみ実行
 - `--target docker`: `docker compose build` を実行
 - `--skip-tests` / `--skip-frontend-install`: ローカル開発時の高速化オプション
-- frontend build は lockfile がある場合 `npm ci` を試し、package.json と lockfile がずれている場合は `npm install` にフォールバックして lockfile を更新します。
+- frontend build は開発時の lockfile 不整合を自動補正できるよう、依存解決に `npm install` を使います。
 - backend build は `uv` があれば `uv run`、なければ実行中の Python に必要な dev dependencies を `pip install -e . ruff pytest httpx` で補完してから `python -m ruff` / `python -m pytest` にフォールバックします。
 
 ## テスト
