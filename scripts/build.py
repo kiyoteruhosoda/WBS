@@ -269,7 +269,7 @@ Files:
 - `image.tar`: Docker image archive for `{context.api_image}` and `{context.web_image}`
 - `.image-version`: source image tag used for env-specific retagging
 - `docker-compose.yml`: host compose file using `API_IMAGE` / `WEB_IMAGE` exported by deploy script
-- `scripts/deploy.sh`: stg/prod aware host deploy script
+- `scripts/deploy.sh`: stg/prod aware host deploy script; pass only app/migrate/reset
 - `entrypoint.sh`: thin wrapper around `scripts/deploy.sh`
 """,
             encoding="utf-8",
