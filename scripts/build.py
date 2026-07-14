@@ -188,7 +188,7 @@ class DockerSave(BuildStep):
             "docker",
             "save",
             "-o",
-            str(context.artifact_dir / "wbs-images.tar"),
+            str(context.artifact_dir / "image.tar"),
             context.api_image,
             context.web_image,
         )
@@ -207,60 +207,70 @@ class DeployBundle(BuildStep):
         if not self.supports(context):
             return
         context.artifact_dir.mkdir(parents=True, exist_ok=True)
+        scripts_dir = context.artifact_dir / "scripts"
+        scripts_dir.mkdir(parents=True, exist_ok=True)
         compose = context.artifact_dir / "docker-compose.yml"
         compose.write_text(
-            f"""services:
+            """services:
   api:
-    image: {context.api_image}
+    image: ${API_IMAGE}
     environment:
-      DATABASE_URL: ${{DATABASE_URL:-sqlite:////app/data/app.db}}
-      ADMIN_EMAIL: ${{ADMIN_EMAIL:-local@example.com}}
-      ADMIN_PASSWORD: ${{ADMIN_PASSWORD:-local-dev-password}}
+      DATABASE_URL: ${DATABASE_URL:-sqlite:////app/data/app.db}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-local@example.com}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-local-dev-password}
     volumes:
-      - api-data:/app/data
+      - ${HOST_DATA_ROOT}/data:/app/data
     ports:
-      - "${{API_PORT:-8000}}:8000"
-    command: ["/app/scripts/entrypoint.sh", "${{APP_MODE:-app}}"]
+      - "${API_PORT:-8000}:8000"
+    command: ["/app/scripts/entrypoint.sh", "${APP_MODE:-app}"]
   web:
-    image: {context.web_image}
+    image: ${WEB_IMAGE}
     ports:
-      - "${{WEB_PORT:-8080}}:80"
+      - "${WEB_HOST_PORT:-8080}:80"
     depends_on:
       - api
-volumes:
-  api-data:
 """,
             encoding="utf-8",
         )
+        deploy_script = ROOT / "scripts" / "deploy.sh"
+        target_deploy_script = scripts_dir / "deploy.sh"
+        shutil.copy2(deploy_script, target_deploy_script)
+        target_deploy_script.chmod(0o755)
         entrypoint = context.artifact_dir / "entrypoint.sh"
         entrypoint.write_text(
             """#!/usr/bin/env sh
 set -eu
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-IMAGE_TAR=${IMAGE_TAR:-$SCRIPT_DIR/wbs-images.tar}
-COMPOSE_FILE=${COMPOSE_FILE:-$SCRIPT_DIR/docker-compose.yml}
-
-docker load -i "$IMAGE_TAR"
-docker compose -f "$COMPOSE_FILE" up -d
+exec "$SCRIPT_DIR/scripts/deploy.sh" "${1:-app}"
 """,
             encoding="utf-8",
         )
         entrypoint.chmod(0o755)
+        (context.artifact_dir / ".image-version").write_text(
+            f"{context.app_version}\n", encoding="utf-8"
+        )
         readme = context.artifact_dir / "README.md"
         readme.write_text(
             f"""# WBS deploy bundle
 
-Copy this directory to the deployment host and run:
+Copy this directory contents to `wbs/<stg|prod>/` on the deployment host and run:
 
 ```bash
-./entrypoint.sh
+./scripts/deploy.sh app
+# or: ./entrypoint.sh app
 ```
 
-The script loads `wbs-images.tar` and starts the containers with Docker Compose.
+Modes:
+- `app`: normal deployment
+- `migrate`: start containers and run schema sync
+- `reset`: delete mounted SQLite data and rebuild schema (destructive)
 
-Images:
-- `{context.api_image}`
-- `{context.web_image}`
+Files:
+- `image.tar`: Docker image archive for `{context.api_image}` and `{context.web_image}`
+- `.image-version`: source image tag used for env-specific retagging
+- `docker-compose.yml`: host compose file using `API_IMAGE` / `WEB_IMAGE` exported by deploy script
+- `scripts/deploy.sh`: stg/prod aware host deploy script
+- `entrypoint.sh`: thin wrapper around `scripts/deploy.sh`
 """,
             encoding="utf-8",
         )

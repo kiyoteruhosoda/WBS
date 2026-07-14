@@ -15,7 +15,7 @@
 ./scripts/build.sh --target api    # API lint/test のみ
 ./scripts/build.sh --target web    # Web install/build のみ
 ./scripts/build.sh --target docker # Docker image build
-./scripts/build.sh --target deploy # dist/deploy に image tar と host entrypoint を生成（明示指定）
+./scripts/build.sh --target deploy # dist/deploy に image.tar と scripts/deploy.sh を生成（明示指定）
 ```
 
 高速化したい場合は `--skip-tests` や `--skip-frontend-install` を指定できます。frontend build は開発時の lockfile 不整合を自動補正できるよう、依存解決に `npm install` を使います。backend build は `uv` があれば `uv run`、なければ実行中の Python に必要な dev dependencies を `pip install -e . ruff pytest httpx` で補完してから `python -m ruff` / `python -m pytest` にフォールバックします。
@@ -24,8 +24,10 @@
 
 `./scripts/build.sh --app-version <tag>`（または明示的に `--target deploy`）は `dist/deploy/` に次を生成します。
 
-- `wbs-images.tar`: `wbs-api:<tag>` と `wbs-web:<tag>` をまとめた Docker image tar
+- `image.tar`: `wbs-api:<tag>` と `wbs-web:<tag>` をまとめた Docker image tar
+- `.image-version`: stg/prod 用タグへ付け替えるための build 元 tag
 - `docker-compose.yml`: build 済み image を参照するホスト用 Compose ファイル
-- `entrypoint.sh`: ホスト側で `docker load` と `docker compose up -d` を実行する起動スクリプト
+- `scripts/deploy.sh`: 配置ディレクトリ名 `stg` / `prod` から環境を自動判定し、`app` / `migrate` / `reset` を実行するデプロイスクリプト
+- `entrypoint.sh`: `scripts/deploy.sh` を呼ぶ薄い互換ラッパー
 
-生成後は `dist/deploy/` ディレクトリごとホストへコピーし、ホスト側で `./entrypoint.sh` を実行してください。
+生成後は `dist/deploy/` の中身を `wbs/stg/` または `wbs/prod/` にコピーし、ホスト側で `./scripts/deploy.sh app`（または `migrate` / `reset`）を実行してください。
