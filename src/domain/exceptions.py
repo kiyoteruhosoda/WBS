@@ -1,6 +1,2 @@
-class DomainError(ValueError):
-    pass
-
-
-class DomainException(DomainError):
+class DomainException(Exception):
     pass
