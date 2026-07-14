@@ -27,7 +27,7 @@
 - `image.tar`: `wbs-api:<tag>` と `wbs-web:<tag>` をまとめた Docker image tar
 - `.image-version`: stg/prod 用タグへ付け替えるための build 元 tag
 - `docker-compose.yml`: build 済み image を参照するホスト用 Compose ファイル
-- `scripts/deploy.sh`: 配置ディレクトリ名 `stg` / `prod` から環境を自動判定し、`app` / `migrate` / `reset` を実行するデプロイスクリプト
+- `scripts/deploy.sh`: 配置ディレクトリ名 `stg` / `prod` から環境を自動判定し、stg/prod を引数に含めず `app` / `migrate` / `reset` だけで実行するデプロイスクリプト
 - `entrypoint.sh`: `scripts/deploy.sh` を呼ぶ薄い互換ラッパー
 
-生成後は `dist/deploy/` の中身を `wbs/stg/` または `wbs/prod/` にコピーし、ホスト側で `./scripts/deploy.sh app`（または `migrate` / `reset`）を実行してください。
+生成後は `dist/deploy/` の中身を `wbs/stg/` または `wbs/prod/` にコピーし、ホスト側で `./scripts/deploy.sh app`（または `migrate` / `reset`）を実行してください。環境は配置先ディレクトリ名から自動判定されるため、`./scripts/deploy.sh stg app` のような環境名引数は不要です。

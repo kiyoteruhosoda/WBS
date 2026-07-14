@@ -1,6 +1,12 @@
 #!/usr/bin/env bash
-# WBS deploy script (stg / prod common). Place this repository's deploy bundle under
-# wbs/<stg|prod>/ and run ./scripts/deploy.sh <app|migrate|reset> from that env directory.
+# WBS deploy script (stg / prod common).
+#
+# Place this repository's deploy bundle under wbs/<stg|prod>/ and run only one
+# mode argument. The environment is derived from the placement directory, so the
+# same commands work for both staging and production:
+#   ./scripts/deploy.sh app
+#   ./scripts/deploy.sh migrate
+#   ./scripts/deploy.sh reset
 
 set -Eeuo pipefail
 
@@ -8,21 +14,41 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BASE_DIR="$(dirname "$SCRIPT_DIR")"
 ENV_NAME="$(basename "$BASE_DIR")"
 
-case "$ENV_NAME" in
-  stg)
-    PROJECT="wbs-stg"
-    DEFAULT_WEB_HOST_PORT=8051
-    ;;
-  prod)
-    PROJECT="wbs"
-    DEFAULT_WEB_HOST_PORT=8050
-    ;;
-  *)
-    echo "[deploy][error] このスクリプトは wbs/stg/scripts/ または wbs/prod/scripts/ に配置して実行してください。" >&2
-    echo "  現在の配置: $SCRIPT_DIR（親ディレクトリ名 '$ENV_NAME' が stg / prod ではありません）" >&2
-    exit 1
-    ;;
-esac
+usage() {
+  cat >&2 <<USAGE
+Usage: $0 <app|migrate|reset>
+
+配置先ディレクトリ名（wbs/stg または wbs/prod）から環境を自動判定します。
+stg / prod をコマンド引数に含める必要はありません。
+
+Examples:
+  ./scripts/deploy.sh app
+  ./scripts/deploy.sh migrate
+  ./scripts/deploy.sh reset
+USAGE
+}
+
+select_environment_profile() {
+  local env_name="$1"
+  case "$env_name" in
+    stg)
+      PROJECT="wbs-stg"
+      DEFAULT_WEB_HOST_PORT=8051
+      ;;
+    prod)
+      PROJECT="wbs"
+      DEFAULT_WEB_HOST_PORT=8050
+      ;;
+    *)
+      echo "[deploy][error] このスクリプトは wbs/stg/scripts/ または wbs/prod/scripts/ に配置して実行してください。" >&2
+      echo "  現在の配置: $SCRIPT_DIR（親ディレクトリ名 '$env_name' が stg / prod ではありません）" >&2
+      usage
+      exit 1
+      ;;
+  esac
+}
+
+select_environment_profile "$ENV_NAME"
 
 TAG="[deploy:$ENV_NAME]"
 log()  { echo -e "\033[36m${TAG}\033[0m $*"; }
@@ -39,11 +65,18 @@ WEB_IMAGE="wbs-web:$ENV_NAME"
 SOURCE_API_IMAGE="wbs-api:$SOURCE_TAG"
 SOURCE_WEB_IMAGE="wbs-web:$SOURCE_TAG"
 
-MODE="${1:-}"
+if [ "$#" -ne 1 ]; then
+  err "Exactly one mode argument is required."
+  usage
+  exit 1
+fi
+
+MODE="$1"
 case "$MODE" in
   app|migrate|reset) ;;
   *)
-    err "Mode required. Usage: $0 <app|migrate|reset>"
+    err "Mode required."
+    usage
     exit 1
     ;;
 esac
