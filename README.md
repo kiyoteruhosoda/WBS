@@ -48,14 +48,13 @@ curl http://127.0.0.1:8000/today-tasks
 ## ビルド
 
 ```bash
-./scripts/build.sh
-./scripts/build.sh --target deploy --app-version local
+./scripts/build.sh --app-version local
 ```
 
 - `--target api`: backend lint / test のみ実行
 - `--target web`: frontend install / build のみ実行
 - `--target docker`: deploy と同じ `wbs-api:<version>` / `wbs-web:<version>` イメージを build
-- `--target deploy`: Docker image tar とホスト実行用 `entrypoint.sh` を `dist/deploy/` に生成
+- `--target deploy`: Docker image tar とホスト実行用 `entrypoint.sh` を `dist/deploy/` に生成（デフォルト）
 - `--skip-tests` / `--skip-frontend-install`: ローカル開発時の高速化オプション
 - frontend build は開発時の lockfile 不整合を自動補正できるよう、依存解決に `npm install` を使います。
 - backend build は `uv` があれば `uv run`、なければ実行中の Python に必要な dev dependencies を `pip install -e . ruff pytest httpx` で補完してから `python -m ruff` / `python -m pytest` にフォールバックします。

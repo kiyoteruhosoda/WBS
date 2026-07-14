@@ -272,8 +272,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--target",
         choices=("all", "api", "web", "docker", "deploy"),
-        default="all",
-        help="Build target. Defaults to all local build targets. Use deploy to export Docker images and host entrypoint.",
+        default="deploy",
+        help="Build target. Defaults to deploy, which exports Docker images and host entrypoint.",
     )
     parser.add_argument(
         "--skip-tests",
