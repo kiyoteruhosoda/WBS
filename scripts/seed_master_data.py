@@ -1,12 +1,28 @@
+from __future__ import annotations
+
 import os
+import sys
+from pathlib import Path
 
-from src.infrastructure.database.connection import get_connection, init_db
+# スクリプト直接実行(`python scripts/seed_master_data.py`)でも `src` パッケージを
+# 解決できるよう、リポジトリルートを import パスへ加える。
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-path = os.getenv("SQLITE_PATH", "/app/data/app.db")
-init_db(path)
-with get_connection(path) as conn:
-    conn.execute(
-        "INSERT OR IGNORE INTO users (id,email,display_name) VALUES (1,?,?)",
-        (os.getenv("ADMIN_EMAIL", "local@example.com"), "ローカルユーザー"),
-    )
-    conn.commit()
+from src.infrastructure.database.connection import init_db  # noqa: E402
+from src.infrastructure.database.models import UserModel  # noqa: E402
+from src.infrastructure.database.session import get_db_session  # noqa: E402
+
+DEFAULT_EMAIL = "local@example.com"
+
+init_db()
+admin_email = os.getenv("ADMIN_EMAIL", DEFAULT_EMAIL)
+with get_db_session() as session:
+    user = session.get(UserModel, 1)
+    if user is None:
+        session.add(UserModel(id=1, email=admin_email, display_name="ローカルユーザー"))
+        session.commit()
+    elif user.email == DEFAULT_EMAIL and admin_email != DEFAULT_EMAIL:
+        # init_db() が投入した既定ユーザーを ADMIN_EMAIL で上書きする
+        # （利用者が変更済みのメールアドレスには触れない）。
+        user.email = admin_email
+        session.commit()

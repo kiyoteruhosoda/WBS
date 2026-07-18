@@ -153,7 +153,7 @@ def test_deploy_migrate_runs_schema_sync_for_prod_profile(tmp_path: Path) -> Non
     assert result.returncode == 0, result.stderr + result.stdout
     commands = host.logged_commands()
     assert "docker compose -p wbs " in commands
-    assert " exec -T api python scripts/run_db_migrations.py" in commands
+    assert " exec -T api /app/scripts/entrypoint.sh migrate" in commands
     assert f"curl -fs http://127.0.0.1:{PROD.default_web_port}/api/health" in commands
 
 
@@ -170,7 +170,7 @@ def test_deploy_reset_removes_data_before_recreating_it(tmp_path: Path) -> None:
     assert result.returncode == 0, result.stderr + result.stdout
     assert data_path.is_dir()
     assert not stale_file.exists()
-    assert " exec -T api python scripts/run_db_migrations.py" in host.logged_commands()
+    assert " exec -T api /app/scripts/entrypoint.sh migrate" in host.logged_commands()
 
 
 def test_deploy_rejects_environment_argument(tmp_path: Path) -> None:

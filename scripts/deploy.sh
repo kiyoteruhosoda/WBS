@@ -278,7 +278,7 @@ rm -f "$UP_OUTPUT"
 run_migrations_with_retry() {
   local attempt
   for attempt in 1 2 3; do
-    if "${COMPOSE[@]}" exec -T api python scripts/run_db_migrations.py; then
+    if "${COMPOSE[@]}" exec -T api /app/scripts/entrypoint.sh migrate; then
       return 0
     fi
     warn "DB migration failed (attempt $attempt/3); retrying in 5s"
