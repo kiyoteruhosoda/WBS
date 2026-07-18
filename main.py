@@ -64,7 +64,10 @@ def create_app(database_url: str | None = None, db_path: str | None = None) -> F
 
     Instrumentator(excluded_handlers=["/metrics"]).instrument(app).expose(app, include_in_schema=False)
     app.add_middleware(RequestLoggingMiddleware)
+    # /health はコンテナ内部の healthcheck 用、/api/health は nginx プロキシ経由の
+    # 外形監視用（nginx は /api/ プレフィックスを剥がさずそのまま転送する）。
     app.include_router(health.router)
+    app.include_router(health.router, prefix="/api")
     app.include_router(ops.router)
     app.include_router(admin.router)
     app.include_router(tasks.router, prefix="/api")
