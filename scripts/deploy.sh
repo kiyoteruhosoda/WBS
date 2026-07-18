@@ -192,8 +192,30 @@ else
   exit 1
 fi
 
+# ===== Sync deploy assets from the loaded image =====
+# 「リポジトリでは修正済みなのに配置先の docker-compose.yml が古いままで、同じ
+# 起動失敗が再発する」事故を防ぐため、api イメージに焼き込まれた
+# /app/docker/deploy/docker-compose.yml をロード直後に取り出し、常にイメージと
+# 同じ版を使う。環境ごとの違い（ポート等）はすべて .env 側で表現する。
+sync_assets_from_image() {
+  local cid
+  if ! cid=$(docker create "$API_IMAGE" 2>/dev/null); then
+    warn "Could not inspect $API_IMAGE; skipping asset sync"
+    return 0
+  fi
+  if docker cp "$cid:/app/docker/deploy/docker-compose.yml" "$COMPOSE_FILE.new" >/dev/null 2>&1; then
+    mv -f "$COMPOSE_FILE.new" "$COMPOSE_FILE"
+    log "compose file synced from image: $API_IMAGE -> $COMPOSE_FILE"
+  else
+    rm -f "$COMPOSE_FILE.new"
+    warn "$API_IMAGE has no /app/docker/deploy/docker-compose.yml (old image); keeping existing file if any"
+  fi
+  docker rm -f "$cid" >/dev/null 2>&1 || true
+}
+sync_assets_from_image
+
 if [ ! -f "$COMPOSE_FILE" ]; then
-  fail "No docker-compose.yml found at $COMPOSE_FILE"
+  fail "No docker-compose.yml found at $COMPOSE_FILE (image sync also failed)"
 fi
 
 if [ ! -f "$ENV_FILE" ]; then
@@ -286,6 +308,9 @@ if ! curl -fs "$HEALTH_URL" >/dev/null 2>&1; then
   err "Health check failed: $HEALTH_URL"
   dump_module_logs api web
   echo "" >&2
+  echo "$TAG api healthcheck history:" >&2
+  docker inspect --format '{{json .State.Health}}' "${PROJECT}-api-1" 2>/dev/null | python3 -m json.tool >&2 || true
+  echo "" >&2
   echo "$TAG next commands:" >&2
   echo "  docker compose -p $PROJECT -f $COMPOSE_FILE --env-file $ENV_FILE logs -f api" >&2
   echo "  docker compose -p $PROJECT -f $COMPOSE_FILE --env-file $ENV_FILE logs -f web" >&2
@@ -295,5 +320,10 @@ fi
 
 log "Cleaning old unused Docker images"
 docker image prune -f >/dev/null 2>&1 || true
+
+log "Deployed version:"
+"${COMPOSE[@]}" exec -T api sh -c \
+  'echo "  version=${APP_VERSION:-unknown} git_sha=${GIT_SHA:-unknown} build_time=${BUILD_TIME:-unknown}"' \
+  || warn "Could not read version info from api container"
 
 echo -e "\033[32m${TAG} Deploy complete (mode: $MODE)\033[0m"

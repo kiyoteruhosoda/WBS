@@ -4,6 +4,18 @@
 
 ## 2026-07-18
 
+- デプロイ時の photonest 同等機能を追加補完。(1) デプロイ bundle 用 compose を
+  `docker/deploy/docker-compose.yml` に切り出して唯一の出所とし、api イメージへ焼き込み、
+  `deploy.sh` がデプロイのたびにイメージ内のコピーで配置先の compose を上書きするようにした
+  （配置先のファイルが古いまま同じ障害が再発する事故の防止）。(2) デプロイ末尾に
+  デプロイされたバージョン（`APP_VERSION` / `GIT_SHA` / `BUILD_TIME`）を表示。
+  (3) ヘルスチェック失敗時の診断に api の healthcheck 履歴を追加。あわせて
+  `docker compose build` にバージョンメタデータのビルド引数を渡していなかった問題
+  （イメージ内の `/info` が常に `dev` / `unknown` になる）と、`--app-version` 指定時に
+  build タグと save タグが食い違う問題を修正。ローカル compose には `name: wbs` を設定し、
+  コンテナ等の Docker リソース名を常に wbs プレフィックスに固定。
+- `.env.example` を追加（ローカル docker compose 用の全キーのコメント付きサンプル）。
+  `deploy.sh` が自動生成する `.env` テンプレートもセクション構成に拡充。
 - デプロイ後の手放し運用に対応（photonest と同様の構成）。全サービスに `restart: unless-stopped` と
   healthcheck を追加し、ホスト再起動・コンテナ異常終了後も自動復帰するようにした。web は
   `depends_on: condition: service_healthy` で api の healthy を待ってから起動する。

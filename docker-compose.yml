@@ -1,3 +1,6 @@
+# プロジェクト名を固定し、コンテナ・ネットワーク・ボリュームを常に wbs- / wbs_
+# プレフィックスで作成する（チェックアウト先のディレクトリ名に依存させない）。
+name: wbs
 services:
   db:
     image: mariadb:10.11
@@ -12,7 +15,13 @@ services:
     restart: unless-stopped
   api:
     image: wbs-api:${APP_VERSION:-local}
-    build: .
+    build:
+      context: .
+      # イメージ内 /info（BuildInfo）に出るメタデータ。scripts/build.py が実値を渡す。
+      args:
+        APP_VERSION: ${APP_VERSION:-local}
+        GIT_SHA: ${GIT_SHA:-unknown}
+        BUILD_TIME: ${BUILD_TIME:-unknown}
     environment:
       DATABASE_URL: ${DATABASE_URL:-sqlite:////app/data/app.db}
       ADMIN_EMAIL: ${ADMIN_EMAIL:-local@example.com}

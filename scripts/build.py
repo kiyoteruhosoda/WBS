@@ -16,6 +16,7 @@ import sys
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -217,50 +218,12 @@ class DeployBundle(BuildStep):
         context.artifact_dir.mkdir(parents=True, exist_ok=True)
         scripts_dir = context.artifact_dir / "scripts"
         scripts_dir.mkdir(parents=True, exist_ok=True)
-        compose = context.artifact_dir / "docker-compose.yml"
-        compose.write_text(
-            """services:
-  api:
-    image: ${API_IMAGE}
-    environment:
-      DATABASE_URL: ${DATABASE_URL:-sqlite:////app/data/app.db}
-      ADMIN_EMAIL: ${ADMIN_EMAIL:-local@example.com}
-      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-local-dev-password}
-    volumes:
-      - ${HOST_DATA_ROOT}/data:/app/data
-    # API はネットワーク内部からのみ到達可能にする。外部公開は web (nginx) が
-    # /api/ プロキシで受け持つため、ホストポートは開けない。
-    expose:
-      - "8000"
-    command: ["/app/scripts/entrypoint.sh", "${APP_MODE:-app}"]
-    # ホスト再起動・コンテナ異常終了後も自動で立ち上がる（デプロイ後の手動操作を不要にする）。
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD-SHELL", "python -c \\"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')\\""]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      # entrypoint が起動時に DB マイグレーションを実行するため、その完了まで
-      # unhealthy と誤判定されないよう余裕を持たせる。start_period 中も probe は
-      # interval ごとに走り、成功すれば即 healthy になる。
-      start_period: 120s
-  web:
-    image: ${WEB_IMAGE}
-    ports:
-      - "${WEB_HOST_PORT:-8100}:80"
-    depends_on:
-      api:
-        condition: service_healthy
-    restart: unless-stopped
-    healthcheck:
-      # nginx → api のプロキシ経路ごと疎通確認する（busybox wget）。
-      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1/api/health || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
-""",
-            encoding="utf-8",
+        # bundle の compose は docker/deploy/docker-compose.yml が唯一の出所。
+        # 同じファイルが api イメージにも焼き込まれ、deploy.sh がデプロイのたびに
+        # イメージ内のコピーで配置先を上書きする。
+        shutil.copy2(
+            ROOT / "docker" / "deploy" / "docker-compose.yml",
+            context.artifact_dir / "docker-compose.yml",
         )
         deploy_script = ROOT / "scripts" / "deploy.sh"
         target_deploy_script = scripts_dir / "deploy.sh"
@@ -298,7 +261,9 @@ Modes:
 Files:
 - `image.tar`: Docker image archive for `{context.api_image}` and `{context.web_image}`
 - `.image-version`: source image tag used for env-specific retagging
-- `docker-compose.yml`: host compose file using `API_IMAGE` / `WEB_IMAGE` exported by deploy script
+- `docker-compose.yml`: host compose file using `API_IMAGE` / `WEB_IMAGE` exported by deploy script.
+  The deploy script re-syncs it from the api image on every deploy, so local edits are overwritten;
+  put environment-specific values in `.env` instead.
 - `scripts/deploy.sh`: stg/prod aware host deploy script; pass only app/migrate/reset
 - `entrypoint.sh`: thin wrapper around `scripts/deploy.sh`
 """,
@@ -339,13 +304,40 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def resolve_git_sha() -> str:
+    try:
+        result = subprocess.run(
+            ("git", "rev-parse", "--short", "HEAD"),
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+    except (OSError, subprocess.CalledProcessError):
+        return "unknown"
+    return result.stdout.strip() or "unknown"
+
+
 def main() -> None:
     args = parse_args()
     context = BuildContext(
         target=args.target,
         skip_tests=args.skip_tests,
         skip_frontend_install=args.skip_frontend_install,
-        env={**os.environ, "PYTHONUNBUFFERED": "1"},
+        # APP_VERSION は compose のイメージタグ（wbs-api:${APP_VERSION}）と build args の
+        # 両方が参照する。--app-version 指定と docker compose build のタグを一致させる
+        # ため、ここで必ず環境変数として渡す。GIT_SHA / BUILD_TIME はイメージ内の
+        # /info エンドポイント（BuildInfo）に表示されるメタデータ。
+        env={
+            **os.environ,
+            "PYTHONUNBUFFERED": "1",
+            "APP_VERSION": args.app_version,
+            "GIT_SHA": os.getenv("GIT_SHA", resolve_git_sha()),
+            "BUILD_TIME": os.getenv(
+                "BUILD_TIME",
+                datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            ),
+        },
         toolchain=Toolchain.detect(),
         app_version=args.app_version,
         artifact_dir=args.artifact_dir,
