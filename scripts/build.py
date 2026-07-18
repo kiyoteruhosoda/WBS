@@ -228,15 +228,37 @@ class DeployBundle(BuildStep):
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-local-dev-password}
     volumes:
       - ${HOST_DATA_ROOT}/data:/app/data
-    ports:
-      - "${API_PORT:-8000}:8000"
+    # API はネットワーク内部からのみ到達可能にする。外部公開は web (nginx) が
+    # /api/ プロキシで受け持つため、ホストポートは開けない。
+    expose:
+      - "8000"
     command: ["/app/scripts/entrypoint.sh", "${APP_MODE:-app}"]
+    # ホスト再起動・コンテナ異常終了後も自動で立ち上がる（デプロイ後の手動操作を不要にする）。
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \\"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')\\""]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      # entrypoint が起動時に DB マイグレーションを実行するため、その完了まで
+      # unhealthy と誤判定されないよう余裕を持たせる。start_period 中も probe は
+      # interval ごとに走り、成功すれば即 healthy になる。
+      start_period: 120s
   web:
     image: ${WEB_IMAGE}
     ports:
-      - "${WEB_HOST_PORT:-8080}:80"
+      - "${WEB_HOST_PORT:-8100}:80"
     depends_on:
-      - api
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      # nginx → api のプロキシ経路ごと疎通確認する（busybox wget）。
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1/api/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
 """,
             encoding="utf-8",
         )

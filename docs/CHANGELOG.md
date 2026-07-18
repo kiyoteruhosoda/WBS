@@ -4,6 +4,12 @@
 
 ## 2026-07-18
 
+- デプロイ後の手放し運用に対応（photonest と同様の構成）。全サービスに `restart: unless-stopped` と
+  healthcheck を追加し、ホスト再起動・コンテナ異常終了後も自動復帰するようにした。web は
+  `depends_on: condition: service_healthy` で api の healthy を待ってから起動する。
+  外部からの待受ポートを web (nginx) の 1 ポートに集約し、既定を prod `8100` / stg `8101`
+  （ローカル compose は `8100`）へ変更。デプロイ bundle の api はホストポートを公開せず
+  `/api/` プロキシ経由のみとした。
 - ビルドが `uv` 使用時にバックエンド依存を明示的に同期するよう修正（`scripts/build.py` の
   `BackendDependencies` を `uv sync --frozen` 実行に変更）。`uv run` の暗黙同期に依存すると、
   依存追加前に作られた既存 venv がそのまま使われ `prometheus_fastapi_instrumentator` を取り込めず

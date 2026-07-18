@@ -19,8 +19,8 @@ class DeployProfile:
     default_web_port: str
 
 
-STG = DeployProfile(name="stg", project="wbs-stg", default_web_port="8051")
-PROD = DeployProfile(name="prod", project="wbs", default_web_port="8050")
+STG = DeployProfile(name="stg", project="wbs-stg", default_web_port="8101")
+PROD = DeployProfile(name="prod", project="wbs", default_web_port="8100")
 
 
 class FakeDeployHost:

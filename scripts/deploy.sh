@@ -33,11 +33,11 @@ select_environment_profile() {
   case "$env_name" in
     stg)
       PROJECT="wbs-stg"
-      DEFAULT_WEB_HOST_PORT=8051
+      DEFAULT_WEB_HOST_PORT=8101
       ;;
     prod)
       PROJECT="wbs"
-      DEFAULT_WEB_HOST_PORT=8050
+      DEFAULT_WEB_HOST_PORT=8100
       ;;
     *)
       echo "[deploy][error] このスクリプトは wbs/stg/scripts/ または wbs/prod/scripts/ に配置して実行してください。" >&2

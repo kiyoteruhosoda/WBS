@@ -31,3 +31,9 @@
 - `entrypoint.sh`: `scripts/deploy.sh` を呼ぶ薄い互換ラッパー
 
 生成後は `dist/deploy/` の中身を `wbs/stg/` または `wbs/prod/` にコピーし、ホスト側で `./scripts/deploy.sh app`（または `migrate` / `reset`）を実行してください。環境は配置先ディレクトリ名から自動判定されるため、`./scripts/deploy.sh stg app` のような環境名引数は不要です。
+
+デプロイ後の運用は手放しです:
+
+- 全サービスに `restart: unless-stopped` を設定しているため、ホスト再起動・コンテナ異常終了後も Docker が自動で立ち上げ直します（再デプロイ不要）。
+- `app` モードでは api コンテナの entrypoint が起動時に DB マイグレーションを自動実行します。
+- 外部からの待受ポートは web (nginx) の 1 ポートのみで、既定は prod `8100` / stg `8101`（`.env` の `WEB_HOST_PORT` で上書き可能）。api はネットワーク内部専用で、外部からは `/api/` プロキシ経由で到達します。

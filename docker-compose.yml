@@ -9,6 +9,7 @@ services:
       TZ: UTC
     ports: ["${DB_PORT:-3306}:3306"]
     volumes: ["db-data:/var/lib/mysql"]
+    restart: unless-stopped
   api:
     image: wbs-api:${APP_VERSION:-local}
     build: .
@@ -20,11 +21,31 @@ services:
     ports: ["${API_PORT:-8000}:8000"]
     depends_on: [db]
     command: ["/app/scripts/entrypoint.sh", "${APP_MODE:-app}"]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')\""]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      # entrypoint が起動時に DB マイグレーションを実行するため、その完了までは
+      # unhealthy と誤判定されないよう余裕を持たせる。
+      start_period: 120s
   web:
     image: wbs-web:${APP_VERSION:-local}
     build: ./frontend
-    ports: ["${WEB_PORT:-8080}:80"]
-    depends_on: [api]
+    # 外部からの待受ポート（既定 8100）。api へは nginx の /api/ プロキシ経由で到達する。
+    ports: ["${WEB_PORT:-8100}:80"]
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      # nginx → api のプロキシ経路ごと疎通確認する（busybox wget）。
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1/api/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
 volumes:
   db-data:
   api-data:

@@ -29,9 +29,11 @@ API: <http://127.0.0.1:8000/docs>
 docker compose up --build
 ```
 
-- Web: <http://127.0.0.1:8080>
+- Web: <http://127.0.0.1:8100>
 - API: <http://127.0.0.1:8000/docs>
 - DB: MariaDB 10.11（UTC）
+
+全サービスに `restart: unless-stopped` と healthcheck を設定しているため、ホスト再起動やコンテナ異常終了後も自動で復帰します。
 
 `.env` がなくても `${VAR:-default}` により起動します。初期ユーザーは開発用の `local@example.com` / `local-dev-password` を想定しています。本番では必ず環境変数で変更してください。
 
