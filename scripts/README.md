@@ -26,8 +26,21 @@
 
 - `image.tar`: `wbs-api:<tag>` と `wbs-web:<tag>` をまとめた Docker image tar
 - `.image-version`: stg/prod 用タグへ付け替えるための build 元 tag
-- `docker-compose.yml`: build 済み image を参照するホスト用 Compose ファイル
+- `docker-compose.yml`: build 済み image を参照するホスト用 Compose ファイル（出所は `docker/deploy/docker-compose.yml`。api イメージにも焼き込まれ、`deploy.sh` がデプロイのたびにイメージ内のコピーで配置先を上書きするため、配置先での手編集は残らない。環境差は `.env` で表現する）
 - `scripts/deploy.sh`: 配置ディレクトリ名 `stg` / `prod` から環境を自動判定し、stg/prod を引数に含めず `app` / `migrate` / `reset` だけで実行するデプロイスクリプト
 - `entrypoint.sh`: `scripts/deploy.sh` を呼ぶ薄い互換ラッパー
 
 生成後は `dist/deploy/` の中身を `wbs/stg/` または `wbs/prod/` にコピーし、ホスト側で `./scripts/deploy.sh app`（または `migrate` / `reset`）を実行してください。環境は配置先ディレクトリ名から自動判定されるため、`./scripts/deploy.sh stg app` のような環境名引数は不要です。
+
+配置先に `.env` が無い場合、`deploy.sh` が初回実行時にコメント付きテンプレート（`HOST_DATA_ROOT` / `WEB_HOST_PORT` の実値＋上書き推奨キーのサンプル）を自動生成します。ローカル compose 用のサンプルはリポジトリ直下の `.env.example` を参照してください（デプロイ側とはキーが一部異なります: `WEB_PORT` ↔ `WEB_HOST_PORT`）。
+
+デプロイ後の運用は手放しです:
+
+- 全サービスに `restart: unless-stopped` を設定しているため、ホスト再起動・コンテナ異常終了後も Docker が自動で立ち上げ直します（再デプロイ不要）。
+- `app` モードでは api コンテナの entrypoint が起動時に DB マイグレーションを自動実行します。
+- 外部からの待受ポートは web (nginx) の 1 ポートのみで、既定は prod `8100` / stg `8101`（`.env` の `WEB_HOST_PORT` で上書き可能）。api はネットワーク内部専用で、外部からは `/api/` プロキシ経由で到達します。
+- デプロイ末尾にはデプロイされたバージョン（`APP_VERSION` / `GIT_SHA` / `BUILD_TIME`）を表示します。ヘルスチェック失敗時は api の healthcheck 履歴（`docker inspect .State.Health`）も診断出力に含まれます。
+
+### Docker リソースの命名
+
+compose プロジェクト名は prod `wbs` / stg `wbs-stg`（`deploy.sh` の `-p` で固定）、ローカル開発はリポジトリ直下 compose の `name: wbs`。コンテナは `wbs-api-1` / `wbs-web-1` のように、ネットワーク・ボリュームは `wbs_...` のように、常に wbs プレフィックスで作成されます。イメージタグは build 時 `wbs-api:<tag>` / `wbs-web:<tag>`、デプロイ先では環境別に `wbs-api:stg|prod` / `wbs-web:stg|prod` へ付け替えます。

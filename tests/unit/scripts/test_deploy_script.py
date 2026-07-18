@@ -19,8 +19,8 @@ class DeployProfile:
     default_web_port: str
 
 
-STG = DeployProfile(name="stg", project="wbs-stg", default_web_port="8051")
-PROD = DeployProfile(name="prod", project="wbs", default_web_port="8050")
+STG = DeployProfile(name="stg", project="wbs-stg", default_web_port="8101")
+PROD = DeployProfile(name="prod", project="wbs", default_web_port="8100")
 
 
 class FakeDeployHost:
@@ -86,6 +86,17 @@ case "${1:-}" in
       inspect|prune) exit 0 ;;
     esac
     ;;
+  create)
+    echo "fake-container-id"
+    exit 0
+    ;;
+  cp)
+    printf 'services: {}\\n# synced-from-image\\n' > "$3"
+    exit 0
+    ;;
+  rm)
+    exit 0
+    ;;
   compose)
     shift
     while [ "$#" -gt 0 ]; do
@@ -118,16 +129,19 @@ def test_deploy_app_uses_directory_profile_without_environment_argument(tmp_path
 
     assert result.returncode == 0, result.stderr + result.stdout
     assert "Deploy complete (mode: app)" in result.stdout
-    assert (host.root / ".env").read_text(encoding="utf-8").splitlines()[:3] == [
-        "# Auto-generated WBS deploy env (env: stg).",
-        "# Defaults are development-grade. Override before exposing externally.",
-        f"HOST_DATA_ROOT={host.root}/mnt",
-    ]
+    env_lines = (host.root / ".env").read_text(encoding="utf-8").splitlines()
+    assert env_lines[0] == "# Auto-generated WBS deploy env (env: stg)."
+    assert f"HOST_DATA_ROOT={host.root}/mnt" in env_lines
+    assert f"WEB_HOST_PORT={STG.default_web_port}" in env_lines
     commands = host.logged_commands()
     assert "docker compose -p wbs-stg" in commands
     assert "docker image inspect wbs-api:stg" in commands
     assert "docker image inspect wbs-web:stg" in commands
     assert f"curl -fs http://127.0.0.1:{STG.default_web_port}/api/health" in commands
+    # compose はイメージ内のコピーで毎回上書きされる（配置先の手編集は残らない）
+    assert "docker create wbs-api:stg" in commands
+    compose_text = (host.root / "docker-compose.yml").read_text(encoding="utf-8")
+    assert "# synced-from-image" in compose_text
 
 
 def test_deploy_migrate_runs_schema_sync_for_prod_profile(tmp_path: Path) -> None:

@@ -16,6 +16,7 @@ import sys
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -217,28 +218,12 @@ class DeployBundle(BuildStep):
         context.artifact_dir.mkdir(parents=True, exist_ok=True)
         scripts_dir = context.artifact_dir / "scripts"
         scripts_dir.mkdir(parents=True, exist_ok=True)
-        compose = context.artifact_dir / "docker-compose.yml"
-        compose.write_text(
-            """services:
-  api:
-    image: ${API_IMAGE}
-    environment:
-      DATABASE_URL: ${DATABASE_URL:-sqlite:////app/data/app.db}
-      ADMIN_EMAIL: ${ADMIN_EMAIL:-local@example.com}
-      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-local-dev-password}
-    volumes:
-      - ${HOST_DATA_ROOT}/data:/app/data
-    ports:
-      - "${API_PORT:-8000}:8000"
-    command: ["/app/scripts/entrypoint.sh", "${APP_MODE:-app}"]
-  web:
-    image: ${WEB_IMAGE}
-    ports:
-      - "${WEB_HOST_PORT:-8080}:80"
-    depends_on:
-      - api
-""",
-            encoding="utf-8",
+        # bundle の compose は docker/deploy/docker-compose.yml が唯一の出所。
+        # 同じファイルが api イメージにも焼き込まれ、deploy.sh がデプロイのたびに
+        # イメージ内のコピーで配置先を上書きする。
+        shutil.copy2(
+            ROOT / "docker" / "deploy" / "docker-compose.yml",
+            context.artifact_dir / "docker-compose.yml",
         )
         deploy_script = ROOT / "scripts" / "deploy.sh"
         target_deploy_script = scripts_dir / "deploy.sh"
@@ -276,7 +261,9 @@ Modes:
 Files:
 - `image.tar`: Docker image archive for `{context.api_image}` and `{context.web_image}`
 - `.image-version`: source image tag used for env-specific retagging
-- `docker-compose.yml`: host compose file using `API_IMAGE` / `WEB_IMAGE` exported by deploy script
+- `docker-compose.yml`: host compose file using `API_IMAGE` / `WEB_IMAGE` exported by deploy script.
+  The deploy script re-syncs it from the api image on every deploy, so local edits are overwritten;
+  put environment-specific values in `.env` instead.
 - `scripts/deploy.sh`: stg/prod aware host deploy script; pass only app/migrate/reset
 - `entrypoint.sh`: thin wrapper around `scripts/deploy.sh`
 """,
@@ -317,13 +304,40 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def resolve_git_sha() -> str:
+    try:
+        result = subprocess.run(
+            ("git", "rev-parse", "--short", "HEAD"),
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+    except (OSError, subprocess.CalledProcessError):
+        return "unknown"
+    return result.stdout.strip() or "unknown"
+
+
 def main() -> None:
     args = parse_args()
     context = BuildContext(
         target=args.target,
         skip_tests=args.skip_tests,
         skip_frontend_install=args.skip_frontend_install,
-        env={**os.environ, "PYTHONUNBUFFERED": "1"},
+        # APP_VERSION は compose のイメージタグ（wbs-api:${APP_VERSION}）と build args の
+        # 両方が参照する。--app-version 指定と docker compose build のタグを一致させる
+        # ため、ここで必ず環境変数として渡す。GIT_SHA / BUILD_TIME はイメージ内の
+        # /info エンドポイント（BuildInfo）に表示されるメタデータ。
+        env={
+            **os.environ,
+            "PYTHONUNBUFFERED": "1",
+            "APP_VERSION": args.app_version,
+            "GIT_SHA": os.getenv("GIT_SHA", resolve_git_sha()),
+            "BUILD_TIME": os.getenv(
+                "BUILD_TIME",
+                datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            ),
+        },
         toolchain=Toolchain.detect(),
         app_version=args.app_version,
         artifact_dir=args.artifact_dir,
