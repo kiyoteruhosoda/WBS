@@ -4,6 +4,14 @@
 
 ## 2026-07-18
 
+- デプロイ時に api コンテナが `ModuleNotFoundError: No module named 'src'` で再起動ループし
+  unhealthy になる問題を修正。`scripts/run_db_migrations.py` / `scripts/seed_master_data.py` が
+  現行の SQLAlchemy 実装に存在しない関数（`resolve_db_path` / `get_connection`）を import して
+  いたのを `init_db()`（`DATABASE_URL` 準拠・冪等）ベースへ書き直し、リポジトリルートを
+  import パスへ追加してスクリプト直接実行でも `src` を解決できるようにした。
+  `entrypoint.sh` は依存の入っていないシステム Python ではなく venv（`/app/.venv`）の Python で
+  実行するよう修正し、`deploy.sh` の migrate も同じ entrypoint 経由に統一。Dockerfile の CMD も
+  entrypoint 経由に変更。seed は `ADMIN_EMAIL` が既定値以外なら初期ユーザーのメールへ反映する。
 - デプロイ時の photonest 同等機能を追加補完。(1) デプロイ bundle 用 compose を
   `docker/deploy/docker-compose.yml` に切り出して唯一の出所とし、api イメージへ焼き込み、
   `deploy.sh` がデプロイのたびにイメージ内のコピーで配置先の compose を上書きするようにした
