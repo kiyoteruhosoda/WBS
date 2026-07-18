@@ -1,17 +1,16 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
-  Box, Typography, CircularProgress, Alert, TextField, Button, List,
-  ListItem, ListItemText, IconButton, Divider, Dialog, DialogTitle,
-  DialogContent, DialogActions, FormControl, InputLabel, Select, MenuItem,
+  Box, CircularProgress, Alert, TextField, Button, IconButton,
+  Dialog, DialogTitle, DialogContent, DialogActions,
+  FormControl, InputLabel, Select, MenuItem,
 } from '@mui/material';
-import DeleteIcon from '@mui/icons-material/Delete';
-import SwapHorizIcon from '@mui/icons-material/SwapHoriz';
-import AddIcon from '@mui/icons-material/Add';
 import { getInbox, createInboxItem, convertInboxItem, deleteInboxItem } from '../api/inbox';
 import { getCategories } from '../api/categories';
-import type { TaskStatus } from '../types';
+
 import { formatDate } from '../utils/format';
+import { ds } from '../theme';
+import { PlusIcon, TrashIcon, SwapIcon } from '../components/icons';
 
 const Inbox: React.FC = () => {
   const qc = useQueryClient();
@@ -19,7 +18,6 @@ const Inbox: React.FC = () => {
   const [memo, setMemo] = useState('');
   const [convertId, setConvertId] = useState<number | null>(null);
   const [convTitle, setConvTitle] = useState('');
-  const [convStatus, setConvStatus] = useState<TaskStatus>('TODO');
   const [convDue, setConvDue] = useState('');
   const [convCat, setConvCat] = useState('');
 
@@ -38,64 +36,86 @@ const Inbox: React.FC = () => {
 
   const convert = useMutation({
     mutationFn: () => convertInboxItem(convertId!, {
-      title: convTitle, status: convStatus,
+      title: convTitle,
       due_date: convDue || null, category_id: convCat ? Number(convCat) : null,
     }),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['inbox'] }); setConvertId(null); },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['inbox'] });
+      qc.invalidateQueries({ queryKey: ['tasks'] });
+      setConvertId(null);
+    },
   });
 
   const openConvert = (id: number, itemTitle: string) => {
-    setConvertId(id); setConvTitle(itemTitle); setConvStatus('TODO'); setConvDue(''); setConvCat('');
+    setConvertId(id); setConvTitle(itemTitle); setConvDue(''); setConvCat('');
   };
 
-  if (isLoading) return <CircularProgress />;
-  if (error) return <Alert severity="error">読み込みエラー</Alert>;
+  if (isLoading) return <Box sx={{ display: 'flex', justifyContent: 'center', mt: 6 }}><CircularProgress /></Box>;
+  if (error) return <Alert severity="error">データの読み込みに失敗しました</Alert>;
 
   return (
-    <Box>
-      <Typography variant="h5" sx={{ mb: 2 }}>インボックス</Typography>
-      <Box sx={{ display: 'flex', gap: 1, mb: 3, flexWrap: 'wrap' }}>
-        <TextField size="small" label="タイトル" value={title} onChange={e => setTitle(e.target.value)} sx={{ flex: 1, minWidth: 200 }} />
-        <TextField size="small" label="メモ (任意)" value={memo} onChange={e => setMemo(e.target.value)} sx={{ flex: 1, minWidth: 200 }} />
-        <Button variant="contained" startIcon={<AddIcon />} onClick={() => add.mutate()} disabled={!title}>追加</Button>
+    <Box sx={{ maxWidth: 720 }}>
+      {/* クイック追加 */}
+      <Box sx={{
+        display: 'flex', gap: '10px', mb: '20px', flexWrap: 'wrap',
+        bgcolor: ds.paper, border: `1px solid ${ds.border}`, borderRadius: '10px', p: '14px',
+      }}>
+        <TextField size="small" placeholder="思いついたことをメモ" value={title}
+          onChange={e => setTitle(e.target.value)} sx={{ flex: 1, minWidth: 200 }} />
+        <TextField size="small" placeholder="補足（任意）" value={memo}
+          onChange={e => setMemo(e.target.value)} sx={{ flex: 1, minWidth: 160 }} />
+        <Button variant="contained" startIcon={<PlusIcon size={14} />} onClick={() => add.mutate()} disabled={!title}>
+          追加
+        </Button>
       </Box>
-      <List>
-        {data?.map(item => (
-          <React.Fragment key={item.id}>
-            <ListItem secondaryAction={
-              <Box sx={{ display: 'flex', gap: 1 }}>
-                {!item.converted_task_id && (
-                  <IconButton edge="end" title="タスクに変換" onClick={() => openConvert(item.id, item.title)}>
-                    <SwapHorizIcon />
-                  </IconButton>
-                )}
-                <IconButton edge="end" onClick={() => del.mutate(item.id)}><DeleteIcon /></IconButton>
-              </Box>
-            }>
-              <ListItemText
-                primary={item.title}
-                secondary={`${formatDate(item.created_at)}${item.converted_task_id ? ' ✅ 変換済み' : ''}`}
-              />
-            </ListItem>
-            <Divider />
-          </React.Fragment>
-        ))}
-        {data?.length === 0 && <Typography variant="body2" color="text.secondary">インボックスは空です</Typography>}
-      </List>
 
-      <Dialog open={convertId !== null} onClose={() => setConvertId(null)} maxWidth="sm" fullWidth>
-        <DialogTitle>タスクに変換</DialogTitle>
+      <Box sx={{ bgcolor: ds.paper, border: `1px solid ${ds.border}`, borderRadius: '10px', overflow: 'hidden' }}>
+        {data?.length === 0 && (
+          <Box sx={{ px: '18px', py: '24px', fontSize: 13, color: ds.textMuted, textAlign: 'center' }}>
+            インボックスは空です
+          </Box>
+        )}
+        {data?.map(item => (
+          <Box key={item.id} sx={{
+            display: 'flex', alignItems: 'center', gap: '12px', px: '16px', py: '12px',
+            borderBottom: `1px solid ${ds.hairline}`, '&:last-child': { borderBottom: 'none' },
+            '&:hover': { bgcolor: '#FAFAFA' },
+          }}>
+            <Box sx={{ flex: 1, minWidth: 0 }}>
+              <Box sx={{ fontSize: 14, fontWeight: 500, color: ds.text }}>{item.title}</Box>
+              <Box sx={{ fontSize: 12, color: ds.textMuted, mt: '2px' }}>
+                {formatDate(item.created_at)}
+                {item.memo ? ` ・ ${item.memo}` : ''}
+              </Box>
+            </Box>
+            {item.converted_task_id ? (
+              <Box sx={{
+                px: '10px', py: '2px', borderRadius: '10px', fontSize: 11, fontWeight: 700,
+                bgcolor: ds.successPale, color: ds.successDark, whiteSpace: 'nowrap',
+              }}>
+                変換済み
+              </Box>
+            ) : (
+              <IconButton size="small" title="タスクに変換" onClick={() => openConvert(item.id, item.title)} sx={{ color: ds.primary }}>
+                <SwapIcon size={18} />
+              </IconButton>
+            )}
+            <IconButton size="small" onClick={() => del.mutate(item.id)} sx={{ color: ds.textMuted }}>
+              <TrashIcon size={18} />
+            </IconButton>
+          </Box>
+        ))}
+      </Box>
+
+      <Dialog open={convertId !== null} onClose={() => setConvertId(null)} maxWidth="sm" fullWidth
+        slotProps={{ paper: { sx: { borderRadius: '10px' } } }}>
+        <DialogTitle sx={{ fontSize: 16, fontWeight: 700 }}>タスクに変換</DialogTitle>
         <DialogContent>
-          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 1 }}>
-            <TextField label="タイトル" value={convTitle} onChange={e => setConvTitle(e.target.value)} fullWidth />
-            <FormControl fullWidth>
-              <InputLabel>ステータス</InputLabel>
-              <Select value={convStatus} label="ステータス" onChange={e => setConvStatus(e.target.value as TaskStatus)}>
-                {(['TODO','DOING','WAITING'] as TaskStatus[]).map(s => <MenuItem key={s} value={s}>{s}</MenuItem>)}
-              </Select>
-            </FormControl>
-            <TextField type="date" label="期日" slotProps={{ inputLabel: { shrink: true } }} value={convDue} onChange={e => setConvDue(e.target.value)} fullWidth />
-            <FormControl fullWidth>
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: '16px', mt: '8px' }}>
+            <TextField label="タスク名" value={convTitle} onChange={e => setConvTitle(e.target.value)} fullWidth size="small" />
+            <TextField type="date" label="期限" slotProps={{ inputLabel: { shrink: true } }}
+              value={convDue} onChange={e => setConvDue(e.target.value)} fullWidth size="small" />
+            <FormControl fullWidth size="small">
               <InputLabel>カテゴリ</InputLabel>
               <Select value={convCat} label="カテゴリ" onChange={e => setConvCat(e.target.value)}>
                 <MenuItem value="">なし</MenuItem>
@@ -104,9 +124,17 @@ const Inbox: React.FC = () => {
             </FormControl>
           </Box>
         </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setConvertId(null)}>キャンセル</Button>
-          <Button variant="contained" onClick={() => convert.mutate()} disabled={!convTitle}>変換</Button>
+        <DialogActions sx={{ px: '24px', pb: '18px' }}>
+          <Button
+            onClick={() => setConvertId(null)}
+            sx={{
+              bgcolor: ds.paper, border: `1px solid ${ds.borderInput}`, color: '#414141',
+              '&:hover': { bgcolor: ds.hairline, border: `1px solid ${ds.borderInput}` },
+            }}
+          >
+            キャンセル
+          </Button>
+          <Button variant="contained" onClick={() => convert.mutate()} disabled={!convTitle}>変換する</Button>
         </DialogActions>
       </Dialog>
     </Box>

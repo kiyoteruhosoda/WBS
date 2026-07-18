@@ -15,6 +15,7 @@ export interface Task {
   remaining_hours: number | null;
   actual_hours: number;
   progress_percent: number;
+  priority_score: number;
   memo: string | null;
   parent_task_id: number | null;
   milestone_id: number | null;
@@ -93,23 +94,22 @@ export interface WeeklyReview {
 }
 
 export interface TaskDependency {
-  predecessor_id: number;
+  predecessor_task_id: number;
+  successor_task_id: number;
   dependency_type: DependencyType;
+  lag_days: number;
 }
 
+export interface TaskDependenciesResponse {
+  task_id: number;
+  predecessors: TaskDependency[];
+  successors: TaskDependency[];
+}
+
+// GET /api/tasks のクエリパラメータ（バックエンドは配列を返す。並び替え・ページングはクライアント側で行う）
 export interface TaskListParams {
-  status?: string;
+  status_filter?: string;
   category_id?: number;
   milestone_id?: number;
   parent_task_id?: number;
-  sort?: string;
-  page?: number;
-  per_page?: number;
-}
-
-export interface TaskListResponse {
-  items: Task[];
-  total: number;
-  page: number;
-  per_page: number;
 }

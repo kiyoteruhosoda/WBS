@@ -1,11 +1,34 @@
+import type { Task, TaskStatus } from '../types';
+
+// APIの日付文字列をローカル日付として解釈する。
+// `YYYY-MM-DD` を new Date() に渡すと UTC 深夜扱いになり、UTCより西のタイムゾーンで前日にずれるため、
+// 日付のみの文字列は明示的にローカルの年月日で構築する。
+export const parseDate = (dateStr: string | null | undefined): Date | null => {
+  if (!dateStr) return null;
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateStr);
+  const d = m ? new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])) : new Date(dateStr);
+  return isNaN(d.getTime()) ? null : d;
+};
+
 export const formatDate = (dateStr: string | null | undefined): string => {
-  if (!dateStr) return '—';
-  const d = new Date(dateStr);
-  if (isNaN(d.getTime())) return '—';
+  const d = parseDate(dateStr);
+  if (!d) return '—';
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, '0');
   const day = String(d.getDate()).padStart(2, '0');
   return `${y}/${m}/${day}`;
+};
+
+export const formatShortDate = (dateStr: string | null | undefined): string => {
+  const d = parseDate(dateStr);
+  if (!d) return '—';
+  return `${d.getMonth() + 1}/${d.getDate()}`;
+};
+
+export const formatMonthDay = (dateStr: string | null | undefined): { month: string; day: string } => {
+  const d = parseDate(dateStr);
+  if (!d) return { month: '', day: '—' };
+  return { month: `${d.getMonth() + 1}月`, day: String(d.getDate()) };
 };
 
 export const statusLabel: Record<string, string> = {
@@ -13,18 +36,47 @@ export const statusLabel: Record<string, string> = {
   DOING: '進行中',
   WAITING: '待機中',
   DONE: '完了',
-  CANCELLED: 'キャンセル',
+  CANCELLED: '中止',
 };
 
-export const statusColor: Record<string, 'default' | 'primary' | 'warning' | 'success' | 'error'> = {
-  TODO: 'default',
-  DOING: 'primary',
-  WAITING: 'warning',
-  DONE: 'success',
-  CANCELLED: 'error',
+export type PriorityBand = 'high' | 'mid' | 'low';
+
+// priority 1〜5 を 高/中/低 の3段階に丸める
+export const priorityBand = (p: number): PriorityBand => (p >= 4 ? 'high' : p === 3 ? 'mid' : 'low');
+
+export const priorityBandLabel: Record<PriorityBand, string> = { high: '高', mid: '中', low: '低' };
+
+// 高/中/低 選択時に保存する priority 値
+export const priorityBandValue: Record<PriorityBand, number> = { high: 5, mid: 3, low: 1 };
+
+const dateOnly = (d: Date): Date => new Date(d.getFullYear(), d.getMonth(), d.getDate());
+
+export const isOverdue = (task: Pick<Task, 'due_date' | 'status'>): boolean => {
+  if (task.status === 'DONE' || task.status === 'CANCELLED') return false;
+  const due = parseDate(task.due_date);
+  if (!due) return false;
+  return dateOnly(due) < dateOnly(new Date());
 };
 
-export const priorityLabel = (p: number): string => '★'.repeat(p) + '☆'.repeat(5 - p);
+export const isDueToday = (task: Pick<Task, 'due_date'>): boolean => {
+  const due = parseDate(task.due_date);
+  if (!due) return false;
+  return dateOnly(due).getTime() === dateOnly(new Date()).getTime();
+};
+
+// 表示用ステータス（遅延を含む）
+export type DisplayStatus = TaskStatus | 'LATE';
+
+export const displayStatus = (task: Pick<Task, 'due_date' | 'status'>): DisplayStatus =>
+  isOverdue(task) ? 'LATE' : task.status;
+
+export const overdueDays = (task: Pick<Task, 'due_date'>): number => {
+  const parsed = parseDate(task.due_date);
+  if (!parsed) return 0;
+  const due = dateOnly(parsed);
+  const today = dateOnly(new Date());
+  return Math.max(0, Math.round((today.getTime() - due.getTime()) / 86400000));
+};
 
 export const getCurrentWeek = (): string => {
   const now = new Date();

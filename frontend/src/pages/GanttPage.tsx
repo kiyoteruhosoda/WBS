@@ -1,60 +1,69 @@
 import React, { useMemo } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { Box, Typography, CircularProgress, Alert } from '@mui/material';
-import { useNavigate } from 'react-router-dom';
-import { Gantt, ViewMode } from 'gantt-task-react';
-import type { Task as GanttLibTask } from 'gantt-task-react';
-import 'gantt-task-react/dist/index.css';
-import { getGantt } from '../api/dashboard';
-import type { GanttTask } from '../types';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { Box, CircularProgress, Alert } from '@mui/material';
+import { getTasks, completeTask, reopenTask } from '../api/tasks';
+import { getCategories } from '../api/categories';
+import type { Task } from '../types';
+import { ds } from '../theme';
+import GanttChart from '../components/GanttChart';
 
-const toGanttTask = (t: GanttTask): GanttLibTask | null => {
-  if (!t.start_date || !t.due_date) return null;
-  const start = new Date(t.start_date);
-  const end = new Date(t.due_date);
-  if (isNaN(start.getTime()) || isNaN(end.getTime())) return null;
-  if (end <= start) end.setDate(start.getDate() + 1);
-  return {
-    id: String(t.id),
-    name: t.title,
-    start,
-    end,
-    progress: t.progress_percent,
-    type: 'task',
-    project: t.parent_task_id ? String(t.parent_task_id) : undefined,
-    dependencies: t.dependencies.map(String),
-  };
-};
+const legend = [
+  { label: '未着手', color: ds.todoGray },
+  { label: '進行中', color: ds.primary },
+  { label: '完了', color: ds.success },
+  { label: '遅延', color: ds.danger },
+];
 
 const GanttPage: React.FC = () => {
-  const navigate = useNavigate();
-  const { data, isLoading, error } = useQuery({ queryKey: ['gantt'], queryFn: getGantt });
+  const qc = useQueryClient();
+  const { data, isLoading, error } = useQuery({ queryKey: ['tasks'], queryFn: () => getTasks() });
+  const { data: categories } = useQuery({ queryKey: ['categories'], queryFn: getCategories });
 
-  const ganttTasks = useMemo<GanttLibTask[]>(() => {
-    if (!data) return [];
-    return data.map(toGanttTask).filter((t): t is GanttLibTask => t !== null);
-  }, [data]);
+  const toggleDone = useMutation({
+    mutationFn: (task: Task) => (task.status === 'DONE' ? reopenTask(task) : completeTask(task)),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['tasks'] });
+      qc.invalidateQueries({ queryKey: ['dashboard-today'] });
+      qc.invalidateQueries({ queryKey: ['kpi'] });
+    },
+  });
 
-  if (isLoading) return <Box sx={{ display: 'flex', justifyContent: 'center', mt: 4 }}><CircularProgress /></Box>;
-  if (error) return <Alert severity="error">読み込みエラー</Alert>;
+  const tasks = useMemo(
+    () => (data ?? [])
+      .filter((t) => t.start_date || t.due_date)
+      .sort((a, b) => (a.start_date ?? a.due_date ?? '').localeCompare(b.start_date ?? b.due_date ?? '')),
+    [data],
+  );
+
+  if (isLoading) return <Box sx={{ display: 'flex', justifyContent: 'center', mt: 6 }}><CircularProgress /></Box>;
+  if (error) return <Alert severity="error">データの読み込みに失敗しました</Alert>;
 
   return (
     <Box>
-      <Typography variant="h5" sx={{ mb: 2 }}>ガントチャート</Typography>
-      {ganttTasks.length === 0
-        ? <Alert severity="info">表示できるタスクがありません（開始日・期日が設定されたタスクが必要です）</Alert>
-        : (
-          <Box sx={{ overflowX: 'auto' }}>
-            <Gantt
-              tasks={ganttTasks}
-              viewMode={ViewMode.Day}
-              onDoubleClick={(t) => navigate(`/tasks/${t.id}`)}
-              listCellWidth="155px"
-              columnWidth={60}
-            />
-          </Box>
-        )
-      }
+      <Box sx={{ display: 'flex', alignItems: 'baseline', gap: '12px', mb: '14px', flexWrap: 'wrap' }}>
+        <Box sx={{ fontSize: 16, fontWeight: 700, color: ds.text }}>スケジュール</Box>
+        <Box sx={{ fontSize: 13, color: ds.textSub }}>全{tasks.length}タスク</Box>
+        <Box sx={{ flex: 1 }} />
+        <Box sx={{ display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
+          {legend.map((l) => (
+            <Box key={l.label} sx={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: 12, color: ds.textSub }}>
+              <Box sx={{ width: 12, height: 12, borderRadius: '3px', bgcolor: l.color }} />
+              {l.label}
+            </Box>
+          ))}
+        </Box>
+      </Box>
+
+      {tasks.length === 0 ? (
+        <Box sx={{
+          bgcolor: ds.paper, border: `1px solid ${ds.border}`, borderRadius: '10px',
+          p: '40px', textAlign: 'center', fontSize: 13, color: ds.textMuted,
+        }}>
+          表示できるタスクがありません（開始日または期日が設定されたタスクが必要です）
+        </Box>
+      ) : (
+        <GanttChart tasks={tasks} categories={categories} onToggleDone={(t) => toggleDone.mutate(t)} />
+      )}
     </Box>
   );
 };
