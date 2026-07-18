@@ -1,18 +1,32 @@
 from __future__ import annotations
+
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
+
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from prometheus_fastapi_instrumentator import Instrumentator
+
+from src.domain.exceptions import ConflictError, NotFoundError, ValidationError
 from src.infrastructure.build_info import load_build_info
 from src.infrastructure.database.session import init_engine
 from src.infrastructure.logging.structured_logger import setup_logging
-from src.presentation.api.routers import admin, health, ops
-from src.presentation.api.routers import tasks, worklogs, milestones, categories
-from src.presentation.api.routers import dependencies as dep_router, inbox, dashboard, gantt, reviews
+from src.presentation.api.routers import (
+    admin,
+    categories,
+    dashboard,
+    gantt,
+    health,
+    inbox,
+    milestones,
+    ops,
+    reviews,
+    tasks,
+    worklogs,
+)
+from src.presentation.api.routers import dependencies as dep_router
 from src.presentation.middleware.logging_middleware import RequestLoggingMiddleware
-from src.domain.exceptions import NotFoundError, ValidationError, ConflictError
 
 
 def create_app(database_url: str | None = None, db_path: str | None = None) -> FastAPI:
