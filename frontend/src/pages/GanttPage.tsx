@@ -1,7 +1,7 @@
 import React, { useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Box, CircularProgress, Alert } from '@mui/material';
-import { getTasks, patchTask } from '../api/tasks';
+import { getTasks, completeTask, reopenTask } from '../api/tasks';
 import { getCategories } from '../api/categories';
 import type { Task } from '../types';
 import { ds } from '../theme';
@@ -20,7 +20,7 @@ const GanttPage: React.FC = () => {
   const { data: categories } = useQuery({ queryKey: ['categories'], queryFn: getCategories });
 
   const toggleDone = useMutation({
-    mutationFn: (task: Task) => patchTask(task.id, { status: task.status === 'DONE' ? 'TODO' : 'DONE' }),
+    mutationFn: (task: Task) => (task.status === 'DONE' ? reopenTask(task) : completeTask(task)),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['tasks'] });
       qc.invalidateQueries({ queryKey: ['dashboard-today'] });

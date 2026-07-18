@@ -2,7 +2,7 @@ import React, { useMemo } from 'react';
 import { Box, Checkbox } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
 import type { Task, Category } from '../types';
-import { displayStatus } from '../utils/format';
+import { displayStatus, parseDate } from '../utils/format';
 import type { DisplayStatus } from '../utils/format';
 import { ds } from '../theme';
 import CategoryDot from './CategoryDot';
@@ -12,15 +12,16 @@ const DAY_WIDTH = 54;
 const ROW_HEIGHT = 40;
 const HEADER_HEIGHT = 56;
 const LEFT_WIDTH = 360;
-const MAX_DAYS = 90;
+// 表示範囲は今日を基準にクランプする（過去・未来に古いタスクがあっても今日ラインが常に見えるようにする）
+const MAX_PAST_DAYS = 30;
+const MAX_FUTURE_DAYS = 59;
 
 const dateOnly = (d: Date): Date => new Date(d.getFullYear(), d.getMonth(), d.getDate());
 const addDays = (d: Date, n: number): Date => new Date(d.getFullYear(), d.getMonth(), d.getDate() + n);
 const diffDays = (a: Date, b: Date): number => Math.round((dateOnly(a).getTime() - dateOnly(b).getTime()) / 86400000);
 const parse = (s: string | null): Date | null => {
-  if (!s) return null;
-  const d = new Date(s);
-  return isNaN(d.getTime()) ? null : dateOnly(d);
+  const d = parseDate(s);
+  return d ? dateOnly(d) : null;
 };
 
 // ステータス→バー色（トラック / フィル）
@@ -55,8 +56,12 @@ const GanttChart: React.FC<Props> = ({ tasks, categories, showMeta = true, onTog
     }
     min = addDays(min, -1);
     max = addDays(max, 1);
-    let n = diffDays(max, min) + 1;
-    if (n > MAX_DAYS) n = MAX_DAYS;
+    // 今日を含む一定幅にクランプ（範囲外にかかるバーは端で切って表示する）
+    const clampMin = addDays(today, -MAX_PAST_DAYS);
+    const clampMax = addDays(today, MAX_FUTURE_DAYS);
+    if (min < clampMin) min = clampMin;
+    if (max > clampMax) max = clampMax;
+    const n = diffDays(max, min) + 1;
     return { rangeStart: min, days: Array.from({ length: n }, (_, i) => addDays(min, i)) };
   }, [tasks, today]);
 

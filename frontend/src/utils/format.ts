@@ -1,9 +1,18 @@
 import type { Task, TaskStatus } from '../types';
 
+// APIの日付文字列をローカル日付として解釈する。
+// `YYYY-MM-DD` を new Date() に渡すと UTC 深夜扱いになり、UTCより西のタイムゾーンで前日にずれるため、
+// 日付のみの文字列は明示的にローカルの年月日で構築する。
+export const parseDate = (dateStr: string | null | undefined): Date | null => {
+  if (!dateStr) return null;
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateStr);
+  const d = m ? new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])) : new Date(dateStr);
+  return isNaN(d.getTime()) ? null : d;
+};
+
 export const formatDate = (dateStr: string | null | undefined): string => {
-  if (!dateStr) return '—';
-  const d = new Date(dateStr);
-  if (isNaN(d.getTime())) return '—';
+  const d = parseDate(dateStr);
+  if (!d) return '—';
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, '0');
   const day = String(d.getDate()).padStart(2, '0');
@@ -11,16 +20,14 @@ export const formatDate = (dateStr: string | null | undefined): string => {
 };
 
 export const formatShortDate = (dateStr: string | null | undefined): string => {
-  if (!dateStr) return '—';
-  const d = new Date(dateStr);
-  if (isNaN(d.getTime())) return '—';
+  const d = parseDate(dateStr);
+  if (!d) return '—';
   return `${d.getMonth() + 1}/${d.getDate()}`;
 };
 
 export const formatMonthDay = (dateStr: string | null | undefined): { month: string; day: string } => {
-  if (!dateStr) return { month: '', day: '—' };
-  const d = new Date(dateStr);
-  if (isNaN(d.getTime())) return { month: '', day: '—' };
+  const d = parseDate(dateStr);
+  if (!d) return { month: '', day: '—' };
   return { month: `${d.getMonth() + 1}月`, day: String(d.getDate()) };
 };
 
@@ -45,16 +52,15 @@ export const priorityBandValue: Record<PriorityBand, number> = { high: 5, mid: 3
 const dateOnly = (d: Date): Date => new Date(d.getFullYear(), d.getMonth(), d.getDate());
 
 export const isOverdue = (task: Pick<Task, 'due_date' | 'status'>): boolean => {
-  if (!task.due_date || task.status === 'DONE' || task.status === 'CANCELLED') return false;
-  const due = new Date(task.due_date);
-  if (isNaN(due.getTime())) return false;
+  if (task.status === 'DONE' || task.status === 'CANCELLED') return false;
+  const due = parseDate(task.due_date);
+  if (!due) return false;
   return dateOnly(due) < dateOnly(new Date());
 };
 
 export const isDueToday = (task: Pick<Task, 'due_date'>): boolean => {
-  if (!task.due_date) return false;
-  const due = new Date(task.due_date);
-  if (isNaN(due.getTime())) return false;
+  const due = parseDate(task.due_date);
+  if (!due) return false;
   return dateOnly(due).getTime() === dateOnly(new Date()).getTime();
 };
 
@@ -65,8 +71,9 @@ export const displayStatus = (task: Pick<Task, 'due_date' | 'status'>): DisplayS
   isOverdue(task) ? 'LATE' : task.status;
 
 export const overdueDays = (task: Pick<Task, 'due_date'>): number => {
-  if (!task.due_date) return 0;
-  const due = dateOnly(new Date(task.due_date));
+  const parsed = parseDate(task.due_date);
+  if (!parsed) return 0;
+  const due = dateOnly(parsed);
   const today = dateOnly(new Date());
   return Math.max(0, Math.round((today.getTime() - due.getTime()) / 86400000));
 };

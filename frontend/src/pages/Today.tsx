@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Box, CircularProgress, Alert, Checkbox } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
 import { getDashboardToday } from '../api/dashboard';
-import { patchTask } from '../api/tasks';
+import { completeTask, reopenTask } from '../api/tasks';
 import { getCategories } from '../api/categories';
 import type { Task } from '../types';
 import { formatDate, isDueToday } from '../utils/format';
@@ -27,7 +27,7 @@ const Today: React.FC = () => {
   const { data: categories } = useQuery({ queryKey: ['categories'], queryFn: getCategories });
 
   const toggleDone = useMutation({
-    mutationFn: (task: Task) => patchTask(task.id, { status: task.status === 'DONE' ? 'TODO' : 'DONE' }),
+    mutationFn: (task: Task) => (task.status === 'DONE' ? reopenTask(task) : completeTask(task)),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['dashboard-today'] });
       qc.invalidateQueries({ queryKey: ['kpi'] });

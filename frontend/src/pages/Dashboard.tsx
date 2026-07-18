@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Box, Button, CircularProgress, Alert, TextField } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
 import { getDashboardToday, getDashboardKpi } from '../api/dashboard';
-import { getTasks, patchTask } from '../api/tasks';
+import { getTasks, completeTask } from '../api/tasks';
 import { createWorklog } from '../api/worklogs';
 import { getCategories } from '../api/categories';
 import type { Task } from '../types';
@@ -53,8 +53,8 @@ const Dashboard: React.FC = () => {
     qc.invalidateQueries({ queryKey: ['tasks'] });
   };
 
-  const patch = useMutation({
-    mutationFn: ({ id, payload }: { id: number; payload: Partial<Task> }) => patchTask(id, payload),
+  const complete = useMutation({
+    mutationFn: (task: Task) => completeTask(task),
     onSuccess: invalidate,
   });
 
@@ -148,8 +148,8 @@ const Dashboard: React.FC = () => {
                   <Button
                     variant="contained"
                     sx={{ flex: '1 1 180px' }}
-                    disabled={patch.isPending}
-                    onClick={() => patch.mutate({ id: hero.id, payload: { status: 'DONE' } })}
+                    disabled={complete.isPending}
+                    onClick={() => complete.mutate(hero)}
                   >
                     完了にする
                   </Button>

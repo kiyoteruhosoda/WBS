@@ -6,6 +6,7 @@ import { getTasks } from '../api/tasks';
 import { getMilestones } from '../api/milestones';
 import { getCategories } from '../api/categories';
 import { ds, categoryColor } from '../theme';
+import { parseDate } from '../utils/format';
 import { ChevronLeftIcon, ChevronRightIcon } from '../components/icons';
 
 interface Pill {
@@ -35,16 +36,14 @@ const CalendarPage: React.FC = () => {
       map.get(key)!.push(pill);
     };
     for (const t of tasksData ?? []) {
-      if (!t.due_date) continue;
-      const d = new Date(t.due_date);
-      if (isNaN(d.getTime())) continue;
+      const d = parseDate(t.due_date);
+      if (!d) continue;
       const cat = categories?.find((c) => c.id === t.category_id);
       push(dateKey(d), { key: `task-${t.id}`, label: t.title, color: categoryColor(t.category_id, cat?.color), taskId: t.id });
     }
     for (const m of milestones ?? []) {
-      if (!m.due_date) continue;
-      const d = new Date(m.due_date);
-      if (isNaN(d.getTime())) continue;
+      const d = parseDate(m.due_date);
+      if (!d) continue;
       push(dateKey(d), { key: `ms-${m.id}`, label: `◆ ${m.name}`, color: '#6B46C1' });
     }
     return map;
