@@ -112,13 +112,21 @@ class BackendDependencies(BackendStep):
     name = "backend dependencies"
 
     def supports(self, context: BuildContext) -> bool:
-        return (
-            super().supports(context)
-            and context.toolchain.uv is None
-            and not context.toolchain.has_modules("ruff", "pytest", "httpx")
-        )
+        if not super().supports(context):
+            return False
+        # With uv, always sync so the environment matches the lockfile before
+        # lint/test run. Relying on `uv run`'s implicit sync is not enough: an
+        # active or pre-existing virtualenv is used as-is and may miss
+        # dependencies added after it was created.
+        if context.toolchain.uv is not None:
+            return True
+        # Without uv, only install when the backend toolchain is not already
+        # importable, to keep repeated local builds fast.
+        return not context.toolchain.has_modules("ruff", "pytest", "httpx")
 
     def command(self, context: BuildContext) -> Sequence[str]:
+        if context.toolchain.uv is not None:
+            return (context.toolchain.uv, "sync", "--frozen")
         return (
             context.toolchain.python,
             "-m",

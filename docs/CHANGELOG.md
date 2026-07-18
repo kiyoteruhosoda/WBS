@@ -4,6 +4,11 @@
 
 ## 2026-07-18
 
+- ビルドが `uv` 使用時にバックエンド依存を明示的に同期するよう修正（`scripts/build.py` の
+  `BackendDependencies` を `uv sync --frozen` 実行に変更）。`uv run` の暗黙同期に依存すると、
+  依存追加前に作られた既存 venv がそのまま使われ `prometheus_fastapi_instrumentator` を取り込めず
+  テストが `ModuleNotFoundError` で失敗していた。あわせてロックファイルの ruff で検出される
+  `main.py` / `migrations/env.py` の import 並び順（I001）を修正。
 - フロントエンド全画面をデジタル庁デザインシステム準拠のデザイン（design handoff）へ刷新。
   デザイントークン（Primary `#0017C1`・Noto Sans JP・角丸8px 等）を `frontend/src/theme.ts` に集約し、
   サイドバー＋トップバーの共通シェル、ステータス/優先度チップ、進捗バー、ヒーロー型ダッシュボードを実装。
