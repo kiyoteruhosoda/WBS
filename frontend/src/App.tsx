@@ -1,8 +1,9 @@
 import React from 'react';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { ThemeProvider, createTheme } from '@mui/material/styles';
+import { ThemeProvider } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
+import { theme } from './theme';
 import Layout from './components/Layout';
 import Dashboard from './pages/Dashboard';
 import Today from './pages/Today';
@@ -13,7 +14,6 @@ import CalendarPage from './pages/CalendarPage';
 import Inbox from './pages/Inbox';
 
 const queryClient = new QueryClient({ defaultOptions: { queries: { retry: 1, staleTime: 30_000 } } });
-const theme = createTheme({ palette: { mode: 'light' } });
 
 const App: React.FC = () => (
   <QueryClientProvider client={queryClient}>

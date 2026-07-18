@@ -1,7 +1,7 @@
 import client from './client';
-import type { Task, TaskListParams, TaskListResponse, TaskDependency } from '../types';
+import type { Task, TaskListParams, TaskDependency, TaskDependenciesResponse, DependencyType } from '../types';
 
-export const getTasks = async (params: TaskListParams = {}): Promise<TaskListResponse> => {
+export const getTasks = async (params: TaskListParams = {}): Promise<Task[]> => {
   const { data } = await client.get('/tasks', { params });
   return data;
 };
@@ -30,12 +30,16 @@ export const deleteTask = async (id: number): Promise<void> => {
   await client.delete(`/tasks/${id}`);
 };
 
+// 先行タスク（predecessors）の一覧を返す
 export const getTaskDependencies = async (id: number): Promise<TaskDependency[]> => {
-  const { data } = await client.get(`/tasks/${id}/dependencies`);
-  return data;
+  const { data } = await client.get<TaskDependenciesResponse>(`/tasks/${id}/dependencies`);
+  return data.predecessors;
 };
 
-export const addDependency = async (id: number, payload: TaskDependency): Promise<void> => {
+export const addDependency = async (
+  id: number,
+  payload: { predecessor_task_id: number; dependency_type: DependencyType },
+): Promise<void> => {
   await client.post(`/tasks/${id}/dependencies`, payload);
 };
 
