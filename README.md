@@ -35,7 +35,7 @@ docker compose up --build
 
 全サービスに `restart: unless-stopped` と healthcheck を設定しているため、ホスト再起動やコンテナ異常終了後も自動で復帰します。
 
-`.env` がなくても `${VAR:-default}` により起動します。初期ユーザーは開発用の `local@example.com` / `local-dev-password` を想定しています。本番では必ず環境変数で変更してください。
+`.env` がなくても `${VAR:-default}` により起動します。設定を変える場合は `cp .env.example .env` して編集してください（全キーの説明は `.env.example` を参照）。初期ユーザーは開発用の `local@example.com` / `local-dev-password` を想定しています。本番では必ず環境変数で変更してください。
 
 ## API 例
 

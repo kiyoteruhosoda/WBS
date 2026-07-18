@@ -118,11 +118,10 @@ def test_deploy_app_uses_directory_profile_without_environment_argument(tmp_path
 
     assert result.returncode == 0, result.stderr + result.stdout
     assert "Deploy complete (mode: app)" in result.stdout
-    assert (host.root / ".env").read_text(encoding="utf-8").splitlines()[:3] == [
-        "# Auto-generated WBS deploy env (env: stg).",
-        "# Defaults are development-grade. Override before exposing externally.",
-        f"HOST_DATA_ROOT={host.root}/mnt",
-    ]
+    env_lines = (host.root / ".env").read_text(encoding="utf-8").splitlines()
+    assert env_lines[0] == "# Auto-generated WBS deploy env (env: stg)."
+    assert f"HOST_DATA_ROOT={host.root}/mnt" in env_lines
+    assert f"WEB_HOST_PORT={STG.default_web_port}" in env_lines
     commands = host.logged_commands()
     assert "docker compose -p wbs-stg" in commands
     assert "docker image inspect wbs-api:stg" in commands

@@ -202,12 +202,27 @@ if [ ! -f "$ENV_FILE" ]; then
   cat > "$ENV_FILE" <<ENVEOF
 # Auto-generated WBS deploy env (env: $ENV_NAME).
 # Defaults are development-grade. Override before exposing externally.
+
+# --- 環境固有の実値（この環境ディレクトリに閉じた値に固定する）---
+# HOST_DATA_ROOT はこのスクリプトの DATA_PATH（reset 時の削除対象）と
+# compose のバインドマウント先を一致させるため、必ず <環境dir>/mnt にする。
 HOST_DATA_ROOT=$BASE_DIR/mnt
+# 外部からの待受ポート（web/nginx。API へは /api/ プロキシ経由で到達する）。
 WEB_HOST_PORT=$WEB_HOST_PORT
+
+# --- 上書き推奨（未設定なら開発向け既定値で動作する）---
+# 既定は SQLite（HOST_DATA_ROOT/data 配下）。外部 DB を使う場合のみ指定。
 # DATABASE_URL=sqlite:////app/data/app.db
+# 初期管理者。外部公開する場合は必ず上書きして再デプロイする。
 # ADMIN_EMAIL=local@example.com
 # ADMIN_PASSWORD=change-me-strong
+
+# --- 任意 ---
+# デプロイ完了判定に使うヘルスチェック URL。
 # HEALTH_URL=http://127.0.0.1:$WEB_HOST_PORT/api/health
+# api コンテナの起動モード（app: 通常 / migrate: スキーマ同期のみ / reset: 破壊的初期化）。
+# 通常は deploy.sh のモード引数を使い、ここでは上書きしない。
+# APP_MODE=app
 ENVEOF
 fi
 

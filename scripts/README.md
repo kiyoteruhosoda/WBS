@@ -32,6 +32,8 @@
 
 生成後は `dist/deploy/` の中身を `wbs/stg/` または `wbs/prod/` にコピーし、ホスト側で `./scripts/deploy.sh app`（または `migrate` / `reset`）を実行してください。環境は配置先ディレクトリ名から自動判定されるため、`./scripts/deploy.sh stg app` のような環境名引数は不要です。
 
+配置先に `.env` が無い場合、`deploy.sh` が初回実行時にコメント付きテンプレート（`HOST_DATA_ROOT` / `WEB_HOST_PORT` の実値＋上書き推奨キーのサンプル）を自動生成します。ローカル compose 用のサンプルはリポジトリ直下の `.env.example` を参照してください（デプロイ側とはキーが一部異なります: `WEB_PORT` ↔ `WEB_HOST_PORT`）。
+
 デプロイ後の運用は手放しです:
 
 - 全サービスに `restart: unless-stopped` を設定しているため、ホスト再起動・コンテナ異常終了後も Docker が自動で立ち上げ直します（再デプロイ不要）。
