@@ -2,7 +2,8 @@ import React from 'react';
 import { Box } from '@mui/material';
 import type { Task } from '../types';
 import type { DisplayStatus } from '../utils/format';
-import { statusLabel, displayStatus } from '../utils/format';
+import { displayStatus } from '../utils/format';
+import { useI18n } from '../i18n';
 import { ds } from '../theme';
 
 const styles: Record<DisplayStatus, { color: string; bg: string }> = {
@@ -21,6 +22,7 @@ interface Props {
 
 // task を渡すと期限超過を「遅延」として表示する
 const StatusChip: React.FC<Props> = ({ status, task }) => {
+  const { t } = useI18n();
   const s: DisplayStatus = status ?? (task ? displayStatus(task) : 'TODO');
   const st = styles[s];
   return (
@@ -29,7 +31,7 @@ const StatusChip: React.FC<Props> = ({ status, task }) => {
       fontSize: 11, fontWeight: 700, lineHeight: 1.7,
       color: st.color, bgcolor: st.bg, whiteSpace: 'nowrap',
     }}>
-      {s === 'LATE' ? '遅延' : statusLabel[s]}
+      {t(`status.${s}`)}
     </Box>
   );
 };

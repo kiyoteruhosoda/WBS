@@ -50,10 +50,16 @@ class Task:
             return 100.0
 
         remaining = float(self.remaining_hours) if self.remaining_hours is not None else 0.0
-        total = actual_hours + remaining
+        # 作業ログがなくても、見積時間より残り時間が少なければその差を消化済みとみなす
+        # （タスク作成時に見積・残りを入力しただけでも進捗に反映される）
+        implied_hours = 0.0
+        if self.estimated_hours is not None:
+            implied_hours = max(float(self.estimated_hours) - remaining, 0.0)
+        effective_actual = max(actual_hours, implied_hours)
+        total = effective_actual + remaining
         if total <= 0:
             return 0.0
-        return round(actual_hours / total * 100, 1)
+        return round(effective_actual / total * 100, 1)
 
     def priority_score(self, today: date) -> int:
         overdue_days = self._overdue_days(today)

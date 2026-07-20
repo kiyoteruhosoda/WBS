@@ -1,9 +1,10 @@
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
 import { Box, Checkbox } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
 import type { Task, Category } from '../types';
-import { displayStatus, parseDate } from '../utils/format';
+import { displayStatus, parseDate, todayDate } from '../utils/format';
 import type { DisplayStatus } from '../utils/format';
+import { useI18n } from '../i18n';
 import { ds } from '../theme';
 import CategoryDot from './CategoryDot';
 import PriorityChip from './PriorityChip';
@@ -43,7 +44,8 @@ interface Props {
 
 const GanttChart: React.FC<Props> = ({ tasks, categories, showMeta = true, onToggleDone }) => {
   const navigate = useNavigate();
-  const today = dateOnly(new Date());
+  const { t, weekdays } = useI18n();
+  const today = todayDate();
 
   const { rangeStart, days } = useMemo(() => {
     let min = addDays(today, -3);
@@ -68,6 +70,16 @@ const GanttChart: React.FC<Props> = ({ tasks, categories, showMeta = true, onTog
   const todayIdx = diffDays(today, rangeStart);
   const timelineWidth = days.length * DAY_WIDTH;
 
+  // 初期表示で今日が見えるようにスクロールする（今日を左から1/3の位置に置く）
+  const scrollRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el || todayIdx < 0) return;
+    const target = todayIdx * DAY_WIDTH + DAY_WIDTH / 2 - el.clientWidth / 3;
+    el.scrollLeft = Math.max(0, target);
+    // 表示範囲が変わったときだけ位置を合わせ直す
+  }, [todayIdx, timelineWidth]);
+
   return (
     <Box sx={{ display: 'flex', border: `1px solid ${ds.border}`, borderRadius: '10px', bgcolor: ds.paper, overflow: 'hidden' }}>
       {/* 左: タスク名パネル */}
@@ -77,7 +89,7 @@ const GanttChart: React.FC<Props> = ({ tasks, categories, showMeta = true, onTog
           bgcolor: '#F7F7F8', borderBottom: `1px solid ${ds.border}`,
           fontSize: 13, fontWeight: 700, color: ds.textSub,
         }}>
-          タスク名
+          {t('gantt.taskName')}
         </Box>
         {tasks.map((t) => (
           <Box key={t.id} sx={{
@@ -108,7 +120,7 @@ const GanttChart: React.FC<Props> = ({ tasks, categories, showMeta = true, onTog
       </Box>
 
       {/* 右: タイムライン */}
-      <Box sx={{ flex: 1, minWidth: 0, overflowX: 'auto' }}>
+      <Box ref={scrollRef} sx={{ flex: 1, minWidth: 0, overflowX: 'auto' }}>
         <Box sx={{ position: 'relative', width: timelineWidth }}>
           {/* ヘッダ */}
           <Box sx={{ display: 'flex', height: HEADER_HEIGHT, bgcolor: '#F7F7F8', borderBottom: `1px solid ${ds.border}` }}>
@@ -122,7 +134,7 @@ const GanttChart: React.FC<Props> = ({ tasks, categories, showMeta = true, onTog
                   bgcolor: dow === 0 || dow === 6 ? '#F1F1F3' : 'transparent',
                 }}>
                   <Box sx={{ fontSize: 13, fontWeight: 700, color: ds.text }}>{d.getMonth() + 1}/{d.getDate()}</Box>
-                  <Box sx={{ fontSize: 11, color }}>{['日', '月', '火', '水', '木', '金', '土'][dow]}</Box>
+                  <Box sx={{ fontSize: 11, color }}>{weekdays[dow]}</Box>
                 </Box>
               );
             })}
@@ -202,7 +214,7 @@ const GanttChart: React.FC<Props> = ({ tasks, categories, showMeta = true, onTog
               bgcolor: ds.danger, color: '#fff', fontSize: 10, fontWeight: 700,
               px: '6px', py: '1px', borderRadius: '4px', pointerEvents: 'none',
             }}>
-              今日
+              {t('gantt.today')}
             </Box>
           )}
         </Box>

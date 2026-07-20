@@ -1,7 +1,8 @@
 import React from 'react';
 import { Box } from '@mui/material';
-import { priorityBand, priorityBandLabel } from '../utils/format';
+import { priorityBand } from '../utils/format';
 import type { PriorityBand } from '../utils/format';
+import { useI18n } from '../i18n';
 import { ds } from '../theme';
 
 const styles: Record<PriorityBand, { color: string; bg: string }> = {
@@ -11,6 +12,7 @@ const styles: Record<PriorityBand, { color: string; bg: string }> = {
 };
 
 const PriorityChip: React.FC<{ priority: number }> = ({ priority }) => {
+  const { t } = useI18n();
   const band = priorityBand(priority);
   const st = styles[band];
   return (
@@ -20,7 +22,7 @@ const PriorityChip: React.FC<{ priority: number }> = ({ priority }) => {
       fontSize: 11, fontWeight: 700, lineHeight: 1.6,
       color: st.color, bgcolor: st.bg, whiteSpace: 'nowrap',
     }}>
-      {priorityBandLabel[band]}
+      {t(`priority.${band}`)}
     </Box>
   );
 };

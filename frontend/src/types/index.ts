@@ -112,3 +112,16 @@ export interface TaskListParams {
   milestone_id?: number;
   parent_task_id?: number;
 }
+
+export interface UserSettings {
+  display_name: string;
+  timezone: string;
+  language: string;
+}
+
+export interface AppInfo {
+  version: string;
+  git_sha: string;
+  build_time: string;
+  environment: string;
+}

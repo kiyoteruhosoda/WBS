@@ -22,6 +22,7 @@ from src.presentation.api.routers import (
     milestones,
     ops,
     reviews,
+    settings,
     tasks,
     worklogs,
 )
@@ -69,6 +70,8 @@ def create_app(database_url: str | None = None, db_path: str | None = None) -> F
     app.include_router(health.router)
     app.include_router(health.router, prefix="/api")
     app.include_router(ops.router)
+    # フロントエンドは nginx 経由の /api/ しか届かないため、/info 等も /api 配下に公開する
+    app.include_router(ops.router, prefix="/api")
     app.include_router(admin.router)
     app.include_router(tasks.router, prefix="/api")
     app.include_router(worklogs.router, prefix="/api")
@@ -79,6 +82,7 @@ def create_app(database_url: str | None = None, db_path: str | None = None) -> F
     app.include_router(dashboard.router, prefix="/api")
     app.include_router(gantt.router, prefix="/api")
     app.include_router(reviews.router, prefix="/api")
+    app.include_router(settings.router, prefix="/api")
     return app
 
 

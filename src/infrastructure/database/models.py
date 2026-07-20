@@ -18,6 +18,7 @@ class UserModel(Base):
     email: Mapped[str] = mapped_column(sa.String(255), unique=True, nullable=False)
     display_name: Mapped[str] = mapped_column(sa.String(100), nullable=False)
     timezone: Mapped[str] = mapped_column(sa.String(64), default="Asia/Tokyo", nullable=False)
+    language: Mapped[str] = mapped_column(sa.String(8), default="ja", nullable=False)
     is_active: Mapped[bool] = mapped_column(sa.Boolean, default=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(sa.DateTime, default=datetime.utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(sa.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
