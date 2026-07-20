@@ -127,11 +127,11 @@ const TaskEdit: React.FC = () => {
 
   const save = useMutation({
     mutationFn: (data: Partial<Task>) => isNew ? createTask(data) : updateTask(Number(id), data),
-    onSuccess: (t) => {
+    onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['tasks'] });
       qc.invalidateQueries({ queryKey: ['dashboard-today'] });
       qc.invalidateQueries({ queryKey: ['kpi'] });
-      navigate(`/tasks/${t.id}`);
+      navigate('/tasks');
     },
   });
 

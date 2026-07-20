@@ -17,7 +17,6 @@ const bucketMeta: { key: string; label: string; accent?: string }[] = [
   { key: 'TODAY', label: '今日', accent: ds.primary },
   { key: 'DOING', label: '進行中' },
   { key: 'TOMORROW', label: '明日' },
-  { key: 'STARTED', label: '開始済み' },
 ];
 
 const Today: React.FC = () => {

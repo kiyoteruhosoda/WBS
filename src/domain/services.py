@@ -31,10 +31,10 @@ def today_bucket(
             return "OVERDUE"
         if due == today:
             return "TODAY"
-        if due.toordinal() == tomorrow:
-            return "TOMORROW"
+    if start_date and date.fromisoformat(start_date) <= today:
+        return "TODAY"
+    if due_date and date.fromisoformat(due_date).toordinal() == tomorrow:
+        return "TOMORROW"
     if status == "DOING":
         return "DOING"
-    if start_date and date.fromisoformat(start_date) <= today and status == "TODO":
-        return "STARTED"
     return None

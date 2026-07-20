@@ -27,7 +27,7 @@ class DashboardUseCases:
             TaskModel.status.in_(active_statuses),
         )
         tasks = list(self._session.scalars(stmt))
-        buckets: dict[str, list] = {"OVERDUE": [], "TODAY": [], "TOMORROW": [], "DOING": [], "STARTED": []}
+        buckets: dict[str, list] = {"OVERDUE": [], "TODAY": [], "TOMORROW": [], "DOING": []}
         seen_ids: set[int] = set()
         for t in tasks:
             enriched = self._task_uc._enrich(self._task_repo._to_entity(t))
@@ -35,14 +35,12 @@ class DashboardUseCases:
             bucket = None
             if t.due_date and t.due_date < today:
                 bucket = "OVERDUE"
-            elif t.due_date == today:
+            elif t.due_date == today or (t.start_date and t.start_date <= today):
                 bucket = "TODAY"
             elif t.due_date == tomorrow:
                 bucket = "TOMORROW"
             elif t.status == TaskStatus.DOING.value:
                 bucket = "DOING"
-            elif t.start_date and t.start_date <= today and t.status == TaskStatus.TODO.value:
-                bucket = "STARTED"
             if bucket and tid not in seen_ids:
                 buckets[bucket].append(enriched)
                 seen_ids.add(tid)

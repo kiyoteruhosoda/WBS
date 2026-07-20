@@ -4,6 +4,10 @@
 
 ## 2026-07-20
 
+- 「今日」画面のバケット分類を変更。開始日が到来したタスク（期限未超過）は
+  「開始済み」バケットではなく「今日」バケットに入るようにし、「開始済み」バケットを廃止
+  （`DashboardUseCases.get_today_buckets` / `domain/services.py today_bucket` / フロント表示）。
+- タスク編集画面で保存後、タスク詳細ではなくタスク一覧（`/tasks`）へ戻るように変更。
 - デプロイ先ホスト用の `scripts/build-remote.sh` を追加（DeployBridge の同名スクリプトが原型）。
   開発コンテナ内ビルド → deploy bundle の取り出し → `./scripts/deploy.sh <MODE>` 実行までを
   ワンコマンド化し、自己更新（リポジトリ HEAD との刻印照合・差分時は exit 2 で再実行要求）にも
