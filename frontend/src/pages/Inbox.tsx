@@ -9,11 +9,13 @@ import { getInbox, createInboxItem, convertInboxItem, deleteInboxItem } from '..
 import { getCategories } from '../api/categories';
 
 import { formatDate } from '../utils/format';
+import { useI18n } from '../i18n';
 import { ds } from '../theme';
 import { PlusIcon, TrashIcon, SwapIcon } from '../components/icons';
 
 const Inbox: React.FC = () => {
   const qc = useQueryClient();
+  const { t } = useI18n();
   const [title, setTitle] = useState('');
   const [memo, setMemo] = useState('');
   const [convertId, setConvertId] = useState<number | null>(null);
@@ -51,7 +53,7 @@ const Inbox: React.FC = () => {
   };
 
   if (isLoading) return <Box sx={{ display: 'flex', justifyContent: 'center', mt: 6 }}><CircularProgress /></Box>;
-  if (error) return <Alert severity="error">データの読み込みに失敗しました</Alert>;
+  if (error) return <Alert severity="error">{t('common.loadError')}</Alert>;
 
   return (
     <Box sx={{ maxWidth: 720 }}>
@@ -60,19 +62,19 @@ const Inbox: React.FC = () => {
         display: 'flex', gap: '10px', mb: '20px', flexWrap: 'wrap',
         bgcolor: ds.paper, border: `1px solid ${ds.border}`, borderRadius: '10px', p: '14px',
       }}>
-        <TextField size="small" placeholder="思いついたことをメモ" value={title}
+        <TextField size="small" placeholder={t('inbox.titlePlaceholder')} value={title}
           onChange={e => setTitle(e.target.value)} sx={{ flex: 1, minWidth: 200 }} />
-        <TextField size="small" placeholder="補足（任意）" value={memo}
+        <TextField size="small" placeholder={t('inbox.memoPlaceholder')} value={memo}
           onChange={e => setMemo(e.target.value)} sx={{ flex: 1, minWidth: 160 }} />
         <Button variant="contained" startIcon={<PlusIcon size={14} />} onClick={() => add.mutate()} disabled={!title}>
-          追加
+          {t('inbox.add')}
         </Button>
       </Box>
 
       <Box sx={{ bgcolor: ds.paper, border: `1px solid ${ds.border}`, borderRadius: '10px', overflow: 'hidden' }}>
         {data?.length === 0 && (
           <Box sx={{ px: '18px', py: '24px', fontSize: 13, color: ds.textMuted, textAlign: 'center' }}>
-            インボックスは空です
+            {t('inbox.empty')}
           </Box>
         )}
         {data?.map(item => (
@@ -93,10 +95,10 @@ const Inbox: React.FC = () => {
                 px: '10px', py: '2px', borderRadius: '10px', fontSize: 11, fontWeight: 700,
                 bgcolor: ds.successPale, color: ds.successDark, whiteSpace: 'nowrap',
               }}>
-                変換済み
+                {t('inbox.converted')}
               </Box>
             ) : (
-              <IconButton size="small" title="タスクに変換" onClick={() => openConvert(item.id, item.title)} sx={{ color: ds.primary }}>
+              <IconButton size="small" title={t('inbox.convertToTask')} onClick={() => openConvert(item.id, item.title)} sx={{ color: ds.primary }}>
                 <SwapIcon size={18} />
               </IconButton>
             )}
@@ -109,16 +111,16 @@ const Inbox: React.FC = () => {
 
       <Dialog open={convertId !== null} onClose={() => setConvertId(null)} maxWidth="sm" fullWidth
         slotProps={{ paper: { sx: { borderRadius: '10px' } } }}>
-        <DialogTitle sx={{ fontSize: 16, fontWeight: 700 }}>タスクに変換</DialogTitle>
+        <DialogTitle sx={{ fontSize: 16, fontWeight: 700 }}>{t('inbox.convertToTask')}</DialogTitle>
         <DialogContent>
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: '16px', mt: '8px' }}>
-            <TextField label="タスク名" value={convTitle} onChange={e => setConvTitle(e.target.value)} fullWidth size="small" />
-            <TextField type="date" label="期限" slotProps={{ inputLabel: { shrink: true } }}
+            <TextField label={t('inbox.taskName')} value={convTitle} onChange={e => setConvTitle(e.target.value)} fullWidth size="small" />
+            <TextField type="date" label={t('inbox.dueDate')} slotProps={{ inputLabel: { shrink: true } }}
               value={convDue} onChange={e => setConvDue(e.target.value)} fullWidth size="small" />
             <FormControl fullWidth size="small">
-              <InputLabel>カテゴリ</InputLabel>
-              <Select value={convCat} label="カテゴリ" onChange={e => setConvCat(e.target.value)}>
-                <MenuItem value="">なし</MenuItem>
+              <InputLabel>{t('inbox.category')}</InputLabel>
+              <Select value={convCat} label={t('inbox.category')} onChange={e => setConvCat(e.target.value)}>
+                <MenuItem value="">{t('inbox.none')}</MenuItem>
                 {categories?.map(c => <MenuItem key={c.id} value={String(c.id)}>{c.name}</MenuItem>)}
               </Select>
             </FormControl>
@@ -132,9 +134,9 @@ const Inbox: React.FC = () => {
               '&:hover': { bgcolor: ds.hairline, border: `1px solid ${ds.borderInput}` },
             }}
           >
-            キャンセル
+            {t('inbox.cancel')}
           </Button>
-          <Button variant="contained" onClick={() => convert.mutate()} disabled={!convTitle}>変換する</Button>
+          <Button variant="contained" onClick={() => convert.mutate()} disabled={!convTitle}>{t('inbox.convert')}</Button>
         </DialogActions>
       </Dialog>
     </Box>

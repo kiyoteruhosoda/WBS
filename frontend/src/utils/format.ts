@@ -58,20 +58,10 @@ export const formatMonthDay = (dateStr: string | null | undefined, lang: 'ja' | 
   return { month, day: String(d.getDate()) };
 };
 
-export const statusLabel: Record<string, string> = {
-  TODO: '未着手',
-  DOING: '進行中',
-  WAITING: '待機中',
-  DONE: '完了',
-  CANCELLED: '中止',
-};
-
 export type PriorityBand = 'high' | 'mid' | 'low';
 
 // priority 1〜5 を 高/中/低 の3段階に丸める
 export const priorityBand = (p: number): PriorityBand => (p >= 4 ? 'high' : p === 3 ? 'mid' : 'low');
-
-export const priorityBandLabel: Record<PriorityBand, string> = { high: '高', mid: '中', low: '低' };
 
 // 高/中/低 選択時に保存する priority 値
 export const priorityBandValue: Record<PriorityBand, number> = { high: 5, mid: 3, low: 1 };
