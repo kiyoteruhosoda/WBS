@@ -8,6 +8,12 @@ def test_create_task_with_estimate_and_remaining_reports_progress(client) -> Non
     assert response.json()["progress_percent"] == 60.0
 
 
+def test_create_task_with_estimate_only_reports_zero_progress(client) -> None:
+    response = client.post("/api/tasks", json={"title": "見積のみ", "estimated_hours": 10})
+    assert response.status_code == 201
+    assert response.json()["progress_percent"] == 0.0
+
+
 def test_create_task_without_hours_reports_zero_progress(client) -> None:
     response = client.post("/api/tasks", json={"title": "新規タスク"})
     assert response.status_code == 201

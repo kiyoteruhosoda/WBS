@@ -44,3 +44,9 @@ def test_progress_remaining_larger_than_estimate_does_not_go_negative() -> None:
 def test_progress_estimate_fully_remaining_is_zero() -> None:
     task = _task(estimated_hours=Decimal("10"), remaining_hours=Decimal("10"))
     assert task.progress_percent(0.0) == 0.0
+
+
+def test_progress_estimate_without_remaining_stays_zero() -> None:
+    # 残り時間が未入力なら見積だけで消化済みと推定しない（100%になるバグの回帰テスト）
+    task = _task(estimated_hours=Decimal("10"))
+    assert task.progress_percent(0.0) == 0.0
