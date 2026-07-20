@@ -62,7 +62,6 @@ export interface DashboardToday {
     TODAY: Task[];
     TOMORROW: Task[];
     DOING: Task[];
-    STARTED: Task[];
   };
 }
 

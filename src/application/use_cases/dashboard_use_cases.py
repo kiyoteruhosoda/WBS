@@ -1,13 +1,14 @@
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import UTC, date, datetime, timedelta
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from src.application.use_cases.task_use_cases import TaskUseCases
 from src.domain.value_objects.task_status import TaskStatus
-from src.infrastructure.database.models import TaskModel, WorkLogModel
+from src.infrastructure.database.models import TaskModel, UserModel, WorkLogModel
 from src.infrastructure.repositories.task_repository import SqlAlchemyTaskRepository
 
 
@@ -17,8 +18,17 @@ class DashboardUseCases:
         self._task_repo = SqlAlchemyTaskRepository(session)
         self._task_uc = TaskUseCases(session)
 
+    def _user_today(self, user_id: int) -> date:
+        timezone_name = self._session.execute(
+            select(UserModel.timezone).where(UserModel.id == user_id)
+        ).scalar() or "UTC"
+        try:
+            return datetime.now(ZoneInfo(timezone_name)).date()
+        except ZoneInfoNotFoundError:
+            return datetime.now(UTC).date()
+
     def get_today_buckets(self, user_id: int) -> dict:
-        today = date.today()
+        today = self._user_today(user_id)
         tomorrow = today + timedelta(days=1)
         active_statuses = [TaskStatus.TODO.value, TaskStatus.DOING.value, TaskStatus.WAITING.value]
         stmt = select(TaskModel).where(
@@ -27,7 +37,7 @@ class DashboardUseCases:
             TaskModel.status.in_(active_statuses),
         )
         tasks = list(self._session.scalars(stmt))
-        buckets: dict[str, list] = {"OVERDUE": [], "TODAY": [], "TOMORROW": [], "DOING": [], "STARTED": []}
+        buckets: dict[str, list] = {"OVERDUE": [], "TODAY": [], "TOMORROW": [], "DOING": []}
         seen_ids: set[int] = set()
         for t in tasks:
             enriched = self._task_uc._enrich(self._task_repo._to_entity(t))
@@ -35,21 +45,19 @@ class DashboardUseCases:
             bucket = None
             if t.due_date and t.due_date < today:
                 bucket = "OVERDUE"
-            elif t.due_date == today:
+            elif t.due_date == today or (t.start_date and t.start_date <= today):
                 bucket = "TODAY"
             elif t.due_date == tomorrow:
                 bucket = "TOMORROW"
             elif t.status == TaskStatus.DOING.value:
                 bucket = "DOING"
-            elif t.start_date and t.start_date <= today and t.status == TaskStatus.TODO.value:
-                bucket = "STARTED"
             if bucket and tid not in seen_ids:
                 buckets[bucket].append(enriched)
                 seen_ids.add(tid)
         return {"buckets": buckets}
 
     def get_kpi(self, user_id: int) -> dict:
-        today = date.today()
+        today = self._user_today(user_id)
         week_start = today - timedelta(days=today.weekday())
         week_end = week_start + timedelta(days=6)
         total = self._session.execute(
