@@ -20,7 +20,6 @@ class Task:
     start_date: date | None = None
     due_date: date | None = None
     estimated_hours: Decimal | None = None
-    remaining_hours: Decimal | None = None
     memo: str | None = None
     parent_task_id: int | None = None
     milestone_id: int | None = None
@@ -39,7 +38,6 @@ class Task:
 
         if new_status == TaskStatus.DONE:
             self.completed_at = changed_at or datetime.utcnow()
-            self.remaining_hours = Decimal("0")
         elif self.status == TaskStatus.DONE:
             self.completed_at = None
 

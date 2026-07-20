@@ -21,12 +21,17 @@ def init_engine(database_url: str | None = None) -> None:
     _seed_default_user()
 
 def _apply_column_upgrades() -> None:
-    # create_all は既存テーブルに列を追加しないため、後から増えた列をここで補う
+    # create_all は既存テーブルの列を変更しないため、後から増減した列をここで補う
     inspector = inspect(_engine)
     user_columns = {c["name"] for c in inspector.get_columns("users")}
     if "language" not in user_columns:
         with _engine.begin() as conn:
             conn.execute(text("ALTER TABLE users ADD COLUMN language VARCHAR(8) NOT NULL DEFAULT 'ja'"))
+    task_columns = {c["name"] for c in inspector.get_columns("tasks")}
+    if "remaining_hours" in task_columns:
+        # 残り時間は「見積 − 実績」で導出する方式に変更したため列ごと廃止
+        with _engine.begin() as conn:
+            conn.execute(text("ALTER TABLE tasks DROP COLUMN remaining_hours"))
 
 def _seed_default_user() -> None:
     with _SessionLocal() as session:
