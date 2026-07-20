@@ -17,7 +17,6 @@ class TaskCreateRequest(BaseModel):
     start_date: date | None = None
     due_date: date | None = None
     estimated_hours: Decimal | None = None
-    remaining_hours: Decimal | None = None
     memo: str | None = None
     parent_task_id: int | None = None
     milestone_id: int | None = None
@@ -32,7 +31,6 @@ class TaskUpdateRequest(BaseModel):
     start_date: date | None = None
     due_date: date | None = None
     estimated_hours: Decimal | None = None
-    remaining_hours: Decimal | None = None
     memo: str | None = None
     parent_task_id: int | None = None
     milestone_id: int | None = None

@@ -46,21 +46,21 @@ class Task:
         self.status = new_status
 
     def progress_percent(self, actual_hours: float) -> float:
+        # 進捗は「実績時間 ÷ 見積時間」で算出する（見積が未入力なら判断材料がないため 0%）
         if self.status == TaskStatus.DONE:
             return 100.0
-
-        remaining = float(self.remaining_hours) if self.remaining_hours is not None else 0.0
-        # 作業ログがなくても、見積時間より残り時間が少なければその差を消化済みとみなす
-        # （タスク作成時に見積・残りを入力しただけでも進捗に反映される）。
-        # 残り時間が未入力の場合は消化済みと推定しない（見積のみで100%になるのを防ぐ）
-        implied_hours = 0.0
-        if self.estimated_hours is not None and self.remaining_hours is not None:
-            implied_hours = max(float(self.estimated_hours) - remaining, 0.0)
-        effective_actual = max(actual_hours, implied_hours)
-        total = effective_actual + remaining
-        if total <= 0:
+        if self.estimated_hours is None or float(self.estimated_hours) <= 0:
             return 0.0
-        return round(effective_actual / total * 100, 1)
+        ratio = min(actual_hours / float(self.estimated_hours), 1.0)
+        return round(ratio * 100, 1)
+
+    def remaining_hours_from(self, actual_hours: float) -> float | None:
+        # 残り時間は直接入力せず「見積時間 − 実績時間」から常に導出する
+        if self.status == TaskStatus.DONE:
+            return 0.0
+        if self.estimated_hours is None:
+            return None
+        return round(max(float(self.estimated_hours) - actual_hours, 0.0), 2)
 
     def priority_score(self, today: date) -> int:
         overdue_days = self._overdue_days(today)

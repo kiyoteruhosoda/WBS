@@ -12,7 +12,7 @@ import { getWorklogs, createWorklog, deleteWorklog } from '../api/worklogs';
 import { getCategories } from '../api/categories';
 import { getMilestones } from '../api/milestones';
 import type { Task, TaskStatus, DependencyType } from '../types';
-import { formatDate, priorityBand, priorityBandValue } from '../utils/format';
+import { formatDate, priorityBand, priorityBandValue, todayDate } from '../utils/format';
 import type { PriorityBand } from '../utils/format';
 import { useI18n } from '../i18n';
 import { ds } from '../theme';
@@ -31,7 +31,7 @@ interface FormData {
   start_date: string;
   due_date: string;
   estimated_hours: string;
-  remaining_hours: string;
+  actual_hours: string;
   parent_task_id: string;
   milestone_id: string;
   memo: string;
@@ -39,7 +39,7 @@ interface FormData {
 
 const defaultForm: FormData = {
   title: '', category_id: '', priority: 3, urgency: 3, status: 'TODO',
-  start_date: '', due_date: '', estimated_hours: '', remaining_hours: '',
+  start_date: '', due_date: '', estimated_hours: '', actual_hours: '',
   parent_task_id: '', milestone_id: '', memo: '',
 };
 
@@ -47,9 +47,15 @@ const toForm = (t: Task): FormData => ({
   title: t.title, category_id: String(t.category_id ?? ''), priority: t.priority,
   urgency: t.urgency, status: t.status, start_date: t.start_date ?? '',
   due_date: t.due_date ?? '', estimated_hours: String(t.estimated_hours ?? ''),
-  remaining_hours: String(t.remaining_hours ?? ''), parent_task_id: String(t.parent_task_id ?? ''),
+  actual_hours: String(t.actual_hours ?? 0), parent_task_id: String(t.parent_task_id ?? ''),
   milestone_id: String(t.milestone_id ?? ''), memo: t.memo ?? '',
 });
+
+// ユーザー設定タイムゾーンでの「今日」を YYYY-MM-DD にする（実績差分の記録日）
+const todayYmd = (): string => {
+  const d = todayDate();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
 
 const FieldLabel: React.FC<{ children: React.ReactNode; required?: boolean }> = ({ children, required }) => {
   const { t } = useI18n();
@@ -134,11 +140,23 @@ const TaskEdit: React.FC = () => {
   useEffect(() => { if (task) setForm(toForm(task)); }, [task]);
 
   const save = useMutation({
-    mutationFn: (data: Partial<Task>) => isNew ? createTask(data) : updateTask(Number(id), data),
+    mutationFn: async (data: Partial<Task>) => {
+      const saved = isNew ? await createTask(data) : await updateTask(Number(id), data);
+      // 実績時間の変更分を作業ログとして記録する（残り時間は見積−実績で自動計算される）
+      if (!isNew && task) {
+        const newActual = form.actual_hours === '' ? task.actual_hours : Number(form.actual_hours);
+        const delta = Math.round((newActual - task.actual_hours) * 100) / 100;
+        if (delta !== 0) {
+          await createWorklog({ task_id: Number(id), work_date: todayYmd(), hours: delta, memo: null });
+        }
+      }
+      return saved;
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['tasks'] });
       qc.invalidateQueries({ queryKey: ['dashboard-today'] });
       qc.invalidateQueries({ queryKey: ['kpi'] });
+      qc.invalidateQueries({ queryKey: ['worklogs', id] });
       navigate('/tasks');
     },
   });
@@ -173,7 +191,6 @@ const TaskEdit: React.FC = () => {
       priority: form.priority, urgency: form.urgency, status: form.status,
       start_date: form.start_date || null, due_date: form.due_date || null,
       estimated_hours: form.estimated_hours ? Number(form.estimated_hours) : null,
-      remaining_hours: form.remaining_hours ? Number(form.remaining_hours) : null,
       parent_task_id: form.parent_task_id ? Number(form.parent_task_id) : null,
       milestone_id: form.milestone_id ? Number(form.milestone_id) : null,
       memo: form.memo || null,
@@ -185,6 +202,14 @@ const TaskEdit: React.FC = () => {
   }
 
   const titleError = showTitleError && !form.title.trim();
+
+  // 残り時間は入力せず「見積 − 実績」で表示する
+  const estNum = Number(form.estimated_hours);
+  const actNum = form.actual_hours === '' ? 0 : Number(form.actual_hours);
+  const remainingDisplay =
+    form.estimated_hours === '' || isNaN(estNum)
+      ? '—'
+      : String(Math.max(Math.round((estNum - (isNaN(actNum) ? 0 : actNum)) * 100) / 100, 0));
 
   return (
     <Box sx={{ maxWidth: 640, mx: 'auto' }}>
@@ -292,22 +317,37 @@ const TaskEdit: React.FC = () => {
           </Box>
 
           <Box sx={{ display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
-            <Box sx={{ flex: '1 1 200px' }}>
+            <Box sx={{ flex: '1 1 160px' }}>
               <FieldLabel>{t('taskEdit.estimatedHours')}</FieldLabel>
               <TextField
                 fullWidth size="small" type="number"
+                slotProps={{ htmlInput: { min: 0, step: 0.5 } }}
                 value={form.estimated_hours}
                 onChange={e => setForm({ ...form, estimated_hours: e.target.value })}
               />
             </Box>
-            <Box sx={{ flex: '1 1 200px' }}>
-              <FieldLabel>{t('taskEdit.remainingHours')}</FieldLabel>
-              <TextField
-                fullWidth size="small" type="number"
-                value={form.remaining_hours}
-                onChange={e => setForm({ ...form, remaining_hours: e.target.value })}
-              />
-            </Box>
+            {!isNew && (
+              <>
+                <Box sx={{ flex: '1 1 160px' }}>
+                  <FieldLabel>{t('taskEdit.actualHours')}</FieldLabel>
+                  <TextField
+                    fullWidth size="small" type="number"
+                    slotProps={{ htmlInput: { min: 0, step: 0.5 } }}
+                    value={form.actual_hours}
+                    helperText={t('taskEdit.actualHoursHelp')}
+                    onChange={e => setForm({ ...form, actual_hours: e.target.value })}
+                  />
+                </Box>
+                <Box sx={{ flex: '1 1 160px' }}>
+                  <FieldLabel>{t('taskEdit.remainingHours')}</FieldLabel>
+                  <TextField
+                    fullWidth size="small" disabled
+                    value={remainingDisplay}
+                    helperText={t('taskEdit.remainingAuto')}
+                  />
+                </Box>
+              </>
+            )}
           </Box>
 
           <Box>
