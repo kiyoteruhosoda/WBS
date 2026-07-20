@@ -5,6 +5,7 @@
 - `entrypoint.sh reset`: SQLite DB を削除して初期ユーザーを再投入します（破壊的）。
 - `build.sh`: API / Web / Docker イメージのビルドをまとめて実行する薄いラッパーです。
 - `build.py`: `BuildStep` のポリモーフィズムで lint・test・frontend build・Docker build を合成するビルドオーケストレーターです。
+- `build-remote.sh`: デプロイ先ホストに単体で置き、開発コンテナ内ビルド→bundle 取り出し→デプロイをワンコマンドで行うスクリプトです（下記「Remote build & deploy」参照）。
 
 現在は軽量 MVP として `init_db()` が冪等なスキーマ作成を担当します。将来 Alembic 導入時は `run_db_migrations.py` を `alembic upgrade head` に置き換えます。
 
@@ -40,6 +41,26 @@
 - `app` モードでは api コンテナの entrypoint が起動時に DB マイグレーションを自動実行します。
 - 外部からの待受ポートは web (nginx) の 1 ポートのみで、既定は prod `8100` / stg `8101`（`.env` の `WEB_HOST_PORT` で上書き可能）。api はネットワーク内部専用で、外部からは `/api/` プロキシ経由で到達します。
 - デプロイ末尾にはデプロイされたバージョン（`APP_VERSION` / `GIT_SHA` / `BUILD_TIME`）を表示します。ヘルスチェック失敗時は api の healthcheck 履歴（`docker inspect .State.Health`）も診断出力に含まれます。
+
+## Remote build & deploy（build-remote.sh）
+
+`scripts/build-remote.sh` は、デプロイ先ホスト（Synology 等）の `wbs/stg/` または `wbs/prod/` に**単体で**コピーして使います（ホスト側にリポジトリの checkout は不要）。実行すると次を一括で行います。
+
+1. **BUILD**: 開発コンテナ（既定 `ubuntu-dev`）内で `git pull` → `./scripts/build.sh --app-version <VERSION>` を実行し `dist/deploy/` に deploy bundle を生成
+2. **PICK**: bundle 一式（`image.tar` / `.image-version` / `docker-compose.yml` / `scripts/deploy.sh` / `entrypoint.sh`）を `docker cp` で**配置ディレクトリ直下**へ展開（`deploy.sh` は `<配置dir>/scripts/deploy.sh` に置かれる）
+3. **DEPLOY**: `./scripts/deploy.sh <MODE>` を実行（load・retag・compose up・ヘルスチェックは `deploy.sh` が担当）
+
+```bash
+./build-remote.sh run app      # 通常デプロイ（MODE 省略時の既定）
+./build-remote.sh run migrate  # コンテナ起動 + スキーマ同期
+./build-remote.sh run reset    # データ削除して再構築（破壊的）
+```
+
+第 1 引数は DeployBridge Agent の args 登録用スロットで値は使いません。環境（stg / prod）は配置ディレクトリ名から `deploy.sh` が自動判定します。
+
+ホストに置いたコピーは実行のたびに `git pull` 後のリポジトリ HEAD と自身のバージョン刻印を照合し、スクリプト本体に差分があれば自己更新して `RESTART REQUIRED`（exit 2）で終了します。その場合はもう一度実行してください。
+
+環境変数で上書き可能: `DEV_CONTAINER` / `DEV_CONTAINER_USER` / `PROJECT_DIR` / `VERSION` / `BUILD_ARGS`（例: `BUILD_ARGS=--skip-tests`）。
 
 ### Docker リソースの命名
 

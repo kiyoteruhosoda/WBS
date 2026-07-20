@@ -2,6 +2,14 @@
 
 完了した重要な変更の要約（新しいものを上に）。詳しい経緯は `history/` を参照。
 
+## 2026-07-20
+
+- デプロイ先ホスト用の `scripts/build-remote.sh` を追加（DeployBridge の同名スクリプトが原型）。
+  開発コンテナ内ビルド → deploy bundle の取り出し → `./scripts/deploy.sh <MODE>` 実行までを
+  ワンコマンド化し、自己更新（リポジトリ HEAD との刻印照合・差分時は exit 2 で再実行要求）にも
+  対応。ホスト側の手書きスクリプトが bundle の実配置（配置 dir 直下の `scripts/deploy.sh`）と
+  食い違うパス `./deploy/scripts/deploy.sh` を呼んで失敗していた問題の恒久対策。
+
 ## 2026-07-18
 
 - デプロイ時に api コンテナが `ModuleNotFoundError: No module named 'src'` で再起動ループし
