@@ -67,7 +67,6 @@ class SqlAlchemyTaskRepository(TaskRepository):
             model.start_date = task.start_date
             model.due_date = task.due_date
             model.estimated_hours = task.estimated_hours
-            model.remaining_hours = task.remaining_hours
             model.memo = task.memo
             model.parent_task_id = task.parent_task_id
             model.milestone_id = task.milestone_id
@@ -109,7 +108,6 @@ class SqlAlchemyTaskRepository(TaskRepository):
             start_date=model.start_date,
             due_date=model.due_date,
             estimated_hours=model.estimated_hours,
-            remaining_hours=model.remaining_hours,
             memo=model.memo,
             parent_task_id=model.parent_task_id,
             milestone_id=model.milestone_id,
@@ -130,7 +128,6 @@ class SqlAlchemyTaskRepository(TaskRepository):
             start_date=task.start_date,
             due_date=task.due_date,
             estimated_hours=task.estimated_hours,
-            remaining_hours=task.remaining_hours,
             memo=task.memo,
             parent_task_id=task.parent_task_id,
             milestone_id=task.milestone_id,

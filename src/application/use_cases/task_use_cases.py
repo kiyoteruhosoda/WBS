@@ -38,7 +38,6 @@ class TaskUseCases:
             start_date=dto.start_date,
             due_date=dto.due_date,
             estimated_hours=dto.estimated_hours,
-            remaining_hours=dto.remaining_hours,
             memo=dto.memo,
             parent_task_id=dto.parent_task_id,
             milestone_id=dto.milestone_id,
@@ -67,8 +66,6 @@ class TaskUseCases:
             task.due_date = dto.due_date
         if dto.estimated_hours is not None:
             task.estimated_hours = dto.estimated_hours
-        if dto.remaining_hours is not None:
-            task.remaining_hours = dto.remaining_hours
         if dto.memo is not None:
             task.memo = dto.memo
         if dto.parent_task_id is not None:
@@ -102,7 +99,7 @@ class TaskUseCases:
             "start_date": task.start_date,
             "due_date": task.due_date,
             "estimated_hours": float(task.estimated_hours) if task.estimated_hours is not None else None,
-            "remaining_hours": float(task.remaining_hours) if task.remaining_hours is not None else None,
+            "remaining_hours": task.remaining_hours_from(actual),
             "actual_hours": actual,
             "progress_percent": progress,
             "priority_score": priority_score,

@@ -7,21 +7,24 @@ import { completeTask, reopenTask } from '../api/tasks';
 import { getCategories } from '../api/categories';
 import type { Task } from '../types';
 import { formatDate, isDueToday } from '../utils/format';
+import { useI18n } from '../i18n';
+import type { TranslationKey } from '../i18n/translations';
 import { ds } from '../theme';
 import StatusChip from '../components/StatusChip';
 import PriorityChip from '../components/PriorityChip';
 import CategoryDot from '../components/CategoryDot';
 
-const bucketMeta: { key: string; label: string; accent?: string }[] = [
-  { key: 'OVERDUE', label: '期限超過', accent: ds.dangerText },
-  { key: 'TODAY', label: '今日', accent: ds.primary },
-  { key: 'DOING', label: '進行中' },
-  { key: 'TOMORROW', label: '明日' },
+const bucketMeta: { key: string; labelKey: TranslationKey; accent?: string }[] = [
+  { key: 'OVERDUE', labelKey: 'today.overdue', accent: ds.dangerText },
+  { key: 'TODAY', labelKey: 'common.today', accent: ds.primary },
+  { key: 'DOING', labelKey: 'status.DOING' },
+  { key: 'TOMORROW', labelKey: 'today.tomorrow' },
 ];
 
 const Today: React.FC = () => {
   const qc = useQueryClient();
   const navigate = useNavigate();
+  const { t: translate } = useI18n();
   const { data: today, isLoading, error } = useQuery({ queryKey: ['dashboard-today'], queryFn: getDashboardToday });
   const { data: categories } = useQuery({ queryKey: ['categories'], queryFn: getCategories });
 
@@ -35,21 +38,21 @@ const Today: React.FC = () => {
   });
 
   if (isLoading) return <Box sx={{ display: 'flex', justifyContent: 'center', mt: 6 }}><CircularProgress /></Box>;
-  if (error) return <Alert severity="error">データの読み込みに失敗しました</Alert>;
+  if (error) return <Alert severity="error">{translate('common.loadError')}</Alert>;
 
   return (
     <Box sx={{ maxWidth: 880 }}>
-      {bucketMeta.map(({ key, label, accent }) => {
+      {bucketMeta.map(({ key, labelKey, accent }) => {
         const tasks = (today?.buckets as Record<string, Task[]> | undefined)?.[key] ?? [];
         return (
           <Box key={key} sx={{ mb: '20px' }}>
             <Box sx={{ display: 'flex', alignItems: 'baseline', gap: '8px', mb: '8px' }}>
-              <Box sx={{ fontSize: 15, fontWeight: 700, color: accent ?? ds.text }}>{label}</Box>
-              <Box sx={{ fontSize: 12, color: ds.textSub }}>{tasks.length}件</Box>
+              <Box sx={{ fontSize: 15, fontWeight: 700, color: accent ?? ds.text }}>{translate(labelKey)}</Box>
+              <Box sx={{ fontSize: 12, color: ds.textSub }}>{translate('today.count', { count: tasks.length })}</Box>
             </Box>
             <Box sx={{ bgcolor: ds.paper, border: `1px solid ${ds.border}`, borderRadius: '10px', overflow: 'hidden' }}>
               {tasks.length === 0 && (
-                <Box sx={{ px: '16px', py: '14px', fontSize: 13, color: ds.textMuted }}>なし</Box>
+                <Box sx={{ px: '16px', py: '14px', fontSize: 13, color: ds.textMuted }}>{translate('today.empty')}</Box>
               )}
               {tasks.map((t) => {
                 const done = t.status === 'DONE';
@@ -83,7 +86,7 @@ const Today: React.FC = () => {
                       fontWeight: isDueToday(t) && !done ? 700 : 400,
                       color: isDueToday(t) && !done ? ds.dangerText : ds.textSub,
                     }}>
-                      {isDueToday(t) ? '今日' : formatDate(t.due_date)}
+                      {isDueToday(t) ? translate('common.today') : formatDate(t.due_date)}
                     </Box>
                     <PriorityChip priority={t.priority} />
                     <StatusChip task={t} />

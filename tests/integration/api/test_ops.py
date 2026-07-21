@@ -17,6 +17,15 @@ def test_readyz_ok(client) -> None:
     assert "timestamp_utc" in data
 
 
+def test_info_available_under_api_prefix(client) -> None:
+    # フロントエンドは nginx 経由で /api/ 配下しか到達できない
+    response = client.get("/api/info")
+    assert response.status_code == 200
+    data = response.json()
+    assert "version" in data
+    assert "git_sha" in data
+
+
 def test_info(client) -> None:
     response = client.get("/info")
     assert response.status_code == 200

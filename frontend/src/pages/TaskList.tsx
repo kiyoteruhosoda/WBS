@@ -9,8 +9,9 @@ import {
 import { getTasks } from '../api/tasks';
 import { getCategories } from '../api/categories';
 import { getMilestones } from '../api/milestones';
-import { formatDate, statusLabel, isOverdue, isDueToday } from '../utils/format';
+import { formatDate, isOverdue, isDueToday } from '../utils/format';
 import type { Task, TaskStatus } from '../types';
+import { useI18n } from '../i18n';
 import { ds } from '../theme';
 import StatusChip from '../components/StatusChip';
 import PriorityChip from '../components/PriorityChip';
@@ -35,6 +36,7 @@ const compare = (a: Task, b: Task, key: SortKey): number => {
 
 const TaskList: React.FC = () => {
   const navigate = useNavigate();
+  const { t } = useI18n();
   const [statusFilter, setStatusFilter] = useState<TaskStatus[]>([]);
   const [categoryId, setCategoryId] = useState<string>('');
   const [milestoneId, setMilestoneId] = useState<string>('');
@@ -70,7 +72,7 @@ const TaskList: React.FC = () => {
       <Box sx={{ display: 'flex', gap: '12px', mb: '14px', flexWrap: 'wrap', alignItems: 'center' }}>
         <TextField
           size="small"
-          placeholder="タスクを検索"
+          placeholder={t('taskList.searchPlaceholder')}
           value={keyword}
           onChange={(e) => setKeyword(e.target.value)}
           sx={{ minWidth: 220 }}
@@ -85,33 +87,33 @@ const TaskList: React.FC = () => {
           }}
         />
         <FormControl size="small" sx={{ minWidth: 150 }}>
-          <InputLabel>ステータス</InputLabel>
+          <InputLabel>{t('taskList.status')}</InputLabel>
           <Select multiple value={statusFilter as unknown as string[]}
             onChange={(e) => setStatusFilter(e.target.value as unknown as TaskStatus[])}
-            input={<OutlinedInput label="ステータス" />}
-            renderValue={(sel) => (sel as unknown as TaskStatus[]).map(s => statusLabel[s]).join(', ')}>
-            {STATUSES.map(s => <MenuItem key={s} value={s}>{statusLabel[s]}</MenuItem>)}
+            input={<OutlinedInput label={t('taskList.status')} />}
+            renderValue={(sel) => (sel as unknown as TaskStatus[]).map(s => t(`status.${s}`)).join(', ')}>
+            {STATUSES.map(s => <MenuItem key={s} value={s}>{t(`status.${s}`)}</MenuItem>)}
           </Select>
         </FormControl>
         <FormControl size="small" sx={{ minWidth: 140 }}>
-          <InputLabel>カテゴリ</InputLabel>
-          <Select value={categoryId} label="カテゴリ" onChange={e => setCategoryId(e.target.value)}>
-            <MenuItem value="">すべて</MenuItem>
+          <InputLabel>{t('taskList.category')}</InputLabel>
+          <Select value={categoryId} label={t('taskList.category')} onChange={e => setCategoryId(e.target.value)}>
+            <MenuItem value="">{t('taskList.all')}</MenuItem>
             {categories?.map(c => <MenuItem key={c.id} value={String(c.id)}>{c.name}</MenuItem>)}
           </Select>
         </FormControl>
         <FormControl size="small" sx={{ minWidth: 150 }}>
-          <InputLabel>マイルストーン</InputLabel>
-          <Select value={milestoneId} label="マイルストーン" onChange={e => setMilestoneId(e.target.value)}>
-            <MenuItem value="">すべて</MenuItem>
+          <InputLabel>{t('taskList.milestone')}</InputLabel>
+          <Select value={milestoneId} label={t('taskList.milestone')} onChange={e => setMilestoneId(e.target.value)}>
+            <MenuItem value="">{t('taskList.all')}</MenuItem>
             {milestones?.map(m => <MenuItem key={m.id} value={String(m.id)}>{m.name}</MenuItem>)}
           </Select>
         </FormControl>
-        <Box sx={{ fontSize: 13, color: ds.textSub, ml: 'auto' }}>{items.length}件</Box>
+        <Box sx={{ fontSize: 13, color: ds.textSub, ml: 'auto' }}>{t('taskList.count', { count: items.length })}</Box>
       </Box>
 
       {isLoading && <Box sx={{ display: 'flex', justifyContent: 'center', mt: 6 }}><CircularProgress /></Box>}
-      {error && <Alert severity="error">データの読み込みに失敗しました</Alert>}
+      {error && <Alert severity="error">{t('common.loadError')}</Alert>}
       {data && (
         <Box sx={{ bgcolor: ds.paper, border: `1px solid ${ds.border}`, borderRadius: '10px', overflow: 'hidden' }}>
           <TableContainer>
@@ -124,7 +126,7 @@ const TaskList: React.FC = () => {
                       direction={sortKey === 'title' && sortDesc ? 'desc' : 'asc'}
                       onClick={() => handleSort('title')}
                     >
-                      タスク名
+                      {t('taskList.taskName')}
                     </TableSortLabel>
                   </TableCell>
                   <TableCell>
@@ -133,7 +135,7 @@ const TaskList: React.FC = () => {
                       direction={sortKey === 'priority_score' && sortDesc ? 'desc' : 'asc'}
                       onClick={() => handleSort('priority_score')}
                     >
-                      優先度
+                      {t('taskList.priority')}
                     </TableSortLabel>
                   </TableCell>
                   <TableCell>
@@ -142,11 +144,11 @@ const TaskList: React.FC = () => {
                       direction={sortKey === 'due_date' && sortDesc ? 'desc' : 'asc'}
                       onClick={() => handleSort('due_date')}
                     >
-                      期限
+                      {t('taskList.due')}
                     </TableSortLabel>
                   </TableCell>
-                  <TableCell sx={{ minWidth: 140 }}>進捗</TableCell>
-                  <TableCell>ステータス</TableCell>
+                  <TableCell sx={{ minWidth: 140 }}>{t('taskList.progress')}</TableCell>
+                  <TableCell>{t('taskList.status')}</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
@@ -173,7 +175,7 @@ const TaskList: React.FC = () => {
                           fontWeight: overdue || dueToday ? 700 : 400,
                           color: overdue || dueToday ? ds.dangerText : ds.textSub,
                         }}>
-                          {dueToday ? '今日' : formatDate(task.due_date)}
+                          {dueToday ? t('common.today') : formatDate(task.due_date)}
                         </Box>
                       </TableCell>
                       <TableCell>
@@ -191,7 +193,7 @@ const TaskList: React.FC = () => {
                 {items.length === 0 && (
                   <TableRow>
                     <TableCell colSpan={5} sx={{ textAlign: 'center', py: '32px', color: ds.textMuted, fontSize: 13 }}>
-                      条件に一致するタスクがありません
+                      {t('taskList.empty')}
                     </TableCell>
                   </TableRow>
                 )}

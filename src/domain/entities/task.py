@@ -20,7 +20,6 @@ class Task:
     start_date: date | None = None
     due_date: date | None = None
     estimated_hours: Decimal | None = None
-    remaining_hours: Decimal | None = None
     memo: str | None = None
     parent_task_id: int | None = None
     milestone_id: int | None = None
@@ -39,21 +38,27 @@ class Task:
 
         if new_status == TaskStatus.DONE:
             self.completed_at = changed_at or datetime.utcnow()
-            self.remaining_hours = Decimal("0")
         elif self.status == TaskStatus.DONE:
             self.completed_at = None
 
         self.status = new_status
 
     def progress_percent(self, actual_hours: float) -> float:
+        # 進捗は「実績時間 ÷ 見積時間」で算出する（見積が未入力なら判断材料がないため 0%）
         if self.status == TaskStatus.DONE:
             return 100.0
-
-        remaining = float(self.remaining_hours) if self.remaining_hours is not None else 0.0
-        total = actual_hours + remaining
-        if total <= 0:
+        if self.estimated_hours is None or float(self.estimated_hours) <= 0:
             return 0.0
-        return round(actual_hours / total * 100, 1)
+        ratio = min(actual_hours / float(self.estimated_hours), 1.0)
+        return round(ratio * 100, 1)
+
+    def remaining_hours_from(self, actual_hours: float) -> float | None:
+        # 残り時間は直接入力せず「見積時間 − 実績時間」から常に導出する
+        if self.status == TaskStatus.DONE:
+            return 0.0
+        if self.estimated_hours is None:
+            return None
+        return round(max(float(self.estimated_hours) - actual_hours, 0.0), 2)
 
     def priority_score(self, today: date) -> int:
         overdue_days = self._overdue_days(today)

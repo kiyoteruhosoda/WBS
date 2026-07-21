@@ -3,32 +3,36 @@ import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { Box, Button, Drawer, IconButton, useMediaQuery } from '@mui/material';
 import MenuIcon from '@mui/icons-material/Menu';
 import { ds } from '../theme';
+import { useI18n } from '../i18n';
+import type { TranslationKey } from '../i18n/translations';
 import {
   GridIcon, CheckListIcon, BarsIcon, CalendarIcon, InboxIcon,
-  CheckIcon, PlusIcon, TodayIcon,
+  CheckIcon, PlusIcon, TodayIcon, SlidersIcon,
 } from './icons';
 
 const SIDEBAR_WIDTH = 224;
 const TOPBAR_HEIGHT = 58;
 
-const navItems = [
-  { label: 'ダッシュボード', path: '/', icon: GridIcon },
-  { label: '今日のタスク', path: '/today', icon: TodayIcon },
-  { label: 'タスク', path: '/tasks', icon: CheckListIcon },
-  { label: 'ガントチャート', path: '/gantt', icon: BarsIcon },
-  { label: 'カレンダー', path: '/calendar', icon: CalendarIcon },
-  { label: 'インボックス', path: '/inbox', icon: InboxIcon },
+const navItems: { labelKey: TranslationKey; path: string; icon: React.FC<{ size?: number; strokeWidth?: number }> }[] = [
+  { labelKey: 'nav.dashboard', path: '/', icon: GridIcon },
+  { labelKey: 'nav.today', path: '/today', icon: TodayIcon },
+  { labelKey: 'nav.tasks', path: '/tasks', icon: CheckListIcon },
+  { labelKey: 'nav.gantt', path: '/gantt', icon: BarsIcon },
+  { labelKey: 'nav.calendar', path: '/calendar', icon: CalendarIcon },
+  { labelKey: 'nav.inbox', path: '/inbox', icon: InboxIcon },
+  { labelKey: 'nav.settings', path: '/settings', icon: SlidersIcon },
 ];
 
-const pageTitles: { pattern: RegExp; title: string }[] = [
-  { pattern: /^\/$/, title: 'ダッシュボード' },
-  { pattern: /^\/today$/, title: '今日のタスク' },
-  { pattern: /^\/tasks\/new$/, title: '新しいタスク' },
-  { pattern: /^\/tasks\/\d+$/, title: 'タスクの編集' },
-  { pattern: /^\/tasks$/, title: 'タスク' },
-  { pattern: /^\/gantt$/, title: 'ガントチャート' },
-  { pattern: /^\/calendar$/, title: 'カレンダー' },
-  { pattern: /^\/inbox$/, title: 'インボックス' },
+const pageTitles: { pattern: RegExp; titleKey: TranslationKey }[] = [
+  { pattern: /^\/$/, titleKey: 'nav.dashboard' },
+  { pattern: /^\/today$/, titleKey: 'nav.today' },
+  { pattern: /^\/tasks\/new$/, titleKey: 'title.taskNew' },
+  { pattern: /^\/tasks\/\d+$/, titleKey: 'title.taskEdit' },
+  { pattern: /^\/tasks$/, titleKey: 'nav.tasks' },
+  { pattern: /^\/gantt$/, titleKey: 'nav.gantt' },
+  { pattern: /^\/calendar$/, titleKey: 'nav.calendar' },
+  { pattern: /^\/inbox$/, titleKey: 'nav.inbox' },
+  { pattern: /^\/settings$/, titleKey: 'settings.title' },
 ];
 
 const NavItem: React.FC<{
@@ -57,6 +61,7 @@ const NavItem: React.FC<{
 const Sidebar: React.FC<{ onNavigate?: () => void }> = ({ onNavigate }) => {
   const navigate = useNavigate();
   const location = useLocation();
+  const { t } = useI18n();
   const isActive = (path: string) =>
     path === '/' ? location.pathname === '/' : location.pathname.startsWith(path);
 
@@ -69,13 +74,13 @@ const Sidebar: React.FC<{ onNavigate?: () => void }> = ({ onNavigate }) => {
         }}>
           <CheckIcon size={18} />
         </Box>
-        <Box sx={{ fontSize: 15, fontWeight: 700, color: ds.text }}>タスク管理</Box>
+        <Box sx={{ fontSize: 15, fontWeight: 700, color: ds.text }}>{t('app.name')}</Box>
       </Box>
       <Box sx={{ pt: '8px', flex: 1 }}>
         {navItems.map((item) => (
           <NavItem
             key={item.path}
-            label={item.label}
+            label={t(item.labelKey)}
             icon={item.icon}
             active={isActive(item.path)}
             onClick={() => { navigate(item.path); onNavigate?.(); }}
@@ -91,8 +96,10 @@ const Layout: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const isDesktop = useMediaQuery('(min-width:1024px)');
+  const { t } = useI18n();
 
-  const title = pageTitles.find((p) => p.pattern.test(location.pathname))?.title ?? 'タスク管理';
+  const titleKey = pageTitles.find((p) => p.pattern.test(location.pathname))?.titleKey;
+  const title = titleKey ? t(titleKey) : t('app.name');
 
   return (
     <Box sx={{ display: 'flex', minHeight: '100svh', bgcolor: ds.canvas }}>
@@ -136,7 +143,7 @@ const Layout: React.FC = () => {
             startIcon={<PlusIcon size={16} />}
             sx={{ px: '18px', py: '7px', whiteSpace: 'nowrap' }}
           >
-            新規タスク
+            {t('action.newTask')}
           </Button>
           <Box sx={{
             width: 34, height: 34, borderRadius: '50%', bgcolor: ds.primary, color: '#fff',

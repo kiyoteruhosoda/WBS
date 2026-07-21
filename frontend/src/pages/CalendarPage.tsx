@@ -6,7 +6,8 @@ import { getTasks } from '../api/tasks';
 import { getMilestones } from '../api/milestones';
 import { getCategories } from '../api/categories';
 import { ds, categoryColor } from '../theme';
-import { parseDate } from '../utils/format';
+import { parseDate, todayDate } from '../utils/format';
+import { useI18n } from '../i18n';
 import { ChevronLeftIcon, ChevronRightIcon } from '../components/icons';
 
 interface Pill {
@@ -21,7 +22,8 @@ const dateKey = (d: Date): string =>
 
 const CalendarPage: React.FC = () => {
   const navigate = useNavigate();
-  const now = new Date();
+  const { t, lang, weekdays } = useI18n();
+  const now = todayDate();
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth()); // 0-11
 
@@ -66,9 +68,12 @@ const CalendarPage: React.FC = () => {
   };
 
   if (isLoading) return <Box sx={{ display: 'flex', justifyContent: 'center', mt: 6 }}><CircularProgress /></Box>;
-  if (error) return <Alert severity="error">データの読み込みに失敗しました</Alert>;
+  if (error) return <Alert severity="error">{t('common.loadError')}</Alert>;
 
-  const todayKey = dateKey(new Date());
+  const todayKey = dateKey(todayDate());
+  const monthName = lang === 'ja'
+    ? String(month + 1)
+    : new Date(year, month, 1).toLocaleString('en-US', { month: 'long' });
 
   return (
     <Box>
@@ -81,7 +86,7 @@ const CalendarPage: React.FC = () => {
           <ChevronLeftIcon size={16} />
         </IconButton>
         <Box sx={{ fontSize: 18, fontWeight: 700, color: ds.text, minWidth: 130, textAlign: 'center' }}>
-          {year}年{month + 1}月
+          {t('calendar.monthTitle', { year, month: monthName })}
         </Box>
         <IconButton
           onClick={() => moveMonth(1)}
@@ -94,14 +99,14 @@ const CalendarPage: React.FC = () => {
           onClick={() => { setYear(now.getFullYear()); setMonth(now.getMonth()); }}
           sx={{ color: ds.primary, fontWeight: 700, px: '10px', py: '4px' }}
         >
-          今日
+          {t('common.today')}
         </Button>
       </Box>
 
       <Box sx={{ bgcolor: ds.paper, border: `1px solid ${ds.border}`, borderRadius: '10px', overflow: 'hidden' }}>
         {/* 曜日ヘッダ */}
         <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', bgcolor: '#F7F7F8', borderBottom: `1px solid ${ds.border}` }}>
-          {['日', '月', '火', '水', '木', '金', '土'].map((w, i) => (
+          {weekdays.map((w, i) => (
             <Box key={w} sx={{
               textAlign: 'center', py: '10px', fontSize: 13, fontWeight: 700,
               color: i === 0 ? ds.dangerText : i === 6 ? ds.primary : ds.textSub,

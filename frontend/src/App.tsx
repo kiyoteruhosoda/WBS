@@ -12,6 +12,8 @@ import TaskEdit from './pages/TaskEdit';
 import GanttPage from './pages/GanttPage';
 import CalendarPage from './pages/CalendarPage';
 import Inbox from './pages/Inbox';
+import Settings from './pages/Settings';
+import { I18nProvider } from './i18n';
 
 const queryClient = new QueryClient({ defaultOptions: { queries: { retry: 1, staleTime: 30_000 } } });
 
@@ -19,6 +21,7 @@ const App: React.FC = () => (
   <QueryClientProvider client={queryClient}>
     <ThemeProvider theme={theme}>
       <CssBaseline />
+      <I18nProvider>
       <BrowserRouter>
         <Routes>
           <Route path="/" element={<Layout />}>
@@ -30,9 +33,11 @@ const App: React.FC = () => (
             <Route path="gantt" element={<GanttPage />} />
             <Route path="calendar" element={<CalendarPage />} />
             <Route path="inbox" element={<Inbox />} />
+            <Route path="settings" element={<Settings />} />
           </Route>
         </Routes>
       </BrowserRouter>
+      </I18nProvider>
     </ThemeProvider>
   </QueryClientProvider>
 );

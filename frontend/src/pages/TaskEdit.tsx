@@ -12,8 +12,9 @@ import { getWorklogs, createWorklog, deleteWorklog } from '../api/worklogs';
 import { getCategories } from '../api/categories';
 import { getMilestones } from '../api/milestones';
 import type { Task, TaskStatus, DependencyType } from '../types';
-import { formatDate, statusLabel, priorityBand, priorityBandValue, priorityBandLabel } from '../utils/format';
+import { formatDate, priorityBand, priorityBandValue, todayDate } from '../utils/format';
 import type { PriorityBand } from '../utils/format';
+import { useI18n } from '../i18n';
 import { ds } from '../theme';
 import { PlusIcon, TrashIcon } from '../components/icons';
 
@@ -30,7 +31,7 @@ interface FormData {
   start_date: string;
   due_date: string;
   estimated_hours: string;
-  remaining_hours: string;
+  actual_hours: string;
   parent_task_id: string;
   milestone_id: string;
   memo: string;
@@ -38,7 +39,7 @@ interface FormData {
 
 const defaultForm: FormData = {
   title: '', category_id: '', priority: 3, urgency: 3, status: 'TODO',
-  start_date: '', due_date: '', estimated_hours: '', remaining_hours: '',
+  start_date: '', due_date: '', estimated_hours: '', actual_hours: '',
   parent_task_id: '', milestone_id: '', memo: '',
 };
 
@@ -46,26 +47,37 @@ const toForm = (t: Task): FormData => ({
   title: t.title, category_id: String(t.category_id ?? ''), priority: t.priority,
   urgency: t.urgency, status: t.status, start_date: t.start_date ?? '',
   due_date: t.due_date ?? '', estimated_hours: String(t.estimated_hours ?? ''),
-  remaining_hours: String(t.remaining_hours ?? ''), parent_task_id: String(t.parent_task_id ?? ''),
+  actual_hours: String(t.actual_hours ?? 0), parent_task_id: String(t.parent_task_id ?? ''),
   milestone_id: String(t.milestone_id ?? ''), memo: t.memo ?? '',
 });
 
-const FieldLabel: React.FC<{ children: React.ReactNode; required?: boolean }> = ({ children, required }) => (
-  <Box sx={{ display: 'flex', alignItems: 'center', gap: '8px', mb: '6px' }}>
-    <Box sx={{ fontSize: 13, fontWeight: 700, color: ds.text }}>{children}</Box>
-    {required && (
-      <Box sx={{
-        bgcolor: ds.danger, color: '#fff', fontSize: 10, fontWeight: 700,
-        px: '6px', py: '1px', borderRadius: '3px', lineHeight: 1.6,
-      }}>
-        必須
-      </Box>
-    )}
-  </Box>
-);
+// ユーザー設定タイムゾーンでの「今日」を YYYY-MM-DD にする（実績差分の記録日）
+const todayYmd = (): string => {
+  const d = todayDate();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
+
+const FieldLabel: React.FC<{ children: React.ReactNode; required?: boolean }> = ({ children, required }) => {
+  const { t } = useI18n();
+  return (
+    <Box sx={{ display: 'flex', alignItems: 'center', gap: '8px', mb: '6px' }}>
+      <Box sx={{ fontSize: 13, fontWeight: 700, color: ds.text }}>{children}</Box>
+      {required && (
+        <Box sx={{
+          bgcolor: ds.danger, color: '#fff', fontSize: 10, fontWeight: 700,
+          px: '6px', py: '1px', borderRadius: '3px', lineHeight: 1.6,
+        }}>
+          {t('taskEdit.required')}
+        </Box>
+      )}
+    </Box>
+  );
+};
 
 // 優先度・緊急度のラジオpill（高/中/低）
-const PillRadio: React.FC<{ value: PriorityBand; onChange: (v: PriorityBand) => void }> = ({ value, onChange }) => (
+const PillRadio: React.FC<{ value: PriorityBand; onChange: (v: PriorityBand) => void }> = ({ value, onChange }) => {
+  const { t } = useI18n();
+  return (
   <Box sx={{ display: 'flex', gap: '10px' }}>
     {BANDS.map((band) => {
       const selected = band === value;
@@ -89,18 +101,20 @@ const PillRadio: React.FC<{ value: PriorityBand; onChange: (v: PriorityBand) => 
             border: selected ? `4px solid ${ds.primary}` : `1.5px solid ${ds.textMuted}`,
             bgcolor: '#fff',
           }} />
-          {priorityBandLabel[band]}
+          {t(`priority.${band}`)}
         </Box>
       );
     })}
   </Box>
-);
+  );
+};
 
 const TaskEdit: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const isNew = id === undefined || id === 'new';
   const navigate = useNavigate();
   const qc = useQueryClient();
+  const { t } = useI18n();
   const [form, setForm] = useState<FormData>(defaultForm);
   const [tab, setTab] = useState(0);
   const [showTitleError, setShowTitleError] = useState(false);
@@ -126,11 +140,23 @@ const TaskEdit: React.FC = () => {
   useEffect(() => { if (task) setForm(toForm(task)); }, [task]);
 
   const save = useMutation({
-    mutationFn: (data: Partial<Task>) => isNew ? createTask(data) : updateTask(Number(id), data),
+    mutationFn: async (data: Partial<Task>) => {
+      const saved = isNew ? await createTask(data) : await updateTask(Number(id), data);
+      // 実績時間の変更分を作業ログとして記録する（残り時間は見積−実績で自動計算される）
+      if (!isNew && task) {
+        const newActual = form.actual_hours === '' ? task.actual_hours : Number(form.actual_hours);
+        const delta = Math.round((newActual - task.actual_hours) * 100) / 100;
+        if (delta !== 0) {
+          await createWorklog({ task_id: Number(id), work_date: todayYmd(), hours: delta, memo: null });
+        }
+      }
+      return saved;
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['tasks'] });
       qc.invalidateQueries({ queryKey: ['dashboard-today'] });
       qc.invalidateQueries({ queryKey: ['kpi'] });
+      qc.invalidateQueries({ queryKey: ['worklogs', id] });
       navigate('/tasks');
     },
   });
@@ -165,7 +191,6 @@ const TaskEdit: React.FC = () => {
       priority: form.priority, urgency: form.urgency, status: form.status,
       start_date: form.start_date || null, due_date: form.due_date || null,
       estimated_hours: form.estimated_hours ? Number(form.estimated_hours) : null,
-      remaining_hours: form.remaining_hours ? Number(form.remaining_hours) : null,
       parent_task_id: form.parent_task_id ? Number(form.parent_task_id) : null,
       milestone_id: form.milestone_id ? Number(form.milestone_id) : null,
       memo: form.memo || null,
@@ -178,16 +203,24 @@ const TaskEdit: React.FC = () => {
 
   const titleError = showTitleError && !form.title.trim();
 
+  // 残り時間は入力せず「見積 − 実績」で表示する
+  const estNum = Number(form.estimated_hours);
+  const actNum = form.actual_hours === '' ? 0 : Number(form.actual_hours);
+  const remainingDisplay =
+    form.estimated_hours === '' || isNaN(estNum)
+      ? '—'
+      : String(Math.max(Math.round((estNum - (isNaN(actNum) ? 0 : actNum)) * 100) / 100, 0));
+
   return (
     <Box sx={{ maxWidth: 640, mx: 'auto' }}>
       {!isNew && (
         <Tabs value={tab} onChange={(_, v) => setTab(v)} sx={{ mb: '14px', minHeight: 40 }}>
-          <Tab label="基本情報" sx={{ minHeight: 40 }} />
-          <Tab label="作業ログ" sx={{ minHeight: 40 }} />
-          <Tab label="依存関係" sx={{ minHeight: 40 }} />
+          <Tab label={t('taskEdit.tabBasic')} sx={{ minHeight: 40 }} />
+          <Tab label={t('taskEdit.tabWorklog')} sx={{ minHeight: 40 }} />
+          <Tab label={t('taskEdit.tabDependencies')} sx={{ minHeight: 40 }} />
         </Tabs>
       )}
-      {save.isError && <Alert severity="error" sx={{ mb: '14px' }}>保存に失敗しました</Alert>}
+      {save.isError && <Alert severity="error" sx={{ mb: '14px' }}>{t('taskEdit.saveError')}</Alert>}
 
       {tab === 0 && (
         <Box sx={{
@@ -196,60 +229,60 @@ const TaskEdit: React.FC = () => {
           display: 'flex', flexDirection: 'column', gap: '18px',
         }}>
           <Box>
-            <FieldLabel required>タスク名</FieldLabel>
+            <FieldLabel required>{t('taskEdit.taskName')}</FieldLabel>
             <TextField
-              fullWidth size="small" placeholder="タスク名を入力"
+              fullWidth size="small" placeholder={t('taskEdit.taskNamePlaceholder')}
               value={form.title}
               error={titleError}
-              helperText={titleError ? 'タスク名を入力してください' : undefined}
+              helperText={titleError ? t('taskEdit.taskNameRequired') : undefined}
               onChange={e => setForm({ ...form, title: e.target.value })}
             />
           </Box>
 
           <Box>
-            <FieldLabel>説明・メモ（Markdown）</FieldLabel>
+            <FieldLabel>{t('taskEdit.memoLabel')}</FieldLabel>
             {memoPreview ? (
               <Paper variant="outlined" sx={{ p: '12px', minHeight: 96, fontSize: 14 }}>
                 <ReactMarkdown>{form.memo}</ReactMarkdown>
               </Paper>
             ) : (
               <TextField
-                fullWidth multiline rows={4} placeholder="詳細を入力"
+                fullWidth multiline rows={4} placeholder={t('taskEdit.memoPlaceholder')}
                 value={form.memo}
                 onChange={e => setForm({ ...form, memo: e.target.value })}
               />
             )}
             <Button size="small" onClick={() => setMemoPreview(!memoPreview)} sx={{ mt: '4px', px: '8px', py: '2px' }}>
-              {memoPreview ? '編集に戻る' : 'プレビュー'}
+              {memoPreview ? t('taskEdit.backToEdit') : t('taskEdit.preview')}
             </Button>
           </Box>
 
           <Box sx={{ display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
             <Box sx={{ flex: '1 1 200px' }}>
-              <FieldLabel>カテゴリ</FieldLabel>
+              <FieldLabel>{t('taskEdit.category')}</FieldLabel>
               <Select
                 fullWidth size="small" displayEmpty
                 value={form.category_id}
                 onChange={e => setForm({ ...form, category_id: String(e.target.value) })}
               >
-                <MenuItem value="">なし</MenuItem>
+                <MenuItem value="">{t('taskEdit.none')}</MenuItem>
                 {categories?.map(c => <MenuItem key={c.id} value={String(c.id)}>{c.name}</MenuItem>)}
               </Select>
             </Box>
             <Box sx={{ flex: '1 1 200px' }}>
-              <FieldLabel>ステータス</FieldLabel>
+              <FieldLabel>{t('taskEdit.status')}</FieldLabel>
               <Select
                 fullWidth size="small"
                 value={form.status}
                 onChange={e => setForm({ ...form, status: e.target.value as TaskStatus })}
               >
-                {STATUSES.map(s => <MenuItem key={s} value={s}>{statusLabel[s]}</MenuItem>)}
+                {STATUSES.map(s => <MenuItem key={s} value={s}>{t(`status.${s}`)}</MenuItem>)}
               </Select>
             </Box>
           </Box>
 
           <Box>
-            <FieldLabel>優先度</FieldLabel>
+            <FieldLabel>{t('taskEdit.priority')}</FieldLabel>
             <PillRadio
               value={priorityBand(form.priority)}
               onChange={(band) => setForm({ ...form, priority: priorityBandValue[band] })}
@@ -257,7 +290,7 @@ const TaskEdit: React.FC = () => {
           </Box>
 
           <Box>
-            <FieldLabel>緊急度</FieldLabel>
+            <FieldLabel>{t('taskEdit.urgency')}</FieldLabel>
             <PillRadio
               value={priorityBand(form.urgency)}
               onChange={(band) => setForm({ ...form, urgency: priorityBandValue[band] })}
@@ -266,7 +299,7 @@ const TaskEdit: React.FC = () => {
 
           <Box sx={{ display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
             <Box sx={{ flex: '1 1 200px' }}>
-              <FieldLabel>開始日</FieldLabel>
+              <FieldLabel>{t('taskEdit.startDate')}</FieldLabel>
               <TextField
                 fullWidth size="small" type="date"
                 value={form.start_date}
@@ -274,7 +307,7 @@ const TaskEdit: React.FC = () => {
               />
             </Box>
             <Box sx={{ flex: '1 1 200px' }}>
-              <FieldLabel>期限</FieldLabel>
+              <FieldLabel>{t('taskEdit.dueDate')}</FieldLabel>
               <TextField
                 fullWidth size="small" type="date"
                 value={form.due_date}
@@ -284,32 +317,47 @@ const TaskEdit: React.FC = () => {
           </Box>
 
           <Box sx={{ display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
-            <Box sx={{ flex: '1 1 200px' }}>
-              <FieldLabel>見積時間（h）</FieldLabel>
+            <Box sx={{ flex: '1 1 160px' }}>
+              <FieldLabel>{t('taskEdit.estimatedHours')}</FieldLabel>
               <TextField
                 fullWidth size="small" type="number"
+                slotProps={{ htmlInput: { min: 0, step: 0.5 } }}
                 value={form.estimated_hours}
                 onChange={e => setForm({ ...form, estimated_hours: e.target.value })}
               />
             </Box>
-            <Box sx={{ flex: '1 1 200px' }}>
-              <FieldLabel>残り時間（h）</FieldLabel>
-              <TextField
-                fullWidth size="small" type="number"
-                value={form.remaining_hours}
-                onChange={e => setForm({ ...form, remaining_hours: e.target.value })}
-              />
-            </Box>
+            {!isNew && (
+              <>
+                <Box sx={{ flex: '1 1 160px' }}>
+                  <FieldLabel>{t('taskEdit.actualHours')}</FieldLabel>
+                  <TextField
+                    fullWidth size="small" type="number"
+                    slotProps={{ htmlInput: { min: 0, step: 0.5 } }}
+                    value={form.actual_hours}
+                    helperText={t('taskEdit.actualHoursHelp')}
+                    onChange={e => setForm({ ...form, actual_hours: e.target.value })}
+                  />
+                </Box>
+                <Box sx={{ flex: '1 1 160px' }}>
+                  <FieldLabel>{t('taskEdit.remainingHours')}</FieldLabel>
+                  <TextField
+                    fullWidth size="small" disabled
+                    value={remainingDisplay}
+                    helperText={t('taskEdit.remainingAuto')}
+                  />
+                </Box>
+              </>
+            )}
           </Box>
 
           <Box>
-            <FieldLabel>マイルストーン</FieldLabel>
+            <FieldLabel>{t('taskEdit.milestone')}</FieldLabel>
             <Select
               fullWidth size="small" displayEmpty
               value={form.milestone_id}
               onChange={e => setForm({ ...form, milestone_id: String(e.target.value) })}
             >
-              <MenuItem value="">なし</MenuItem>
+              <MenuItem value="">{t('taskEdit.none')}</MenuItem>
               {milestones?.map(m => <MenuItem key={m.id} value={String(m.id)}>{m.name}</MenuItem>)}
             </Select>
           </Box>
@@ -325,10 +373,10 @@ const TaskEdit: React.FC = () => {
                 px: '24px', '&:hover': { bgcolor: ds.hairline, border: `1px solid ${ds.borderInput}` },
               }}
             >
-              キャンセル
+              {t('taskEdit.cancel')}
             </Button>
             <Button variant="contained" onClick={handleSubmit} disabled={save.isPending} sx={{ px: '28px' }}>
-              保存する
+              {t('taskEdit.save')}
             </Button>
           </Box>
         </Box>
@@ -336,13 +384,13 @@ const TaskEdit: React.FC = () => {
 
       {tab === 1 && !isNew && (
         <Box sx={{ bgcolor: ds.paper, border: `1px solid ${ds.border}`, borderRadius: '10px', p: '18px' }}>
-          <Box sx={{ fontSize: 15, fontWeight: 700, color: ds.text, mb: '12px' }}>作業ログ</Box>
+          <Box sx={{ fontSize: 15, fontWeight: 700, color: ds.text, mb: '12px' }}>{t('taskEdit.tabWorklog')}</Box>
           <Table size="small">
             <TableHead>
               <TableRow>
-                <TableCell>日付</TableCell>
-                <TableCell>時間（h）</TableCell>
-                <TableCell>メモ</TableCell>
+                <TableCell>{t('taskEdit.date')}</TableCell>
+                <TableCell>{t('taskEdit.hoursUnit')}</TableCell>
+                <TableCell>{t('taskEdit.memo')}</TableCell>
                 <TableCell></TableCell>
               </TableRow>
             </TableHead>
@@ -362,18 +410,18 @@ const TaskEdit: React.FC = () => {
               {(worklogs?.length ?? 0) === 0 && (
                 <TableRow>
                   <TableCell colSpan={4} sx={{ textAlign: 'center', color: ds.textMuted, py: '20px' }}>
-                    作業ログはまだありません
+                    {t('taskEdit.noWorklogs')}
                   </TableCell>
                 </TableRow>
               )}
             </TableBody>
           </Table>
           <Box sx={{ display: 'flex', gap: '10px', mt: '16px', flexWrap: 'wrap' }}>
-            <TextField size="small" type="date" label="日付" slotProps={{ inputLabel: { shrink: true } }} value={wlDate} onChange={e => setWlDate(e.target.value)} />
-            <TextField size="small" type="number" label="時間" sx={{ width: 100 }} value={wlHours} onChange={e => setWlHours(e.target.value)} />
-            <TextField size="small" label="メモ" value={wlMemo} onChange={e => setWlMemo(e.target.value)} sx={{ flex: 1, minWidth: 160 }} />
+            <TextField size="small" type="date" label={t('taskEdit.date')} slotProps={{ inputLabel: { shrink: true } }} value={wlDate} onChange={e => setWlDate(e.target.value)} />
+            <TextField size="small" type="number" label={t('taskEdit.hours')} sx={{ width: 100 }} value={wlHours} onChange={e => setWlHours(e.target.value)} />
+            <TextField size="small" label={t('taskEdit.memo')} value={wlMemo} onChange={e => setWlMemo(e.target.value)} sx={{ flex: 1, minWidth: 160 }} />
             <Button variant="outlined" startIcon={<PlusIcon size={14} />} onClick={() => addWl.mutate()} disabled={!wlDate || !wlHours}>
-              追加
+              {t('taskEdit.add')}
             </Button>
           </Box>
         </Box>
@@ -381,12 +429,12 @@ const TaskEdit: React.FC = () => {
 
       {tab === 2 && !isNew && (
         <Box sx={{ bgcolor: ds.paper, border: `1px solid ${ds.border}`, borderRadius: '10px', p: '18px' }}>
-          <Box sx={{ fontSize: 15, fontWeight: 700, color: ds.text, mb: '12px' }}>依存関係</Box>
+          <Box sx={{ fontSize: 15, fontWeight: 700, color: ds.text, mb: '12px' }}>{t('taskEdit.tabDependencies')}</Box>
           <Table size="small">
             <TableHead>
               <TableRow>
-                <TableCell>先行タスクID</TableCell>
-                <TableCell>依存タイプ</TableCell>
+                <TableCell>{t('taskEdit.predecessorId')}</TableCell>
+                <TableCell>{t('taskEdit.depType')}</TableCell>
                 <TableCell></TableCell>
               </TableRow>
             </TableHead>
@@ -405,22 +453,22 @@ const TaskEdit: React.FC = () => {
               {(deps?.length ?? 0) === 0 && (
                 <TableRow>
                   <TableCell colSpan={3} sx={{ textAlign: 'center', color: ds.textMuted, py: '20px' }}>
-                    依存関係はまだありません
+                    {t('taskEdit.noDeps')}
                   </TableCell>
                 </TableRow>
               )}
             </TableBody>
           </Table>
           <Box sx={{ display: 'flex', gap: '10px', mt: '16px' }}>
-            <TextField size="small" type="number" label="先行タスクID" sx={{ width: 140 }} value={depPredId} onChange={e => setDepPredId(e.target.value)} />
+            <TextField size="small" type="number" label={t('taskEdit.predecessorId')} sx={{ width: 140 }} value={depPredId} onChange={e => setDepPredId(e.target.value)} />
             <FormControl size="small" sx={{ minWidth: 100 }}>
-              <InputLabel>タイプ</InputLabel>
-              <Select value={depType} label="タイプ" onChange={e => setDepType(e.target.value as DependencyType)}>
-                {DEP_TYPES.map(t => <MenuItem key={t} value={t}>{t}</MenuItem>)}
+              <InputLabel>{t('taskEdit.type')}</InputLabel>
+              <Select value={depType} label={t('taskEdit.type')} onChange={e => setDepType(e.target.value as DependencyType)}>
+                {DEP_TYPES.map(dt => <MenuItem key={dt} value={dt}>{dt}</MenuItem>)}
               </Select>
             </FormControl>
             <Button variant="outlined" startIcon={<PlusIcon size={14} />} onClick={() => addDep.mutate()} disabled={!depPredId}>
-              追加
+              {t('taskEdit.add')}
             </Button>
           </Box>
         </Box>
