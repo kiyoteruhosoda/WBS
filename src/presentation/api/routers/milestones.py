@@ -37,7 +37,9 @@ def get_milestone(milestone_id: int, db: DbDep) -> MilestoneResponse:
 @router.put("/{milestone_id}", response_model=MilestoneResponse)
 def update_milestone(milestone_id: int, body: MilestoneUpdateRequest, db: DbDep) -> MilestoneResponse:
     uc = MilestoneUseCases(db)
-    dto = UpdateMilestoneDTO(name=body.name, due_date=body.due_date, description=body.description)
+    # 送信されたフィールドのみ DTO へ渡す（未指定は UNSET のまま＝変更しない）。
+    # 明示的な null はクリアとして反映される。
+    dto = UpdateMilestoneDTO(**body.model_dump(exclude_unset=True))
     return MilestoneResponse.model_validate(uc.update_milestone(milestone_id, dto), from_attributes=True)
 
 

@@ -3,6 +3,7 @@ from __future__ import annotations
 from sqlalchemy.orm import Session
 
 from src.application.dto.milestone_dto import CreateMilestoneDTO, UpdateMilestoneDTO
+from src.application.dto.unset import UNSET
 from src.domain.entities.milestone import Milestone
 from src.domain.exceptions import NotFoundError
 from src.infrastructure.repositories.milestone_repository import SqlAlchemyMilestoneRepository
@@ -32,11 +33,11 @@ class MilestoneUseCases:
         m = self._repo.find_by_id(milestone_id)
         if m is None:
             raise NotFoundError("Milestone", milestone_id)
-        if dto.name is not None:
+        if dto.name is not UNSET:
             m.name = dto.name
-        if dto.due_date is not None:
+        if dto.due_date is not UNSET:
             m.due_date = dto.due_date
-        if dto.description is not None:
+        if dto.description is not UNSET:
             m.description = dto.description
         saved = self._repo.save(m)
         self._session.commit()

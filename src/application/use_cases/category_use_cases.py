@@ -3,6 +3,7 @@ from __future__ import annotations
 from sqlalchemy.orm import Session
 
 from src.application.dto.category_dto import CreateCategoryDTO, UpdateCategoryDTO
+from src.application.dto.unset import UNSET
 from src.domain.entities.category import Category
 from src.domain.exceptions import NotFoundError
 from src.infrastructure.repositories.category_repository import SqlAlchemyCategoryRepository
@@ -32,11 +33,11 @@ class CategoryUseCases:
         cat = self._repo.find_by_id(category_id)
         if cat is None:
             raise NotFoundError("Category", category_id)
-        if dto.name is not None:
+        if dto.name is not UNSET:
             cat.name = dto.name
-        if dto.color is not None:
+        if dto.color is not UNSET:
             cat.color = dto.color
-        if dto.sort_order is not None:
+        if dto.sort_order is not UNSET:
             cat.sort_order = dto.sort_order
         saved = self._repo.save(cat)
         self._session.commit()

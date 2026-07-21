@@ -37,7 +37,9 @@ def get_category(category_id: int, db: DbDep) -> CategoryResponse:
 @router.put("/{category_id}", response_model=CategoryResponse)
 def update_category(category_id: int, body: CategoryUpdateRequest, db: DbDep) -> CategoryResponse:
     uc = CategoryUseCases(db)
-    dto = UpdateCategoryDTO(name=body.name, color=body.color, sort_order=body.sort_order)
+    # 送信されたフィールドのみ DTO へ渡す（未指定は UNSET のまま＝変更しない）。
+    # 明示的な null はクリアとして反映される。
+    dto = UpdateCategoryDTO(**body.model_dump(exclude_unset=True))
     return CategoryResponse.model_validate(uc.update_category(category_id, dto), from_attributes=True)
 
 

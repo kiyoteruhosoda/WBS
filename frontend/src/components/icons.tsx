@@ -77,6 +77,13 @@ export const FolderIcon: React.FC<IconProps> = (p) => base(p, (
   <path d="M3.5 7a2 2 0 0 1 2-2h4l2 2.5h7a2 2 0 0 1 2 2V17a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2V7z" />
 ));
 
+export const FlagIcon: React.FC<IconProps> = (p) => base(p, (
+  <>
+    <path d="M6 21V4" />
+    <path d="M6 5h11l-2 3.5 2 3.5H6" />
+  </>
+));
+
 export const InboxIcon: React.FC<IconProps> = (p) => base(p, (
   <>
     <path d="M4 13.5V17a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3.5" />

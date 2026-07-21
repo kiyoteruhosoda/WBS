@@ -12,6 +12,8 @@ import TaskEdit from './pages/TaskEdit';
 import GanttPage from './pages/GanttPage';
 import CalendarPage from './pages/CalendarPage';
 import Inbox from './pages/Inbox';
+import CategoriesPage from './pages/CategoriesPage';
+import MilestonesPage from './pages/MilestonesPage';
 import Settings from './pages/Settings';
 import { I18nProvider } from './i18n';
 
@@ -33,6 +35,8 @@ const App: React.FC = () => (
             <Route path="gantt" element={<GanttPage />} />
             <Route path="calendar" element={<CalendarPage />} />
             <Route path="inbox" element={<Inbox />} />
+            <Route path="categories" element={<CategoriesPage />} />
+            <Route path="milestones" element={<MilestonesPage />} />
             <Route path="settings" element={<Settings />} />
           </Route>
         </Routes>
