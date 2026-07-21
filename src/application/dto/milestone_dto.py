@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date
 
+from src.application.dto.unset import UNSET, UnsetType
+
 
 @dataclass
 class CreateMilestoneDTO:
@@ -13,6 +15,7 @@ class CreateMilestoneDTO:
 
 @dataclass
 class UpdateMilestoneDTO:
-    name: str | None = None
-    due_date: date | None = None
-    description: str | None = None
+    # UNSET = 変更しない / None = 明示的にクリアする
+    name: str | UnsetType = UNSET
+    due_date: date | None | UnsetType = UNSET
+    description: str | None | UnsetType = UNSET

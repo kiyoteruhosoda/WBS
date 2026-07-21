@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from src.application.dto.unset import UNSET, UnsetType
+
 
 @dataclass
 class CreateCategoryDTO:
@@ -12,6 +14,7 @@ class CreateCategoryDTO:
 
 @dataclass
 class UpdateCategoryDTO:
-    name: str | None = None
-    color: str | None = None
-    sort_order: int | None = None
+    # UNSET = 変更しない / None = 明示的にクリアする
+    name: str | UnsetType = UNSET
+    color: str | None | UnsetType = UNSET
+    sort_order: int | UnsetType = UNSET
