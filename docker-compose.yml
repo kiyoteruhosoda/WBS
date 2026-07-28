@@ -3,7 +3,7 @@
 name: wbs
 services:
   db:
-    container_name: ${DB_CONTAINER_NAME:-wbs-db}
+    container_name: ${DB_CONTAINER_NAME:-${COMPOSE_PROJECT_NAME:-wbs}-db}
     image: mariadb:10.11
     environment:
       MARIADB_ROOT_PASSWORD: ${MARIADB_ROOT_PASSWORD:-rootpass}
@@ -15,7 +15,7 @@ services:
     volumes: ["db-data:/var/lib/mysql"]
     restart: unless-stopped
   api:
-    container_name: ${API_CONTAINER_NAME:-wbs-api}
+    container_name: ${API_CONTAINER_NAME:-${COMPOSE_PROJECT_NAME:-wbs}-api}
     image: wbs-api:${APP_VERSION:-local}
     build:
       context: .
@@ -42,7 +42,7 @@ services:
       # unhealthy と誤判定されないよう余裕を持たせる。
       start_period: 120s
   web:
-    container_name: ${WEB_CONTAINER_NAME:-wbs-web}
+    container_name: ${WEB_CONTAINER_NAME:-${COMPOSE_PROJECT_NAME:-wbs}-web}
     image: wbs-web:${APP_VERSION:-local}
     build: ./frontend
     # 外部からの待受ポート（既定 8100）。api へは nginx の /api/ プロキシ経由で到達する。
