@@ -1,6 +1,6 @@
 # プロジェクト名を固定し、コンテナ・ネットワーク・ボリュームを常に wbs- / wbs_
 # プレフィックスで作成する（チェックアウト先のディレクトリ名に依存させない）。
-name: wbs
+name: ${COMPOSE_PROJECT_NAME:-wbs-dev}
 services:
   db:
     container_name: ${DB_CONTAINER_NAME:-${COMPOSE_PROJECT_NAME:-wbs}-db}
