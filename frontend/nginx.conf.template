@@ -1,0 +1,37 @@
+# SPA 配信 + /api/ のリバースプロキシ。
+#
+# nginx 公式イメージの envsubst 機構でコンテナ起動時に展開される
+# (/etc/nginx/templates/*.template → /etc/nginx/conf.d/*)。
+# 既定値は Dockerfile の ENV で与えているので、compose 側で何も指定しなくても
+# 従来どおり http://api:8000 を向く。
+#
+# ⚠ upstream を直書き (proxy_pass http://api:8000;) に戻さないこと。
+#   nginx は upstream 名を**起動時に一度だけ解決してキャッシュする**ため、api の
+#   コンテナを作り直して IP が変わると、消えた IP に接続し続けて 502 を返し続ける。
+#   復旧にはこのコンテナの再起動が要る。resolver + 変数経由なら毎リクエスト解決に
+#   なり、api を作り直しても数秒で自動復旧する。
+
+resolver ${WBS_RESOLVER} valid=10s ipv6=off;
+
+server {
+    listen 80;
+    root /usr/share/nginx/html;
+    index index.html;
+
+    location /api/ {
+        # ⚠ 値にパスを含めないこと。`$upstream/` のように書くと location の /api/ が
+        #   剥がれて api 側のルーティングが全部外れる。
+        set $api_upstream http://${WBS_API_HOST}:${WBS_API_PORT};
+        proxy_pass $api_upstream;
+
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location / {
+        try_files $uri /index.html;
+    }
+}
