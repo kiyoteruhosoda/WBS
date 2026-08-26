@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-from datetime import datetime
-
 from pydantic import BaseModel
 
 from src.domain.value_objects.dependency_type import DependencyType
+from src.presentation.api.schemas.types import UtcDatetime
 
 
 class DependencyCreateRequest(BaseModel):
@@ -18,7 +17,7 @@ class DependencyResponse(BaseModel):
     successor_task_id: int
     dependency_type: str
     lag_days: int
-    created_at: datetime | None = None
+    created_at: UtcDatetime | None = None
 
     model_config = {"from_attributes": True}
 

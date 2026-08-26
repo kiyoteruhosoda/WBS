@@ -1,18 +1,17 @@
 from __future__ import annotations
 
-from datetime import datetime
-
 from fastapi import APIRouter, Query
 
 from src.application.use_cases.review_use_cases import ReviewUseCases
 from src.presentation.api.dependencies import DbDep
+from src.shared.clock import utcnow
 
 router = APIRouter(prefix="/reviews", tags=["reviews"])
 USER_ID = 1
 
 
 def _current_week() -> str:
-    now = datetime.utcnow()
+    now = utcnow()
     return now.strftime("%G-W%V")
 
 

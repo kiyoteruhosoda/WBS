@@ -218,6 +218,24 @@ presentation/web/translations/
 
 時刻は常に UTC（`UTC_TIMESTAMP(6)`）。traceback フィールドは NULLABLE（例外時のみ記録）。
 
+### 時刻の契約
+
+1. **「今」は `src/shared/clock.utcnow()`（aware な UTC）で取る。**
+   `datetime.now()` / `datetime.utcnow()` / `date.today()` は書かない。
+   `tests/unit/test_time_contract.py` が AST で検査していて、書くと落ちる。
+2. **「今日」は利用者のタイムゾーンで出す** — `src/application/user_clock.UserClock.today(user_id)`。
+   利用者ごとの `users.timezone` を見る。サーバ（UTC）の日付を使うと、JST の
+   利用者にとって 0:00〜9:00 のあいだ「今日」が前日にずれる。
+3. **API の外へ出す ISO 文字列は `clock.isoformat_utc()` を通す**（末尾は `Z`）。
+   レスポンスに時刻を載せるときは `datetime` ではなく
+   `src/presentation/api/schemas/types.UtcDatetime` を使う。オフセットの無い
+   ISO 文字列は JavaScript の `new Date()` が**ローカル時刻として**解釈するため、
+   付け忘れると JST の閲覧者で 9 時間ずれる。
+4. **画面側の変換はフロントエンドの仕事。** `frontend/src/utils/format.ts` が
+   `activeTimeZone` で描く。サーバは UTC のまま返す。
+
+コンテナ側は「作られるときに一律 UTC」が別途契約になっている（HANDOVER §14）。
+
 ---
 
 ## テスト

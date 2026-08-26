@@ -6,6 +6,7 @@ from decimal import Decimal
 
 from src.domain.exceptions import InvalidStatusTransitionError
 from src.domain.value_objects.task_status import TaskStatus
+from src.shared.clock import utcnow
 
 
 @dataclass
@@ -37,7 +38,7 @@ class Task:
             raise InvalidStatusTransitionError(self.status.value, new_status.value)
 
         if new_status == TaskStatus.DONE:
-            self.completed_at = changed_at or datetime.utcnow()
+            self.completed_at = changed_at or utcnow()
         elif self.status == TaskStatus.DONE:
             self.completed_at = None
 

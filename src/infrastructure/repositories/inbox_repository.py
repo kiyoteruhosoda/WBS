@@ -1,13 +1,12 @@
 from __future__ import annotations
 
-from datetime import datetime
-
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from src.domain.entities.inbox_item import InboxItem
 from src.domain.repositories.inbox_repository import InboxRepository
 from src.infrastructure.database.models import InboxItemModel
+from src.shared.clock import utcnow
 
 
 class SqlAlchemyInboxRepository(InboxRepository):
@@ -48,14 +47,14 @@ class SqlAlchemyInboxRepository(InboxRepository):
             model.memo = item.memo
             model.converted_task_id = item.converted_task_id
             model.converted_at = item.converted_at
-            model.updated_at = datetime.utcnow()
+            model.updated_at = utcnow()
             self._session.flush()
             return self._to_entity(model)
 
     def soft_delete(self, item_id: int) -> None:
         model = self._session.get(InboxItemModel, item_id)
         if model:
-            model.deleted_at = datetime.utcnow()
+            model.deleted_at = utcnow()
             self._session.flush()
 
     def _to_entity(self, model: InboxItemModel) -> InboxItem:

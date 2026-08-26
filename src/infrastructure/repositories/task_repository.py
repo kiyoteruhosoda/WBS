@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from datetime import datetime
-
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -9,6 +7,7 @@ from src.domain.entities.task import Task
 from src.domain.repositories.task_repository import TaskRepository
 from src.domain.value_objects.task_status import TaskStatus
 from src.infrastructure.database.models import TaskModel, WorkLogModel
+from src.shared.clock import utcnow
 
 
 class SqlAlchemyTaskRepository(TaskRepository):
@@ -71,7 +70,7 @@ class SqlAlchemyTaskRepository(TaskRepository):
             model.parent_task_id = task.parent_task_id
             model.milestone_id = task.milestone_id
             model.completed_at = task.completed_at
-            model.updated_at = datetime.utcnow()
+            model.updated_at = utcnow()
             self._session.flush()
             return self._to_entity(model)
 
@@ -84,7 +83,7 @@ class SqlAlchemyTaskRepository(TaskRepository):
             stmt = stmt.where(TaskModel.user_id == user_id)
         model = self._session.scalar(stmt)
         if model:
-            model.deleted_at = datetime.utcnow()
+            model.deleted_at = utcnow()
             self._session.flush()
 
     def get_actual_hours(self, task_id: int) -> float:

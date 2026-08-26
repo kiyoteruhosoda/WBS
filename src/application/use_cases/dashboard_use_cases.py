@@ -1,14 +1,14 @@
 from __future__ import annotations
 
-from datetime import UTC, date, datetime, timedelta
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+from datetime import date, timedelta
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from src.application.use_cases.task_use_cases import TaskUseCases
+from src.application.user_clock import UserClock
 from src.domain.value_objects.task_status import TaskStatus
-from src.infrastructure.database.models import TaskModel, UserModel, WorkLogModel
+from src.infrastructure.database.models import TaskModel, WorkLogModel
 from src.infrastructure.repositories.task_repository import SqlAlchemyTaskRepository
 
 
@@ -17,15 +17,10 @@ class DashboardUseCases:
         self._session = session
         self._task_repo = SqlAlchemyTaskRepository(session)
         self._task_uc = TaskUseCases(session)
+        self._clock = UserClock(session)
 
     def _user_today(self, user_id: int) -> date:
-        timezone_name = self._session.execute(
-            select(UserModel.timezone).where(UserModel.id == user_id)
-        ).scalar() or "UTC"
-        try:
-            return datetime.now(ZoneInfo(timezone_name)).date()
-        except ZoneInfoNotFoundError:
-            return datetime.now(UTC).date()
+        return self._clock.today(user_id)
 
     def get_today_buckets(self, user_id: int) -> dict:
         today = self._user_today(user_id)

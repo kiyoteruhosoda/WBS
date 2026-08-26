@@ -1,9 +1,11 @@
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date
 from decimal import Decimal
 
 from pydantic import BaseModel
+
+from src.presentation.api.schemas.types import UtcDatetime
 
 
 class InboxItemCreateRequest(BaseModel):
@@ -28,9 +30,9 @@ class InboxItemResponse(BaseModel):
     title: str
     memo: str | None = None
     converted_task_id: int | None = None
-    converted_at: datetime | None = None
-    deleted_at: datetime | None = None
-    created_at: datetime | None = None
-    updated_at: datetime | None = None
+    converted_at: UtcDatetime | None = None
+    deleted_at: UtcDatetime | None = None
+    created_at: UtcDatetime | None = None
+    updated_at: UtcDatetime | None = None
 
     model_config = {"from_attributes": True}

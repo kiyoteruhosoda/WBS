@@ -3,9 +3,10 @@ import logging
 import logging.handlers
 import os
 import sys
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+
+from src.shared.clock import isoformat_utc, utcnow
 
 _STDLIB_ATTRS = frozenset(
     {
@@ -39,7 +40,7 @@ class StructuredFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
         record.message = record.getMessage()
         log: dict[str, Any] = {
-            "timestamp": datetime.now(UTC).isoformat(),
+            "timestamp": isoformat_utc(utcnow()),
             "level": record.levelname,
             "logger": record.name,
             "message": record.message,

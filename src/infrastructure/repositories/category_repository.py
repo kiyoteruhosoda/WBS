@@ -1,13 +1,12 @@
 from __future__ import annotations
 
-from datetime import datetime
-
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from src.domain.entities.category import Category
 from src.domain.repositories.category_repository import CategoryRepository
 from src.infrastructure.database.models import CategoryModel
+from src.shared.clock import utcnow
 
 
 class SqlAlchemyCategoryRepository(CategoryRepository):
@@ -45,14 +44,14 @@ class SqlAlchemyCategoryRepository(CategoryRepository):
             model.name = category.name
             model.color = category.color
             model.sort_order = category.sort_order
-            model.updated_at = datetime.utcnow()
+            model.updated_at = utcnow()
             self._session.flush()
             return self._to_entity(model)
 
     def soft_delete(self, category_id: int) -> None:
         model = self._session.get(CategoryModel, category_id)
         if model:
-            model.deleted_at = datetime.utcnow()
+            model.deleted_at = utcnow()
             self._session.flush()
 
     def _to_entity(self, model: CategoryModel) -> Category:

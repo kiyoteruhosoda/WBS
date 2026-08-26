@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from src.presentation.api.dependencies import get_db
 from src.presentation.api.schemas.ops import InfoResponse, LivenessResponse, ReadinessResponse
+from src.shared.clock import isoformat_utc
 
 router = APIRouter(tags=["ops"])
 
@@ -16,7 +17,7 @@ async def liveness(request: Request) -> LivenessResponse:
     now = datetime.now(UTC)
     build_info = request.app.state.build_info
     startup_time = request.app.state.startup_time
-    return LivenessResponse(status="ok", version=build_info.version, timestamp_utc=now.isoformat(), uptime_seconds=(now - startup_time).total_seconds())
+    return LivenessResponse(status="ok", version=build_info.version, timestamp_utc=isoformat_utc(now), uptime_seconds=(now - startup_time).total_seconds())
 
 @router.get("/readyz", summary="Readiness probe")
 async def readiness(request: Request, db: Annotated[Session, Depends(get_db)]) -> JSONResponse:
@@ -28,7 +29,7 @@ async def readiness(request: Request, db: Annotated[Session, Depends(get_db)]) -
     except Exception:
         checks["database"] = "ng"
     all_ok = all(v == "ok" for v in checks.values())
-    body = ReadinessResponse(status="ok" if all_ok else "ng", checks=checks, timestamp_utc=now.isoformat())
+    body = ReadinessResponse(status="ok" if all_ok else "ng", checks=checks, timestamp_utc=isoformat_utc(now))
     return JSONResponse(status_code=status.HTTP_200_OK if all_ok else status.HTTP_503_SERVICE_UNAVAILABLE, content=body.model_dump())
 
 @router.get("/info", response_model=InfoResponse, summary="Build / version info")

@@ -1,13 +1,12 @@
 from __future__ import annotations
 
-from datetime import datetime
-
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from src.domain.entities.work_log import WorkLog
 from src.domain.repositories.work_log_repository import WorkLogRepository
 from src.infrastructure.database.models import WorkLogModel
+from src.shared.clock import utcnow
 
 
 class SqlAlchemyWorkLogRepository(WorkLogRepository):
@@ -46,14 +45,14 @@ class SqlAlchemyWorkLogRepository(WorkLogRepository):
             model.work_date = work_log.work_date
             model.hours = work_log.hours
             model.memo = work_log.memo
-            model.updated_at = datetime.utcnow()
+            model.updated_at = utcnow()
             self._session.flush()
             return self._to_entity(model)
 
     def soft_delete(self, work_log_id: int) -> None:
         model = self._session.get(WorkLogModel, work_log_id)
         if model:
-            model.deleted_at = datetime.utcnow()
+            model.deleted_at = utcnow()
             self._session.flush()
 
     def _to_entity(self, model: WorkLogModel) -> WorkLog:

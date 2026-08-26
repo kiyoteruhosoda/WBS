@@ -1,9 +1,11 @@
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date
 from decimal import Decimal
 
 from pydantic import BaseModel
+
+from src.presentation.api.schemas.types import UtcDatetime
 
 
 class WorkLogCreateRequest(BaseModel):
@@ -26,8 +28,8 @@ class WorkLogResponse(BaseModel):
     work_date: date
     hours: float
     memo: str | None = None
-    deleted_at: datetime | None = None
-    created_at: datetime | None = None
-    updated_at: datetime | None = None
+    deleted_at: UtcDatetime | None = None
+    created_at: UtcDatetime | None = None
+    updated_at: UtcDatetime | None = None
 
     model_config = {"from_attributes": True}

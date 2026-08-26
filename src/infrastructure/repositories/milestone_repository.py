@@ -1,13 +1,12 @@
 from __future__ import annotations
 
-from datetime import datetime
-
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from src.domain.entities.milestone import Milestone
 from src.domain.repositories.milestone_repository import MilestoneRepository
 from src.infrastructure.database.models import MilestoneModel
+from src.shared.clock import utcnow
 
 
 class SqlAlchemyMilestoneRepository(MilestoneRepository):
@@ -45,14 +44,14 @@ class SqlAlchemyMilestoneRepository(MilestoneRepository):
             model.name = milestone.name
             model.due_date = milestone.due_date
             model.description = milestone.description
-            model.updated_at = datetime.utcnow()
+            model.updated_at = utcnow()
             self._session.flush()
             return self._to_entity(model)
 
     def soft_delete(self, milestone_id: int) -> None:
         model = self._session.get(MilestoneModel, milestone_id)
         if model:
-            model.deleted_at = datetime.utcnow()
+            model.deleted_at = utcnow()
             self._session.flush()
 
     def _to_entity(self, model: MilestoneModel) -> Milestone:

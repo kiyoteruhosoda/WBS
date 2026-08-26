@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta
+from datetime import datetime, timedelta
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from src.application.user_clock import UserClock
 from src.domain.value_objects.task_status import TaskStatus
 from src.infrastructure.database.models import CategoryModel, TaskModel, WorkLogModel
 
@@ -12,6 +13,7 @@ from src.infrastructure.database.models import CategoryModel, TaskModel, WorkLog
 class ReviewUseCases:
     def __init__(self, session: Session) -> None:
         self._session = session
+        self._clock = UserClock(session)
 
     def get_weekly_review(self, user_id: int, week: str) -> dict:
         monday = datetime.strptime(week + "-1", "%G-W%V-%u").date()
@@ -41,7 +43,7 @@ class ReviewUseCases:
                 TaskModel.user_id == user_id,
                 TaskModel.deleted_at.is_(None),
                 TaskModel.status.notin_([TaskStatus.DONE.value, TaskStatus.CANCELLED.value]),
-                TaskModel.due_date < date.today(),
+                TaskModel.due_date < self._clock.today(user_id),
             )
         ).scalar() or 0
 
