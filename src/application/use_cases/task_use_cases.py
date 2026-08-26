@@ -11,10 +11,10 @@ from src.infrastructure.repositories.task_repository import SqlAlchemyTaskReposi
 
 
 class TaskUseCases:
-    def __init__(self, session: Session) -> None:
+    def __init__(self, session: Session, clock: UserClock | None = None) -> None:
         self._repo: TaskRepository = SqlAlchemyTaskRepository(session)
         self._session = session
-        self._clock = UserClock(session)
+        self._clock = clock or UserClock(session)
 
     def list_tasks(self, user_id: int, filters: dict) -> list[dict]:
         tasks = self._repo.find_all(user_id, filters)

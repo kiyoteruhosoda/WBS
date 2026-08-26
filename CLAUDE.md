@@ -231,8 +231,9 @@ presentation/web/translations/
    `src/presentation/api/schemas/types.UtcDatetime` を使う。オフセットの無い
    ISO 文字列は JavaScript の `new Date()` が**ローカル時刻として**解釈するため、
    付け忘れると JST の閲覧者で 9 時間ずれる。
-4. **画面側の変換はフロントエンドの仕事。** `frontend/src/utils/format.ts` が
-   `activeTimeZone` で描く。サーバは UTC のまま返す。
+4. **画面側の変換はフロントエンドの仕事。** サーバは UTC のまま返す。
+   `frontend/src/utils/format.ts` の `todayDate()` だけが利用者設定の
+   `activeTimeZone` を見ていて、日時そのものの表示は閲覧者のローカルで描く。
 
 コンテナ側は「作られるときに一律 UTC」が別途契約になっている（HANDOVER §14）。
 

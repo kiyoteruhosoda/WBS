@@ -36,3 +36,32 @@ def test_weekly_review_honours_an_explicit_week(client, frozen_now) -> None:
 
     assert data["week"] == "2026-W35"
     assert data["monday"] == "2026-08-24"
+
+
+def test_a_task_finished_monday_morning_jst_counts_in_that_week(client, frozen_now) -> None:
+    """週の区切りは利用者の日付、保存値は UTC。突き合わせは UTC の半開区間で行う。
+
+    JST の月曜 8:00 に終えたタスクは UTC では日曜 23:00。利用者の日付をそのまま
+    DATETIME 列と比べると、前の週にも今の週にも入らずどこからも数えられない。
+    """
+    import sqlalchemy as sa
+
+    from src.infrastructure.database.models import TaskModel
+    from src.presentation.api.dependencies import get_db
+
+    task_id = client.post("/api/tasks", json={"title": "月曜の朝に終えた"}).json()["id"]
+    db = next(client.app.dependency_overrides.get(get_db, get_db)())
+    db.execute(
+        sa.update(TaskModel)
+        .where(TaskModel.id == task_id)
+        .values(status="DONE", completed_at=datetime(2026, 8, 30, 23, 0))
+    )
+    db.commit()
+
+    assert client.get("/api/reviews/weekly", params={"week": "2026-W36"}).json()["completed_count"] == 1
+    assert client.get("/api/reviews/weekly", params={"week": "2026-W35"}).json()["completed_count"] == 0
+
+
+def test_an_unreadable_week_is_rejected_rather_than_crashing(client) -> None:
+    for bad in ("abc", "2026-W99", ""):
+        assert client.get("/api/reviews/weekly", params={"week": bad}).status_code == 422, bad
