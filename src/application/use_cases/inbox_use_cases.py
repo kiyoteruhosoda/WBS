@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from datetime import datetime
-
 from sqlalchemy.orm import Session
 
 from src.application.dto.inbox_dto import ConvertInboxItemDTO, CreateInboxItemDTO
@@ -9,6 +7,7 @@ from src.domain.entities.inbox_item import InboxItem
 from src.domain.exceptions import NotFoundError
 from src.infrastructure.repositories.inbox_repository import SqlAlchemyInboxRepository
 from src.infrastructure.repositories.task_repository import SqlAlchemyTaskRepository
+from src.shared.clock import utcnow
 
 
 class InboxUseCases:
@@ -58,7 +57,7 @@ class InboxUseCases:
         )
         saved_task = self._task_repo.save(task)
         item.converted_task_id = saved_task.id
-        item.converted_at = datetime.utcnow()
+        item.converted_at = utcnow()
         self._repo.save(item)
         self._session.commit()
         from src.application.use_cases.task_use_cases import TaskUseCases

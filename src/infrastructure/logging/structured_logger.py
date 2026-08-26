@@ -3,9 +3,10 @@ import logging
 import logging.handlers
 import os
 import sys
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+
+from src.shared.clock import isoformat_utc, utcnow
 
 _STDLIB_ATTRS = frozenset(
     {
@@ -39,7 +40,7 @@ class StructuredFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
         record.message = record.getMessage()
         log: dict[str, Any] = {
-            "timestamp": datetime.now(UTC).isoformat(),
+            "timestamp": isoformat_utc(utcnow()),
             "level": record.levelname,
             "logger": record.name,
             "message": record.message,
@@ -59,6 +60,9 @@ def _make_rotating_handler(path: str) -> logging.handlers.TimedRotatingFileHandl
         interval=1,
         backupCount=30,
         encoding="utf-8",
+        # 契約: ログは UTC（HANDOVER §14）。既定の utc=False だと切り替えと
+        # ファイル名の日付だけがプロセスの TZ になり、中身の timestamp とずれる。
+        utc=True,
     )
     handler.setFormatter(StructuredFormatter())
     return handler

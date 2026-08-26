@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from datetime import datetime
-
 from pydantic import BaseModel
+
+from src.presentation.api.schemas.types import UtcDatetime
 
 
 class CategoryCreateRequest(BaseModel):
@@ -23,8 +23,8 @@ class CategoryResponse(BaseModel):
     name: str
     color: str | None = None
     sort_order: int
-    deleted_at: datetime | None = None
-    created_at: datetime | None = None
-    updated_at: datetime | None = None
+    deleted_at: UtcDatetime | None = None
+    created_at: UtcDatetime | None = None
+    updated_at: UtcDatetime | None = None
 
     model_config = {"from_attributes": True}

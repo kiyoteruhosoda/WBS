@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date
 from decimal import Decimal
 
 from pydantic import BaseModel, Field
 
 from src.domain.value_objects.task_status import TaskStatus
+from src.presentation.api.schemas.types import UtcDatetime
 
 
 class TaskCreateRequest(BaseModel):
@@ -54,9 +55,9 @@ class TaskResponse(BaseModel):
     memo: str | None = None
     parent_task_id: int | None = None
     milestone_id: int | None = None
-    completed_at: datetime | None = None
-    deleted_at: datetime | None = None
-    created_at: datetime | None = None
-    updated_at: datetime | None = None
+    completed_at: UtcDatetime | None = None
+    deleted_at: UtcDatetime | None = None
+    created_at: UtcDatetime | None = None
+    updated_at: UtcDatetime | None = None
 
     model_config = {"from_attributes": True}

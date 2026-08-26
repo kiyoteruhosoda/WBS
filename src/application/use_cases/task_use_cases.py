@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-from datetime import date
-
 from sqlalchemy.orm import Session
 
 from src.application.dto.task_dto import CreateTaskDTO, UpdateTaskDTO
+from src.application.user_clock import UserClock
 from src.domain.entities.task import Task
 from src.domain.exceptions import NotFoundError
 from src.domain.repositories.task_repository import TaskRepository
@@ -12,9 +11,10 @@ from src.infrastructure.repositories.task_repository import SqlAlchemyTaskReposi
 
 
 class TaskUseCases:
-    def __init__(self, session: Session) -> None:
+    def __init__(self, session: Session, clock: UserClock | None = None) -> None:
         self._repo: TaskRepository = SqlAlchemyTaskRepository(session)
         self._session = session
+        self._clock = clock or UserClock(session)
 
     def list_tasks(self, user_id: int, filters: dict) -> list[dict]:
         tasks = self._repo.find_all(user_id, filters)
@@ -85,7 +85,9 @@ class TaskUseCases:
 
     def _enrich(self, task: Task) -> dict:
         actual = self._repo.get_actual_hours(task.id)
-        today = date.today()
+        # 期限の近さは利用者の日付で決まる。サーバ（UTC）の today を使うと
+        # JST の利用者にとって 0:00〜9:00 のあいだ「今日」が前日にずれる。
+        today = self._clock.today(task.user_id)
         priority_score = task.priority_score(today)
         progress = task.progress_percent(actual)
         return {

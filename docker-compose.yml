@@ -23,6 +23,8 @@ services:
         GIT_SHA: ${GIT_SHA:-unknown}
         BUILD_TIME: ${BUILD_TIME:-unknown}
     environment:
+      # 契約: コンテナは一律 UTC（HANDOVER §14）
+      TZ: UTC
       DATABASE_URL: ${DATABASE_URL:-sqlite:////app/data/app.db}
       ADMIN_EMAIL: ${ADMIN_EMAIL:-local@example.com}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-local-dev-password}
@@ -42,6 +44,9 @@ services:
   web:
     image: wbs-web:${APP_VERSION:-local}
     build: ./frontend
+    environment:
+      # 契約: コンテナは一律 UTC（HANDOVER §14）
+      TZ: UTC
     # 外部からの待受ポート（既定 8100）。api へは nginx の /api/ プロキシ経由で到達する。
     ports: ["${WEB_PORT:-8100}:80"]
     depends_on:
