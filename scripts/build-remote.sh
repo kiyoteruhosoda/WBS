@@ -52,7 +52,7 @@ esac
 DEV_CONTAINER=${DEV_CONTAINER:-ubuntu-dev}
 DEV_CONTAINER_USER=${DEV_CONTAINER_USER:-sshuser}
 PROJECT_DIR=${PROJECT_DIR:-/work/project/$PROJECT}
-VERSION=${VERSION:-$(date +%Y.%m.%d.%H%M%S)}
+VERSION=${VERSION:-$(date -u +%Y.%m.%d.%H%M%S)}   # 契約: 時刻は UTC（HANDOVER §14）
 BUILD_ARGS=${BUILD_ARGS:-}
 
 echo "===== START ====="

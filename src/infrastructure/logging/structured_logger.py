@@ -60,6 +60,9 @@ def _make_rotating_handler(path: str) -> logging.handlers.TimedRotatingFileHandl
         interval=1,
         backupCount=30,
         encoding="utf-8",
+        # 契約: ログは UTC（HANDOVER §14）。既定の utc=False だと切り替えと
+        # ファイル名の日付だけがプロセスの TZ になり、中身の timestamp とずれる。
+        utc=True,
     )
     handler.setFormatter(StructuredFormatter())
     return handler

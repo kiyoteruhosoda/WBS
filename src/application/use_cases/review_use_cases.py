@@ -15,9 +15,18 @@ class ReviewUseCases:
         self._session = session
         self._clock = UserClock(session)
 
-    def get_weekly_review(self, user_id: int, week: str) -> dict:
-        monday = datetime.strptime(week + "-1", "%G-W%V-%u").date()
+    def get_weekly_review(self, user_id: int, week: str | None = None) -> dict:
+        # 「今週」も「今日」も利用者のタイムゾーンで決まる。サーバ（UTC）基準で取ると、
+        # JST の利用者にとって月曜 0:00〜9:00 のあいだ前の週・前の日にずれる。
+        today = self._clock.today(user_id)
+        monday = (
+            datetime.strptime(week + "-1", "%G-W%V-%u").date()
+            if week
+            else today - timedelta(days=today.weekday())
+        )
         sunday = monday + timedelta(days=6)
+        # 応答の week は必ず埋める（省略時はいま解決した週を返す）
+        week = week or monday.strftime("%G-W%V")
 
         completed_count = self._session.execute(
             select(func.count()).where(
@@ -43,7 +52,7 @@ class ReviewUseCases:
                 TaskModel.user_id == user_id,
                 TaskModel.deleted_at.is_(None),
                 TaskModel.status.notin_([TaskStatus.DONE.value, TaskStatus.CANCELLED.value]),
-                TaskModel.due_date < self._clock.today(user_id),
+                TaskModel.due_date < today,
             )
         ).scalar() or 0
 
