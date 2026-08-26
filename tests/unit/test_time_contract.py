@@ -33,10 +33,16 @@ _MESSAGES = {
 }
 
 
-def test_utcnow_is_aware_utc() -> None:
+def test_utcnow_is_naive_utc() -> None:
+    """保存値と同じ形（naive な UTC）で返す。
+
+    DB の DATETIME はタイムゾーンを持たず、書いた値は naive で返る。生成側だけ
+    aware にすると「入れたばかりの値は aware・読み直した値は naive」となり、
+    比べた瞬間に TypeError で落ちる。
+    """
     now = utcnow()
-    assert now.tzinfo is not None
-    assert now.utcoffset() == timedelta(0)
+    assert now.tzinfo is None
+    assert abs((now - datetime.now(UTC).replace(tzinfo=None)).total_seconds()) < 5
 
 
 def test_naive_value_is_rendered_with_a_trailing_z() -> None:
@@ -68,28 +74,45 @@ def test_response_field_renders_with_a_trailing_z() -> None:
 
 def _source_files() -> list[Path]:
     files = [p for p in (_ROOT / "src").rglob("*.py") if "__pycache__" not in p.parts]
+    files.append(_ROOT / "main.py")  # 合成ルートも契約の対象
     assert files, "走査対象のソースが見つからない"
     return files
 
 
+def _is_clock_receiver(node: ast.Attribute) -> bool:
+    """``datetime.now`` のように標準の日時型に生えているものか（自前の Clock は対象外）。"""
+    return ast.unparse(node.value).endswith(("datetime", "date"))
+
+
 def _violations(tree: ast.AST) -> list[tuple[int, str]]:
     found: list[tuple[int, str]] = []
+    called: set[int] = set()
+
+    # (1) 呼び出しの形。tz を渡していれば明示的なので見逃す。
     for node in ast.walk(tree):
         if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute):
             continue
+        called.add(id(node.func))
         attr = node.func.attr
         if attr not in _MESSAGES:
             continue
-        receiver = ast.unparse(node.func.value)
-        if attr in {"now", "utcnow", "today", "fromtimestamp"} and not receiver.endswith(
-            ("datetime", "date")
-        ):
-            continue  # 自前の Clock などは対象外
-        if attr in {"now", "today", "astimezone"} and (node.args or node.keywords):
-            continue  # tz を渡しているので明示的
-        if attr == "fromtimestamp" and len(node.args) + len(node.keywords) > 1:
+        if attr in {"now", "utcnow", "today", "fromtimestamp"} and not _is_clock_receiver(node.func):
             continue
+        if attr in {"now", "today", "astimezone"} and (node.args or node.keywords):
+            continue  # tz を渡している
+        if attr == "fromtimestamp" and len(node.args) + len(node.keywords) > 1:
+            continue  # tz を渡している
         found.append((node.lineno, _MESSAGES[attr]))
+
+    # (2) 関数参照として渡す形（``default=datetime.utcnow``）。呼び出しではないので
+    #     (1) では拾えない。渡した先が呼ぶので、結果はローカル時計と同じ。
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Attribute) or id(node) in called:
+            continue
+        if node.attr not in {"now", "utcnow", "today"} or not _is_clock_receiver(node):
+            continue
+        found.append((node.lineno, _MESSAGES[node.attr] + "（関数参照として渡す形も同じ）"))
+
     return found
 
 
@@ -99,3 +122,27 @@ def test_source_does_not_take_the_local_clock(path: Path) -> None:
     assert not violations, "\n".join(
         f"{path.relative_to(_ROOT)}:{line} {message}" for line, message in violations
     )
+
+
+def test_the_clock_is_the_only_place_that_reads_the_wall_clock() -> None:
+    """「今」を作るのは `src/shared/clock.py` だけ。
+
+    `datetime.now(UTC)` は tz を渡しているので上の検査は通ってしまうが、
+    あちこちで呼ばれると生成口が増える。実際、ops のヘルスと main.py の
+    startup_time が別々に `datetime.now(UTC)` を呼んでいて、片方だけ形を
+    変えると差分の計算が TypeError になる状態だった。
+    """
+    offenders: list[str] = []
+    for path in _source_files():
+        if path.name == "clock.py" and path.parent.name == "shared":
+            continue
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(tree):
+            if (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Attribute)
+                and node.func.attr == "now"
+                and _is_clock_receiver(node.func)
+            ):
+                offenders.append(f"{path.relative_to(_ROOT)}:{node.lineno}")
+    assert not offenders, "src.shared.clock.utcnow() を使う: " + ", ".join(offenders)

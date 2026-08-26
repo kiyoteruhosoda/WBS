@@ -51,7 +51,8 @@ class UserClock:
         cached = self._today.get(user_id)
         if cached is not None:
             return cached
-        resolved = utcnow().astimezone(self.zone(user_id)).date()
+        # utcnow() は保存値と同じ naive な UTC。付け直してから利用者の TZ へ。
+        resolved = utcnow().replace(tzinfo=UTC).astimezone(self.zone(user_id)).date()
         self._today[user_id] = resolved
         return resolved
 

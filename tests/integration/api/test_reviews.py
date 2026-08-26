@@ -5,13 +5,13 @@
 `overdue_count` は利用者の日付を見ているので、週と日でずれた数字が並ぶ。
 """
 
-from datetime import UTC, datetime
+from datetime import datetime
 
 import pytest
 
 # 2026-08-30 15:30 UTC = 2026-08-31 00:30 JST（月曜）。
 # UTC 基準なら 2026-W35（月曜 08-24）、JST 基準なら 2026-W36（月曜 08-31）。
-_MONDAY_EARLY_MORNING_IN_JST = datetime(2026, 8, 30, 15, 30, tzinfo=UTC)
+_MONDAY_EARLY_MORNING_IN_JST = datetime(2026, 8, 30, 15, 30)  # naive な UTC（保存値と同じ形）
 
 
 @pytest.fixture

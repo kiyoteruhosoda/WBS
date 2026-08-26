@@ -1,4 +1,3 @@
-from datetime import UTC, datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Request, status
@@ -8,20 +7,20 @@ from sqlalchemy.orm import Session
 
 from src.presentation.api.dependencies import get_db
 from src.presentation.api.schemas.ops import InfoResponse, LivenessResponse, ReadinessResponse
-from src.shared.clock import isoformat_utc
+from src.shared.clock import isoformat_utc, utcnow
 
 router = APIRouter(tags=["ops"])
 
 @router.get("/healthz", response_model=LivenessResponse, summary="Liveness probe", description="Always returns 200 while the process is running.")
 async def liveness(request: Request) -> LivenessResponse:
-    now = datetime.now(UTC)
+    now = utcnow()
     build_info = request.app.state.build_info
     startup_time = request.app.state.startup_time
     return LivenessResponse(status="ok", version=build_info.version, timestamp_utc=isoformat_utc(now), uptime_seconds=(now - startup_time).total_seconds())
 
 @router.get("/readyz", summary="Readiness probe")
 async def readiness(request: Request, db: Annotated[Session, Depends(get_db)]) -> JSONResponse:
-    now = datetime.now(UTC)
+    now = utcnow()
     checks: dict[str, str] = {}
     try:
         db.execute(text("SELECT 1"))

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from datetime import UTC, datetime
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
@@ -28,6 +27,7 @@ from src.presentation.api.routers import (
 )
 from src.presentation.api.routers import dependencies as dep_router
 from src.presentation.middleware.logging_middleware import RequestLoggingMiddleware
+from src.shared.clock import utcnow
 
 
 def create_app(database_url: str | None = None, db_path: str | None = None) -> FastAPI:
@@ -49,7 +49,7 @@ def create_app(database_url: str | None = None, db_path: str | None = None) -> F
         lifespan=lifespan,
     )
     app.state.build_info = build_info
-    app.state.startup_time = datetime.now(UTC)
+    app.state.startup_time = utcnow()  # ops.py が now との差を取るので形を揃える
 
     @app.exception_handler(NotFoundError)
     async def not_found_handler(request: Request, exc: NotFoundError) -> JSONResponse:

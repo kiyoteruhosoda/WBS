@@ -220,8 +220,12 @@ presentation/web/translations/
 
 ### 時刻の契約
 
-1. **「今」は `src/shared/clock.utcnow()`（aware な UTC）で取る。**
+1. **「今」は `src/shared/clock.utcnow()` で取る。返るのは naive な UTC**
+   （＝保存値と同じ形）。DB の `DATETIME` はタイムゾーンを持たず書いた値は naive で
+   返るので、生成側だけ aware にすると「入れたばかりの値は aware・読み直した値は
+   naive」となり、比べた瞬間に `TypeError` で落ちる。
    `datetime.now()` / `datetime.utcnow()` / `date.today()` は書かない。
+   **`datetime.now(UTC)` も `clock.py` の外では呼ばない**（生成口を 1 つに保つ）。
    `tests/unit/test_time_contract.py` が AST で検査していて、書くと落ちる。
 2. **「今日」は利用者のタイムゾーンで出す** — `src/application/user_clock.UserClock.today(user_id)`。
    利用者ごとの `users.timezone` を見る。サーバ（UTC）の日付を使うと、JST の
