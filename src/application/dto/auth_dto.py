@@ -7,6 +7,9 @@ from datetime import datetime
 @dataclass(frozen=True)
 class StartedLoginDTO:
     authorization_url: str
+    # コールバックが「この往復を始めたブラウザ」から戻ってきたことを確かめるための
+    # 合言葉。Presentation 層が短命な Cookie に載せ、コールバックで突き合わせる。
+    browser_binding: str
 
 
 @dataclass(frozen=True)

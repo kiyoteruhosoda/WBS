@@ -15,6 +15,8 @@ from src.presentation.api.dependencies import get_identity_provider
 
 ISSUER = "https://idp.example.com/realms/wbs"
 COOKIE = "wbs_session"
+# 認可コードフロー 1 往復のあいだだけ生きる、ブラウザ結び付け用の Cookie
+STATE_COOKIE = "sso_login_state"
 
 OIDC_ENV = {
     "AUTH_MODE": "oidc",
@@ -234,6 +236,8 @@ def test_signing_in_twice_keeps_the_same_account(sso_client) -> None:
 
 # ── コールバックの失敗 ─────────────────────────────────────────────────────
 def test_an_unknown_state_goes_back_to_the_login_page(sso_client) -> None:
+    # ブラウザ結び付けは通し、サーバ側に覚えのない state であることだけを見る
+    sso_client.cookies.set(STATE_COOKIE, "never-issued")
     response = sso_client.get(
         "/api/auth/callback?code=taro-code&state=never-issued", follow_redirects=False
     )
@@ -242,11 +246,45 @@ def test_an_unknown_state_goes_back_to_the_login_page(sso_client) -> None:
     assert COOKIE not in response.headers.get("set-cookie", "")
 
 
+def test_a_callback_from_another_browser_is_refused(sso_client) -> None:
+    """ログイン CSRF。攻撃者が自分で始めた往復のコールバックを他人に踏ませる手口。
+
+    state はサーバに実在するので、それだけでは止まらない。始めたブラウザにしか
+    無い Cookie と突き合わせて初めて弾ける。
+    """
+    started = sso_client.get("/api/auth/login", follow_redirects=False)
+    state = started.headers["location"].split("state=")[1].split("&")[0]
+    sso_client.cookies.delete(STATE_COOKIE)  # 別のブラウザ（＝Cookie を持たない）から
+
+    response = sso_client.get(
+        f"/api/auth/callback?code=taro-code&state={state}", follow_redirects=False
+    )
+    assert response.headers["location"].startswith("/login?error=invalid_request")
+    assert COOKIE not in response.headers.get("set-cookie", "")
+    assert sso_client.get("/api/tasks").status_code == 401
+
+
+def test_a_login_started_in_another_tab_still_completes(sso_client) -> None:
+    # 別タブで 2 回目のログインを始めても、先に始めた往復が締め出されない
+    first = sso_client.get("/api/auth/login", follow_redirects=False)
+    first_state = first.headers["location"].split("state=")[1].split("&")[0]
+    sso_client.get("/api/auth/login", follow_redirects=False)
+
+    response = sso_client.get(
+        f"/api/auth/callback?code=taro-code&state={first_state}", follow_redirects=False
+    )
+    assert response.headers["location"] == "/"
+    assert sso_client.get("/api/tasks").status_code == 200
+
+
 def test_a_state_cannot_be_used_twice(sso_client) -> None:
     started = sso_client.get("/api/auth/login", follow_redirects=False)
     state = started.headers["location"].split("state=")[1].split("&")[0]
     sso_client.get(f"/api/auth/callback?code=taro-code&state={state}", follow_redirects=False)
 
+    # 一時 Cookie は 1 回目で消えている。サーバ側でも使い切られていることを見たいので、
+    # Cookie は戻したうえで再送する。
+    sso_client.cookies.set(STATE_COOKIE, state)
     replay = sso_client.get(
         f"/api/auth/callback?code=taro-code&state={state}", follow_redirects=False
     )

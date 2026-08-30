@@ -37,8 +37,15 @@ class SqlAlchemyLoginTransactionRepository(LoginTransactionRepository):
             return None
         entity = self._to_entity(model)
         # 取り出したその場で消す。同じ state（＝同じ認可コード）での再送を通さない。
-        self._session.delete(model)
+        # 消す側を条件付き DELETE にして、削れたのが自分だったときだけ返す。読んでから
+        # 消すまでのあいだに別のリクエストが同じ行を取っていると、そちらでも 1 回きりの
+        # はずの往復が成立してしまう（コールバックの二重送信で起こり得る）。
+        deleted = self._session.execute(
+            delete(LoginTransactionModel).where(LoginTransactionModel.id == model.id)
+        )
         self._session.commit()
+        if not deleted.rowcount:
+            return None
         return entity
 
     def delete_expired(self, now: datetime) -> int:

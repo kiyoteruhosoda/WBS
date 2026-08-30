@@ -10,6 +10,9 @@
   `nonce` / `azp` も検査する。判断の背景は `docs/decisions/ADR-0002-oidc-sso.md`。
 - ログイン後は不透明なセッショントークンを HttpOnly Cookie で保持する（DB には SHA-256
   ハッシュのみ）。利用停止（`users.is_active=false`）は次のリクエストから即座に効く。
+- ログインの往復中だけ生きる HttpOnly Cookie（`sso_login_state`）で `state` をブラウザに
+  結び付ける。攻撃者が自分で始めたログインのコールバックを他人に踏ませて、他人のブラウザを
+  自分のアカウントに繋ぐ手口（ログイン CSRF）を止める。
 - 全 API が認証済み利用者に紐づくようになった（従来は `USER_ID = 1` 固定）。タスク・
   カテゴリ・マイルストーン・作業ログ・Inbox・設定が利用者ごとに分かれる。
 - ID 指定の取得・更新・削除に持ち主の確認を追加（`src/application/use_cases/ownership.py`）。

@@ -16,6 +16,9 @@ from src.domain.value_objects.provisioning_policy import ProvisioningPolicy
 DEFAULT_COOKIE_NAME = "wbs_session"
 DEFAULT_SCOPES = "openid email profile"
 SINGLE_USER_ID = 1
+# Set-Cookie の SameSite に書ける値。ここで弾かないと、誤記に気づくのが
+# 「ログインの最後で Cookie を載せるとき」になり、500 だけが見える。
+ALLOWED_SAMESITE = ("lax", "strict", "none")
 
 
 class AuthMode(enum.StrEnum):
@@ -75,6 +78,19 @@ def _env_domains(key: str) -> tuple[str, ...]:
     return tuple(d.strip().lower() for d in raw.split(",") if d.strip())
 
 
+def _env_samesite(key: str, *, cookie_secure: bool) -> str:
+    value = os.getenv(key, "lax").strip().lower() or "lax"
+    if value not in ALLOWED_SAMESITE:
+        raise AuthConfigurationError(
+            f"{key} must be one of: {', '.join(ALLOWED_SAMESITE)} (got {value!r})"
+        )
+    if value == "none" and not cookie_secure:
+        # SameSite=None の Cookie は Secure が無いとブラウザに捨てられる。
+        # 起動はするがログインだけが通らない、という一番分かりにくい壊れ方になる。
+        raise AuthConfigurationError(f"{key}=none requires AUTH_COOKIE_SECURE=true")
+    return value
+
+
 def load_auth_settings() -> AuthSettings:
     raw_mode = os.getenv("AUTH_MODE", AuthMode.SINGLE_USER.value).strip().lower()
     try:
@@ -108,6 +124,7 @@ def load_auth_settings() -> AuthSettings:
                 f"OIDC_ISSUER must use https (got {issuer!r}); http is only allowed for localhost"
             )
 
+    cookie_secure = _env_bool("AUTH_COOKIE_SECURE", True)
     return AuthSettings(
         mode=mode,
         issuer=issuer,
@@ -120,8 +137,8 @@ def load_auth_settings() -> AuthSettings:
         http_timeout_seconds=_env_float("OIDC_HTTP_TIMEOUT_SECONDS", 10.0),
         session_ttl=timedelta(hours=_env_float("AUTH_SESSION_TTL_HOURS", 12.0)),
         cookie_name=os.getenv("AUTH_COOKIE_NAME", DEFAULT_COOKIE_NAME).strip() or DEFAULT_COOKIE_NAME,
-        cookie_secure=_env_bool("AUTH_COOKIE_SECURE", True),
-        cookie_samesite=os.getenv("AUTH_COOKIE_SAMESITE", "lax").strip().lower() or "lax",
+        cookie_secure=cookie_secure,
+        cookie_samesite=_env_samesite("AUTH_COOKIE_SAMESITE", cookie_secure=cookie_secure),
         policy=ProvisioningPolicy(
             auto_provision=_env_bool("OIDC_AUTO_PROVISION", True),
             allowed_email_domains=_env_domains("OIDC_ALLOWED_EMAIL_DOMAINS"),

@@ -62,8 +62,10 @@ class SessionAuthenticationUseCases:
             # 利用停止は「次のログインから」ではなく即時に効かせる
             self._sessions.delete_by_token(token)
             raise AccessDeniedError(f"User account is deactivated: {user.email}")
-        session.touch(now)
-        self._sessions.update(session)
+        # 最終アクセス時刻は分解能ぶんだけ間引いて書く（毎リクエストの書き込みを避ける）
+        if session.needs_touch(now):
+            session.touch(now)
+            self._sessions.update(session)
         return _to_dto(user)
 
     def revoke(self, *, token: str | None) -> None:
@@ -118,7 +120,13 @@ class SsoLoginUseCases:
         request = self._idp.build_authorization_request(
             state=state, nonce=nonce, code_verifier=code_verifier
         )
-        return StartedLoginDTO(authorization_url=request.authorization_url)
+        # ``browser_binding`` は Presentation 層が短命な Cookie に載せ、コールバックで
+        # 突き合わせる。DB に state があるだけだと、攻撃者が自分で始めたログインの
+        # コールバック URL を被害者に踏ませて「攻撃者としてログイン済み」の状態に
+        # できてしまう（ログイン CSRF）。
+        return StartedLoginDTO(
+            authorization_url=request.authorization_url, browser_binding=state
+        )
 
     # ── 2. コールバック ───────────────────────────────────────────────
     def complete_login(self, *, code: str, state: str, now: datetime) -> CompletedLoginDTO:

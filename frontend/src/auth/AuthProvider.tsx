@@ -60,11 +60,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     staleTime: 5 * 60_000,
   });
 
-  // どの画面の通信で 401 が出ても、ログイン画面へ戻す
+  // どの画面の通信で 401 が出ても、ログイン画面へ戻す。
+  // ただし「まだ一度もログインしていない」ときの 401 は期限切れではないので、
+  // 本人が判明したあと（＝セッションがあった）に受けた 401 だけを期限切れとして扱う。
+  const hadSession = Boolean(user);
   useEffect(() => {
-    setUnauthorizedHandler(() => setSessionExpired(true));
+    setUnauthorizedHandler(() => {
+      if (hadSession) setSessionExpired(true);
+    });
     return () => setUnauthorizedHandler(null);
-  }, []);
+  }, [hadSession]);
 
   const signOut = useCallback(async () => {
     const result = await requestLogout();

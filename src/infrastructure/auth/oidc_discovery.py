@@ -83,8 +83,11 @@ class OidcDiscoveryClient:
         except ValueError as exc:
             raise AuthenticationError("Identity provider returned a malformed discovery document") from exc
 
-        advertised_issuer = str(payload.get("issuer", "")).rstrip("/")
-        if advertised_issuer != self._issuer:
+        # 突き合わせは末尾の `/` を無視するが、保持するのは IdP が名乗ったそのままの
+        # 文字列。ID トークンの `iss` は正規化されずに届くので、ここで削ると
+        # 末尾に `/` を含む発行者（Auth0 など）で必ず検証に落ちる。
+        advertised_issuer = str(payload.get("issuer", ""))
+        if advertised_issuer.rstrip("/") != self._issuer:
             # ここが食い違うと、後段の ID トークン検証で使う iss がどちらか分からなくなる
             raise AuthenticationError(
                 f"Issuer mismatch: configured {self._issuer!r}, discovery says {advertised_issuer!r}"

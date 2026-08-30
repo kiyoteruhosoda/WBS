@@ -9,6 +9,11 @@ from datetime import datetime, timedelta
 
 DEFAULT_SESSION_TTL = timedelta(hours=12)
 
+# ``last_seen_at`` をどれだけ粗く記録するか。毎リクエストで書くと、読むだけの API が
+# ことごとく書き込みトランザクションになり、SQLite では書き込みロックの取り合いになる。
+# この値は「最終アクセス時刻の分解能」であって、セッションの寿命とは関係しない。
+LAST_SEEN_RESOLUTION = timedelta(minutes=5)
+
 
 def hash_session_token(token: str) -> str:
     """セッショントークンの保存形。
@@ -51,6 +56,10 @@ class AuthSession:
 
     def matches(self, token: str) -> bool:
         return hmac.compare_digest(self.token_hash, hash_session_token(token))
+
+    def needs_touch(self, now: datetime, resolution: timedelta = LAST_SEEN_RESOLUTION) -> bool:
+        """``last_seen_at`` を書き直す価値があるか（記録の分解能ぶんだけ経ったか）。"""
+        return now - self.last_seen_at >= resolution
 
     def touch(self, now: datetime) -> None:
         self.last_seen_at = now

@@ -22,6 +22,21 @@ from src.infrastructure.auth.pkce import CODE_CHALLENGE_METHOD, code_challenge_f
 
 JWKS_CACHE_SECONDS = 300
 
+# JSON の真値として認める文字列。`email_verified` を素の ``bool()`` に通すと
+# ``bool("false")`` が True になり、「検証済みメールしか通さない」規則が
+# 文字列で真偽値を返す IdP でだけ素通しになる。
+_TRUE_STRINGS = {"true", "1", "yes"}
+
+
+def _as_bool(value: object, *, default: bool = False) -> bool:
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() in _TRUE_STRINGS
+    return bool(value)
+
 
 class OidcIdentityProvider(IdentityProvider):
     def __init__(
@@ -71,7 +86,7 @@ class OidcIdentityProvider(IdentityProvider):
 
         claims = self._verify_id_token(id_token, nonce=nonce)
         email = claims.get("email")
-        email_verified = bool(claims.get("email_verified", False))
+        email_verified = _as_bool(claims.get("email_verified"))
         display_name = claims.get("name")
         preferred_username = claims.get("preferred_username")
 
@@ -82,7 +97,7 @@ class OidcIdentityProvider(IdentityProvider):
             if userinfo.get("sub") != claims["sub"]:
                 raise AuthenticationError("userinfo response does not match the ID token subject")
             email = userinfo.get("email")
-            email_verified = bool(userinfo.get("email_verified", email_verified))
+            email_verified = _as_bool(userinfo.get("email_verified"), default=email_verified)
             display_name = display_name or userinfo.get("name")
             preferred_username = preferred_username or userinfo.get("preferred_username")
 
