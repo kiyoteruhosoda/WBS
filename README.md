@@ -91,6 +91,24 @@ OIDC_ALLOWED_EMAIL_DOMAINS=example.com  # テナント共用の IdP では必ず
 `docker/deploy/docker-compose.yml` の両方に足してください（`tests/unit/scripts/test_auth_env_passthrough.py`
 が食い違いを検出します）。
 
+### IdP の前段に WAF / CDN がある場合
+
+このアプリが IdP へ出す HTTP には `User-Agent: wbs-oidc/1.0` を必ず付けています
+（`src/infrastructure/auth/idp_http.py`）。ライブラリ既定の UA を自動化ツールとして
+弾く WAF があるためです。
+
+⚠ **JWKS だけ経路が違います。** ディスカバリ・トークン・userinfo は `httpx` ですが、
+JWKS は PyJWT の `PyJWKClient` が **`urllib`** で取りに行きます。JWKS だけが弾かれると
+**トークン交換までは成功したまま ID トークンの署名検証で落ちる**ので、画面には
+「ログインに失敗しました」としか出ず、サーバのログにも例外が残りません
+（コールバックが握ってログイン画面へ戻すため）。切り分けは IdP 側 / WAF 側のログか、
+次で確認します。
+
+```bash
+# api コンテナの中から。403 なら UA が弾かれている
+python -c "import urllib.request; print(urllib.request.urlopen('<jwks_uri>').status)"
+```
+
 ### 覚えておくこと
 
 - 利用者の同一性は IdP の `(iss, sub)` で決まります。IdP 側でメールアドレスが
