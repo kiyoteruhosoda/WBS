@@ -239,6 +239,16 @@ WEB_HOST_PORT=$WEB_HOST_PORT
 # ADMIN_EMAIL=local@example.com
 # ADMIN_PASSWORD=change-me-strong
 
+# --- 認証 / SSO ---
+# 既定の single_user では認証がかからない。外部公開する場合は oidc にして
+# 下記を設定する（詳細は README の「SSO（IdP 連携）」）。
+# AUTH_MODE=oidc
+# OIDC_ISSUER=https://idp.example.com/realms/wbs
+# OIDC_CLIENT_ID=wbs
+# OIDC_CLIENT_SECRET=change-me
+# OIDC_REDIRECT_URI=https://wbs.example.com/api/auth/callback
+# OIDC_ALLOWED_EMAIL_DOMAINS=example.com
+
 # --- 任意 ---
 # デプロイ完了判定に使うヘルスチェック URL。
 # HEALTH_URL=http://127.0.0.1:$WEB_HOST_PORT/api/health

@@ -184,6 +184,16 @@ const ja = {
   'milestone.deleteTitle': 'マイルストーンの削除',
   'milestone.deleteConfirm': '「{name}」を削除しますか？この操作は取り消せません。',
   'milestone.deleteError': 'マイルストーンの削除に失敗しました',
+
+  'login.subtitle': 'シングルサインオンでログインします',
+  'login.signIn': 'ログイン',
+  'login.signInWith': '{provider} でログイン',
+  'login.sessionExpired': 'セッションの有効期限が切れました。もう一度ログインしてください。',
+  'login.errorAccessDenied': 'このアカウントではログインできません。管理者に問い合わせてください。',
+  'login.errorFailed': 'ログインに失敗しました。もう一度お試しください。',
+  'login.errorGeneric': 'ログインを完了できませんでした。',
+
+  'account.signOut': 'ログアウト',
 };
 
 const en: Record<TranslationKey, string> = {
@@ -368,6 +378,16 @@ const en: Record<TranslationKey, string> = {
   'milestone.deleteTitle': 'Delete Milestone',
   'milestone.deleteConfirm': 'Delete "{name}"? This action cannot be undone.',
   'milestone.deleteError': 'Failed to delete milestone',
+
+  'login.subtitle': 'Sign in with single sign-on',
+  'login.signIn': 'Sign in',
+  'login.signInWith': 'Sign in with {provider}',
+  'login.sessionExpired': 'Your session has expired. Please sign in again.',
+  'login.errorAccessDenied': 'This account cannot sign in. Please contact your administrator.',
+  'login.errorFailed': 'Sign-in failed. Please try again.',
+  'login.errorGeneric': 'Could not complete sign-in.',
+
+  'account.signOut': 'Sign out',
 };
 
 export type TranslationKey = keyof typeof ja;

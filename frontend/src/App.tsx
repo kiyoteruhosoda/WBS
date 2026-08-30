@@ -1,5 +1,5 @@
 import React from 'react';
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ThemeProvider } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
@@ -16,6 +16,7 @@ import CategoriesPage from './pages/CategoriesPage';
 import MilestonesPage from './pages/MilestonesPage';
 import Settings from './pages/Settings';
 import { I18nProvider } from './i18n';
+import { AuthProvider } from './auth/AuthProvider';
 
 const queryClient = new QueryClient({ defaultOptions: { queries: { retry: 1, staleTime: 30_000 } } });
 
@@ -23,8 +24,9 @@ const App: React.FC = () => (
   <QueryClientProvider client={queryClient}>
     <ThemeProvider theme={theme}>
       <CssBaseline />
-      <I18nProvider>
       <BrowserRouter>
+      <AuthProvider>
+      <I18nProvider>
         <Routes>
           <Route path="/" element={<Layout />}>
             <Route index element={<Dashboard />} />
@@ -38,10 +40,13 @@ const App: React.FC = () => (
             <Route path="categories" element={<CategoriesPage />} />
             <Route path="milestones" element={<MilestonesPage />} />
             <Route path="settings" element={<Settings />} />
+            {/* ログイン済みで /login に来た場合（コールバック後の戻り先など）は最初の画面へ */}
+            <Route path="login" element={<Navigate to="/" replace />} />
           </Route>
         </Routes>
-      </BrowserRouter>
       </I18nProvider>
+      </AuthProvider>
+      </BrowserRouter>
     </ThemeProvider>
   </QueryClientProvider>
 );

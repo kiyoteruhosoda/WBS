@@ -99,3 +99,43 @@ class InboxItemModel(Base):
     deleted_at: Mapped[datetime | None] = mapped_column(sa.DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(sa.DateTime, default=utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(sa.DateTime, default=utcnow, onupdate=utcnow, nullable=False)
+
+# ── SSO（OIDC）─────────────────────────────────────────────────────────────
+class FederatedIdentityModel(Base):
+    """IdP 上の本人（iss + sub）と利用者の対応。
+
+    利用者の突き合わせにメールを使わないのは、IdP 側で改姓・部署異動に伴う
+    アドレス変更があると別人になってしまうため。1 人が複数 IdP に属せるよう
+    users とは 1 対多にしている。
+    """
+
+    __tablename__ = "federated_identities"
+    __table_args__ = (sa.UniqueConstraint("issuer", "subject", name="uq_federated_identity"),)
+    id: Mapped[int] = mapped_column(BigIntPK, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(sa.BigInteger().with_variant(sa.Integer(), "sqlite"), sa.ForeignKey("users.id"), nullable=False, index=True)
+    issuer: Mapped[str] = mapped_column(sa.String(255), nullable=False)
+    subject: Mapped[str] = mapped_column(sa.String(255), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(sa.DateTime, default=utcnow, nullable=False)
+
+class AuthSessionModel(Base):
+    """ログイン中のセッション。生のトークンは持たずハッシュだけを置く。"""
+
+    __tablename__ = "auth_sessions"
+    id: Mapped[int] = mapped_column(BigIntPK, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(sa.BigInteger().with_variant(sa.Integer(), "sqlite"), sa.ForeignKey("users.id"), nullable=False, index=True)
+    token_hash: Mapped[str] = mapped_column(sa.String(64), unique=True, nullable=False)
+    issued_at: Mapped[datetime] = mapped_column(sa.DateTime, nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(sa.DateTime, nullable=False, index=True)
+    last_seen_at: Mapped[datetime] = mapped_column(sa.DateTime, nullable=False)
+
+class LoginTransactionModel(Base):
+    """認可コードフロー 1 往復ぶんの一時データ（state / nonce / PKCE）。"""
+
+    __tablename__ = "auth_login_transactions"
+    id: Mapped[int] = mapped_column(BigIntPK, primary_key=True, autoincrement=True)
+    state: Mapped[str] = mapped_column(sa.String(128), unique=True, nullable=False)
+    nonce: Mapped[str] = mapped_column(sa.String(128), nullable=False)
+    code_verifier: Mapped[str] = mapped_column(sa.String(128), nullable=False)
+    redirect_path: Mapped[str] = mapped_column(sa.String(512), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(sa.DateTime, nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(sa.DateTime, nullable=False, index=True)

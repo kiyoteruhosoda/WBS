@@ -3,8 +3,8 @@ from __future__ import annotations
 from sqlalchemy.orm import Session
 
 from src.application.dto.inbox_dto import ConvertInboxItemDTO, CreateInboxItemDTO
+from src.application.use_cases.ownership import owned_by
 from src.domain.entities.inbox_item import InboxItem
-from src.domain.exceptions import NotFoundError
 from src.infrastructure.repositories.inbox_repository import SqlAlchemyInboxRepository
 from src.infrastructure.repositories.task_repository import SqlAlchemyTaskRepository
 from src.shared.clock import utcnow
@@ -19,11 +19,8 @@ class InboxUseCases:
     def list_items(self, user_id: int) -> list[InboxItem]:
         return self._repo.find_all(user_id)
 
-    def get_item(self, item_id: int) -> InboxItem:
-        item = self._repo.find_by_id(item_id)
-        if item is None:
-            raise NotFoundError("InboxItem", item_id)
-        return item
+    def get_item(self, item_id: int, user_id: int) -> InboxItem:
+        return self._owned(item_id, user_id)
 
     def create_item(self, dto: CreateInboxItemDTO) -> InboxItem:
         item = InboxItem(id=None, user_id=dto.user_id, title=dto.title, memo=dto.memo)
@@ -31,17 +28,13 @@ class InboxUseCases:
         self._session.commit()
         return saved
 
-    def delete_item(self, item_id: int) -> None:
-        item = self._repo.find_by_id(item_id)
-        if item is None:
-            raise NotFoundError("InboxItem", item_id)
+    def delete_item(self, item_id: int, user_id: int) -> None:
+        self._owned(item_id, user_id)
         self._repo.soft_delete(item_id)
         self._session.commit()
 
-    def convert_to_task(self, item_id: int, dto: ConvertInboxItemDTO) -> dict:
-        item = self._repo.find_by_id(item_id)
-        if item is None:
-            raise NotFoundError("InboxItem", item_id)
+    def convert_to_task(self, item_id: int, user_id: int, dto: ConvertInboxItemDTO) -> dict:
+        item = self._owned(item_id, user_id)
         from src.domain.entities.task import Task
         task = Task(
             id=None,
@@ -63,3 +56,9 @@ class InboxUseCases:
         from src.application.use_cases.task_use_cases import TaskUseCases
         uc = TaskUseCases(self._session)
         return uc._enrich(saved_task)
+
+    def _owned(self, item_id: int, user_id: int) -> InboxItem:
+        return owned_by(
+            self._repo.find_by_id(item_id), user_id,
+            resource="InboxItem", resource_id=item_id,
+        )

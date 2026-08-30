@@ -4,7 +4,7 @@ from fastapi import APIRouter, status
 
 from src.application.dto.task_dto import CreateTaskDTO, UpdateTaskDTO
 from src.application.use_cases.task_use_cases import TaskUseCases
-from src.presentation.api.dependencies import DbDep
+from src.presentation.api.dependencies import CurrentUserDep, DbDep
 from src.presentation.api.schemas.task_schemas import (
     TaskCreateRequest,
     TaskResponse,
@@ -12,7 +12,6 @@ from src.presentation.api.schemas.task_schemas import (
 )
 
 router = APIRouter(prefix="/tasks", tags=["tasks"])
-USER_ID = 1
 
 
 def get_use_case(db: DbDep) -> TaskUseCases:
@@ -22,6 +21,7 @@ def get_use_case(db: DbDep) -> TaskUseCases:
 @router.get("", response_model=list[TaskResponse])
 def list_tasks(
     db: DbDep,
+    current_user: CurrentUserDep,
     status_filter: str | None = None,
     category_id: int | None = None,
     milestone_id: int | None = None,
@@ -37,14 +37,14 @@ def list_tasks(
         filters["milestone_id"] = milestone_id
     if parent_task_id is not None:
         filters["parent_task_id"] = parent_task_id
-    return [TaskResponse(**t) for t in uc.list_tasks(USER_ID, filters)]
+    return [TaskResponse(**t) for t in uc.list_tasks(current_user.user_id, filters)]
 
 
 @router.post("", response_model=TaskResponse, status_code=status.HTTP_201_CREATED)
-def create_task(body: TaskCreateRequest, db: DbDep) -> TaskResponse:
+def create_task(body: TaskCreateRequest, db: DbDep, current_user: CurrentUserDep) -> TaskResponse:
     uc = get_use_case(db)
     dto = CreateTaskDTO(
-        user_id=USER_ID,
+        user_id=current_user.user_id,
         title=body.title,
         category_id=body.category_id,
         priority=body.priority,
@@ -61,13 +61,13 @@ def create_task(body: TaskCreateRequest, db: DbDep) -> TaskResponse:
 
 
 @router.get("/{task_id}", response_model=TaskResponse)
-def get_task(task_id: int, db: DbDep) -> TaskResponse:
+def get_task(task_id: int, db: DbDep, current_user: CurrentUserDep) -> TaskResponse:
     uc = get_use_case(db)
-    return TaskResponse(**uc.get_task(task_id, USER_ID))
+    return TaskResponse(**uc.get_task(task_id, current_user.user_id))
 
 
 @router.put("/{task_id}", response_model=TaskResponse)
-def update_task(task_id: int, body: TaskUpdateRequest, db: DbDep) -> TaskResponse:
+def update_task(task_id: int, body: TaskUpdateRequest, db: DbDep, current_user: CurrentUserDep) -> TaskResponse:
     uc = get_use_case(db)
     dto = UpdateTaskDTO(
         title=body.title,
@@ -82,15 +82,15 @@ def update_task(task_id: int, body: TaskUpdateRequest, db: DbDep) -> TaskRespons
         parent_task_id=body.parent_task_id,
         milestone_id=body.milestone_id,
     )
-    return TaskResponse(**uc.update_task(task_id, USER_ID, dto))
+    return TaskResponse(**uc.update_task(task_id, current_user.user_id, dto))
 
 
 @router.patch("/{task_id}", response_model=TaskResponse)
-def patch_task(task_id: int, body: TaskUpdateRequest, db: DbDep) -> TaskResponse:
-    return update_task(task_id, body, db)
+def patch_task(task_id: int, body: TaskUpdateRequest, db: DbDep, current_user: CurrentUserDep) -> TaskResponse:
+    return update_task(task_id, body, db, current_user)
 
 
 @router.delete("/{task_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_task(task_id: int, db: DbDep) -> None:
+def delete_task(task_id: int, db: DbDep, current_user: CurrentUserDep) -> None:
     uc = get_use_case(db)
-    uc.delete_task(task_id, USER_ID)
+    uc.delete_task(task_id, current_user.user_id)
