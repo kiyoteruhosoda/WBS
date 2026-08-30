@@ -17,6 +17,7 @@ from src.domain.exceptions import AuthenticationError
 from src.domain.value_objects.federated_identity import FederatedIdentity
 from src.domain.value_objects.identity_claims import IdentityClaims
 from src.infrastructure.auth.auth_settings import AuthSettings
+from src.infrastructure.auth.idp_http import IDP_HEADERS
 from src.infrastructure.auth.oidc_discovery import OidcDiscoveryClient
 from src.infrastructure.auth.pkce import CODE_CHALLENGE_METHOD, code_challenge_from_verifier
 
@@ -146,7 +147,7 @@ class OidcIdentityProvider(IdentityProvider):
                 discovery.token_endpoint,
                 data=data,
                 auth=auth,
-                headers={"Accept": "application/json"},
+                headers={"Accept": "application/json", **IDP_HEADERS},
                 timeout=self._settings.http_timeout_seconds,
             )
         except httpx.HTTPError as exc:
@@ -192,6 +193,10 @@ class OidcIdentityProvider(IdentityProvider):
                 cache_keys=True,
                 lifespan=JWKS_CACHE_SECONDS,
                 timeout=self._settings.http_timeout_seconds,
+                # ⚠ ここだけ urllib 経由。既定の UA (`Python-urllib/3.x`) は WAF に
+                #   弾かれることがあり、そうなると**トークン交換までは成功したまま**
+                #   署名検証だけが落ちる。詳細は idp_http.py。
+                headers=IDP_HEADERS,
             )
         return self._jwks_client
 
@@ -199,7 +204,11 @@ class OidcIdentityProvider(IdentityProvider):
         try:
             response = httpx.get(
                 userinfo_endpoint,
-                headers={"Authorization": f"Bearer {access_token}", "Accept": "application/json"},
+                headers={
+                    "Authorization": f"Bearer {access_token}",
+                    "Accept": "application/json",
+                    **IDP_HEADERS,
+                },
                 timeout=self._settings.http_timeout_seconds,
             )
             response.raise_for_status()

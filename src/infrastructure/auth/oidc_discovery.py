@@ -8,6 +8,7 @@ from dataclasses import dataclass
 import httpx
 
 from src.domain.exceptions import AuthenticationError
+from src.infrastructure.auth.idp_http import IDP_HEADERS
 
 # 署名アルゴリズムの許可リスト。`none` と対称鍵（HS*）は入れない。
 # JWKS の公開鍵で検証する前提なので、対称鍵を許すと「公開鍵を鍵として HS256 を
@@ -75,7 +76,7 @@ class OidcDiscoveryClient:
 
     def _fetch(self) -> OidcDiscovery:
         try:
-            response = httpx.get(self.well_known_url, timeout=self._timeout)
+            response = httpx.get(self.well_known_url, timeout=self._timeout, headers=IDP_HEADERS)
             response.raise_for_status()
             payload = response.json()
         except httpx.HTTPError as exc:
