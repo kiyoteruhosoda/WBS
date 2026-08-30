@@ -79,6 +79,18 @@ OIDC_ALLOWED_EMAIL_DOMAINS=example.com  # テナント共用の IdP では必ず
 利用者は初回ログイン時に自動で作られます。あらかじめ登録した人だけを通したい場合は
 `OIDC_AUTO_PROVISION=false` にしてください。
 
+### 既存のデプロイに後から入れる場合
+
+`scripts/deploy.sh` が `.env` テンプレートを作るのは**配置先に `.env` が無いときだけ**です。
+すでに動いている stg / prod では既存の `.env` はそのまま残るため、上記のキーを手で
+追記してから再デプロイしてください。追記せずに再デプロイすると、認証は掛からないまま
+（`AUTH_MODE=single_user`）で起動します。
+
+なお、`.env` に書いたキーは compose の `environment:` に並んでいるものだけがコンテナへ
+届きます。設定キーを増やしたときは `docker-compose.yml` と
+`docker/deploy/docker-compose.yml` の両方に足してください（`tests/unit/scripts/test_auth_env_passthrough.py`
+が食い違いを検出します）。
+
 ### 覚えておくこと
 
 - 利用者の同一性は IdP の `(iss, sub)` で決まります。IdP 側でメールアドレスが

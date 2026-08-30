@@ -4,6 +4,10 @@
 
 ## 2026-08-30
 
+- デプロイ先用の compose（`docker/deploy/docker-compose.yml`）に認証 / SSO の環境変数を通した。
+  並べ忘れていたため、ホストの `.env` に `AUTH_MODE=oidc` と書いてもコンテナへ届かず、
+  認証が掛からないまま起動していた。設定が読むキーと compose が渡すキーの食い違いは
+  `tests/unit/scripts/test_auth_env_passthrough.py` が検出する。
 - **IdP との SSO 連携を追加**（OIDC 認可コードフロー + PKCE）。`AUTH_MODE=oidc` で有効化し、
   Keycloak / Microsoft Entra ID / Google Workspace など、ディスカバリ文書を出す IdP に
   設定だけで繋がる。ID トークンは JWKS の公開鍵で署名検証し、`iss` / `aud` / `exp` /
