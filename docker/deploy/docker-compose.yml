@@ -11,6 +11,26 @@ services:
       DATABASE_URL: ${DATABASE_URL:-sqlite:////app/data/app.db}
       ADMIN_EMAIL: ${ADMIN_EMAIL:-local@example.com}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-local-dev-password}
+      # 認証 / SSO。ここに並べていないキーは .env に書いてもコンテナへ渡らない
+      # ＝ AUTH_MODE=oidc と書いたつもりで認証なしのまま起動する、という
+      # 一番気づきにくい壊れ方をするので、増やしたら必ずここにも足す。
+      # 各キーの意味は README「SSO（IdP 連携）」と .env.example を参照。
+      AUTH_MODE: ${AUTH_MODE:-single_user}
+      OIDC_ISSUER: ${OIDC_ISSUER:-}
+      OIDC_CLIENT_ID: ${OIDC_CLIENT_ID:-}
+      OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET:-}
+      OIDC_REDIRECT_URI: ${OIDC_REDIRECT_URI:-}
+      OIDC_PROVIDER_NAME: ${OIDC_PROVIDER_NAME:-SSO}
+      OIDC_SCOPES: ${OIDC_SCOPES:-openid email profile}
+      OIDC_HTTP_TIMEOUT_SECONDS: ${OIDC_HTTP_TIMEOUT_SECONDS:-10}
+      OIDC_AUTO_PROVISION: ${OIDC_AUTO_PROVISION:-true}
+      OIDC_ALLOWED_EMAIL_DOMAINS: ${OIDC_ALLOWED_EMAIL_DOMAINS:-}
+      OIDC_REQUIRE_VERIFIED_EMAIL: ${OIDC_REQUIRE_VERIFIED_EMAIL:-true}
+      AUTH_SESSION_TTL_HOURS: ${AUTH_SESSION_TTL_HOURS:-12}
+      AUTH_COOKIE_NAME: ${AUTH_COOKIE_NAME:-wbs_session}
+      AUTH_COOKIE_SECURE: ${AUTH_COOKIE_SECURE:-true}
+      AUTH_COOKIE_SAMESITE: ${AUTH_COOKIE_SAMESITE:-lax}
+      AUTH_POST_LOGOUT_REDIRECT_URI: ${AUTH_POST_LOGOUT_REDIRECT_URI:-}
     volumes:
       - ${HOST_DATA_ROOT}/data:/app/data
     # API はネットワーク内部からのみ到達可能にする。外部公開は web (nginx) が
