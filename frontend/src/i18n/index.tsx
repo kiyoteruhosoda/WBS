@@ -19,9 +19,24 @@ interface I18nContextValue {
 
 const isLang = (v: string | null): v is Lang => v === 'ja' || v === 'en';
 
-const storedLang = (): Lang => {
+export const storedLang = (): Lang => {
   const v = localStorage.getItem(LANG_STORAGE_KEY);
   return isLang(v) ? v : 'ja';
+};
+
+/**
+ * I18nProvider の外（＝ログイン前）でも使える翻訳。
+ * ログイン画面は利用者設定を取りに行けないので、前回の言語を localStorage から使う。
+ */
+export const translate = (key: TranslationKey, params?: TranslateParams): string => {
+  const lang = storedLang();
+  let text = translations[lang][key] ?? translations.ja[key] ?? key;
+  if (params) {
+    for (const [name, value] of Object.entries(params)) {
+      text = text.replace(new RegExp(`\\{${name}\\}`, 'g'), String(value));
+    }
+  }
+  return text;
 };
 
 const I18nContext = createContext<I18nContextValue>({

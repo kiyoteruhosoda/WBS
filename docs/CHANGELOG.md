@@ -2,6 +2,29 @@
 
 完了した重要な変更の要約（新しいものを上に）。詳しい経緯は `history/` を参照。
 
+## 2026-08-30
+
+- **IdP との SSO 連携を追加**（OIDC 認可コードフロー + PKCE）。`AUTH_MODE=oidc` で有効化し、
+  Keycloak / Microsoft Entra ID / Google Workspace など、ディスカバリ文書を出す IdP に
+  設定だけで繋がる。ID トークンは JWKS の公開鍵で署名検証し、`iss` / `aud` / `exp` /
+  `nonce` / `azp` も検査する。判断の背景は `docs/decisions/ADR-0002-oidc-sso.md`。
+- ログイン後は不透明なセッショントークンを HttpOnly Cookie で保持する（DB には SHA-256
+  ハッシュのみ）。利用停止（`users.is_active=false`）は次のリクエストから即座に効く。
+- ログインの往復中だけ生きる HttpOnly Cookie（`sso_login_state`）で `state` をブラウザに
+  結び付ける。攻撃者が自分で始めたログインのコールバックを他人に踏ませて、他人のブラウザを
+  自分のアカウントに繋ぐ手口（ログイン CSRF）を止める。
+- 全 API が認証済み利用者に紐づくようになった（従来は `USER_ID = 1` 固定）。タスク・
+  カテゴリ・マイルストーン・作業ログ・Inbox・設定が利用者ごとに分かれる。
+- ID 指定の取得・更新・削除に持ち主の確認を追加（`src/application/use_cases/ownership.py`）。
+  他人のレコードは 403 ではなく 404 で返す（403 だと ID の存在を教えてしまうため）。
+  カテゴリ・マイルストーン・Inbox・作業ログ・タスク依存関係が対象。
+- 既定は `AUTH_MODE=single_user` で、従来どおり認証なしの単独利用として動く。既存の配備は
+  環境変数を足さなければ挙動が変わらない。
+- 画面にログイン画面とアカウントメニュー（表示名・メール・ログアウト）を追加。どの画面の
+  通信でも 401 を受けたらログイン画面に戻る。
+- テーブルを 3 つ追加（`federated_identities` / `auth_sessions` / `auth_login_transactions`）。
+- ランタイム依存に `httpx` と `pyjwt[crypto]` を追加。
+
 ## 2026-07-21
 
 - カテゴリ・マイルストーンの登録／編集画面を追加。サイドバーに「カテゴリ」（`/categories`）と

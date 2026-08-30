@@ -63,8 +63,8 @@ MVPのゴールは「タスクを登録すること」ではなく、**「今日
 | 分類     | 項目    | MVP方針             | 将来                |
 | ------ | ----- | ----------------- | ----------------- |
 | 性能     | ページ表示 | 1秒以内（〜1万タスク）      | 3秒以内（〜10万タスク）     |
-| 認証     | ログイン  | ローカル固定ユーザー        | OIDC (Entra ID連携) |
-| 認可     | データ分離 | `user_id` カラム保持のみ | ユーザー別アクセス制御       |
+| 認証     | ログイン  | ローカル固定ユーザー / OIDC を `AUTH_MODE` で切替（実装済み） | 同左                |
+| 認可     | データ分離 | `user_id` によるユーザー別分離（実装済み） | ロール・スコープによる権限制御 |
 | タイムゾーン | 保存形式  | DB は UTC 保存       | 同左                |
 | タイムゾーン | 表示    | JST 固定            | ユーザー設定            |
 | 文字コード  | 全般    | utf8mb4（絵文字対応）    | 同左                |
@@ -142,7 +142,7 @@ MVPのゴールは「タスクを登録すること」ではなく、**「今日
 | ORM         | SQLAlchemy 2.x |
 | マイグレーション    | Alembic        |
 | バリデーション     | Pydantic v2    |
-| 認証（フェーズ2）   | Authlib (OIDC) |
+| 認証          | PyJWT + httpx（OIDC / 認可コードフロー + PKCE） |
 
 ### 3.3.3 Database
 
@@ -397,6 +397,20 @@ CREATE TABLE inbox_items (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
   ROW_FORMAT=DYNAMIC COMMENT='Inbox';
 ```
+
+### 4.2.9 認証（SSO）関連テーブル
+
+`AUTH_MODE=oidc` で使う 3 テーブル。実際の定義は
+`src/infrastructure/database/models.py` を正とする（ここは役割の一覧）。
+
+| テーブル | 役割 | 主な列 |
+| --- | --- | --- |
+| `federated_identities` | IdP 上の本人と `users` の対応。1 人が複数 IdP に属せる | `user_id` / `issuer` / `subject`（`(issuer, subject)` に一意制約） |
+| `auth_sessions` | ログイン中のセッション。生のトークンは保存しない | `user_id` / `token_hash`（SHA-256, 一意） / `issued_at` / `expires_at` / `last_seen_at` |
+| `auth_login_transactions` | 認可コードフロー 1 往復ぶんの一時データ。コールバックで使い切って消す | `state`（一意） / `nonce` / `code_verifier` / `redirect_path` / `expires_at` |
+
+利用者の同一性を `(issuer, subject)` で決める理由は
+`docs/decisions/ADR-0002-oidc-sso.md` を参照。
 
 ## 4.3 ビュー
 
@@ -708,8 +722,9 @@ CREATE TABLE notifications (
 * **OpenAPI 3.1**（FastAPI が自動生成）
 * **エラー形式**: RFC 7807 (Problem Details for HTTP APIs)
 * **ページング**: `?page=1&per_page=50` または `?cursor=xxx`
-* **認証（MVP）**: なし（固定 user\_id=1）
-* **認証（フェーズ2）**: Bearer Token (OIDC)
+* **認証**: `AUTH_MODE=single_user` では認証なし（固定 user\_id=1）。
+  `AUTH_MODE=oidc` では IdP による SSO ログイン後、HttpOnly Cookie のセッションで認証する
+  （`/api/auth/*`。設計判断は `docs/decisions/ADR-0002-oidc-sso.md`）
 
 ## 8.2 エンドポイント一覧（MVP）
 
@@ -811,8 +826,8 @@ GET /api/tasks?status=TODO&category_id=3&sort=-priority,due_date&page=1&per_page
 
 | 項目          | MVP                             | フェーズ2                  |
 | ----------- | ------------------------------- | ---------------------- |
-| 認証          | なし（ローカル起動）                      | OIDC (Entra ID)        |
-| CSRF        | 同一オリジンのみ                        | SameSite Cookie + トークン |
+| 認証          | なし（`AUTH_MODE=single_user`）／ OIDC + PKCE（`AUTH_MODE=oidc`） | 同左                     |
+| CSRF        | 同一オリジンのみ + SameSite=Lax のセッション Cookie | 状態変更 API へのトークン付与     |
 | SQLインジェクション | SQLAlchemy でパラメータ化              | 同左                     |
 | XSS         | React の自動エスケープ + Markdown サニタイズ | 同左                     |
 | CORS        | 開発用のみ許可                         | 明示許可                   |
@@ -858,7 +873,7 @@ GET /api/tasks?status=TODO&category_id=3&sort=-priority,due_date&page=1&per_page
 ## 10.2 MVPで実装しないもの（フェーズ2以降）
 
 * デスクトップ通知（Web Notifications API）
-* 認証・マルチユーザー
+* チーム共有（1 つのタスクを複数人で持つ）・ロールによる権限制御
 * Microsoft To Do / Outlook / Google Calendar 連携
 * AI による優先度・WBS 生成
 * チーム共有機能

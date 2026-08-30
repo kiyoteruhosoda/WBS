@@ -23,3 +23,9 @@ class CyclicDependencyError(ConflictError):
 class InvalidStatusTransitionError(ValidationError):
     def __init__(self, from_status: str, to_status: str) -> None:
         super().__init__(f"Invalid status transition: {from_status} -> {to_status}")
+
+class AuthenticationError(DomainException):
+    """本人が確かめられない（未ログイン・セッション切れ・IdP 応答の不備）。"""
+
+class AccessDeniedError(DomainException):
+    """本人は確かめられたが、このアプリを使わせない（無効化・所属外）。"""

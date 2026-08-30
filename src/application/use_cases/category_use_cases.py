@@ -4,8 +4,8 @@ from sqlalchemy.orm import Session
 
 from src.application.dto.category_dto import CreateCategoryDTO, UpdateCategoryDTO
 from src.application.dto.unset import UNSET
+from src.application.use_cases.ownership import owned_by
 from src.domain.entities.category import Category
-from src.domain.exceptions import NotFoundError
 from src.infrastructure.repositories.category_repository import SqlAlchemyCategoryRepository
 
 
@@ -17,11 +17,8 @@ class CategoryUseCases:
     def list_categories(self, user_id: int) -> list[Category]:
         return self._repo.find_all(user_id)
 
-    def get_category(self, category_id: int) -> Category:
-        cat = self._repo.find_by_id(category_id)
-        if cat is None:
-            raise NotFoundError("Category", category_id)
-        return cat
+    def get_category(self, category_id: int, user_id: int) -> Category:
+        return self._owned(category_id, user_id)
 
     def create_category(self, dto: CreateCategoryDTO) -> Category:
         cat = Category(id=None, user_id=dto.user_id, name=dto.name, color=dto.color, sort_order=dto.sort_order)
@@ -29,10 +26,8 @@ class CategoryUseCases:
         self._session.commit()
         return saved
 
-    def update_category(self, category_id: int, dto: UpdateCategoryDTO) -> Category:
-        cat = self._repo.find_by_id(category_id)
-        if cat is None:
-            raise NotFoundError("Category", category_id)
+    def update_category(self, category_id: int, user_id: int, dto: UpdateCategoryDTO) -> Category:
+        cat = self._owned(category_id, user_id)
         if dto.name is not UNSET:
             cat.name = dto.name
         if dto.color is not UNSET:
@@ -43,9 +38,13 @@ class CategoryUseCases:
         self._session.commit()
         return saved
 
-    def delete_category(self, category_id: int) -> None:
-        cat = self._repo.find_by_id(category_id)
-        if cat is None:
-            raise NotFoundError("Category", category_id)
+    def delete_category(self, category_id: int, user_id: int) -> None:
+        self._owned(category_id, user_id)
         self._repo.soft_delete(category_id)
         self._session.commit()
+
+    def _owned(self, category_id: int, user_id: int) -> Category:
+        return owned_by(
+            self._repo.find_by_id(category_id), user_id,
+            resource="Category", resource_id=category_id,
+        )

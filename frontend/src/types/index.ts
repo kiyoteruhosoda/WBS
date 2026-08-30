@@ -125,3 +125,23 @@ export interface AppInfo {
   build_time: string;
   environment: string;
 }
+
+// ── 認証（SSO）─────────────────────────────────────────────────────────────
+export interface AuthConfig {
+  mode: 'single_user' | 'oidc';
+  sso_enabled: boolean;
+  provider_name: string | null;
+  login_path: string | null;
+}
+
+export interface CurrentUser {
+  user_id: number;
+  email: string;
+  display_name: string;
+  timezone: string;
+  language: string;
+}
+
+export interface LogoutResult {
+  end_session_url: string | null;
+}

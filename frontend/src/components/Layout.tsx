@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
-import { Box, Button, Drawer, IconButton, useMediaQuery } from '@mui/material';
+import { Box, Button, Drawer, IconButton, ListItemText, Menu, MenuItem, useMediaQuery } from '@mui/material';
 import MenuIcon from '@mui/icons-material/Menu';
 import { ds } from '../theme';
 import { useI18n } from '../i18n';
+import { useAuth } from '../auth/AuthProvider';
 import type { TranslationKey } from '../i18n/translations';
 import {
   GridIcon, CheckListIcon, BarsIcon, CalendarIcon, InboxIcon,
@@ -95,6 +96,50 @@ const Sidebar: React.FC<{ onNavigate?: () => void }> = ({ onNavigate }) => {
   );
 };
 
+/** 右上のアカウント。SSO 有効時はここからログアウトする。 */
+const AccountButton: React.FC = () => {
+  const { user, ssoEnabled, signOut } = useAuth();
+  const { t } = useI18n();
+  const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null);
+
+  const initial = (user?.display_name ?? 'W').trim().charAt(0).toUpperCase();
+  const avatar = (
+    <Box sx={{
+      width: 34, height: 34, borderRadius: '50%', bgcolor: ds.primary, color: '#fff',
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      fontSize: 14, fontWeight: 700, flexShrink: 0,
+    }}>
+      {initial}
+    </Box>
+  );
+
+  // SSO を使わない配備にはログアウトの行き先が無いので、飾りのまま出す
+  if (!ssoEnabled) return avatar;
+
+  return (
+    <>
+      <IconButton onClick={(e) => setAnchorEl(e.currentTarget)} sx={{ p: 0 }} aria-label={user?.display_name}>
+        {avatar}
+      </IconButton>
+      <Menu anchorEl={anchorEl} open={Boolean(anchorEl)} onClose={() => setAnchorEl(null)}>
+        <MenuItem disabled sx={{ opacity: '1 !important' }}>
+          <ListItemText
+            primary={user?.display_name}
+            secondary={user?.email}
+            slotProps={{
+              primary: { sx: { fontSize: 14, fontWeight: 600 } },
+              secondary: { sx: { fontSize: 12 } },
+            }}
+          />
+        </MenuItem>
+        <MenuItem onClick={() => { setAnchorEl(null); void signOut(); }} sx={{ fontSize: 14 }}>
+          {t('account.signOut')}
+        </MenuItem>
+      </Menu>
+    </>
+  );
+};
+
 const Layout: React.FC = () => {
   const [mobileOpen, setMobileOpen] = useState(false);
   const navigate = useNavigate();
@@ -149,13 +194,7 @@ const Layout: React.FC = () => {
           >
             {t('action.newTask')}
           </Button>
-          <Box sx={{
-            width: 34, height: 34, borderRadius: '50%', bgcolor: ds.primary, color: '#fff',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontSize: 14, fontWeight: 700, flexShrink: 0,
-          }}>
-            W
-          </Box>
+          <AccountButton />
         </Box>
 
         <Box component="main" sx={{ flex: 1, p: { xs: '16px', md: '24px' } }}>
