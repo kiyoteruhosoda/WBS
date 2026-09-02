@@ -2,6 +2,18 @@
 
 完了した重要な変更の要約（新しいものを上に）。詳しい経緯は `history/` を参照。
 
+## 2026-09-03
+
+- `v*.*.*` タグで ghcr.io へイメージを push していた `release.yml` を削除した。
+  **本番が引くのは Komodo Build の成果物**（`hub.nolumia.com:5000/komodo/wbs-api` と
+  `.../wbs-web`）で、ghcr のイメージはどのデプロイからも参照されていない。naso 時代の
+  名残で、実行履歴は 0 件・ghcr にパッケージも作られていなかった。
+- 焼く場所が 2 つあると、同じコミットから出たイメージのどちらが本番か答えられなくなる。
+  加えて `release.yml` はリポジトリ直下の Dockerfile（api）しか焼いておらず、
+  `frontend/` の web は端から漏れていた。入口を Komodo だけに畳んだ。
+- `release.yml` が持っていた lint / test は `ci.yml` が push と PR で同じ内容を回しており、
+  失われる検査は無い。
+
 ## 2026-08-30
 
 - デプロイ先用の compose（`docker/deploy/docker-compose.yml`）に認証 / SSO の環境変数を通した。
