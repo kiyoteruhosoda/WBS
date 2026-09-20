@@ -2,6 +2,31 @@
 
 完了した重要な変更の要約（新しいものを上に）。詳しい経緯は `history/` を参照。
 
+## 2026-09-20
+
+- **IdP で止めた人が、このアプリでも止まるようにした**（ADR-0003）。⚠ **これまでは
+  セッションの寿命（既定 12 時間）のあいだ入れたままだった** ——back-channel logout の
+  受け口が無く、こちらから IdP へ聞き直す経路も無かった。同じ IdP を使う他の 6 本は
+  受け口と定期照合の二段で塞いである。
+  - **受け口**: `POST /api/auth/backchannel-logout`（未認証。証明は `logout_token` の署名だけ）。
+    ⚠ **再送では消さない**（同じ `jti` の再送が、入り直したあとのセッションを落とすため）。
+    `sid` のある通知は**その端末のログインだけ**を終わらせる。
+  - **定期照合**: 毎時、IdP の名簿（`{issuer}/admin/applications/self/users`）を聞き直す。
+    ⚠ **引けなかったら何もしない**（「全員辞めた」と混ぜない）。⚠ **全員が `unknown` なら見送る**。
+  - ⚠ **利用者（`users.is_active`）には触らない。** 止めたのは IdP であって、この口座の
+    持ち主ではない。IdP で戻せば、こちらでは何もしなくてよい。
+  - 設定が 3 つ増えた（`MACHINE_CLIENT_ID` / `MACHINE_PRIVATE_KEY_FILE` /
+    `MACHINE_PRIVATE_KEY_KID`）。⚠ **IdP 側に 3 手が要る**（`docs/OPERATIONS.md`）。
+  - 表 `auth_backchannel_logout_deliveries` と列 `auth_sessions.idp_session_id` が増えた。
+- **メールアドレスで既存の利用者へ寄せるのを、既定で止めた**（ADR-0004。`OIDC_LINK_BY_EMAIL`、
+  既定 `false`）。⚠ **`email_verified` は「その利用者が本人である」の証明ではない**
+  ——IdP がそのアドレスへ到達できることまでしか意味しない。⚠ **SSO を入れる途中の配備は、
+  移行が済むまで `true` にすること。**
+- **発行者の綴りを 1 か所で揃えた**（`FederatedIdentity`）。手元に残す宛名は末尾の `/` を
+  落とした綴りで持つ。⚠ ディスカバリ文書側は IdP が名乗ったままを保つ（ID トークンの `iss` は
+  完全一致で照合する）。揃っていないと、停止の通知も照合も**引く行が 1 つも無いまま
+  「異常なし」で終わる**。
+
 ## 2026-09-03
 
 - `v*.*.*` タグで ghcr.io へイメージを push していた `release.yml` を削除した。

@@ -27,6 +27,12 @@ def _apply_column_upgrades() -> None:
     if "language" not in user_columns:
         with _engine.begin() as conn:
             conn.execute(text("ALTER TABLE users ADD COLUMN language VARCHAR(8) NOT NULL DEFAULT 'ja'"))
+    auth_session_columns = {c["name"] for c in inspector.get_columns("auth_sessions")}
+    if "idp_session_id" not in auth_session_columns:
+        # 停止の通知を「その 1 ログインだけ」に効かせるための列。既存の行は NULL の
+        # ままでよい（その人のセッションをすべて終わらせる側に当たる）。
+        with _engine.begin() as conn:
+            conn.execute(text("ALTER TABLE auth_sessions ADD COLUMN idp_session_id VARCHAR(255)"))
     task_columns = {c["name"] for c in inspector.get_columns("tasks")}
     if "remaining_hours" in task_columns:
         # 残り時間は「見積 − 実績」で導出する方式に変更したため列ごと廃止

@@ -22,6 +22,9 @@ class IdentityClaims:
     email_verified: bool = False
     display_name: str | None = None
     preferred_username: str | None = None
+    #: ID トークンの ``sid``（IdP 側のログインセッション）。出さない IdP があるので
+    #: ``None`` 可 ——その IdP では**利用者単位でしか**止められない。
+    session_id: str | None = None
 
     def __post_init__(self) -> None:
         if self.email is not None and "@" not in self.email:

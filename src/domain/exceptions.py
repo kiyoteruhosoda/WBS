@@ -29,3 +29,16 @@ class AuthenticationError(DomainException):
 
 class AccessDeniedError(DomainException):
     """本人は確かめられたが、このアプリを使わせない（無効化・所属外）。"""
+
+class IdentityProviderUnavailableError(DomainException):
+    """IdP に聞けなかった（届かない・5xx・応答が読めない）。
+
+    ⚠ **「誰も居ない」と混ぜない。** 空の名簿として扱うと、IdP が不調なだけで
+    全員を止めてしまう。聞けなかったときは何も変えずに見送る。
+    """
+
+class MachineNotBoundToApplicationError(DomainException):
+    """名乗ったサービスアカウントが、まだ IdP 側でアプリに結び付いていない。
+
+    ⚠ **障害ではなく準備待ち。** 結び付けるまで毎周回ここへ来るので、警告にしない。
+    """

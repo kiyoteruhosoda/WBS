@@ -127,6 +127,22 @@ class AuthSessionModel(Base):
     issued_at: Mapped[datetime] = mapped_column(sa.DateTime, nullable=False)
     expires_at: Mapped[datetime] = mapped_column(sa.DateTime, nullable=False, index=True)
     last_seen_at: Mapped[datetime] = mapped_column(sa.DateTime, nullable=False)
+    # このセッションを始めた IdP 側のログイン（ID トークンの ``sid``）。
+    # ⚠ 出さない IdP があるので NULL 可。その IdP では**利用者単位でしか**止められない。
+    idp_session_id: Mapped[str | None] = mapped_column(sa.String(255), nullable=True, index=True)
+
+
+class BackchannelLogoutDeliveryModel(Base):
+    """受け取った停止の通知（再送を弾くためだけの記録）。
+
+    ⚠ **中身は持たない。** 誰を止めたかはセッションの行が消えたことで表れる。ここに
+    残すのは「この ``jti`` はもう効かせた」という 1 点だけで、一定時間で片付ける。
+    """
+
+    __tablename__ = "auth_backchannel_logout_deliveries"
+    id: Mapped[int] = mapped_column(BigIntPK, primary_key=True, autoincrement=True)
+    jti: Mapped[str] = mapped_column(sa.String(255), unique=True, nullable=False)
+    received_at: Mapped[datetime] = mapped_column(sa.DateTime, nullable=False, index=True)
 
 class LoginTransactionModel(Base):
     """認可コードフロー 1 往復ぶんの一時データ（state / nonce / PKCE）。"""

@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from collections.abc import Mapping
 from dataclasses import dataclass
+from typing import Any
 
 from src.domain.value_objects.identity_claims import IdentityClaims
 
@@ -45,3 +47,24 @@ class IdentityProvider(ABC):
     @abstractmethod
     def build_end_session_url(self, *, post_logout_redirect_uri: str | None) -> str | None:
         """IdP 側もログアウトさせる URL。IdP が対応していなければ None。"""
+
+    @abstractmethod
+    def verify_logout_token(self, token: str) -> Mapping[str, Any]:
+        """停止の通知（``logout_token``）を JWT として確かめ、クレームを返す。
+
+        確かめるのは**署名・発行者・対象者・期限**まで。「ログアウトの通知として
+        成立しているか」（``events`` / ``nonce`` / ``sub`` か ``sid`` / ``jti``）の
+        判断はドメイン側（``LogoutNotice``）が行う。
+
+        通らなければ ``InvalidLogoutTokenError`` を送出する。
+        """
+
+    @property
+    @abstractmethod
+    def federated_issuer(self) -> str:
+        """**手元に残した宛名を引くための**発行者の綴り。
+
+        ⚠ ディスカバリ文書が名乗るままの綴り（ID トークンの ``iss`` と完全一致で
+        照合する値）とは別。末尾の ``/`` の有無が違うだけで、引く行が 1 つも
+        見つからなくなる。
+        """

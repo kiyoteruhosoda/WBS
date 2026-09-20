@@ -6,6 +6,8 @@ Google Workspace / Okta など、ディスカバリ文書を出す IdP であれ
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+from typing import Any
 from urllib.parse import urlencode
 
 import httpx
@@ -16,6 +18,7 @@ from src.application.ports.identity_provider import AuthorizationRequest, Identi
 from src.domain.exceptions import AuthenticationError
 from src.domain.value_objects.federated_identity import FederatedIdentity
 from src.domain.value_objects.identity_claims import IdentityClaims
+from src.domain.value_objects.logout_notice import InvalidLogoutTokenError
 from src.infrastructure.auth.auth_settings import AuthSettings
 from src.infrastructure.auth.idp_http import IDP_HEADERS
 from src.infrastructure.auth.oidc_discovery import OidcDiscoveryClient
@@ -55,6 +58,16 @@ class OidcIdentityProvider(IdentityProvider):
     @property
     def display_name(self) -> str:
         return self._settings.provider_name
+
+    @property
+    def federated_issuer(self) -> str:
+        """手元に残した宛名を引くための綴り（末尾の ``/`` を落としたもの）。
+
+        ⚠ ``OidcDiscovery.issuer`` は IdP が名乗ったままを保つ ——ID トークンの ``iss``
+        との照合は**完全一致**でなければならない。ここで返すのは**保存側**の綴りで、
+        結び付き（``federated_identities``）と同じもの。
+        """
+        return self._settings.issuer
 
     # ── 認可リクエスト ─────────────────────────────────────────────────
     def build_authorization_request(
@@ -102,13 +115,41 @@ class OidcIdentityProvider(IdentityProvider):
             display_name = display_name or userinfo.get("name")
             preferred_username = preferred_username or userinfo.get("preferred_username")
 
+        session_id = claims.get("sid")
         return IdentityClaims(
             identity=FederatedIdentity(issuer=claims["iss"], subject=claims["sub"]),
             email=email,
             email_verified=email_verified,
             display_name=display_name,
             preferred_username=preferred_username,
+            session_id=session_id.strip() if isinstance(session_id, str) and session_id.strip() else None,
         )
+
+    def verify_logout_token(self, token: str) -> Mapping[str, Any]:
+        """停止の通知（``logout_token``）を JWT として確かめる。
+
+        ``exp`` と ``iat`` を**必須**にする。仕様は ``exp`` を必須にしていないが、
+        無ければ「いつまで有効な通知か」を判断できず、一度傍受された通知をいつまでも
+        投げ返せる。
+
+        ⚠ **``algorithms`` は列挙したものだけ。** ``none`` も対称鍵も入れない
+        （``OidcDiscovery.allowed_algorithms`` が絞ってある）。
+        """
+        discovery = self._discovery.get()
+        try:
+            signing_key = self._get_jwks_client(discovery.jwks_uri).get_signing_key_from_jwt(token)
+            claims: dict[str, Any] = jwt.decode(
+                token,
+                signing_key.key,
+                algorithms=discovery.allowed_algorithms,
+                audience=self._settings.client_id,
+                issuer=discovery.issuer,
+                options={"require": ["exp", "iat", "iss", "aud"]},
+            )
+        except jwt.PyJWTError as exc:
+            # ⚠ **理由を送り手へ返さない。** 記録だけ残す（この口は未認証で叩ける）。
+            raise InvalidLogoutTokenError(f"logout_token verification failed: {exc}") from exc
+        return claims
 
     def build_end_session_url(self, *, post_logout_redirect_uri: str | None) -> str | None:
         try:

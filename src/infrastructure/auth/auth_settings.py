@@ -33,6 +33,8 @@ class AuthConfigurationError(RuntimeError):
 @dataclass(frozen=True)
 class AuthSettings:
     mode: AuthMode
+    #: ⚠ **末尾の ``/`` を落とした綴り。** ディスカバリ文書が名乗るままの綴り
+    #: （ID トークンの ``iss`` と完全一致で照合する値）とは別（``OidcDiscovery.issuer``）。
     issuer: str
     client_id: str
     client_secret: str | None
@@ -46,10 +48,20 @@ class AuthSettings:
     cookie_secure: bool
     cookie_samesite: str
     policy: ProvisioningPolicy
+    #: IdP へ**こちらから**問い合わせるときの名乗り（サービスアカウントの ``client_id``）。
+    #: ⚠ ログイン用の ``client_id`` とは別の登録。**空なら定期照合は走らない。**
+    machine_client_id: str = ""
+    machine_private_key_file: str = ""
+    machine_private_key_kid: str | None = None
 
     @property
     def sso_enabled(self) -> bool:
         return self.mode is AuthMode.OIDC
+
+    @property
+    def reconciliation_enabled(self) -> bool:
+        """定期照合を走らせるか。**名乗りが無ければ走らせない**（何も聞けない）。"""
+        return self.sso_enabled and bool(self.machine_client_id)
 
     @property
     def scope_list(self) -> list[str]:
@@ -143,5 +155,10 @@ def load_auth_settings() -> AuthSettings:
             auto_provision=_env_bool("OIDC_AUTO_PROVISION", True),
             allowed_email_domains=_env_domains("OIDC_ALLOWED_EMAIL_DOMAINS"),
             require_verified_email=_env_bool("OIDC_REQUIRE_VERIFIED_EMAIL", True),
+            # ⚠ **既定は寄せない。** メールアドレスは本人の証明ではない（下記）。
+            link_by_email=_env_bool("OIDC_LINK_BY_EMAIL", False),
         ),
+        machine_client_id=os.getenv("MACHINE_CLIENT_ID", "").strip(),
+        machine_private_key_file=os.getenv("MACHINE_PRIVATE_KEY_FILE", "").strip(),
+        machine_private_key_kid=os.getenv("MACHINE_PRIVATE_KEY_KID", "").strip() or None,
     )

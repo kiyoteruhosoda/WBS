@@ -33,6 +33,10 @@ class AuthSession:
     expires_at: datetime
     last_seen_at: datetime
     id: int | None = None
+    #: このセッションを始めた IdP 側のログイン（ID トークンの ``sid``）。
+    #: ⚠ ``sid`` を出さない IdP では ``None`` になり、停止の通知は**利用者単位**でしか
+    #: 効かせられない（その人のセッションがまとめて終わる）。
+    idp_session_id: str | None = None
 
     @classmethod
     def issue(
@@ -42,6 +46,7 @@ class AuthSession:
         token: str,
         now: datetime,
         ttl: timedelta = DEFAULT_SESSION_TTL,
+        idp_session_id: str | None = None,
     ) -> AuthSession:
         return cls(
             user_id=user_id,
@@ -49,6 +54,7 @@ class AuthSession:
             issued_at=now,
             expires_at=now + ttl,
             last_seen_at=now,
+            idp_session_id=idp_session_id,
         )
 
     def is_expired(self, now: datetime) -> bool:
