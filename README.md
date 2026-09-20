@@ -109,12 +109,29 @@ JWKS は PyJWT の `PyJWKClient` が **`urllib`** で取りに行きます。JWK
 python -c "import urllib.request; print(urllib.request.urlopen('<jwks_uri>').status)"
 ```
 
+### 4. IdP で止めた人を、このアプリでも止める
+
+⚠ **ここを設定しないと、IdP で止めた人がセッションの寿命（既定 12 時間）のあいだ
+入れたままになります。** 「届いたら止める」（back-channel logout の受け口）と
+「毎時聞き直して止める」（定期照合）の二段で塞ぎます（ADR-0003）。
+
+```bash
+MACHINE_CLIENT_ID=wbs-machine                        # IdP 側のサービスアカウント
+MACHINE_PRIVATE_KEY_FILE=/srv/secrets/oidc/machine.key
+MACHINE_PRIVATE_KEY_KID=                             # 鍵を複数登録しているときだけ
+```
+
+⚠ **IdP 側に 3 手が要ります**（送り先の登録・サービスアカウントの登録・アプリへの結び付け）。
+手順は `docs/OPERATIONS.md`。`MACHINE_CLIENT_ID` が空なら定期照合は動きません
+（受け口のほうは名乗りが無くても効きます）。
+
 ### 覚えておくこと
 
 - 利用者の同一性は IdP の `(iss, sub)` で決まります。IdP 側でメールアドレスが
   変わっても同じ利用者として扱われます。
-- SSO 導入前から居る利用者は、初回 SSO ログイン時に**検証済みメールアドレスの一致**で
-  既存アカウントに紐づきます。
+- ⚠ **既定では、メールアドレスが同じでも既存の利用者へは寄せません**（ADR-0004）。
+  SSO を後から入れて既存の利用者を引き継ぐあいだだけ `OIDC_LINK_BY_EMAIL=true` にし、
+  移行が済んだら戻してください。
 - `AUTH_COOKIE_SECURE=true`（既定）のセッション Cookie は https でしか送られません。
   http の開発環境では `false` にしてください。
 

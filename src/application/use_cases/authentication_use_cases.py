@@ -146,7 +146,15 @@ class SsoLoginUseCases:
 
         token = self._secrets.generate()
         self._sessions.delete_expired(now)
-        session = AuthSession.issue(user_id=user.id, token=token, now=now, ttl=self._session_ttl)
+        session = AuthSession.issue(
+            user_id=user.id,
+            token=token,
+            now=now,
+            ttl=self._session_ttl,
+            # IdP 側のログイン（``sid``）を覚えておく。停止の通知が「その端末の
+            # ログインだけ」を指して届いたときに、そこだけを終わらせられる。
+            idp_session_id=claims.session_id,
+        )
         self._sessions.add(session)
         return CompletedLoginDTO(
             session_token=token,
@@ -171,14 +179,10 @@ class SsoLoginUseCases:
             existing = self._users.find_by_email(claims.email)
             if existing is not None:
                 # SSO 導入前から居る利用者、あるいは別 IdP で入っていた利用者。
-                # メール一致だけで結ぶので、検証済みメールを要求する設定でのみ許す
-                # （検証されていないメールを名乗れる IdP では、他人の既存アカウントを
-                #   乗っ取れてしまう）。
-                if not self._policy.require_verified_email:
-                    raise AccessDeniedError(
-                        "Linking an existing account by email requires verified email addresses; "
-                        "enable OIDC_REQUIRE_VERIFIED_EMAIL"
-                    )
+                # ⚠ **メールアドレスは本人の証明ではない**ので、既定では寄せない
+                #   （`ProvisioningPolicy.link_by_email`）。寄せると決めた配備でも、
+                #   検証済みのアドレスでなければ通さない。
+                self._policy.ensure_can_link_by_email(claims)
                 existing.ensure_can_sign_in()
                 existing.link_identity(claims.identity)
                 existing.apply_profile(

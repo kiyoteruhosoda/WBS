@@ -13,6 +13,7 @@ from src.application.use_cases.authentication_use_cases import (
     SessionAuthenticationUseCases,
     SsoLoginUseCases,
 )
+from src.application.use_cases.backchannel_logout_use_cases import ReceiveBackchannelLogout
 from src.domain.exceptions import AuthenticationError
 from src.infrastructure.auth.auth_settings import SINGLE_USER_ID, AuthSettings
 from src.infrastructure.database.session import get_db_session
@@ -21,6 +22,9 @@ from src.infrastructure.repositories.auth_session_repository import (
 )
 from src.infrastructure.repositories.login_transaction_repository import (
     SqlAlchemyLoginTransactionRepository,
+)
+from src.infrastructure.repositories.logout_delivery_repository import (
+    SqlAlchemyLogoutDeliveryRepository,
 )
 from src.infrastructure.repositories.user_account_repository import (
     SqlAlchemyUserAccountRepository,
@@ -87,6 +91,20 @@ def get_sso_login_use_cases(
     )
 
 SsoLoginDep = Annotated[SsoLoginUseCases, Depends(get_sso_login_use_cases)]
+
+
+def get_receive_backchannel_logout(
+    db: DbDep, identity_provider: IdentityProviderDep
+) -> ReceiveBackchannelLogout:
+    return ReceiveBackchannelLogout(
+        identity_provider=identity_provider,
+        sessions=SqlAlchemyAuthSessionRepository(db),
+        deliveries=SqlAlchemyLogoutDeliveryRepository(db),
+    )
+
+BackchannelLogoutDep = Annotated[
+    ReceiveBackchannelLogout, Depends(get_receive_backchannel_logout)
+]
 
 
 def get_current_user(

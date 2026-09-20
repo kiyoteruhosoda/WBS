@@ -19,6 +19,7 @@ from src.infrastructure.auth.oidc_identity_provider import OidcIdentityProvider
 from src.infrastructure.build_info import load_build_info
 from src.infrastructure.database.session import init_engine
 from src.infrastructure.logging.structured_logger import setup_logging
+from src.presentation.api.reconciliation import start_reconciliation_worker
 from src.presentation.api.routers import (
     admin,
     auth,
@@ -45,12 +46,19 @@ def create_app(database_url: str | None = None, db_path: str | None = None) -> F
     auth_settings = load_auth_settings()
 
     @asynccontextmanager
-    async def lifespan(_: FastAPI) -> AsyncGenerator[None, None]:
+    async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         url = database_url
         if url is None and db_path is not None:
             url = f"sqlite:///{db_path}"
         init_engine(url)
-        yield
+        # IdP で止まった人を拾い直す定期照合。⚠ **停止の受け口が取りこぼしたぶん**を
+        #   埋めるための 2 段目で、`MACHINE_CLIENT_ID` が無ければ何も起こさない。
+        worker = start_reconciliation_worker(auth_settings)
+        try:
+            yield
+        finally:
+            if worker is not None:
+                worker.stop()
 
     app = FastAPI(
         title="Task Scheduler",

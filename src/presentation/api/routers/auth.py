@@ -8,16 +8,20 @@
 from __future__ import annotations
 
 import hmac
-from urllib.parse import urlencode
+import logging
+from urllib.parse import parse_qs, urlencode
 
-from fastapi import APIRouter, Query, Request, Response, status
+from fastapi import APIRouter, HTTPException, Query, Request, Response, status
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import RedirectResponse
 
 from src.domain.entities.login_transaction import DEFAULT_LOGIN_TRANSACTION_TTL
 from src.domain.exceptions import AccessDeniedError, AuthenticationError, ValidationError
+from src.domain.value_objects.logout_notice import InvalidLogoutTokenError
 from src.infrastructure.auth.auth_settings import AuthSettings
 from src.presentation.api.dependencies import (
     AuthSettingsDep,
+    BackchannelLogoutDep,
     CurrentUserDep,
     SessionAuthDep,
     SsoLoginDep,
@@ -28,6 +32,8 @@ from src.presentation.api.schemas.auth_schemas import (
     LogoutResponse,
 )
 from src.shared.clock import utcnow
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -163,6 +169,70 @@ def logout(
             post_logout_redirect_uri=settings.post_logout_redirect_uri
         )
     )
+
+
+#: 受け取る本文の上限。``logout_token`` 1 本しか入らないので、これで充分に広い。
+LOGOUT_BODY_MAX_BYTES = 16 * 1024
+
+
+@router.post("/backchannel-logout", include_in_schema=False)
+async def receive_backchannel_logout(
+    request: Request, use_case: BackchannelLogoutDep
+) -> dict[str, str]:
+    """IdP からの停止の通知を受ける（OpenID Connect Back-Channel Logout 1.0）。
+
+    ⚠ **この口は未認証で叩ける。** 相手の証明は ``logout_token`` の署名だけなので、
+    検証を通らないものは理由を返さずに 400 で落とす（どこまで通ったかを教えない）。
+
+    ⚠ **SSO が無効な配備では 404 を返す**（署名を確かめる相手が居ない）。SSO を
+    有効にしている配備でこの口が 404 になるなら、経路の取り違えである ——送り手は
+    404 を「届かない」とだけ記録して再送を続けるので、気付くのが遅れる。
+
+    検証ではディスカバリと JWKS の同期 HTTP が出るので、処理はスレッドプールへ逃がす。
+    """
+    try:
+        logout_token = _logout_token_of(await _bounded_body(request))
+        await run_in_threadpool(use_case.execute, logout_token=logout_token, now=utcnow())
+    except InvalidLogoutTokenError:
+        # 停止の通知を送るのは IdP であって利用者ではない。401 で返すと「認証し直せ」に
+        # 読めてしまうので、仕様どおり「要求が不正」として返す（§2.8）。
+        logger.warning(
+            "停止の通知を受け付けませんでした",
+            extra={"event": "auth.oidc.logout_rejected"},
+        )
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"error": "invalid_logout_token"},
+        ) from None
+    # 仕様が求める応答。⚠ **キャッシュさせない**（§2.8）。
+    return {"status": "ok"}
+
+
+async def _bounded_body(request: Request) -> bytes:
+    """本文を読む。**大きすぎるものは読まずに断る**（未認証で叩ける口のため）。"""
+    declared = request.headers.get("Content-Length")
+    if declared is not None and declared.isdigit() and int(declared) > LOGOUT_BODY_MAX_BYTES:
+        raise InvalidLogoutTokenError("the logout_token body is too large")
+    body = await request.body()
+    if len(body) > LOGOUT_BODY_MAX_BYTES:
+        raise InvalidLogoutTokenError("the logout_token body is too large")
+    return body
+
+
+def _logout_token_of(body: bytes) -> str:
+    """``application/x-www-form-urlencoded`` の 1 項目だけを取り出す。
+
+    ⚠ **``Form()`` を使わない。** FastAPI の ``Form`` は ``python-multipart`` を要求する
+    ので、この 1 か所のために依存を 1 つ増やすことになる。
+    """
+    try:
+        fields = parse_qs(body.decode("utf-8"))
+    except UnicodeDecodeError as exc:
+        raise InvalidLogoutTokenError("the logout_token body is not utf-8") from exc
+    values = fields.get("logout_token") or []
+    if len(values) != 1 or not values[0].strip():
+        raise InvalidLogoutTokenError("the body must carry exactly one logout_token")
+    return values[0].strip()
 
 
 def _remember_binding(cookie_value: str | None, state: str) -> str:

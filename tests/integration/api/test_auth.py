@@ -11,6 +11,7 @@ from src.application.ports.identity_provider import AuthorizationRequest, Identi
 from src.domain.exceptions import AuthenticationError
 from src.domain.value_objects.federated_identity import FederatedIdentity
 from src.domain.value_objects.identity_claims import IdentityClaims
+from src.domain.value_objects.logout_notice import LOGOUT_EVENT, InvalidLogoutTokenError
 from src.presentation.api.dependencies import get_identity_provider
 
 ISSUER = "https://idp.example.com/realms/wbs"
@@ -30,7 +31,11 @@ OIDC_ENV = {
 
 
 class FakeIdentityProvider(IdentityProvider):
-    """認可コードごとに、その人のクレームを返す IdP。"""
+    """認可コードごとに、その人のクレームを返す IdP。
+
+    停止の通知（``logout_token``）は「``<sub>|<sid>|<jti>``」という綴りで受ける。
+    **署名の検証はインフラ層の責任**なので、ここではそこを模さない。
+    """
 
     def __init__(self) -> None:
         self.codes: dict[str, IdentityClaims] = {
@@ -39,14 +44,17 @@ class FakeIdentityProvider(IdentityProvider):
                 email="taro@example.com",
                 email_verified=True,
                 display_name="Taro",
+                session_id="taro-session",
             ),
             "hanako-code": IdentityClaims(
                 identity=FederatedIdentity(issuer=ISSUER, subject="hanako"),
                 email="hanako@example.com",
                 email_verified=True,
                 display_name="Hanako",
+                session_id="hanako-session",
             ),
         }
+        self.rejected: set[str] = set()
 
     @property
     def display_name(self) -> str:
@@ -69,15 +77,46 @@ class FakeIdentityProvider(IdentityProvider):
     def build_end_session_url(self, *, post_logout_redirect_uri):
         return f"{ISSUER}/logout"
 
+    @property
+    def federated_issuer(self):
+        return ISSUER
+
+    def verify_logout_token(self, token):
+        if token in self.rejected:
+            raise InvalidLogoutTokenError("forged")
+        subject, _, rest = token.partition("|")
+        session_id, _, jti = rest.partition("|")
+        claims = {
+            "iss": ISSUER,
+            "aud": "wbs",
+            "jti": jti,
+            "events": {LOGOUT_EVENT: {}},
+        }
+        if subject:
+            claims["sub"] = subject
+        if session_id:
+            claims["sid"] = session_id
+        return claims
+
 
 @pytest.fixture
-def sso_client(tmp_path, monkeypatch):
+def sso_provider():
+    """この試験で使う IdP を 1 つだけ作る。
+
+    ⚠ **リクエストごとに作り直さない。** 作り直すと、試験が「この IdP は次の
+    トークンを断る」と仕込んでも、実際に呼ばれるのは別の個体になる（断らない）。
+    """
+    return FakeIdentityProvider()
+
+
+@pytest.fixture
+def sso_client(tmp_path, monkeypatch, sso_provider):
     for key, value in OIDC_ENV.items():
         monkeypatch.setenv(key, value)
     from main import create_app
 
     app = create_app(db_path=str(tmp_path / "sso.db"))
-    app.dependency_overrides[get_identity_provider] = lambda: FakeIdentityProvider()
+    app.dependency_overrides[get_identity_provider] = lambda: sso_provider
     with TestClient(app) as client:
         yield client
 

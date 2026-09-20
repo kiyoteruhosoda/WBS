@@ -19,6 +19,7 @@ from src.domain.repositories.login_transaction_repository import LoginTransactio
 from src.domain.repositories.user_account_repository import UserAccountRepository
 from src.domain.value_objects.federated_identity import FederatedIdentity
 from src.domain.value_objects.identity_claims import IdentityClaims
+from src.domain.value_objects.logout_notice import InvalidLogoutTokenError
 from src.domain.value_objects.provisioning_policy import ProvisioningPolicy
 
 NOW = datetime(2026, 8, 30, 12, 0, 0)
@@ -50,6 +51,8 @@ class InMemoryUsers(UserAccountRepository):
 class InMemorySessions(AuthSessionRepository):
     def __init__(self) -> None:
         self.sessions: list[AuthSession] = []
+        #: ``(issuer, subject)`` → 利用者。停止の宛名を引くのに使う。
+        self.user_ids_by_identity: dict[tuple[str, str], int] = {}
 
     def add(self, session):
         session.id = len(self.sessions) + 1
@@ -69,6 +72,26 @@ class InMemorySessions(AuthSessionRepository):
         before = len(self.sessions)
         self.sessions = [s for s in self.sessions if not s.is_expired(now)]
         return before - len(self.sessions)
+
+    def delete_for_identity(self, identity, *, idp_session_id=None):
+        # 置き場は利用者と結び付きの対応を持たないので、試験で渡された
+        # ``user_ids_by_identity`` を引く（既定では「誰にも当たらない」）。
+        user_id = self.user_ids_by_identity.get((identity.issuer, identity.subject))
+        if user_id is None:
+            return 0
+        matched = [
+            s
+            for s in self.sessions
+            if s.user_id == user_id
+            and (idp_session_id is None or s.idp_session_id == idp_session_id)
+        ]
+        self.sessions = [s for s in self.sessions if s not in matched]
+        return len(matched)
+
+    def delete_for_idp_session(self, *, issuer, idp_session_id):
+        matched = [s for s in self.sessions if s.idp_session_id == idp_session_id]
+        self.sessions = [s for s in self.sessions if s not in matched]
+        return len(matched)
 
 
 class InMemoryTransactions(LoginTransactionRepository):
@@ -130,6 +153,13 @@ class FakeIdentityProvider(IdentityProvider):
 
     def build_end_session_url(self, *, post_logout_redirect_uri):
         return f"{ISSUER}/logout"
+
+    @property
+    def federated_issuer(self):
+        return ISSUER
+
+    def verify_logout_token(self, token):
+        raise InvalidLogoutTokenError("this fake does not serve logout tokens")
 
 
 def build(idp=None, users=None, policy=None):
@@ -244,8 +274,11 @@ def test_a_second_login_reuses_the_same_user() -> None:
 
 
 def test_an_existing_user_is_linked_by_verified_email() -> None:
+    """⚠ **寄せると決めた配備でだけ**起きる（既定は寄せない。下の試験）。"""
     existing = UserAccount(id=7, email="taro@example.com", display_name="Old Name")
-    sso, _, users, _, transactions = build(users=[existing])
+    sso, _, users, _, transactions = build(
+        users=[existing], policy=ProvisioningPolicy(link_by_email=True)
+    )
     sso.start_login(redirect_path=None, now=NOW)
     sso.complete_login(code="c", state=transactions.transactions[0].state, now=NOW)
 
@@ -290,7 +323,7 @@ def test_an_unknown_user_is_refused_when_provisioning_is_off() -> None:
 def test_an_invited_user_may_sign_in_when_provisioning_is_off() -> None:
     invited = UserAccount(id=3, email="taro@example.com", display_name="Taro")
     sso, _, users, _, transactions = build(
-        users=[invited], policy=ProvisioningPolicy(auto_provision=False)
+        users=[invited], policy=ProvisioningPolicy(auto_provision=False, link_by_email=True)
     )
     sso.start_login(redirect_path=None, now=NOW)
     completed = sso.complete_login(code="c", state=transactions.transactions[0].state, now=NOW)
@@ -305,11 +338,29 @@ def test_linking_by_email_is_refused_when_emails_are_not_verified() -> None:
     """
     existing = UserAccount(id=7, email="taro@example.com", display_name="Taro")
     sso, _, _, _, transactions = build(
-        users=[existing], policy=ProvisioningPolicy(require_verified_email=False)
+        users=[existing],
+        policy=ProvisioningPolicy(link_by_email=True, require_verified_email=False),
     )
     sso.start_login(redirect_path=None, now=NOW)
     with pytest.raises(AccessDeniedError):
         sso.complete_login(code="c", state=transactions.transactions[0].state, now=NOW)
+
+
+def test_linking_by_email_is_off_by_default() -> None:
+    """⚠ **メールアドレスは本人の証明ではない。**
+
+    ``email_verified`` が真でも、それは「IdP がそのアドレスへ到達できる」であって
+    「この利用者が本人である」ではない。寄せる形を既定で開けておくと、IdP 側で
+    誰かのアドレスを名乗れた時点で、このアプリの既存の口座に入れてしまう。
+    """
+    existing = UserAccount(id=7, email="taro@example.com", display_name="Taro")
+    sso, _, users, _, transactions = build(users=[existing])
+    sso.start_login(redirect_path=None, now=NOW)
+    with pytest.raises(AccessDeniedError):
+        sso.complete_login(code="c", state=transactions.transactions[0].state, now=NOW)
+    # ⚠ 既存の利用者は**そのまま**。新しく作りもしない。
+    assert [u.id for u in users.users] == [7]
+    assert users.users[0].identities == []
 
 
 # ── セッション ─────────────────────────────────────────────────────────────
