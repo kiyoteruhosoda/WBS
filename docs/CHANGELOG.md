@@ -4,6 +4,15 @@
 
 ## 2026-10-01
 
+- **カレンダーの表示の部品を NolumiaScheduler に寄せて作った**（task #157 の第 1 段）。月（6×7・色チップ・
+  「+N 件」・土日祝の背景・過去日の影・祝日チップ）、週・平日（時刻列 56px・終日の帯・1px = 1 分の
+  時間グリッド・正時/30 分線・開いたら 9:00（今週は今の 4 時間前）へ送る・現在時刻の赤線・過去の影・
+  重なりの列分け）、見出し、選んだ日の一覧。色は MUI テーマの `palette.calendar`（明暗）。
+  ⚠ **まだ予定の API には繋いでいない**（`/calendar` は今のまま。見本は `/calendar-preview`）。
+  部品は API の応答をそのまま受ける型 `CalendarOccurrence`（`frontend/src/types`）で書いてあり、
+  日をまたぐ回は閲覧者のタイムゾーン（利用者設定）の 0:00 で割る。配置の純関数は vitest で試験し、
+  CI の frontend ジョブに `npm run test` の段を足した。
+
 - **スキーマを Alembic で管理するようにした**（ADR-0006、task #153）。起動のたびの `create_all` と
   手書きの列補完をやめ、今の形を baseline（`migrations/versions/0001_baseline.py`）にした。
   DB を上げるのは entrypoint（`scripts/run_db_migrations.py`）だけで、アプリは DB が head で

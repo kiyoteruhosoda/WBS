@@ -11,6 +11,7 @@ import TaskList from './pages/TaskList';
 import TaskEdit from './pages/TaskEdit';
 import GanttPage from './pages/GanttPage';
 import CalendarPage from './pages/CalendarPage';
+import CalendarPreviewPage from './pages/CalendarPreviewPage';
 import Inbox from './pages/Inbox';
 import CategoriesPage from './pages/CategoriesPage';
 import MilestonesPage from './pages/MilestonesPage';
@@ -36,6 +37,8 @@ const App: React.FC = () => (
             <Route path="tasks/:id" element={<TaskEdit />} />
             <Route path="gantt" element={<GanttPage />} />
             <Route path="calendar" element={<CalendarPage />} />
+            {/* 予定の表示の部品の見本（task #157 第 1 段）。API と繋いだら消す */}
+            <Route path="calendar-preview" element={<CalendarPreviewPage />} />
             <Route path="inbox" element={<Inbox />} />
             <Route path="categories" element={<CategoriesPage />} />
             <Route path="milestones" element={<MilestonesPage />} />
