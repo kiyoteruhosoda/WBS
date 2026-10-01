@@ -139,6 +139,17 @@ const fromAbsolute = (base: string, absolute: number): { date: string; startMinu
 };
 
 /**
+ * 刻みと最短の長さ。省けば予定の既定（15 分・最短 15 分）。締めの画面の打刻は、Shift を押している間
+ * 1 分で動かす（`closing/entryGestures.ts`）。
+ */
+export interface SnapOptions {
+  snapMinutes?: number;
+  minDurationMinutes?: number;
+}
+
+const snapTo = (minute: number, step: number): number => Math.round(minute / step) * step;
+
+/**
  * 動かした先（移植元 ManipulationDelta の移動）。つかんだ区間の上端を縦の動きぶん動かして
  * 15 分に丸め、その日の中（0:00〜23:45）に収める。日はポインタの下の列。長さは変えない。
  * 2 日目以降の区間をつかんだときは、回の開始もその分だけ前にずらす。
@@ -148,8 +159,9 @@ export const moveTiming = (
   grabbed: GrabbedSegment,
   targetDate: string,
   deltaMinutes: number,
+  { snapMinutes = SNAP_MINUTES }: SnapOptions = {},
 ): OccurrenceTiming => {
-  const top = clamp(snapToQuarterHour(grabbed.startMinute + deltaMinutes), 0, MINUTES_PER_DAY - SNAP_MINUTES);
+  const top = clamp(snapTo(grabbed.startMinute + deltaMinutes, snapMinutes), 0, MINUTES_PER_DAY - snapMinutes);
   const offset = toAbsolute(origin.date, grabbed.date, grabbed.startMinute) - origin.startMinute;
   return { ...fromAbsolute(targetDate, top - offset), durationMinutes: origin.durationMinutes };
 };
@@ -163,17 +175,18 @@ export const resizeTiming = (
   grabbed: GrabbedSegment,
   edge: 'top' | 'bottom',
   deltaMinutes: number,
+  { snapMinutes = SNAP_MINUTES, minDurationMinutes = MIN_DURATION_MINUTES }: SnapOptions = {},
 ): OccurrenceTiming => {
   const start = origin.startMinute;
   const end = start + Math.max(0, origin.durationMinutes);
   const dayBase = toAbsolute(origin.date, grabbed.date, 0);
   if (edge === 'top') {
-    const top = clamp(snapToQuarterHour(grabbed.startMinute + deltaMinutes), 0, MINUTES_PER_DAY);
-    const newStart = Math.min(dayBase + top, end - MIN_DURATION_MINUTES);
+    const top = clamp(snapTo(grabbed.startMinute + deltaMinutes, snapMinutes), 0, MINUTES_PER_DAY);
+    const newStart = Math.min(dayBase + top, end - minDurationMinutes);
     return { ...fromAbsolute(origin.date, newStart), durationMinutes: end - newStart };
   }
-  const bottom = clamp(snapToQuarterHour(grabbed.endMinute + deltaMinutes), 0, MINUTES_PER_DAY);
-  const newEnd = Math.max(dayBase + bottom, start + MIN_DURATION_MINUTES);
+  const bottom = clamp(snapTo(grabbed.endMinute + deltaMinutes, snapMinutes), 0, MINUTES_PER_DAY);
+  const newEnd = Math.max(dayBase + bottom, start + minDurationMinutes);
   return { date: origin.date, startMinute: start, durationMinutes: newEnd - start };
 };
 

@@ -169,3 +169,14 @@ export const StopIcon: React.FC<IconProps> = (p) => base({ strokeWidth: 2, ...p 
 export const ChevronDownIcon: React.FC<IconProps> = (p) => base({ strokeWidth: 2, ...p }, (
   <path d="M6 9.5l6 6 6-6" />
 ));
+
+// 締め（task #161）: カレンダーに確定の印
+export const ClosingIcon: React.FC<IconProps> = (p) => base(p, (
+  <>
+    <rect x="4" y="5" width="16" height="15" rx="2" />
+    <path d="M4 9.5h16" />
+    <path d="M8.5 3.5v3" />
+    <path d="M15.5 3.5v3" />
+    <path d="M9 14.5l2.2 2.2 4-4.2" />
+  </>
+));
