@@ -22,12 +22,13 @@ from src.application.dto.calendar_event_dto import (
     MoveOccurrenceCommand,
     OccurrenceCommand,
     OccurrenceView,
+    PlannedAlarm,
     RescheduleSingleEventCommand,
     SplitThisOccurrenceCommand,
     UpdateEventCommand,
     UpdateRecurringSeriesCommand,
 )
-from src.application.dto.unset import UNSET
+from src.application.dto.unset import UNSET, UnsetType
 from src.application.ports.task_lookup import OwnedTaskLookup
 from src.application.ports.unit_of_work import UnitOfWork
 from src.application.use_cases.ownership import owned_by
@@ -38,6 +39,7 @@ from src.domain.repositories.business_calendar_repository import BusinessCalenda
 from src.domain.repositories.calendar_event_repository import CalendarEventRepository
 from src.domain.services.occurrence_display_projection import to_display_time_zone
 from src.domain.services.occurrence_expander import OccurrenceExpander
+from src.domain.value_objects.event_alarm import ALARM_OFFSETS_MINUTES, EventAlarm
 from src.domain.value_objects.event_schedule import (
     EventOccurrence,
     RecurringEventSchedule,
@@ -55,6 +57,23 @@ from src.shared.clock import utcnow
 
 SCHEDULED_TASK_LOOKBACK_DAYS = 7
 """打刻の既定のタスクを探すとき、何日前に始まった回まで見るか（それより長い予定は見ない）。"""
+
+MAX_ALARM_WINDOW = timedelta(days=7)
+"""この先の通知を一度に引ける期間の上限（ADR-0021）。"""
+
+_ALARM_EXPANSION_PAD_DAYS = 2
+"""通知の期間（UTC の瞬間）を予定のタイムゾーンのローカル日へ直すときの余白。UTC からのずれは
+最大でも ±14 時間なので、前後 1 日で足りるが、日付の境目の丸めも含めて 2 日取る。"""
+
+
+def _alarm_or_default(alarm: EventAlarm | None | UnsetType) -> EventAlarm | None:
+    """作るときの通知。省かれたら既定（移植元 ``EventAlarm.Default``: 4 つとも入り）。"""
+    return EventAlarm.default() if isinstance(alarm, UnsetType) else alarm
+
+
+def _alarm_or(alarm: EventAlarm | None | UnsetType, current: EventAlarm | None) -> EventAlarm | None:
+    """直すときの通知。省かれたら ``current``（今のもの・元の系列のもの）。"""
+    return current if isinstance(alarm, UnsetType) else alarm
 
 
 def _shift_clamped(day: date, days: int) -> date:
@@ -135,10 +154,72 @@ class CalendarEventUseCases:
                 is_moved=occurrence.is_moved,
                 is_overridden=occurrence.is_overridden,
                 series_key=occurrence.series_key if event.is_recurring() else None,
+                alarm=event.alarm,
             )
             for event, occurrence in self._expand(user_id, from_date, to_date, viewer_time_zone)
             if event.id is not None
         ]
+
+    def list_planned_alarms(
+        self, user_id: int, from_utc: datetime, to_utc: datetime
+    ) -> list[PlannedAlarm]:
+        """``[from_utc, to_utc)`` に知らせる時刻が来る通知を、知らせる時刻の順に返す（ADR-0021）。
+
+        回の展開は ``/calendar/occurrences`` と同じ（繰り返し・営業日シフト・祝日・移した回。
+        飛ばした回は出ない）。知らせるのは通知を持ち、止めていない予定の、終日でない回だけ
+        （終日の回には意味のある開始時刻が無い。移植元と同じ）。基準は回の開始時刻で、長さは
+        見ない。期間は ``MAX_ALARM_WINDOW`` まで。超えたら・逆なら ``ValidationError``。
+        「遅れても 1 分以内なら鳴らす」は端末の仕事（ここは予定を返すだけ）。
+        """
+        start = to_naive_utc(from_utc)
+        end = to_naive_utc(to_utc)
+        if start >= end:
+            raise ValidationError("from must be before to")
+        if end - start > MAX_ALARM_WINDOW:
+            raise ValidationError(
+                f"the window must be {MAX_ALARM_WINDOW.days} days or shorter"
+            )
+        # 知らせる時刻は開始より前（最大 15 分）なので、開始は [start, end + 15 分) にある。
+        latest_start = end + timedelta(minutes=max(ALARM_OFFSETS_MINUTES))
+        pairs = self._expand(
+            user_id,
+            _shift_clamped(start.date(), -_ALARM_EXPANSION_PAD_DAYS),
+            _shift_clamped(latest_start.date(), _ALARM_EXPANSION_PAD_DAYS),
+            None,
+            with_alarm_only=True,
+        )
+        task_titles: dict[int, str | None] = {}
+        planned: list[PlannedAlarm] = []
+        for event, occurrence in pairs:
+            if event.id is None or event.alarm is None or occurrence.is_all_day:
+                continue
+            occurrence_start = start_instant(
+                occurrence.date, occurrence.start_time, event.time_zone.zone
+            )
+            for minutes_before in event.alarm.minutes_before():
+                notify_at = occurrence_start - timedelta(minutes=minutes_before)
+                if not start <= notify_at < end:
+                    continue
+                task_id = occurrence.task_id
+                task_title = self._task_title(task_id, user_id, task_titles)
+                planned.append(
+                    PlannedAlarm(
+                        event_id=event.id,
+                        occurrence_start_utc=occurrence_start,
+                        minutes_before=minutes_before,
+                        notify_at_utc=notify_at,
+                        title=occurrence.title,
+                        duration_minutes=occurrence.duration_minutes,
+                        location=occurrence.location,
+                        task_id=task_id if task_title is not None else None,
+                        task_title=task_title,
+                        is_recurring=event.is_recurring(),
+                    )
+                )
+        planned.sort(
+            key=lambda p: (p.notify_at_utc, p.occurrence_start_utc, p.event_id, -p.minutes_before)
+        )
+        return planned
 
     def task_scheduled_at(self, user_id: int, at: datetime) -> int | None:
         """``at``（naive な UTC）に掛かっている回に結ばれた、その利用者のタスク（打刻の既定、ADR-0008）。
@@ -197,6 +278,7 @@ class CalendarEventUseCases:
         viewer_time_zone: str | None,
         *,
         linked_to_tasks_only: bool = False,
+        with_alarm_only: bool = False,
     ) -> list[tuple[CalendarEvent, EventOccurrence]]:
         if from_date > to_date:
             raise ValidationError("from_date must be on or before to_date")
@@ -209,6 +291,8 @@ class CalendarEventUseCases:
         results: list[tuple[CalendarEvent, EventOccurrence]] = []
         for event in self._events.find_by_period(user_id, expand_from, expand_to):
             if linked_to_tasks_only and event.task_id is None:
+                continue
+            if with_alarm_only and (event.alarm is None or not event.alarm.minutes_before()):
                 continue
             calendar = self._calendar_for(event, calendars)
             for occurrence in self._expander.expand(event, expand_from, expand_to, calendar):
@@ -234,6 +318,7 @@ class CalendarEventUseCases:
             description=cmd.description,
             color_key=cmd.color_key,
             task_id=cmd.task_id,
+            alarm=_alarm_or_default(cmd.alarm),
         )
         saved = self._events.save(event)
         self._uow.commit()
@@ -252,6 +337,7 @@ class CalendarEventUseCases:
             description=cmd.description,
             color_key=cmd.color_key,
             task_id=cmd.task_id,
+            alarm=_alarm_or_default(cmd.alarm),
         )
         saved = self._events.save(event)
         self._uow.commit()
@@ -276,6 +362,7 @@ class CalendarEventUseCases:
             event.reschedule_single(SingleEventSchedule(cmd.start_utc, cmd.duration_minutes), now)
         if cmd.color_key is not None:
             event.set_color(cmd.color_key, now)
+        event.set_alarm(_alarm_or(cmd.alarm, event.alarm), now)
         saved = self._events.save(event)
         self._uow.commit()
         return saved
@@ -311,6 +398,7 @@ class CalendarEventUseCases:
             RecurringEventSchedule(anchor, cmd.duration_minutes, cmd.recurrence_rule), now
         )
         event.set_color(cmd.color_key, now)
+        event.set_alarm(_alarm_or(cmd.alarm, event.alarm), now)
         saved = self._events.save(event)
         self._uow.commit()
         return saved
@@ -340,6 +428,7 @@ class CalendarEventUseCases:
             description=cmd.description,
             color_key=cmd.color_key,
             task_id=task_id,
+            alarm=_alarm_or(cmd.alarm, event.alarm),
         )
         self._end_series_before(event, cmd.from_occurrence_key.date, now)
         saved = self._events.save(new_series)
@@ -366,6 +455,7 @@ class CalendarEventUseCases:
             description=cmd.description,
             color_key=cmd.color_key,
             task_id=task_id,
+            alarm=_alarm_or(cmd.alarm, event.alarm),
         )
         event.skip_occurrence(cmd.occurrence_key, now)
         self._events.save(event)
@@ -466,6 +556,17 @@ class CalendarEventUseCases:
             return
         if self._tasks.find_by_id_for_user(task_id, user_id) is None:
             raise NotFoundError("Task", task_id)
+
+    def _task_title(
+        self, task_id: int | None, user_id: int, cache: dict[int, str | None]
+    ) -> str | None:
+        """結んだタスクの題名（消えた・他人のものなら ``None``）。"""
+        if task_id is None:
+            return None
+        if task_id not in cache:
+            task = self._tasks.find_by_id_for_user(task_id, user_id)
+            cache[task_id] = task.title if task is not None else None
+        return cache[task_id]
 
     def _check_rule_calendar(self, rule: RecurrenceRule, user_id: int) -> None:
         calendar_id = rule.adjustment.calendar_id if rule.adjustment else None

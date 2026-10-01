@@ -29,6 +29,7 @@ export const occurrence = (
   is_moved: false,
   is_overridden: false,
   series_key: null,
+  alarm: null,
 });
 
 /** 時:分 → 分 */

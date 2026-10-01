@@ -32,6 +32,7 @@ from src.domain.entities.calendar_event import (
 )
 from src.domain.exceptions import ConflictError
 from src.domain.repositories.calendar_event_repository import CalendarEventRepository
+from src.domain.value_objects.event_alarm import EventAlarm
 from src.domain.value_objects.event_color import EventColorKey
 from src.domain.value_objects.event_schedule import (
     OccurrenceKey,
@@ -152,6 +153,12 @@ class SqlAlchemyCalendarEventRepository(CalendarEventRepository):
         model.description = event.description
         model.color_key = event.color_key.value
         model.task_id = event.task_id
+        alarm = event.alarm
+        model.alarm_enabled = alarm.is_enabled if alarm is not None else None
+        model.alarm_15_min = alarm.notify_15_min if alarm is not None else False
+        model.alarm_5_min = alarm.notify_5_min if alarm is not None else False
+        model.alarm_1_min = alarm.notify_1_min if alarm is not None else False
+        model.alarm_at_start = alarm.notify_at_start if alarm is not None else False
         model.span_start_day = span_start
         model.span_end_day = span_end
         model.version = event.version
@@ -182,12 +189,25 @@ class SqlAlchemyCalendarEventRepository(CalendarEventRepository):
             description=model.description,
             color_key=EventColorKey(model.color_key),
             task_id=model.task_id,
+            alarm=_alarm_to_entity(model),
             exceptions=[_exception_to_entity(e) for e in model.exceptions],
             moves=[_move_to_entity(m) for m in model.moves],
             version=model.version,
             created_at=model.created_at,
             updated_at=model.updated_at,
         )
+
+
+def _alarm_to_entity(model: CalendarEventModel) -> EventAlarm | None:
+    if model.alarm_enabled is None:
+        return None
+    return EventAlarm(
+        is_enabled=bool(model.alarm_enabled),
+        notify_15_min=bool(model.alarm_15_min),
+        notify_5_min=bool(model.alarm_5_min),
+        notify_1_min=bool(model.alarm_1_min),
+        notify_at_start=bool(model.alarm_at_start),
+    )
 
 
 def _exception_to_model(exception: EventException) -> CalendarEventExceptionModel:

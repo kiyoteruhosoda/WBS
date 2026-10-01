@@ -5,6 +5,9 @@
 （予定のタイムゾーンでの候補日 ``date`` ＋ 系列の開始時刻 ``start_time``）で指す。回の一覧の
 ``series_key`` をそのまま返せばよい。``expected_version`` は楽観ロックで、読んだときの版と
 違えば 409。
+
+通知（``alarm``、ADR-0021）は、作るときに省くと既定（4 つとも入り）、直すときに省くと今のまま
+（この回だけ・以降は元の系列のもの）。``null`` は通知なし。
 """
 
 from __future__ import annotations
@@ -14,13 +17,14 @@ from typing import Annotated, Literal
 
 from pydantic import AfterValidator, BaseModel, Field
 
-from src.application.dto.calendar_event_dto import OccurrenceView
+from src.application.dto.calendar_event_dto import OccurrenceView, PlannedAlarm
 from src.application.recurrence_rule_mapping import (
     recurrence_rule_from_mapping,
     recurrence_rule_to_mapping,
 )
 from src.domain.entities.business_calendar import BusinessCalendar, Holiday
 from src.domain.entities.calendar_event import CalendarEvent
+from src.domain.value_objects.event_alarm import EventAlarm
 from src.domain.value_objects.event_color import EventColorKey
 from src.domain.value_objects.event_schedule import OccurrenceKey
 from src.domain.value_objects.recurrence import (
@@ -32,6 +36,7 @@ from src.domain.value_objects.recurrence import (
     Weekday,
 )
 from src.presentation.api.schemas.types import UtcDatetime
+from src.shared.clock import isoformat_utc
 
 TITLE_MAX = 500
 MAX_DURATION_MINUTES = 366 * 24 * 60
@@ -107,6 +112,48 @@ class RecurrenceRuleSchema(BaseModel):
         return cls.model_validate(recurrence_rule_to_mapping(rule))
 
 
+# ── 通知 ────────────────────────────────────────────────────────────────────
+
+
+class EventAlarmSchema(BaseModel):
+    """予定の通知（移植元 ``EventAlarm``）。基準は回の開始時刻。
+
+    ``enabled`` が false なら、どれを選んでいても知らせない（選んだものは残る）。
+    """
+
+    enabled: bool = Field(description="通知する")
+    notify_15_min: bool = Field(description="開始の 15 分前")
+    notify_5_min: bool = Field(description="開始の 5 分前")
+    notify_1_min: bool = Field(description="開始の 1 分前")
+    notify_at_start: bool = Field(description="開始時刻")
+
+    def to_alarm(self) -> EventAlarm:
+        return EventAlarm(
+            is_enabled=self.enabled,
+            notify_15_min=self.notify_15_min,
+            notify_5_min=self.notify_5_min,
+            notify_1_min=self.notify_1_min,
+            notify_at_start=self.notify_at_start,
+        )
+
+    @classmethod
+    def from_alarm(cls, alarm: EventAlarm | None) -> EventAlarmSchema | None:
+        if alarm is None:
+            return None
+        return cls(
+            enabled=alarm.is_enabled,
+            notify_15_min=alarm.notify_15_min,
+            notify_5_min=alarm.notify_5_min,
+            notify_1_min=alarm.notify_1_min,
+            notify_at_start=alarm.notify_at_start,
+        )
+
+
+ALARM_FIELD_ON_CREATE = "通知。省くと既定（4 つとも入り）、null は通知なし"
+ALARM_FIELD_ON_UPDATE = "通知。省くと今のまま、null は通知を外す"
+ALARM_FIELD_ON_SPLIT = "通知。省くと元の系列のもの、null は通知なし"
+
+
 # ── 回の鍵 ──────────────────────────────────────────────────────────────────
 
 
@@ -150,6 +197,7 @@ class CalendarEventCreateRequest(_StartsAt):
     color_key: EventColorKey = EventColorKey.DEFAULT
     task_id: int | None = None
     recurrence: RecurrenceRuleSchema | None = None
+    alarm: EventAlarmSchema | None = Field(default=None, description=ALARM_FIELD_ON_CREATE)
 
 
 class CalendarEventUpdateRequest(BaseModel):
@@ -162,6 +210,7 @@ class CalendarEventUpdateRequest(BaseModel):
     start: MinuteInstant | None = None
     duration_minutes: int | None = Field(default=None, gt=0, le=MAX_DURATION_MINUTES)
     color_key: EventColorKey | None = Field(default=None, description="null は今の色のまま")
+    alarm: EventAlarmSchema | None = Field(default=None, description=ALARM_FIELD_ON_UPDATE)
     expected_version: int | None = None
 
 
@@ -176,6 +225,7 @@ class SeriesUpdateRequest(BaseModel):
     description: str | None = None
     task_id: int | None = None
     color_key: EventColorKey = EventColorKey.DEFAULT
+    alarm: EventAlarmSchema | None = Field(default=None, description=ALARM_FIELD_ON_UPDATE)
     expected_version: int | None = None
 
 
@@ -192,6 +242,7 @@ class FollowingOccurrencesChangeRequest(_StartsAt):
     description: str | None = None
     color_key: EventColorKey = EventColorKey.DEFAULT
     task_id: int | None = None
+    alarm: EventAlarmSchema | None = Field(default=None, description=ALARM_FIELD_ON_SPLIT)
     expected_version: int | None = None
 
 
@@ -207,6 +258,7 @@ class ThisOccurrenceChangeRequest(_StartsAt):
     description: str | None = None
     color_key: EventColorKey = EventColorKey.DEFAULT
     task_id: int | None = None
+    alarm: EventAlarmSchema | None = Field(default=None, description=ALARM_FIELD_ON_SPLIT)
     expected_version: int | None = None
 
 
@@ -255,6 +307,7 @@ class CalendarEventResponse(BaseModel):
     description: str | None
     color_key: EventColorKey
     task_id: int | None
+    alarm: EventAlarmSchema | None = Field(description="通知。null は通知を持たない")
     exceptions: list[EventExceptionResponse]
     moves: list[EventMoveResponse]
     version: int
@@ -285,6 +338,7 @@ class CalendarEventResponse(BaseModel):
             description=event.description,
             color_key=event.color_key,
             task_id=event.task_id,
+            alarm=EventAlarmSchema.from_alarm(event.alarm),
             exceptions=[
                 EventExceptionResponse(
                     occurrence=OccurrenceKeyResponse.from_key(e.occurrence_key), type=e.type.value
@@ -335,6 +389,9 @@ class CalendarOccurrenceResponse(BaseModel):
     series_key: OccurrenceKeyResponse | None = Field(
         description="繰り返しの元の鍵（予定のタイムゾーン）。単発は null"
     )
+    alarm: EventAlarmSchema | None = Field(
+        description="予定の通知（繰り返しは系列のもの。移した回も同じ）。null は通知を持たない"
+    )
 
     @classmethod
     def from_view(cls, view: OccurrenceView) -> CalendarOccurrenceResponse:
@@ -363,7 +420,58 @@ class CalendarOccurrenceResponse(BaseModel):
             is_moved=view.is_moved,
             is_overridden=view.is_overridden,
             series_key=series_key,
+            alarm=EventAlarmSchema.from_alarm(view.alarm),
         )
+
+
+class CalendarAlarmResponse(BaseModel):
+    """この先の通知 1 件（ADR-0021）。``notify_at`` に知らせる。"""
+
+    id: str = Field(
+        description="通知の識別子 `<event_id>:<starts_at>:<minutes_before>`（端末の重複除け）"
+    )
+    occurrence_id: str = Field(
+        description="回の識別子 `<event_id>:<starts_at>`（同じ回の通知をまとめる）"
+    )
+    event_id: int
+    title: str
+    location: str | None
+    task_id: int | None = Field(
+        description="結んだタスク。消えた・他人のものなら null（打刻開始に使う）"
+    )
+    task_title: str | None
+    starts_at: UtcDatetime = Field(description="回の開始の UTC 瞬間（Z 付き）")
+    duration_minutes: int
+    notify_at: UtcDatetime = Field(description="知らせる UTC 瞬間（Z 付き）= starts_at − minutes_before")
+    minutes_before: Literal[15, 5, 1, 0] = Field(description="開始の何分前か。0 は開始時刻")
+    is_recurring: bool
+
+    @classmethod
+    def from_planned(cls, planned: PlannedAlarm) -> CalendarAlarmResponse:
+        starts_at = isoformat_utc(planned.occurrence_start_utc)
+        occurrence_id = f"{planned.event_id}:{starts_at}"
+        return cls(
+            id=f"{occurrence_id}:{planned.minutes_before}",
+            occurrence_id=occurrence_id,
+            event_id=planned.event_id,
+            title=planned.title,
+            location=planned.location,
+            task_id=planned.task_id,
+            task_title=planned.task_title,
+            starts_at=planned.occurrence_start_utc,
+            duration_minutes=planned.duration_minutes,
+            notify_at=planned.notify_at_utc,
+            minutes_before=planned.minutes_before,
+            is_recurring=planned.is_recurring,
+        )
+
+
+class CalendarAlarmsResponse(BaseModel):
+    """``[window_start, window_end)`` に知らせる通知（``notify_at`` の順）。"""
+
+    window_start: UtcDatetime
+    window_end: UtcDatetime
+    alarms: list[CalendarAlarmResponse]
 
 
 # ── 営業日カレンダー ────────────────────────────────────────────────────────

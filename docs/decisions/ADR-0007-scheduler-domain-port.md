@@ -82,7 +82,8 @@
 
 ### 落としたもの
 
-- **アラーム**（`EventAlarm`・`AlarmApplicationService`・`AlarmScheduleCalculator`）・
+- **アラーム**（`EventAlarm`・`AlarmApplicationService`・`AlarmScheduleCalculator`）——⚠ **ADR-0021 で戻した**
+  （2026-10-01 の持ち主の依頼。鳴らすのは打刻アプリ）・
   **公開/非公開**（`Visibility`）・**予定種別**（`EventType`）——#155 の決定。上書き・移動・回からも
   その欄を落とした。
 - 期限切れの判定と掃除（`EventExpirationService`・`PurgeExpiredEventsService`）。デスクトップ版の

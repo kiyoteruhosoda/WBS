@@ -257,6 +257,12 @@ class CalendarEventModel(Base):
     version: Mapped[int] = mapped_column(sa.Integer, nullable=False)
     created_at: Mapped[datetime] = mapped_column(sa.DateTime, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(sa.DateTime, nullable=False)
+    # 通知（ADR-0021）。alarm_enabled が NULL = 通知を持たない（このとき 4 つの列は false）。
+    alarm_enabled: Mapped[bool | None] = mapped_column(sa.Boolean, nullable=True)
+    alarm_15_min: Mapped[bool] = mapped_column(sa.Boolean, nullable=False, server_default=sa.false())
+    alarm_5_min: Mapped[bool] = mapped_column(sa.Boolean, nullable=False, server_default=sa.false())
+    alarm_1_min: Mapped[bool] = mapped_column(sa.Boolean, nullable=False, server_default=sa.false())
+    alarm_at_start: Mapped[bool] = mapped_column(sa.Boolean, nullable=False, server_default=sa.false())
 
     exceptions: Mapped[list[CalendarEventExceptionModel]] = relationship(
         cascade="all, delete-orphan", order_by="CalendarEventExceptionModel.id", lazy="selectin"

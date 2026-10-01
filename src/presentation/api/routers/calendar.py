@@ -1,6 +1,7 @@
 """予定の API（task #156、ADR-0009）。
 
 - 回を期間で引く（閲覧者のタイムゾーンへ投影済み）: ``GET /calendar/occurrences``
+- この先の通知を引く（打刻アプリが Bearer でも叩く。ADR-0021）: ``GET /calendar/alarms``
 - 祝日を期間で引く（有効な営業日カレンダーから）: ``GET /calendar/holidays``
 - 予定の CRUD: ``/calendar/events``
 - 繰り返しの編集: すべて（``PUT .../series``）・この回以降（``POST .../occurrences/following``）・
@@ -27,17 +28,22 @@ from src.application.dto.calendar_event_dto import (
     UpdateEventCommand,
     UpdateRecurringSeriesCommand,
 )
-from src.application.dto.unset import UNSET
+from src.application.dto.unset import UNSET, UnsetType
+from src.domain.value_objects.event_alarm import EventAlarm
 from src.presentation.api.dependencies import (
+    AppOrWebUserDep,
     BusinessCalendarUseCasesDep,
     CalendarEventUseCasesDep,
     CurrentUserDep,
 )
 from src.presentation.api.schemas.calendar_schemas import (
+    CalendarAlarmResponse,
+    CalendarAlarmsResponse,
     CalendarEventCreateRequest,
     CalendarEventResponse,
     CalendarEventUpdateRequest,
     CalendarOccurrenceResponse,
+    EventAlarmSchema,
     FollowingOccurrencesChangeRequest,
     HolidaySchema,
     OccurrenceActionRequest,
@@ -45,12 +51,22 @@ from src.presentation.api.schemas.calendar_schemas import (
     SeriesUpdateRequest,
     ThisOccurrenceChangeRequest,
 )
+from src.shared.clock import to_naive_utc
 
 router = APIRouter(prefix="/calendar", tags=["calendar"])
 
 
 FromDate = Annotated[dt.date, Query(alias="from", description="期間の初日（ローカル日、含む）")]
 ToDate = Annotated[dt.date, Query(alias="to", description="期間の末日（ローカル日、含む）")]
+
+
+def _alarm_input(
+    alarm: EventAlarmSchema | None, fields_set: set[str]
+) -> EventAlarm | None | UnsetType:
+    """本文の ``alarm``。省かれたら ``UNSET``（作る: 既定・直す: 今のまま）、``null`` は通知なし。"""
+    if "alarm" not in fields_set:
+        return UNSET
+    return alarm.to_alarm() if alarm is not None else None
 
 
 # ── 引く ────────────────────────────────────────────────────────────────────
@@ -70,6 +86,35 @@ def list_occurrences(
         current_user.user_id, from_date, to_date, time_zone or current_user.timezone
     )
     return [CalendarOccurrenceResponse.from_view(v) for v in views]
+
+
+@router.get("/alarms", response_model=CalendarAlarmsResponse)
+def list_alarms(
+    window_start: Annotated[
+        dt.datetime,
+        Query(
+            alias="from",
+            description="期間の始まり（UTC 瞬間、含む）。`Z` 付き ISO 8601。オフセットの無い値は UTC",
+        ),
+    ],
+    window_end: Annotated[
+        dt.datetime,
+        Query(alias="to", description="期間の終わり（UTC 瞬間、含まない）。from から 7 日まで"),
+    ],
+    current_user: AppOrWebUserDep,
+    events: CalendarEventUseCasesDep,
+) -> CalendarAlarmsResponse:
+    """``[from, to)`` に知らせる時刻が来る通知を、知らせる時刻の順に返す（ADR-0021）。
+
+    打刻アプリが端末で通知を出すための口。⚠ Cookie のほか assay のアクセストークン
+    （``Authorization: Bearer``、ADR-0018）でも読める。読むだけ。
+    """
+    planned = events.list_planned_alarms(current_user.user_id, window_start, window_end)
+    return CalendarAlarmsResponse(
+        window_start=to_naive_utc(window_start),
+        window_end=to_naive_utc(window_end),
+        alarms=[CalendarAlarmResponse.from_planned(p) for p in planned],
+    )
 
 
 @router.get("/holidays", response_model=list[HolidaySchema])
@@ -116,6 +161,7 @@ def create_event(
                 description=body.description,
                 color_key=body.color_key,
                 task_id=body.task_id,
+                alarm=_alarm_input(body.alarm, body.model_fields_set),
             )
         )
     else:
@@ -131,6 +177,7 @@ def create_event(
                 description=body.description,
                 color_key=body.color_key,
                 task_id=body.task_id,
+                alarm=_alarm_input(body.alarm, body.model_fields_set),
             )
         )
     return CalendarEventResponse.from_event(created)
@@ -152,6 +199,7 @@ def update_event(
             start_utc=body.start,
             duration_minutes=body.duration_minutes,
             color_key=body.color_key,
+            alarm=_alarm_input(body.alarm, body.model_fields_set),
             expected_version=body.expected_version,
         )
     )
@@ -175,6 +223,7 @@ def update_series(
             task_id=body.task_id,
             color_key=body.color_key,
             anchor_utc=body.start,
+            alarm=_alarm_input(body.alarm, body.model_fields_set),
             expected_version=body.expected_version,
         )
     )
@@ -219,6 +268,7 @@ def change_following_occurrences(
             description=body.description,
             color_key=body.color_key,
             task_id=body.task_id if "task_id" in body.model_fields_set else UNSET,
+            alarm=_alarm_input(body.alarm, body.model_fields_set),
             expected_version=body.expected_version,
         )
     )
@@ -249,6 +299,7 @@ def split_this_occurrence(
             description=body.description,
             color_key=body.color_key,
             task_id=body.task_id if "task_id" in body.model_fields_set else UNSET,
+            alarm=_alarm_input(body.alarm, body.model_fields_set),
             expected_version=body.expected_version,
         )
     )
