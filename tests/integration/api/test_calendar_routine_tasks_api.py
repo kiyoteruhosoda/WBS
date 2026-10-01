@@ -341,7 +341,6 @@ def test_deleting_a_routine_forgets_its_done_marks(client) -> None:
     assert _done(client, routine["id"], _key("2026-10-05")).status_code == 200
     assert client.delete(f"/api/calendar/events/{routine['id']}").status_code == 204
 
-    # 同じ内容で作り直しても済みは引き継がない
-    again = _routine(client, task_id=routine["task_id"])
-    assert again["id"] != routine["id"]
+    # 作り直しても済みは引き継がない（⚠ 試験の DB は消した id を使い回しうる。済みが残っていると当たる）
+    _routine(client, task_id=routine["task_id"])
     assert _done_dates(client, "2026-10-05", "2026-10-09") == []
