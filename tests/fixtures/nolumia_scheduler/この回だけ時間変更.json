@@ -1,0 +1,42 @@
+{
+  "id": "evt_rec_006",
+  "kind": "Recurring",
+  "title": "開発定例",
+  "location": "会議室B",
+  "visibility": "Public",
+  "eventType": "meeting",
+  "description": null,
+  "timezone": "Asia/Tokyo",
+  "allDay": false,
+  "startDate": "2026-04-20",
+  "startTime": "10:00:00",
+  "endTime": "11:00:00",
+  "recurrence": {
+    "ruleType": "WEEKLY",
+    "interval": 1,
+    "endDate": "2026-12-31",
+    "weekly": {
+      "weekdays": ["TU"]
+    },
+    "monthly": null,
+    "yearly": null,
+    "adjustment": null
+  },
+  "exceptions": [
+    {
+      "occurrenceLocal": "2026-05-12T10:00:00",
+      "action": "OVERRIDE",
+      "override": {
+        "title": "開発定例（短縮）",
+        "location": "会議室C",
+        "visibility": "Private",
+        "startTime": "10:30:00",
+        "endTime": "11:00:00"
+      }
+    }
+  ],
+  "moves": [],
+  "createdAt": "2026-04-20T10:30:00+09:00",
+  "updatedAt": "2026-04-20T10:30:00+09:00",
+  "version": 1
+}

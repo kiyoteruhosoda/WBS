@@ -1,0 +1,37 @@
+{
+  "id": "evt_rec_002",
+  "kind": "Recurring",
+  "title": "月例承認会",
+  "location": "大会議室",
+  "visibility": "Public",
+  "eventType": "meeting",
+  "description": "承認会議",
+  "timezone": "Asia/Tokyo",
+  "allDay": false,
+  "startDate": "2026-04-13",
+  "startTime": "09:00:00",
+  "endTime": "10:00:00",
+  "recurrence": {
+    "ruleType": "MONTHLY",
+    "interval": 1,
+    "endDate": "2026-12-31",
+    "weekly": null,
+    "monthly": {
+      "mode": "NTH_WEEKDAY",
+      "weekIndex": 2,
+      "weekday": "MO"
+    },
+    "yearly": null,
+    "adjustment": {
+      "condition": "HOLIDAY",
+      "shiftUnit": "BUSINESS_DAY",
+      "shiftAmount": -1,
+      "calendarId": "jp_default"
+    }
+  },
+  "exceptions": [],
+  "moves": [],
+  "createdAt": "2026-04-20T09:50:00+09:00",
+  "updatedAt": "2026-04-20T09:50:00+09:00",
+  "version": 1
+}
