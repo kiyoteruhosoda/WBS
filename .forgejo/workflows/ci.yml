@@ -39,3 +39,46 @@ jobs:
 
       - name: Test
         run: uv run pytest -v --tb=short
+
+  frontend:
+    name: Frontend (Node ${{ matrix.node-version }})
+    # ⚠ **自前の台で回す**。台の既定のジョブイメージ（node 入り）で走る。`container:` は書かない。
+    runs-on: [self-hosted, nolumialab]
+    timeout-minutes: 25
+    defaults:
+      run:
+        working-directory: frontend
+    strategy:
+      fail-fast: false
+      matrix:
+        # 本番の像（frontend/Dockerfile の node:22-alpine）と揃える。
+        node-version: ["22"]
+
+    steps:
+      - uses: actions/checkout@v6
+
+      # ⚠ **既定の鏡（data.forgejo.org）に在るので完全な URL にしない**。
+      #   自前の鏡（git.nolumia.com）には setup-node は無い（setup-uv とは事情が違う）。
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        id: install
+        run: npm ci
+
+      - name: TypeScript (型検査)
+        run: npx tsc -b
+
+      - name: oxlint (静的解析)
+        # 型検査が落ちても lint と build の結果は見たい。依存が入らなかったときだけ止める。
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: npm run lint
+
+      # vitest はまだ入っていない。入れたらここに `npm run test` を足す。
+
+      - name: Build (tsc -b && vite build)
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: npm run build
