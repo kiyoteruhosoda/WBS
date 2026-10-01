@@ -4,6 +4,12 @@
 
 ## 2026-10-01
 
+- **`/info` の版をビルドの前に刻む形にした**（task #168、ADR-0011）。本番の `git_sha` が `unknown` の
+  ままだった（`Dockerfile` の `ARG GIT_SHA` などを deck の build が渡さない）。fastapitemplate の
+  ADR-0044 と同じく、`scripts/generate_version.sh` が `src/infrastructure/version.json` を作り、
+  `BuildInfo` がそれを読む。`Dockerfile` の ARG はやめた。応答の形は変えていない。
+  ⚠ 効かせるには deploy-repo の build-matrix で `wbs-api` の `pre_build` を `true` にする。
+
 - **進捗率を設計書 §5.1 の「実績 ÷（実績 ＋ 残）」に揃えた**（task #165、ADR-0010）。残を列
   `tasks.remaining_hours` で手で持つ（移行 `0004`。既存の行は max(見積 − 実績, 0)、DONE は 0 で埋めた）。
   残が空なら「見積 − 実績」を既定に使う。分母 0・残が決まらないときは null（画面は「—」）。子を持つタスクは

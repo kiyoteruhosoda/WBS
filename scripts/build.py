@@ -16,7 +16,6 @@ import sys
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
 from dataclasses import dataclass
-from datetime import UTC, datetime
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -175,6 +174,21 @@ class FrontendBuild(FrontendStep):
         return ("npm", "run", "build")
 
 
+class VersionStamp(BuildStep):
+    """版を刻む（src/infrastructure/version.json）。docker build の前に必ず走らせる。
+
+    deck の build の「版を刻む」段と同じスクリプトを使う（ADR-0011）。build-arg では渡さない。
+    """
+
+    name = "version stamp"
+
+    def supports(self, context: BuildContext) -> bool:
+        return context.target in {"docker", "deploy"}
+
+    def command(self, context: BuildContext) -> Sequence[str]:
+        return ("bash", str(ROOT / "scripts" / "generate_version.sh"))
+
+
 class DockerBuild(BuildStep):
     name = "docker compose build"
 
@@ -304,39 +318,19 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def resolve_git_sha() -> str:
-    try:
-        result = subprocess.run(
-            ("git", "rev-parse", "--short", "HEAD"),
-            cwd=ROOT,
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-    except (OSError, subprocess.CalledProcessError):
-        return "unknown"
-    return result.stdout.strip() or "unknown"
-
-
 def main() -> None:
     args = parse_args()
     context = BuildContext(
         target=args.target,
         skip_tests=args.skip_tests,
         skip_frontend_install=args.skip_frontend_install,
-        # APP_VERSION は compose のイメージタグ（wbs-api:${APP_VERSION}）と build args の
-        # 両方が参照する。--app-version 指定と docker compose build のタグを一致させる
-        # ため、ここで必ず環境変数として渡す。GIT_SHA / BUILD_TIME はイメージ内の
-        # /info エンドポイント（BuildInfo）に表示されるメタデータ。
+        # APP_VERSION は compose のイメージタグ（wbs-api:${APP_VERSION}）が参照する。
+        # --app-version 指定と docker compose build のタグを一致させるため、ここで必ず
+        # 環境変数として渡す。/info に出る版は VersionStamp が version.json に刻む。
         env={
             **os.environ,
             "PYTHONUNBUFFERED": "1",
             "APP_VERSION": args.app_version,
-            "GIT_SHA": os.getenv("GIT_SHA", resolve_git_sha()),
-            "BUILD_TIME": os.getenv(
-                "BUILD_TIME",
-                datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
-            ),
         },
         toolchain=Toolchain.detect(),
         app_version=args.app_version,
@@ -348,6 +342,7 @@ def main() -> None:
         Pytest(),
         FrontendInstall(),
         FrontendBuild(),
+        VersionStamp(),
         DockerBuild(),
         DockerSave(),
         DeployBundle(),
