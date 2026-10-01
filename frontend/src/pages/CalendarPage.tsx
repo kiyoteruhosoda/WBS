@@ -287,9 +287,12 @@ const CalendarPage: React.FC = () => {
     navigate(deadline.kind === 'task' ? `/tasks/${deadline.id}` : '/milestones');
 
   const askDeleteScope = deleteTarget != null && deleteTarget.is_recurring && deleteTarget.series_key != null;
-  // 広い画面はカレンダーとタスクの一覧を画面の下端まで（下の余白は main の 24px）。狭い画面は縦に積んでページごと送る。
+  // 広い画面はカレンダーとタスクの一覧を画面の下端まで（下の余白は main の 24px）。狭い画面は縦に積む。
   const wide = useMediaQuery(useTheme().breakpoints.up('md'));
   const fill = useHeightToViewportBottom<HTMLDivElement>(24, wide);
+  // 狭い画面もカレンダーの箱を画面の下端まで（下の余白は main の 16px）。上の高さを決め打ちすると、文字の大きさや
+  // タスクの帯の高さ次第でページが数 px はみ出し、時間グリッドを送り切ったところでページごと動く（アドレスバーも出入りする）。
+  const fillNarrow = useHeightToViewportBottom<HTMLDivElement>(16, !wide);
 
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
@@ -326,9 +329,9 @@ const CalendarPage: React.FC = () => {
         </Box>
         {/* 狭い画面（縦に積む）で flex: 1 にすると、高さの指定より中身の高さ（1 日 1440px）が勝って
             時間グリッドが内側でスクロールしなくなる（今の時刻へ送れず 0:00 から出る）。広い画面だけ伸ばす。 */}
-        <Box sx={{
+        <Box ref={fillNarrow.ref} sx={{
           order: { xs: 2, md: 1 }, flex: { xs: '0 0 auto', md: 1 }, minWidth: 0,
-          height: { xs: 'calc(100svh - 140px)', md: '100%' }, minHeight: { xs: 480 },
+          height: { xs: fillNarrow.height != null ? `${fillNarrow.height}px` : 'calc(100svh - 140px)', md: '100%' }, minHeight: { xs: 480 },
         }}>
           <SchedulerCalendar
             occurrences={occurrencesQuery.data ?? []}

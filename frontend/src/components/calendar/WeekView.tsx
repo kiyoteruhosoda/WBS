@@ -29,6 +29,10 @@ export const TIME_COLUMN_WIDTH = 56;
 // 予定の左の余白と、列幅に対する最大の幅（移植元 ChipMarginLeft・0.8）。
 const CHIP_MARGIN_LEFT = 4;
 const CHIP_MAX_WIDTH_RATIO = 0.8;
+// 狭い画面で何日も並べるとき（列が 50px ほど）は、右の 2 割を空けると題名が 1 文字しか入らない。
+// 列いっぱいに描き、題名は折り返す（打刻の帯を重ねる日だけは帯の場所を空けたまま）。
+const NARROW_CHIP_MARGIN = 2;
+const NARROW_TITLE_LINE = 12;
 // 予定と並べて重ねる帯（打刻）の幅と右の余白。予定のブロックが空けている右の 2 割に置く。
 const BAND_WIDTH = 10;
 const BAND_MARGIN_RIGHT = 3;
@@ -74,6 +78,7 @@ const WeekView: React.FC<Props> = ({
   const c = theme.palette.calendar;
   // 狭い画面で何日も並べるときは、見出しを曜日と日付の 2 行にする（1 行だと列の幅に収まらず、今日の太字が枠で切れる）
   const stackHeader = useMediaQuery(theme.breakpoints.down('sm')) && dates.length > 1;
+  const narrowColumns = stackHeader;
   const scrollRef = useRef<HTMLDivElement>(null);
   const columns = `${TIME_COLUMN_WIDTH}px repeat(${dates.length}, minmax(0, 1fr))`;
   const isCurrentWeek = dates.includes(today);
@@ -160,12 +165,20 @@ const WeekView: React.FC<Props> = ({
 
   const chipText = { color: c.onColor, fontSize: 10, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } as const;
 
-  const occurrenceMark = (segment: DaySegment) => {
+  // 繰り返し・振替の印は題名と同じ白（移植元も White）。`overlay` は時間の予定の右下に重ねる（移植元 WeekCalendarView の
+  // HorizontalAlignment Right・VerticalAlignment Bottom）。題名の横に並べると題名の幅を食う。
+  // 狭い列は題名を折り返すので、右下に重ねると最後の行の字に被る。`float` で 1 行目の右に置き、題名を回り込ませる。
+  const occurrenceMark = (segment: DaySegment, place: 'inline' | 'overlay' | 'float' = 'inline') => {
     const o = segment.occurrence;
+    const sx = {
+      fontSize: 10, flexShrink: 0, color: c.onColor,
+      ...(place === 'overlay' ? { position: 'absolute', right: '1px', bottom: '1px', pointerEvents: 'none' } : {}),
+      ...(place === 'float' ? { float: 'right', mt: '1px' } : {}),
+    } as const;
     if (o.is_moved || o.is_overridden) {
-      return <SwapHorizIcon titleAccess={t(o.is_moved ? 'calendar.badgeMoved' : 'calendar.badgeModified')} sx={{ fontSize: 10, flexShrink: 0 }} />;
+      return <SwapHorizIcon titleAccess={t(o.is_moved ? 'calendar.badgeMoved' : 'calendar.badgeModified')} sx={sx} />;
     }
-    if (o.is_recurring) return <RepeatIcon titleAccess={t('calendar.recurring')} sx={{ fontSize: 10, flexShrink: 0 }} />;
+    if (o.is_recurring) return <RepeatIcon titleAccess={t('calendar.recurring')} sx={sx} />;
     return null;
   };
 
@@ -291,6 +304,11 @@ const WeekView: React.FC<Props> = ({
               }}
             >
               {(blocksByDate.get(date) ?? []).map((block) => {
+                // 狭い列では列いっぱい（打刻の帯を重ねる日は帯の場所を空ける）
+                const fill = narrowColumns && !(bands?.get(date)?.length);
+                const chipLeft = fill ? NARROW_CHIP_MARGIN : CHIP_MARGIN_LEFT;
+                const chipWidthRatio = fill ? block.widthRatio : Math.min(block.widthRatio, CHIP_MAX_WIDTH_RATIO);
+                const chipRightGap = fill ? NARROW_CHIP_MARGIN * 2 : CHIP_MARGIN_LEFT;
                 const segment = block.segment;
                 const o = segment.occurrence;
                 // 終わった予定は影の上に描き、地だけ沈める（文字は白のまま読める）
@@ -316,9 +334,9 @@ const WeekView: React.FC<Props> = ({
                     sx={{
                       position: 'absolute', zIndex: 1, boxSizing: 'border-box', overflow: 'hidden',
                       top: block.top, height: block.height,
-                      left: `calc(${block.leftRatio * 100}% + ${CHIP_MARGIN_LEFT}px)`,
-                      width: `calc(${Math.min(block.widthRatio, CHIP_MAX_WIDTH_RATIO) * 100}% - ${CHIP_MARGIN_LEFT}px)`,
-                      px: '4px', borderRadius: '2px', bgcolor: bg, cursor: 'pointer', touchAction: 'none',
+                      left: `calc(${block.leftRatio * 100}% + ${chipLeft}px)`,
+                      width: `calc(${chipWidthRatio * 100}% - ${chipRightGap}px)`,
+                      px: fill ? '2px' : '4px', borderRadius: '2px', bgcolor: bg, cursor: 'pointer', touchAction: 'none',
                       opacity: dragging ? 0.5 : 1,
                       border: selected ? `2px solid ${c.onColor}` : `1px solid ${darken(bg)}`,
                       boxShadow: selected ? `0 0 0 1px ${c.blue}` : 'none',
@@ -326,16 +344,28 @@ const WeekView: React.FC<Props> = ({
                     }}
                   >
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: '2px', minWidth: 0 }}>
-                      <Box sx={{ ...chipText, flex: 1 }}>{o.title}</Box>
-                      {occurrenceMark(segment)}
+                      <Box sx={fill
+                        ? {
+                          ...chipText, flex: 1, whiteSpace: 'normal', wordBreak: 'break-all', lineHeight: `${NARROW_TITLE_LINE}px`,
+                          display: '-webkit-box', WebkitBoxOrient: 'vertical',
+                          WebkitLineClamp: Math.max(1, Math.floor((block.height - 2) / NARROW_TITLE_LINE)),
+                        }
+                        : { ...chipText, flex: 1 }}
+                      >
+                        {/* 重なって列を分けた細いチップ（1 字幅）は題名を優先する */}
+                        {fill && block.widthRatio > 0.99 && occurrenceMark(segment, 'float')}
+                        {o.title}
+                      </Box>
                       {occurrenceAction?.(o)}
                     </Box>
-                    {taskLabel && block.height >= 32 && (
+                    {!fill && occurrenceMark(segment, 'overlay')}
+                    {/* 狭い列は題名を折り返して使い切る（時刻は目盛りで分かる。全部は title の吹き出しに出る） */}
+                    {!fill && taskLabel && block.height >= 32 && (
                       <Box data-testid="occurrence-task" sx={{ ...chipText, fontSize: 9, fontWeight: 600 }}>
                         {t('calendar.linkedTask', { title: taskLabel })}
                       </Box>
                     )}
-                    {block.height >= (taskLabel ? 46 : 32) && <Box sx={{ ...chipText, fontSize: 9, opacity: 0.9 }}>{range}</Box>}
+                    {!fill && block.height >= (taskLabel ? 46 : 32) && <Box sx={{ ...chipText, fontSize: 9, opacity: 0.9 }}>{range}</Box>}
                   </Box>
                 );
               })}
@@ -344,14 +374,19 @@ const WeekView: React.FC<Props> = ({
                 const piece = ghostByDate.get(date);
                 if (!piece) return null;
                 const fullWidth = ghost.kind === 'create';
+                // 動かす途中の形は、置いたときのチップと同じ幅（狭い列は列いっぱい）
+                const ghostFill = narrowColumns && !(bands?.get(date)?.length);
+                const ghostLeft = ghostFill ? NARROW_CHIP_MARGIN : CHIP_MARGIN_LEFT;
+                const ghostRatio = ghostFill ? ghost.widthRatio : Math.min(ghost.widthRatio, CHIP_MAX_WIDTH_RATIO);
+                const ghostRightGap = ghostFill ? NARROW_CHIP_MARGIN * 2 : CHIP_MARGIN_LEFT;
                 return (
                   <Box
                     data-testid={piece.first ? 'drag-ghost' : undefined}
                     sx={{
                       position: 'absolute', zIndex: 4, pointerEvents: 'none', boxSizing: 'border-box',
                       top: piece.startMinute, height: Math.max(piece.endMinute - piece.startMinute, 15),
-                      left: fullWidth ? 0 : `calc(${ghost.leftRatio * 100}% + ${CHIP_MARGIN_LEFT}px)`,
-                      width: fullWidth ? '100%' : `max(24px, calc(${Math.min(ghost.widthRatio, CHIP_MAX_WIDTH_RATIO) * 100}% - ${CHIP_MARGIN_LEFT}px))`,
+                      left: fullWidth ? 0 : `calc(${ghost.leftRatio * 100}% + ${ghostLeft}px)`,
+                      width: fullWidth ? '100%' : `max(24px, calc(${ghostRatio * 100}% - ${ghostRightGap}px))`,
                       bgcolor: c.dragGhost, borderRadius: '6px',
                       borderTop: piece.first ? `2px solid ${c.blue}` : 'none',
                       px: '6px', pt: '4px', color: c.onColor, fontSize: 10, whiteSpace: 'nowrap', overflow: 'hidden',
