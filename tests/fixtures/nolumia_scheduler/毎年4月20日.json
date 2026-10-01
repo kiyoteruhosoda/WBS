@@ -1,0 +1,32 @@
+{
+  "id": "evt_rec_003",
+  "kind": "Recurring",
+  "title": "年次棚卸",
+  "location": "倉庫",
+  "visibility": "Private",
+  "eventType": "inventory",
+  "description": null,
+  "timezone": "Asia/Tokyo",
+  "allDay": false,
+  "startDate": "2026-04-20",
+  "startTime": "08:00:00",
+  "endTime": "12:00:00",
+  "recurrence": {
+    "ruleType": "YEARLY",
+    "interval": 1,
+    "endDate": "2030-12-31",
+    "weekly": null,
+    "monthly": null,
+    "yearly": {
+      "mode": "DAY_OF_MONTH",
+      "month": 4,
+      "day": 20
+    },
+    "adjustment": null
+  },
+  "exceptions": [],
+  "moves": [],
+  "createdAt": "2026-04-20T10:00:00+09:00",
+  "updatedAt": "2026-04-20T10:00:00+09:00",
+  "version": 1
+}
