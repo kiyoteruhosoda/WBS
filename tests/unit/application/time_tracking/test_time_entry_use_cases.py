@@ -268,3 +268,95 @@ def test_delete_removes_the_entry(uc) -> None:
     assert uc.current(ME) is None
     with pytest.raises(NotFoundError):
         uc.get(entry.id, ME)
+
+
+# ── 押した時刻（アプリが溜めた押下。ADR-0018） ───────────────────────────
+
+
+def test_start_and_stop_at_the_pressed_time(uc, clock) -> None:
+    clock.current = T0 + timedelta(hours=2)
+    pressed = T0 + timedelta(minutes=10)
+    started = uc.start(StartTimerCommand(user_id=ME, task_id=None, at=pressed)).started
+    assert started.entry.started_at == pressed
+    stopped = uc.stop(ME, T0 + timedelta(minutes=70))
+    assert stopped is not None
+    assert stopped.entry.ended_at == T0 + timedelta(minutes=70)
+    assert stopped.duration_seconds == 60 * 60
+
+
+def test_switch_at_the_pressed_time(uc, clock) -> None:
+    first = uc.start(StartTimerCommand(user_id=ME, task_id=MY_TASK)).started
+    clock.current = T0 + timedelta(hours=1)
+    pressed = T0 + timedelta(minutes=30)
+    result = uc.start(StartTimerCommand(user_id=ME, task_id=MY_OTHER_TASK, at=pressed))
+    assert result.stopped is not None and result.stopped.entry.id == first.entry.id
+    assert result.stopped.entry.ended_at == pressed
+    assert result.started.entry.started_at == pressed
+
+
+def test_a_resent_start_does_not_make_a_second_entry(uc, entries, clock) -> None:
+    pressed = T0 + timedelta(minutes=5)
+    clock.current = T0 + timedelta(minutes=6)
+    first = uc.start(StartTimerCommand(user_id=ME, task_id=None, at=pressed)).started
+    clock.current = T0 + timedelta(minutes=7)
+    again = uc.start(StartTimerCommand(user_id=ME, task_id=MY_TASK, at=pressed))
+    assert again.started.entry.id == first.entry.id
+    assert again.stopped is None
+    assert len(entries.all()) == 1
+
+
+def test_sub_second_press_times_are_dropped(uc, clock) -> None:
+    clock.current = T0 + timedelta(minutes=1)
+    started = uc.start(
+        StartTimerCommand(user_id=ME, task_id=None, at=T0 + timedelta(seconds=5, microseconds=700))
+    ).started
+    assert started.entry.started_at == T0 + timedelta(seconds=5)
+
+
+def test_a_press_slightly_ahead_of_the_server_is_taken_as_now(uc, clock) -> None:
+    started = uc.start(
+        StartTimerCommand(user_id=ME, task_id=None, at=T0 + timedelta(seconds=30))
+    ).started
+    assert started.entry.started_at == T0
+
+
+@pytest.mark.parametrize(
+    "pressed",
+    [T0 + timedelta(minutes=2), T0 - timedelta(days=7, seconds=1)],
+    ids=["future", "older-than-seven-days"],
+)
+def test_presses_out_of_range_are_refused(uc, entries, pressed) -> None:
+    with pytest.raises(ValidationError):
+        uc.start(StartTimerCommand(user_id=ME, task_id=None, at=pressed))
+    assert entries.all() == []
+
+
+def test_a_start_before_the_running_entry_is_refused(uc, clock) -> None:
+    clock.current = T0 + timedelta(hours=1)
+    uc.start(StartTimerCommand(user_id=ME, task_id=None, at=T0 + timedelta(minutes=30)))
+    with pytest.raises(ValidationError):
+        uc.start(StartTimerCommand(user_id=ME, task_id=None, at=T0 + timedelta(minutes=10)))
+
+
+def test_a_stop_before_the_running_entry_started_is_refused(uc, clock) -> None:
+    clock.current = T0 + timedelta(hours=1)
+    uc.start(StartTimerCommand(user_id=ME, task_id=None, at=T0 + timedelta(minutes=30)))
+    with pytest.raises(ValidationError):
+        uc.stop(ME, T0 + timedelta(minutes=10))
+    assert uc.current(ME) is not None
+
+
+def test_a_past_start_that_overlaps_another_entry_is_refused(uc, entries, clock) -> None:
+    uc.start(StartTimerCommand(user_id=ME, task_id=None))
+    clock.current = T0 + timedelta(minutes=30)
+    uc.stop(ME)
+    clock.current = T0 + timedelta(hours=1)
+    # 送り直された古い Start（もう止めた打刻の途中）
+    with pytest.raises(ConflictError):
+        uc.start(StartTimerCommand(user_id=ME, task_id=None, at=T0 + timedelta(minutes=10)))
+    assert len(entries.all()) == 1
+
+
+def test_a_stop_with_a_time_when_nothing_runs_does_nothing(uc, uow) -> None:
+    assert uc.stop(ME, T0 - timedelta(minutes=1)) is None
+    assert uow.commits == 0

@@ -36,6 +36,7 @@ from src.domain.entities.time_entry import TimeEntry
 from src.domain.exceptions import ConflictError, NotFoundError, ValidationError
 from src.domain.repositories.closing_period_repository import ClosingPeriodRepository
 from src.domain.repositories.time_entry_repository import TimeEntryRepository
+from src.domain.value_objects.press_time import effective_press_time
 from src.domain.value_objects.time_entry_source import TimeEntrySource
 from src.shared.clock import utcnow
 
@@ -67,23 +68,37 @@ class TimeEntryUseCases:
     # ── 普段の 2 つ ────────────────────────────────────────────────────
 
     def start(self, command: StartTimerCommand) -> StartTimerResult:
-        """始める。走っている打刻があれば、それを同じ時刻で止めてから始める（切り替え）。"""
+        """始める。走っている打刻があれば、それを同じ時刻で止めてから始める（切り替え）。
+
+        ``command.at``（押した時刻、ADR-0018）があればその時刻で切り替える。走っている打刻と
+        同じ時刻の Start は**送り直し**とみなして何もしない（アプリが応答を受け取り損ねて
+        もう一度送ったとき、長さ 0 の打刻を作らない）。
+        """
         now = self._now()
+        at = effective_press_time(command.at, now)
         user_id = command.user_id
-        task_id = self._task_for_start(user_id, command.task_id, now)
 
         running = self._entries.find_running(user_id)
+        if running is not None and command.at is not None:
+            if at == running.started_at:
+                return StartTimerResult(started=self._view(running, now), stopped=None)
+            if at < running.started_at:
+                raise ValidationError("at must not be before the running time entry started")
+        if at < now:
+            self._ensure_no_overlap(user_id, at, now, running)
+
+        task_id = self._task_for_start(user_id, command.task_id, at)
         if running is not None:
-            self._ensure_open(user_id, running.started_at, now)
-        self._ensure_open(user_id, now, now)
+            self._ensure_open(user_id, running.started_at, at)
+        self._ensure_open(user_id, at, at)
 
         stopped: TimeEntry | None = None
         if running is not None:
-            running.stop(now)
+            running.stop(at)
             stopped = self._entries.save(running)
 
         started = self._entries.save(
-            TimeEntry.start(user_id=user_id, at=now, task_id=task_id, memo=command.memo)
+            TimeEntry.start(user_id=user_id, at=at, task_id=task_id, memo=command.memo)
         )
         self._uow.commit()
         return StartTimerResult(
@@ -91,14 +106,21 @@ class TimeEntryUseCases:
             stopped=self._view(stopped, now) if stopped is not None else None,
         )
 
-    def stop(self, user_id: int) -> TimeEntryView | None:
-        """止める。走っていなければ何もせず None（2 度押しても同じ結果になる）。"""
+    def stop(self, user_id: int, at: datetime | None = None) -> TimeEntryView | None:
+        """止める。走っていなければ何もせず None（2 度押しても同じ結果になる）。
+
+        ``at``（押した時刻、naive な UTC。ADR-0018）があればその時刻で止める。走っている打刻の
+        始まりより前は断る。
+        """
         now = self._now()
+        stop_at = effective_press_time(at, now)
         running = self._entries.find_running(user_id)
         if running is None:
             return None
-        self._ensure_open(user_id, running.started_at, now)
-        running.stop(now)
+        if at is not None and stop_at < running.started_at:
+            raise ValidationError("at must not be before the running time entry started")
+        self._ensure_open(user_id, running.started_at, stop_at)
+        running.stop(stop_at)
         saved = self._entries.save(running)
         self._uow.commit()
         return self._view(saved, now)
@@ -315,6 +337,18 @@ class TimeEntryUseCases:
         return self._view(saved, now)
 
     # ── 内側 ────────────────────────────────────────────────────────────
+
+    def _ensure_no_overlap(
+        self, user_id: int, start: datetime, now: datetime, running: TimeEntry | None
+    ) -> None:
+        """過去の時刻から始める打刻が、ほかの打刻と重ならないか（走っている打刻は除く）。
+
+        溜めた Start を送ったら、その間に締めの画面で手で足した打刻があった、という場合に
+        重なった 2 本を作らない。
+        """
+        running_id = running.id if running is not None else None
+        if any(e.id != running_id for e in self._entries.find_overlapping(user_id, start, now)):
+            raise ConflictError("at overlaps another time entry")
 
     def _ensure_entry_open(self, entry: TimeEntry) -> None:
         self._ensure_open(entry.user_id, entry.started_at, entry.ended_at)

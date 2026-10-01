@@ -211,6 +211,62 @@ def test_required_claims_must_be_present(rsa_key, jwks) -> None:
         _provider(jwks)._verify_id_token(token, nonce=NONCE)
 
 
+# ── アプリのアクセストークン（ADR-0018） ──────────────────────────────────
+def _access_token(rsa_key, *, typ: str = "at+jwt", **claim_overrides) -> str:
+    now = datetime.now(UTC)
+    claims = {
+        "iss": ISSUER,
+        "sub": "abc-123",
+        "aud": f"{ISSUER}/userinfo",
+        "client_id": "wbstimer-app",
+        "scope": "openid profile email offline_access",
+        "exp": now + timedelta(minutes=5),
+        "iat": now,
+        "jti": "at-1",
+    }
+    claims.update(claim_overrides)
+    return jwt.encode(claims, rsa_key, algorithm="RS256", headers={"kid": KEY_ID, "typ": typ})
+
+
+def test_a_valid_access_token_yields_its_claims(rsa_key, jwks) -> None:
+    claims = _provider(jwks).verify_access_token(_access_token(rsa_key))
+    assert claims["sub"] == "abc-123"
+    assert claims["client_id"] == "wbstimer-app"
+
+
+def test_an_id_token_is_not_taken_as_an_access_token(rsa_key, jwks) -> None:
+    # typ が at+jwt でないもの（ID トークン・停止の通知）を Bearer に持ち込ませない
+    with pytest.raises(AuthenticationError):
+        _provider(jwks).verify_access_token(_id_token(rsa_key))
+    with pytest.raises(AuthenticationError):
+        _provider(jwks).verify_access_token(_access_token(rsa_key, typ="JWT"))
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"aud": "api://someone-else"},
+        {"iss": "https://evil.example"},
+        {"exp": datetime(2020, 1, 1, tzinfo=UTC)},
+    ],
+    ids=["another-audience", "another-issuer", "expired"],
+)
+def test_access_tokens_that_do_not_fit_are_refused(rsa_key, jwks, overrides) -> None:
+    with pytest.raises(AuthenticationError):
+        _provider(jwks).verify_access_token(_access_token(rsa_key, **overrides))
+
+
+def test_an_access_token_signed_by_another_key_is_refused(jwks) -> None:
+    other_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    with pytest.raises(AuthenticationError):
+        _provider(jwks).verify_access_token(_access_token(other_key))
+
+
+def test_garbage_is_refused_without_an_unexpected_error(jwks) -> None:
+    with pytest.raises(AuthenticationError):
+        _provider(jwks).verify_access_token("not-a-jwt")
+
+
 # ── ログアウト URL ────────────────────────────────────────────────────────
 def test_end_session_url_includes_the_client_and_return_address(jwks) -> None:
     url = _provider(jwks).build_end_session_url(
