@@ -5,8 +5,8 @@ import { scheduleTaskPath } from '../calendar/taskScheduling';
 import { useNavigate } from 'react-router-dom';
 import type { Task, Category } from '../types';
 import type { GanttActualSpan } from '../types/actuals';
-import { ACTUAL_DAY_COLOR, ACTUAL_STRIP_COLOR, formatSeconds, ganttActualLayout } from '../actuals/actualsView';
-import { displayStatus, parseDate, todayDate } from '../utils/format';
+import { ACTUAL_DAY_COLOR, ACTUAL_STRIP_COLOR, ganttActualLayout } from '../actuals/actualsView';
+import { dateRangeParts, displayStatus, formatDate, formatSecondsAsHours, parseDate, todayDate } from '../utils/format';
 import type { DisplayStatus } from '../utils/format';
 import { useI18n } from '../i18n';
 import { ds } from '../theme';
@@ -193,8 +193,8 @@ const GanttChart: React.FC<Props> = ({ tasks, categories, showMeta = true, onTog
               const span = actuals?.get(t.id);
               const actualStrip = actualLayout.strip && span ? (
                 <Box
-                  aria-label={tr('gantt.actualTip', { first: span.first_date, last: span.last_date })}
-                  title={tr('gantt.actualTip', { first: span.first_date, last: span.last_date })}
+                  aria-label={tr('gantt.actualTip', dateRangeParts(span.first_date, span.last_date))}
+                  title={tr('gantt.actualTip', dateRangeParts(span.first_date, span.last_date))}
                   sx={{
                     position: 'absolute',
                     left: actualLayout.strip.startIdx * DAY_WIDTH + 3,
@@ -207,7 +207,7 @@ const GanttChart: React.FC<Props> = ({ tasks, categories, showMeta = true, onTog
               const actualCells = actualLayout.cells.map((c) => {
                 const day = days[c.idx];
                 const label = tr('gantt.actualDayTip', {
-                  date: `${day.getMonth() + 1}/${day.getDate()}`, hours: formatSeconds(c.seconds),
+                  date: formatDate(day), hours: formatSecondsAsHours(c.seconds),
                 });
                 return (
                   <Box

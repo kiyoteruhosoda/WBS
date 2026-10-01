@@ -13,8 +13,13 @@ export interface CalendarPalette {
   holidayBg: string;
   sundayBg: string;
   saturdayBg: string;
-  /** 過ぎた日・時刻に重ねる半透明の黒 */
+  /**
+   * 過ぎた日・時刻に敷く半透明の黒（移植元は #3D000000 / #54000000。濃すぎて題名が読めないので薄くした）。
+   * 予定のチップはこの上に描き、文字は白のまま地だけ `pastEventFactor` 倍に沈める。
+   */
   pastShade: string;
+  /** 過ぎた予定の地の色に掛ける倍率（影と同じ濃さ。`1 − 影の不透明度`） */
+  pastEventFactor: number;
   gridLine: string;
   gridHalfLine: string;
   currentTimeLine: string;
@@ -45,7 +50,8 @@ export const calendarPalettes: Record<'light' | 'dark', CalendarPalette> = {
     holidayBg: '#fff0f0',
     sundayBg: '#fff8f8',
     saturdayBg: '#f0f4ff',
-    pastShade: 'rgba(0, 0, 0, 0.24)', // #3D000000
+    pastShade: 'rgba(0, 0, 0, 0.1)',
+    pastEventFactor: 0.9,
     gridLine: '#d0d7de',
     gridHalfLine: 'rgba(208, 215, 222, 0.35)', // #5AD0D7DE
     currentTimeLine: '#ea4335',
@@ -68,7 +74,8 @@ export const calendarPalettes: Record<'light' | 'dark', CalendarPalette> = {
     holidayBg: '#3a1a1a',
     sundayBg: '#2d1a1a',
     saturdayBg: '#1a1a2d',
-    pastShade: 'rgba(0, 0, 0, 0.33)', // #54000000
+    pastShade: 'rgba(0, 0, 0, 0.2)',
+    pastEventFactor: 0.8,
     gridLine: '#454545',
     gridHalfLine: 'rgba(69, 69, 69, 0.31)', // #50454545
     currentTimeLine: '#ea4335',
@@ -99,6 +106,10 @@ export const eventColors: Record<EventColorKey, string> = {
 };
 
 export const eventColor = (key: EventColorKey | null | undefined): string => eventColors[key ?? 'DEFAULT'] ?? eventColors.DEFAULT;
+
+/** 過ぎた予定の地の色（影を重ねたのと同じ色。文字は白のまま）。 */
+export const pastEventColor = (hex: string, palette: Pick<CalendarPalette, 'pastEventFactor'>): string =>
+  darken(hex, palette.pastEventFactor);
 
 /** 予定の枠の色（地の色を 0.72 倍に暗くする。移植元 `DarkenColor`）。 */
 export const darken = (hex: string, factor = 0.72): string => {

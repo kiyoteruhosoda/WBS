@@ -4,7 +4,7 @@ import { groupSegmentsByDate } from '../calendar/daySegments';
 import { fromZonedPoint } from '../calendar/zonedTime';
 import { TOKYO, hm, occurrence } from '../calendar/testOccurrences';
 import {
-  currentAndNext, entryBands, formatDuration, liveActuals, occurrenceStartOf, taskUrgencyOf,
+  currentAndNext, entryBands, liveActuals, occurrenceStartOf, taskUrgencyOf,
 } from './todayView';
 
 const DAY = '2026-09-10';
@@ -102,12 +102,6 @@ describe('今日の実績', () => {
     const live = liveActuals({ ...base, server_now: '2026-09-10T14:59:00Z', running }, 0, 3_600_000);
     expect(live.totalSeconds).toBe(5400 + 60);
     expect(live.actuals[live.actuals.length - 1]).toEqual({ task_id: null, task_title: null, seconds: 60 });
-  });
-
-  it('H:MM で出す', () => {
-    expect(formatDuration(0)).toBe('0:00');
-    expect(formatDuration(59)).toBe('0:00');
-    expect(formatDuration(3600 + 5 * 60 + 59)).toBe('1:05');
   });
 });
 

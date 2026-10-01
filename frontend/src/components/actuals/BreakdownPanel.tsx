@@ -7,8 +7,9 @@ import {
 } from '@mui/material';
 import { ACTUALS_KEY, getBreakdown } from '../../api/actuals';
 import {
-  formatSeconds, groupFill, rangeParams, stackSegments, totalOf,
+  groupFill, rangeParams, stackSegments, totalOf,
 } from '../../actuals/actualsView';
+import { dateRangeParts, formatSecondsAsHours } from '../../utils/format';
 import type { RangeValue } from '../../actuals/actualsView';
 import { useI18n } from '../../i18n';
 import { categoryColor, ds } from '../../theme';
@@ -75,11 +76,11 @@ const BreakdownPanel: React.FC = () => {
               return (
                 <Box key={p.first_day} sx={{ display: 'flex', alignItems: 'center', gap: '12px', py: '6px' }}>
                   <Box sx={{ width: 170, flexShrink: 0, fontSize: 12, color: ds.textSub, whiteSpace: 'nowrap' }}>
-                    {p.first_day}〜{p.last_day}
+                    {t('common.dateRange', dateRangeParts(p.first_day, p.last_day))}
                   </Box>
                   <Box sx={{ flex: 1, display: 'flex', gap: '2px', height: 16, minWidth: 0 }}>
                     {stackSegments(groups, p.seconds_by_group, maxTotal).map((s, i, all) => {
-                      const label = `${names.get(s.key)} ${formatSeconds(s.seconds)}`;
+                      const label = `${names.get(s.key)} ${formatSecondsAsHours(s.seconds)}`;
                       return (
                         <Box
                           key={s.key}
@@ -95,7 +96,7 @@ const BreakdownPanel: React.FC = () => {
                     })}
                   </Box>
                   <Box sx={{ width: 64, flexShrink: 0, textAlign: 'right', fontSize: 12, color: ds.text }}>
-                    {formatSeconds(total)}
+                    {formatSecondsAsHours(total)}
                   </Box>
                 </Box>
               );
@@ -115,13 +116,13 @@ const BreakdownPanel: React.FC = () => {
               <TableBody>
                 {data.periods.map((p) => (
                   <TableRow key={p.first_day}>
-                    <TableCell sx={{ whiteSpace: 'nowrap' }}>{p.first_day}〜{p.last_day}</TableCell>
+                    <TableCell sx={{ whiteSpace: 'nowrap' }}>{t('common.dateRange', dateRangeParts(p.first_day, p.last_day))}</TableCell>
                     {groups.map((g) => (
                       <TableCell key={g.key} align="right">
-                        {p.seconds_by_group[g.key] ? formatSeconds(p.seconds_by_group[g.key]) : '—'}
+                        {p.seconds_by_group[g.key] ? formatSecondsAsHours(p.seconds_by_group[g.key]) : '—'}
                       </TableCell>
                     ))}
-                    <TableCell align="right">{formatSeconds(totalOf(p.seconds_by_group))}</TableCell>
+                    <TableCell align="right">{formatSecondsAsHours(totalOf(p.seconds_by_group))}</TableCell>
                   </TableRow>
                 ))}
               </TableBody>

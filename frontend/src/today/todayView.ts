@@ -89,12 +89,6 @@ export const liveActuals = (
   return { totalSeconds: summary.total_seconds + delta, actuals };
 };
 
-/** `H:MM`（秒は切り捨て）。 */
-export const formatDuration = (seconds: number): string => {
-  const total = Math.max(0, Math.floor(seconds / 60));
-  return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`;
-};
-
 /**
  * 時刻付きの予定のうち、いま掛かっているもの（タスクのあるものを優先）と、次に始まるもの。
  * `segments` は今日の分（`groupSegmentsByDate` の 1 日分）。

@@ -13,7 +13,7 @@ import {
 } from '../../calendar/weekLayout';
 import type { DayBand, WeekEventBlock } from '../../calendar/weekLayout';
 import { holidaysByDate } from '../../calendar/monthCells';
-import { darken } from '../../calendar/calendarColors';
+import { darken, pastEventColor } from '../../calendar/calendarColors';
 import type { LinkedTask } from '../../calendar/taskScheduling';
 import { linkedTaskLabel, occurrenceColor } from '../../calendar/taskScheduling';
 import { formatWeekHeader } from '../../calendar/calendarTitles';
@@ -224,7 +224,9 @@ const WeekView: React.FC<Props> = ({
                   );
                 }
                 const segment = b.segment;
-                const bg = segment ? occurrenceColor(segment.occurrence, linkedTasks) : c.red;
+                const color = segment ? occurrenceColor(segment.occurrence, linkedTasks) : c.red;
+                // 過ぎた日の予定は影の上に描き、地だけ沈める（文字は白のまま読める）
+                const bg = date < today ? pastEventColor(color, c) : color;
                 const title = segment ? segment.occurrence.title : b.holiday?.name ?? '';
                 const selected = segment != null && segment.key === selectedSegmentKey;
                 return (
@@ -234,7 +236,7 @@ const WeekView: React.FC<Props> = ({
                     onClick={segment ? (e) => { e.stopPropagation(); onSelectSegment(segment); } : undefined}
                     onDoubleClick={segment && onEditOccurrence ? (e) => { e.stopPropagation(); onEditOccurrence(segment.occurrence); } : undefined}
                     sx={{
-                      position: 'absolute', top: b.row * ALL_DAY_ROW_HEIGHT + 1, left: 0, right: '4px',
+                      position: 'absolute', zIndex: 1, top: b.row * ALL_DAY_ROW_HEIGHT + 1, left: 0, right: '4px',
                       height: ALL_DAY_CHIP_HEIGHT, px: '6px', py: '2px', borderRadius: '2px', boxSizing: 'border-box',
                       display: 'flex', alignItems: 'center', gap: '2px',
                       bgcolor: bg, opacity: segment ? 0.82 : 0.7,
@@ -248,7 +250,7 @@ const WeekView: React.FC<Props> = ({
                 );
               })}
               {date < today && (
-                <Box sx={{ position: 'absolute', inset: 0, bgcolor: c.pastShade, pointerEvents: 'none' }} />
+                <Box sx={{ position: 'absolute', inset: 0, zIndex: 0, bgcolor: c.pastShade, pointerEvents: 'none' }} />
               )}
             </Box>
           );
@@ -291,7 +293,9 @@ const WeekView: React.FC<Props> = ({
               {(blocksByDate.get(date) ?? []).map((block) => {
                 const segment = block.segment;
                 const o = segment.occurrence;
-                const bg = occurrenceColor(o, linkedTasks);
+                // 終わった予定は影の上に描き、地だけ沈める（文字は白のまま読める）
+                const ended = date < today || (date === today && segment.endMinute <= nowMinute);
+                const bg = ended ? pastEventColor(occurrenceColor(o, linkedTasks), c) : occurrenceColor(o, linkedTasks);
                 const selected = segment.key === selectedSegmentKey;
                 const range = formatSegmentTimeRange(segment);
                 const taskLabel = linkedTaskLabel(o, linkedTasks);
@@ -389,9 +393,9 @@ const WeekView: React.FC<Props> = ({
                   }}
                 />
               ))}
-              {/* 過ぎた時間の影（過ぎた日は下まで、今日は今まで） */}
+              {/* 過ぎた時間の影（過ぎた日は下まで、今日は今まで）。予定のチップ（zIndex 1）より下に敷く */}
               <Box sx={{
-                position: 'absolute', top: 0, left: 0, right: 0, zIndex: 2, pointerEvents: 'none',
+                position: 'absolute', top: 0, left: 0, right: 0, zIndex: 0, pointerEvents: 'none',
                 height: pastShadeHeight(date, today, nowMinute, MINUTES_PER_DAY), bgcolor: c.pastShade,
               }} />
               {/* 現在時刻の線（今週の列すべて） */}

@@ -2,7 +2,8 @@ import React from 'react';
 import { Box } from '@mui/material';
 import { useI18n } from '../../i18n';
 import type { TotalsTable as TotalsTableModel } from '../../closing/closingBoard';
-import { formatExactDuration, formatQuarterHours } from '../../closing/closingBoard';
+import { formatQuarterHours } from '../../closing/closingBoard';
+import { formatExactDuration } from '../../utils/format';
 import { dayOfWeek } from '../../calendar/zonedTime';
 import { ds } from '../../theme';
 

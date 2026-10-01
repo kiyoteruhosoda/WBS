@@ -248,19 +248,13 @@ const pad2 = (n: number): string => String(n).padStart(2, '0');
 
 /**
  * 表の時間（#163: 表示だけ 15 分単位）。15 分へ四捨五入して `H:MM`。0 秒は空。
- * 正確な長さは `formatExactDuration`（確定は丸めない）。
+ * 正確な長さは `utils/format` の `formatExactDuration`（確定は丸めない）。
  */
 export const formatQuarterHours = (seconds: number): string => {
   if (seconds <= 0) return '';
   const quarters = Math.round(seconds / 900);
   const minutes = quarters * 15;
   return `${Math.floor(minutes / 60)}:${pad2(minutes % 60)}`;
-};
-
-/** 正確な長さ（`H:MM:SS`）。 */
-export const formatExactDuration = (seconds: number): string => {
-  const s = Math.max(0, Math.round(seconds));
-  return `${Math.floor(s / 3600)}:${pad2(Math.floor((s % 3600) / 60))}:${pad2(s % 60)}`;
 };
 
 // ── タスクを振る ────────────────────────────────────────────────────────

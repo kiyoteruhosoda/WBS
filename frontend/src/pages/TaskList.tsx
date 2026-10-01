@@ -7,11 +7,11 @@ import {
   TableContainer, OutlinedInput, InputAdornment, TextField, IconButton, Tooltip,
 } from '@mui/material';
 import MoreTimeIcon from '@mui/icons-material/MoreTime';
-import { formatHours, scheduleTaskPath } from '../calendar/taskScheduling';
+import { scheduleTaskPath } from '../calendar/taskScheduling';
 import { getTasks } from '../api/tasks';
 import { getCategories } from '../api/categories';
 import { getMilestones } from '../api/milestones';
-import { formatDate, isOverdue, isDueToday } from '../utils/format';
+import { formatDate, formatHours, isOverdue, isDueToday } from '../utils/format';
 import type { Task, TaskStatus } from '../types';
 import { useI18n } from '../i18n';
 import { ds } from '../theme';

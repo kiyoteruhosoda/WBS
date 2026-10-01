@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { Task } from '../types';
 import {
   assignCandidates, buildFindingItems, buildTotalsTable, canTurnIntoEntry, entriesOverlappingOccurrence, entryMarksOf,
-  formatEntryRange, formatExactDuration, formatQuarterHours, groupEntrySegmentsByDate, splitEntryIntoDaySegments,
+  formatEntryRange, formatQuarterHours, groupEntrySegmentsByDate, splitEntryIntoDaySegments,
 } from './closingBoard';
 import type { EntrySegment } from './closingBoard';
 import { layoutTimedSegments } from '../calendar/weekLayout';
@@ -132,7 +132,6 @@ describe('日ごと・タスクごとの合計', () => {
     expect(formatQuarterHours(3600)).toBe('1:00');
     expect(formatQuarterHours(1000)).toBe('0:15');
     expect(formatQuarterHours(5800)).toBe('1:30');
-    expect(formatExactDuration(3725)).toBe('1:02:05');
   });
 });
 

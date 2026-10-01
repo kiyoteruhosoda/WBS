@@ -20,15 +20,6 @@ export interface CurrentSnapshot {
 export const elapsedOf = (snapshot: CurrentSnapshot, entry: TimeEntry, nowMs: number): number =>
   Date.parse(snapshot.current.server_now) - Date.parse(entry.started_at) + (nowMs - snapshot.receivedAt);
 
-/** `H:MM:SS`（負は 0）。 */
-export const formatElapsed = (ms: number): string => {
-  const total = Math.max(0, Math.floor(ms / 1000));
-  const h = Math.floor(total / 3600);
-  const m = Math.floor((total % 3600) / 60);
-  const s = total % 60;
-  return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
-};
-
 /** 打刻の書き込みの失敗。 */
 export interface TimerFailure {
   /**

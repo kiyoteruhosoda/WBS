@@ -6,6 +6,7 @@ import type { MonthCell } from '../../calendar/monthCells';
 import { availableChipRows, visibleChipCount } from '../../calendar/monthCells';
 import type { LinkedTask } from '../../calendar/taskScheduling';
 import { occurrenceColor } from '../../calendar/taskScheduling';
+import { pastEventColor } from '../../calendar/calendarColors';
 import { formatOccurrenceTimeRange } from '../../calendar/daySegments';
 import DeadlineChip from './DeadlineChip';
 
@@ -94,6 +95,8 @@ const MonthView: React.FC<Props> = ({ cells, selectedDate, timeZone, onSelectDat
                 position: 'relative', minWidth: 0, overflow: 'hidden', cursor: 'pointer', p: '2px',
                 borderRight: `1px solid ${c.border}`, borderBottom: `1px solid ${c.border}`,
                 bgcolor: background(cell),
+                // 過ぎた日の影は地に敷く（中身の上に重ねると題名が読めない）。予定の地は pastEventColor で沈める
+                backgroundImage: cell.isPast ? `linear-gradient(${c.pastShade}, ${c.pastShade})` : 'none',
                 '&:nth-of-type(7n)': { borderRight: 'none' },
                 '&:focus-visible': { outline: `2px solid ${c.blue}`, outlineOffset: -2 },
               }}
@@ -128,7 +131,8 @@ const MonthView: React.FC<Props> = ({ cells, selectedDate, timeZone, onSelectDat
                       title={range ? `${o.title}\n${range}` : o.title}
                       sx={{
                         height: 14, lineHeight: '14px', borderRadius: '3px', mx: '1px', px: '3px',
-                        bgcolor: occurrenceColor(o, linkedTasks), color: c.onColor, fontSize: 10,
+                        bgcolor: cell.isPast ? pastEventColor(occurrenceColor(o, linkedTasks), c) : occurrenceColor(o, linkedTasks),
+                        color: c.onColor, fontSize: 10,
                         overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                       }}
                     >
@@ -146,10 +150,6 @@ const MonthView: React.FC<Props> = ({ cells, selectedDate, timeZone, onSelectDat
                 <Box sx={{ fontSize: 10, m: '1px 3px 0', color: c.textSecondary }}>
                   {t('calendar.more', { count: extra })}
                 </Box>
-              )}
-              {/* 過ぎた日の影。中身ごと沈める。押せるように pointer は通す。 */}
-              {cell.isPast && (
-                <Box sx={{ position: 'absolute', inset: 0, bgcolor: c.pastShade, pointerEvents: 'none' }} />
               )}
             </Box>
           );
