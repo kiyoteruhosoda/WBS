@@ -37,6 +37,16 @@ jobs:
       - name: Lint
         run: uv run ruff check src/ tests/
 
+      - name: Migrations (alembic CLI)
+        # 空の DB に head → base → head、そのあとモデルとの差が無いこと（autogenerate）を見る。
+        env:
+          DATABASE_URL: sqlite:///${{ runner.temp }}/alembic-check.db
+        run: |
+          uv run alembic upgrade head
+          uv run alembic downgrade base
+          uv run alembic upgrade head
+          uv run alembic check
+
       - name: Test
         run: uv run pytest -v --tb=short
 

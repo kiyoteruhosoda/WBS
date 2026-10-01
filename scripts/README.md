@@ -7,7 +7,7 @@
 - `build.py`: `BuildStep` のポリモーフィズムで lint・test・frontend build・Docker build を合成するビルドオーケストレーターです。
 - `build-remote.sh`: デプロイ先ホストに単体で置き、開発コンテナ内ビルド→bundle 取り出し→デプロイをワンコマンドで行うスクリプトです（下記「Remote build & deploy」参照）。
 
-現在は軽量 MVP として `init_db()` が冪等なスキーマ作成を担当します。将来 Alembic 導入時は `run_db_migrations.py` を `alembic upgrade head` に置き換えます。
+`run_db_migrations.py` は `init_db()` を呼び、Alembic で `upgrade head` してから初期ユーザー（id=1）を入れます（冪等）。`alembic_version` の無い既存の DB は、Alembic 導入前の列補完を 1 回なぞって baseline（`0001`）と同じ形になったと確かめてから `stamp` します。形が揃わなければ何も確定せずに失敗します（ADR-0006）。アプリ本体（uvicorn）は表を作らず、DB が head でなければ起動しません。
 
 ## Build
 

@@ -1,1 +1,23 @@
-Generic single-database configuration.
+# migrations
+
+Alembic のリビジョン置き場。起点は `versions/0001_baseline.py`（Alembic 導入前の
+`create_all` + 手書きの列補完が作っていた形。⚠ stamp された本番の DB と一致させてあるので
+**書き換えない**）。DB を上げるのは `scripts/run_db_migrations.py`（コンテナの entrypoint が
+uvicorn の前に流す）で、`alembic_version` の無い古い DB はそこで baseline に揃えてから
+stamp される（ADR-0006）。
+
+## 表・列の足し方
+
+`src/infrastructure/database/models.py` を直すのと**同じ PR で**、`versions/` に
+リビジョンを 1 つ足す。ファイル名は `NNNN_<内容>.py`（`NNNN` は 4 桁の通し番号で、
+`revision = "NNNN"`、`down_revision` はいまの head の番号）。先頭に
+`from __future__ import annotations`、`upgrade()` と `downgrade()` の両方を書く。
+新しい表は `op.create_table`、既存の表を変えるときは SQLite のため
+`with op.batch_alter_table("<表>") as batch:` を使う。PK は
+`sa.BigInteger().with_variant(sa.Integer(), "sqlite")`、ネイティブ ENUM は使わない。
+雛形は `uv run alembic revision -m "<内容>" --rev-id NNNN`（`--autogenerate` は
+`DATABASE_URL` の DB を head にしてから）。モデルとリビジョンの食い違いは
+`tests/integration/test_migration_model_consistency.py` と CI の `alembic check` が、
+上げ下げは `tests/integration/test_schema_migration.py` が落とす。⚠ 別の PR と同じ番号を
+取ると head が 2 つになって `test_there_is_a_single_head` が落ちる。後からマージする側が
+番号と `down_revision` を付け直す。

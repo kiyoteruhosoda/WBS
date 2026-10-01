@@ -110,12 +110,12 @@ def sso_provider():
 
 
 @pytest.fixture
-def sso_client(tmp_path, monkeypatch, sso_provider):
+def sso_client(database_path, monkeypatch, sso_provider):
     for key, value in OIDC_ENV.items():
         monkeypatch.setenv(key, value)
     from main import create_app
 
-    app = create_app(db_path=str(tmp_path / "sso.db"))
+    app = create_app(db_path=database_path)
     app.dependency_overrides[get_identity_provider] = lambda: sso_provider
     with TestClient(app) as client:
         yield client

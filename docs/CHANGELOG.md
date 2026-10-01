@@ -4,6 +4,13 @@
 
 ## 2026-10-01
 
+- **スキーマを Alembic で管理するようにした**（ADR-0006、task #153）。起動のたびの `create_all` と
+  手書きの列補完をやめ、今の形を baseline（`migrations/versions/0001_baseline.py`）にした。
+  DB を上げるのは entrypoint（`scripts/run_db_migrations.py`）だけで、アプリは DB が head で
+  なければ起動しない。⚠ **`alembic_version` の無い既存の DB は、旧経路の補完を 1 回なぞって
+  baseline と形が揃ったと確かめてから stamp する**（揃わなければ全部巻き戻して起動を止める）。
+  列補完が作っていなかった索引 `ix_auth_sessions_idp_session_id` はこのとき作られる。
+
 - **予定（NolumiaScheduler）のドメインとユースケースを移植した**（task #156 の第 1 段、ADR-0007）。
   単発・繰り返し（毎週／毎月 n 日・第 n 曜日・月末／毎年、間隔・終了日）・飛ばす・この回だけ移動・
   この回を切り出す・以降を分ける・営業日カレンダー（祝日で前後に寄せる・n 営業日前）・色・場所・
