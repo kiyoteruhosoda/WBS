@@ -356,3 +356,59 @@ export interface TodaySummary {
   /** 今日やるべきタスクのうち、まだ予定を取っていないもの（優先度の点の高い順） */
   tasks_to_schedule: Task[];
 }
+
+// ── 締め（task #161 / ADR-0012）。仕様の正は /api/docs ──────────────────
+
+export interface ClosingPeriodRange {
+  /** 初日（利用者のタイムゾーンの日付。1 日か 16 日） */
+  first_day: string;
+  /** 末日（含む） */
+  last_day: string;
+}
+
+export interface ClosingPeriod extends ClosingPeriodRange {
+  status: 'open' | 'closed';
+  /** 区切りに使ったタイムゾーン（確定済みなら確定したときの値） */
+  time_zone: string;
+  /** 区切りの始まりの瞬間（含む） */
+  starts_at: string;
+  /** 区切りの終わりの瞬間（含まない） */
+  ends_at: string;
+  closed_at: string | null;
+}
+
+export interface DailyTaskTotal {
+  work_date: string;
+  task_id: number | null;
+  task_title: string | null;
+  /** 丸めない長さ（秒）。日をまたぐ打刻は 0:00 で割ってある */
+  seconds: number;
+}
+
+export interface ClosingOverlap {
+  /** 重なっている 2 本（始まりの早い順） */
+  entry_ids: [number, number];
+  seconds: number;
+}
+
+export interface ClosingFindings {
+  long_running_entry_ids: number[];
+  overlaps: ClosingOverlap[];
+  unassigned_entry_ids: number[];
+  missed_occurrences: CalendarOccurrence[];
+  count: number;
+}
+
+export interface ClosingBoard {
+  period: ClosingPeriod;
+  entries: TimeEntry[];
+  occurrences: CalendarOccurrence[];
+  daily_totals: DailyTaskTotal[];
+  findings: ClosingFindings;
+}
+
+export interface PendingClosings {
+  has_pending: boolean;
+  current: ClosingPeriodRange;
+  pending: ClosingPeriodRange[];
+}

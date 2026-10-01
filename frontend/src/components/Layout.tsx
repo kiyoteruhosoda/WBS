@@ -6,10 +6,11 @@ import { ds } from '../theme';
 import { useI18n } from '../i18n';
 import { useAuth } from '../auth/AuthProvider';
 import TimerButton from './TimerButton';
+import ClosingNotice from './closing/ClosingNotice';
 import type { TranslationKey } from '../i18n/translations';
 import {
   CheckListIcon, BarsIcon, CalendarIcon, InboxIcon,
-  CheckIcon, PlusIcon, TodayIcon, SlidersIcon, FolderIcon, FlagIcon,
+  CheckIcon, PlusIcon, TodayIcon, SlidersIcon, FolderIcon, FlagIcon, ClosingIcon,
 } from './icons';
 
 const SIDEBAR_WIDTH = 224;
@@ -20,6 +21,7 @@ const navItems: { labelKey: TranslationKey; path: string; icon: React.FC<{ size?
   { labelKey: 'nav.tasks', path: '/tasks', icon: CheckListIcon },
   { labelKey: 'nav.gantt', path: '/gantt', icon: BarsIcon },
   { labelKey: 'nav.calendar', path: '/calendar', icon: CalendarIcon },
+  { labelKey: 'nav.closing', path: '/closing', icon: ClosingIcon },
   { labelKey: 'nav.inbox', path: '/inbox', icon: InboxIcon },
   { labelKey: 'nav.categories', path: '/categories', icon: FolderIcon },
   { labelKey: 'nav.milestones', path: '/milestones', icon: FlagIcon },
@@ -33,6 +35,7 @@ const pageTitles: { pattern: RegExp; titleKey: TranslationKey }[] = [
   { pattern: /^\/tasks$/, titleKey: 'nav.tasks' },
   { pattern: /^\/gantt$/, titleKey: 'nav.gantt' },
   { pattern: /^\/calendar$/, titleKey: 'nav.calendar' },
+  { pattern: /^\/closing$/, titleKey: 'nav.closing' },
   { pattern: /^\/inbox$/, titleKey: 'nav.inbox' },
   { pattern: /^\/categories$/, titleKey: 'nav.categories' },
   { pattern: /^\/milestones$/, titleKey: 'nav.milestones' },
@@ -216,6 +219,8 @@ const Layout: React.FC = () => {
         </Box>
 
         <Box component="main" sx={{ flex: 1, p: { xs: '16px', md: '24px' } }}>
+          {/* 未確定の締めの期間の知らせ（task #161 / ADR-0012） */}
+          <ClosingNotice />
           <Outlet />
         </Box>
       </Box>

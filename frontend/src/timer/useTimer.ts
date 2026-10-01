@@ -6,6 +6,7 @@ import { CURRENT_TIME_ENTRY_KEY } from './timerState';
 import type { CurrentSnapshot, TimerFailure } from './timerState';
 import { timerFailureOf } from './timerState';
 import { TODAY_SUMMARY_KEY } from '../api/today';
+import { CLOSING_BOARD_KEY } from '../api/closing';
 
 const fetchCurrent = async (): Promise<CurrentSnapshot> => ({
   current: await getCurrentTimeEntry(),
@@ -22,7 +23,7 @@ export const useCurrentTimeEntry = () => useQuery({
 
 /**
  * 打刻の書き込み（Start・Stop・タスクの付け替え）。上部の打刻ボタンと「今日」の画面で共有する。
- * 書いたら「いま走っている打刻」の控えを置き換え、打刻を見ている問い合わせ（締めの一覧・今日の要約）を読み直させる。
+ * 書いたら「いま走っている打刻」の控えを置き換え、打刻を見ている問い合わせ（打刻の一覧・今日の要約・締めの画面）を読み直させる。
  */
 export const useTimerWrites = () => {
   const qc = useQueryClient();
@@ -35,6 +36,7 @@ export const useTimerWrites = () => {
     });
     void qc.invalidateQueries({ queryKey: ['time-entries', 'list'] });
     void qc.invalidateQueries({ queryKey: TODAY_SUMMARY_KEY });
+    void qc.invalidateQueries({ queryKey: [CLOSING_BOARD_KEY] });
   };
   const onError = (error: unknown) => {
     setFailure(timerFailureOf(error));
@@ -61,6 +63,7 @@ export const useTimerWrites = () => {
       ));
       void qc.invalidateQueries({ queryKey: ['time-entries', 'list'] });
       void qc.invalidateQueries({ queryKey: TODAY_SUMMARY_KEY });
+      void qc.invalidateQueries({ queryKey: [CLOSING_BOARD_KEY] });
     },
     onError,
   });

@@ -10,6 +10,7 @@ import TaskList from './pages/TaskList';
 import TaskEdit from './pages/TaskEdit';
 import GanttPage from './pages/GanttPage';
 import CalendarPage from './pages/CalendarPage';
+import ClosingPage from './pages/ClosingPage';
 import Inbox from './pages/Inbox';
 import CategoriesPage from './pages/CategoriesPage';
 import MilestonesPage from './pages/MilestonesPage';
@@ -36,6 +37,7 @@ const App: React.FC = () => (
             <Route path="tasks/:id" element={<TaskEdit />} />
             <Route path="gantt" element={<GanttPage />} />
             <Route path="calendar" element={<CalendarPage />} />
+            <Route path="closing" element={<ClosingPage />} />
             <Route path="inbox" element={<Inbox />} />
             <Route path="categories" element={<CategoriesPage />} />
             <Route path="milestones" element={<MilestonesPage />} />
