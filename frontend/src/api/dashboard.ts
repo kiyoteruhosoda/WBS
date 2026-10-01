@@ -1,10 +1,5 @@
 import client from './client';
-import type { DashboardToday, DashboardKpi, GanttTask, WeeklyReview } from '../types';
-
-export const getDashboardToday = async (): Promise<DashboardToday> => {
-  const { data } = await client.get('/dashboard/today');
-  return data;
-};
+import type { DashboardKpi, GanttTask, WeeklyReview } from '../types';
 
 export const getDashboardKpi = async (): Promise<DashboardKpi> => {
   const { data } = await client.get('/dashboard/kpi');

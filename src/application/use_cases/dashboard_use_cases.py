@@ -5,54 +5,18 @@ from datetime import date, timedelta
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from src.application.use_cases.task_use_cases import TaskUseCases
 from src.application.user_clock import UserClock
 from src.domain.value_objects.task_status import TaskStatus
 from src.infrastructure.database.models import TaskModel, WorkLogModel
-from src.infrastructure.repositories.task_repository import SqlAlchemyTaskRepository
 
 
 class DashboardUseCases:
     def __init__(self, session: Session) -> None:
         self._session = session
-        self._task_repo = SqlAlchemyTaskRepository(session)
-        # 時計は 1 つを共有する。別々に持つと users.timezone を 2 回引き、
-        # 1 リクエストのなかで日付がずれることもある。
         self._clock = UserClock(session)
-        self._task_uc = TaskUseCases(session, self._clock)
 
     def _user_today(self, user_id: int) -> date:
         return self._clock.today(user_id)
-
-    def get_today_buckets(self, user_id: int) -> dict:
-        today = self._user_today(user_id)
-        tomorrow = today + timedelta(days=1)
-        active_statuses = [TaskStatus.TODO.value, TaskStatus.DOING.value, TaskStatus.WAITING.value]
-        stmt = select(TaskModel).where(
-            TaskModel.user_id == user_id,
-            TaskModel.deleted_at.is_(None),
-            TaskModel.status.in_(active_statuses),
-        )
-        tasks = list(self._session.scalars(stmt))
-        buckets: dict[str, list] = {"OVERDUE": [], "TODAY": [], "TOMORROW": [], "DOING": []}
-        seen_ids: set[int] = set()
-        board = self._task_uc.progress_board(user_id)
-        for t in tasks:
-            enriched = self._task_uc._enrich(self._task_repo._to_entity(t), board)
-            tid = t.id
-            bucket = None
-            if t.due_date and t.due_date < today:
-                bucket = "OVERDUE"
-            elif t.due_date == today or (t.start_date and t.start_date <= today):
-                bucket = "TODAY"
-            elif t.due_date == tomorrow:
-                bucket = "TOMORROW"
-            elif t.status == TaskStatus.DOING.value:
-                bucket = "DOING"
-            if bucket and tid not in seen_ids:
-                buckets[bucket].append(enriched)
-                seen_ids.add(tid)
-        return {"buckets": buckets}
 
     def get_kpi(self, user_id: int) -> dict:
         today = self._user_today(user_id)
