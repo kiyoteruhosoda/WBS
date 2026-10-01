@@ -81,7 +81,7 @@ class WorkLogModel(Base):
     deleted_at: Mapped[datetime | None] = mapped_column(sa.DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(sa.DateTime, default=utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(sa.DateTime, default=utcnow, onupdate=utcnow, nullable=False)
-    # WorkLogSource の値（manual / closing）。締めで作った行は開け直しで消える（ADR-0011）
+    # WorkLogSource の値（manual / closing）。締めで作った行は開け直しで消える（ADR-0012）
     source: Mapped[str] = mapped_column(sa.String(16), default="manual", server_default=sa.text("'manual'"), nullable=False)
     closing_period_id: Mapped[int | None] = mapped_column(
         sa.BigInteger().with_variant(sa.Integer(), "sqlite"),
@@ -200,7 +200,7 @@ class TimeEntryModel(Base):
 
 
 class ClosingPeriodModel(Base):
-    """確定した締めの期間（行がある = 確定済み。task #161 / ADR-0011）。
+    """確定した締めの期間（行がある = 確定済み。task #161 / ADR-0012）。
 
     ``first_day`` / ``last_day`` は利用者のタイムゾーンの日付（1〜15 日 / 16 日〜末日）、
     ``starts_at`` / ``ends_at`` は確定したときのタイムゾーン（``time_zone``）で出した区切りの瞬間

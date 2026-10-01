@@ -1,4 +1,4 @@
-"""closing_periods: 締めの確定（task #161 / ADR-0011）と、work_logs の出どころの列
+"""closing_periods: 締めの確定（task #161 / ADR-0012）と、work_logs の出どころの列
 
 Revision ID: 0005
 Revises: 0004

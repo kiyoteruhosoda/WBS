@@ -1,4 +1,4 @@
-"""締め（task #161 / ADR-0011）の API スキーマ。"""
+"""締め（task #161 / ADR-0012）の API スキーマ。"""
 
 from __future__ import annotations
 

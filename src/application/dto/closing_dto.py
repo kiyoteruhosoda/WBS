@@ -1,4 +1,4 @@
-"""締め（task #161 / ADR-0011）のユースケースが返す形。"""
+"""締め（task #161 / ADR-0012）のユースケースが返す形。"""
 
 from __future__ import annotations
 

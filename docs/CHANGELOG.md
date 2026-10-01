@@ -4,7 +4,7 @@
 
 ## 2026-10-01
 
-- **締め（月 2 回の補正と確定）のバックエンドを足した**（task #161 の第 1 段、ADR-0011）。表 `closing_periods`
+- **締め（月 2 回の補正と確定）のバックエンドを足した**（task #161 の第 1 段、ADR-0012）。表 `closing_periods`
   （行がある = 確定済み）と `work_logs` の列 `source`（`manual` / `closing`）・`closing_period_id`・
   `duration_seconds` を移行 `0005` で足した。確定（`POST /api/closing-periods/{初日}/close`）は期間の打刻を
   利用者の日付ごと・タスクごとに足して `work_logs` を作る（日をまたぐ打刻は 0:00 で割る・丸めない）。

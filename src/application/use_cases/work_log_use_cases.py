@@ -52,7 +52,7 @@ class WorkLogUseCases:
 
     @staticmethod
     def _ensure_not_from_closing(work_log: WorkLog) -> None:
-        """締めで作った実績は直接は直させない（打刻を直すには期間を開け直す。ADR-0011）。"""
+        """締めで作った実績は直接は直させない（打刻を直すには期間を開け直す。ADR-0012）。"""
         if work_log.is_from_closing:
             raise ConflictError(
                 "This work log was created by closing a period; reopen the period to change it"

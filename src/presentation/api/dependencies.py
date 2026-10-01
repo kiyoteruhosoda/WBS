@@ -125,7 +125,7 @@ BackchannelLogoutDep = Annotated[
 
 def get_time_entry_use_cases(db: DbDep) -> TimeEntryUseCases:
     # Start の既定のタスクは「いまの予定の回のタスク」から（ADR-0008・ADR-0009）。
-    # 確定済みの締めの期間に掛かる打刻は書き換えさせない（ADR-0011）。
+    # 確定済みの締めの期間に掛かる打刻は書き換えさせない（ADR-0012）。
     calendar = get_calendar_event_use_cases(db)
     return TimeEntryUseCases(
         entries=SqlAlchemyTimeEntryRepository(db),
@@ -187,7 +187,7 @@ BusinessCalendarUseCasesDep = Annotated[
 
 
 def get_closing_use_cases(db: DbDep) -> ClosingUseCases:
-    """締め（ADR-0011）。確定は期間の行と work_logs をこのリクエストの ``Session`` で 1 度に書く。"""
+    """締め（ADR-0012）。確定は期間の行と work_logs をこのリクエストの ``Session`` で 1 度に書く。"""
     return ClosingUseCases(
         periods=SqlAlchemyClosingPeriodRepository(db),
         entries=SqlAlchemyTimeEntryRepository(db),

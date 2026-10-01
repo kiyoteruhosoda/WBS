@@ -279,7 +279,7 @@ def test_0004_fills_remaining_from_estimate_minus_actual(tmp_path):
 
 
 def test_0005_marks_existing_work_logs_as_manual_and_downgrades_cleanly(tmp_path):
-    # task #161 / ADR-0011: 締めより前の実績は手で書いたもの（開け直しで消えない）
+    # task #161 / ADR-0012: 締めより前の実績は手で書いたもの（開け直しで消えない）
     url = _url(tmp_path, "closing.db")
     engine = sa.create_engine(url)
     try:

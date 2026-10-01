@@ -12,4 +12,4 @@ class WorkLogSource(StrEnum):
     """実績の画面・API で手で書いた。"""
 
     CLOSING = "closing"
-    """締めの確定で打刻から作った（task #161 / ADR-0011）。開け直すと消える。"""
+    """締めの確定で打刻から作った（task #161 / ADR-0012）。開け直すと消える。"""

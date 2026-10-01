@@ -22,7 +22,7 @@ class WorkLog:
     closing_period_id: int | None = None
     """締めで作ったとき、どの期間から作ったか（開け直しで消すため）。"""
     duration_seconds: int | None = None
-    """締めで作ったときの正確な長さ（秒）。``hours`` は小数 2 桁に収めた値（ADR-0011）。"""
+    """締めで作ったときの正確な長さ（秒）。``hours`` は小数 2 桁に収めた値（ADR-0012）。"""
 
     @property
     def is_from_closing(self) -> bool:
