@@ -23,6 +23,10 @@ export interface Task {
   rollup_remaining_hours: number | null;
   // 実績 ÷（実績 ＋ 残）× 100。分母 0・残が決まらないときは null（「—」と出す）
   progress_percent: number | null;
+  // 予定済みの時間: 今日以降に始まる、このタスクに結んだ予定の回の合計（終日の回は数えない。ADR-0014）
+  scheduled_hours: number | null;
+  // 残のうち、まだ予定に取っていない分（残 − 予定済み、0 未満は 0）。残が決まらないときは null
+  unscheduled_hours: number | null;
   priority_score: number;
   memo: string | null;
   parent_task_id: number | null;

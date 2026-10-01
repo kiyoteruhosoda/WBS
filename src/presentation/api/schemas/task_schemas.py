@@ -63,6 +63,10 @@ class TaskResponse(BaseModel):
     rollup_remaining_hours: float | None = None
     # 実績 ÷（実績 ＋ 残）× 100。DONE は 100。分母 0・残が決まらないときは null
     progress_percent: float | None = None
+    # 予定済みの時間: 今日以降に始まる、このタスクに結ばれた予定の回の合計（終日の回は数えない。ADR-0014）。
+    # まだ取っていない分 = 残 − 予定済み（0 未満は 0）。予定を見ない応答・残が決まらないときは null
+    scheduled_hours: float | None = None
+    unscheduled_hours: float | None = None
     priority_score: int = 0
     memo: str | None = None
     parent_task_id: int | None = None

@@ -17,6 +17,8 @@ import type { PriorityBand } from '../utils/format';
 import { useI18n } from '../i18n';
 import { ds } from '../theme';
 import { PlusIcon, TrashIcon } from '../components/icons';
+import MoreTimeIcon from '@mui/icons-material/MoreTime';
+import { formatHours, scheduleTaskPath } from '../calendar/taskScheduling';
 
 const STATUSES: TaskStatus[] = ['TODO', 'DOING', 'WAITING', 'DONE', 'CANCELLED'];
 const DEP_TYPES: DependencyType[] = ['FS', 'SS', 'FF', 'SF'];
@@ -370,6 +372,35 @@ const TaskEdit: React.FC = () => {
               )}
             </Box>
           </Box>
+
+          {/* 予定済みの時間と、まだ取っていない分（task #159） */}
+          {!isNew && task && (
+            <Box
+              data-testid="task-scheduled-hours"
+              sx={{
+                display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap',
+                p: '10px 12px', border: `1px solid ${ds.border}`, borderRadius: '8px',
+              }}
+            >
+              <Box sx={{ flex: '1 1 200px' }}>
+                <Box sx={{ fontSize: 13, fontWeight: 700, color: ds.text }}>{t('taskEdit.scheduledHours')}</Box>
+                <Box sx={{ fontSize: 13, color: ds.textSub }}>
+                  {t('taskEdit.scheduledSummary', {
+                    scheduled: formatHours(task.scheduled_hours),
+                    unscheduled: formatHours(task.unscheduled_hours),
+                  })}
+                </Box>
+              </Box>
+              {task.status !== 'DONE' && task.status !== 'CANCELLED' && (
+                <Button
+                  variant="outlined" size="small" startIcon={<MoreTimeIcon />}
+                  onClick={() => navigate(scheduleTaskPath(task.id))}
+                >
+                  {t('task.scheduleTime')}
+                </Button>
+              )}
+            </Box>
+          )}
 
           <Box>
             <FieldLabel>{t('taskEdit.milestone')}</FieldLabel>

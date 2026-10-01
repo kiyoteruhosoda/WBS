@@ -169,8 +169,34 @@ class CalendarEventUseCases:
                 return task_id
         return None
 
+    def scheduled_minutes_by_task(
+        self, user_id: int, from_date: date, to_date: date, time_zone: str
+    ) -> dict[int, int]:
+        """``[from_date, to_date]``（``time_zone`` のローカル日）の回の長さを、結ばれたタスクごとに足す。
+
+        ``ScheduledTimeLookup`` の実装（タスクの「予定済みの時間」、ADR-0014）。数えるのは
+        その利用者の予定だけ（引く段で ``user_id`` で絞る）。終日の回は「その日に充てる」印で
+        作業の時間ではないので数えない。回の日付は ``time_zone`` へ投影したもので見る。
+        """
+        totals: dict[int, int] = {}
+        for _, occurrence in self._expand(
+            user_id, from_date, to_date, time_zone, linked_to_tasks_only=True
+        ):
+            if occurrence.task_id is None or occurrence.is_all_day:
+                continue
+            totals[occurrence.task_id] = (
+                totals.get(occurrence.task_id, 0) + occurrence.duration_minutes
+            )
+        return totals
+
     def _expand(
-        self, user_id: int, from_date: date, to_date: date, viewer_time_zone: str | None
+        self,
+        user_id: int,
+        from_date: date,
+        to_date: date,
+        viewer_time_zone: str | None,
+        *,
+        linked_to_tasks_only: bool = False,
     ) -> list[tuple[CalendarEvent, EventOccurrence]]:
         if from_date > to_date:
             raise ValidationError("from_date must be on or before to_date")
@@ -182,6 +208,8 @@ class CalendarEventUseCases:
         calendars: dict[int, BusinessCalendar | None] = {}
         results: list[tuple[CalendarEvent, EventOccurrence]] = []
         for event in self._events.find_by_period(user_id, expand_from, expand_to):
+            if linked_to_tasks_only and event.task_id is None:
+                continue
             calendar = self._calendar_for(event, calendars)
             for occurrence in self._expander.expand(event, expand_from, expand_to, calendar):
                 if viewer is not None:
