@@ -10,7 +10,7 @@ import ClosingNotice from './closing/ClosingNotice';
 import type { TranslationKey } from '../i18n/translations';
 import {
   CheckListIcon, BarsIcon, CalendarIcon, InboxIcon,
-  CheckIcon, PlusIcon, TodayIcon, SlidersIcon, FolderIcon, FlagIcon, ClosingIcon,
+  CheckIcon, PlusIcon, TodayIcon, SlidersIcon, FolderIcon, FlagIcon, ClosingIcon, GridIcon,
 } from './icons';
 
 const SIDEBAR_WIDTH = 224;
@@ -22,6 +22,7 @@ const navItems: { labelKey: TranslationKey; path: string; icon: React.FC<{ size?
   { labelKey: 'nav.gantt', path: '/gantt', icon: BarsIcon },
   { labelKey: 'nav.calendar', path: '/calendar', icon: CalendarIcon },
   { labelKey: 'nav.closing', path: '/closing', icon: ClosingIcon },
+  { labelKey: 'nav.actuals', path: '/actuals', icon: GridIcon },
   { labelKey: 'nav.inbox', path: '/inbox', icon: InboxIcon },
   { labelKey: 'nav.categories', path: '/categories', icon: FolderIcon },
   { labelKey: 'nav.milestones', path: '/milestones', icon: FlagIcon },
@@ -36,6 +37,7 @@ const pageTitles: { pattern: RegExp; titleKey: TranslationKey }[] = [
   { pattern: /^\/gantt$/, titleKey: 'nav.gantt' },
   { pattern: /^\/calendar$/, titleKey: 'nav.calendar' },
   { pattern: /^\/closing$/, titleKey: 'nav.closing' },
+  { pattern: /^\/actuals(\/\w+)?$/, titleKey: 'nav.actuals' },
   { pattern: /^\/inbox$/, titleKey: 'nav.inbox' },
   { pattern: /^\/categories$/, titleKey: 'nav.categories' },
   { pattern: /^\/milestones$/, titleKey: 'nav.milestones' },

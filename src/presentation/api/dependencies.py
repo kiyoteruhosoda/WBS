@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from src.application.dto.auth_dto import AuthenticatedUserDTO
 from src.application.ports.identity_provider import IdentityProvider
 from src.application.ports.secret_generator import UrlSafeSecretGenerator
+from src.application.use_cases.actuals_use_cases import ActualsUseCases
 from src.application.use_cases.authentication_use_cases import (
     AppTokenAuthenticationUseCases,
     SessionAuthenticationUseCases,
@@ -34,6 +35,7 @@ from src.infrastructure.repositories.business_calendar_repository import (
 from src.infrastructure.repositories.calendar_event_repository import (
     SqlAlchemyCalendarEventRepository,
 )
+from src.infrastructure.repositories.category_repository import SqlAlchemyCategoryRepository
 from src.infrastructure.repositories.closing_period_repository import (
     SqlAlchemyClosingPeriodRepository,
 )
@@ -43,6 +45,7 @@ from src.infrastructure.repositories.login_transaction_repository import (
 from src.infrastructure.repositories.logout_delivery_repository import (
     SqlAlchemyLogoutDeliveryRepository,
 )
+from src.infrastructure.repositories.milestone_repository import SqlAlchemyMilestoneRepository
 from src.infrastructure.repositories.task_repository import SqlAlchemyTaskRepository
 from src.infrastructure.repositories.time_entry_repository import SqlAlchemyTimeEntryRepository
 from src.infrastructure.repositories.user_account_repository import (
@@ -252,3 +255,22 @@ def get_closing_use_cases(db: DbDep) -> ClosingUseCases:
     )
 
 ClosingUseCasesDep = Annotated[ClosingUseCases, Depends(get_closing_use_cases)]
+
+
+def get_actuals_use_cases(db: DbDep) -> ActualsUseCases:
+    """実績の見える化（ADR-0017）。時計は 1 つを共有する（タスクの予定済みと期間の区切りを揃える）。"""
+    clock = UserClock(db)
+    calendar = get_calendar_event_use_cases(db)
+    return ActualsUseCases(
+        clock=clock,
+        tasks=TaskUseCases(db, clock, scheduled_time=calendar),
+        task_repository=SqlAlchemyTaskRepository(db),
+        work_logs=SqlAlchemyWorkLogRepository(db),
+        time_entries=SqlAlchemyTimeEntryRepository(db),
+        closing_periods=SqlAlchemyClosingPeriodRepository(db),
+        categories=SqlAlchemyCategoryRepository(db),
+        milestones=SqlAlchemyMilestoneRepository(db),
+        occurrences=calendar,
+    )
+
+ActualsUseCasesDep = Annotated[ActualsUseCases, Depends(get_actuals_use_cases)]

@@ -9,6 +9,7 @@ import Today from './pages/Today';
 import TaskList from './pages/TaskList';
 import TaskEdit from './pages/TaskEdit';
 import GanttPage from './pages/GanttPage';
+import ActualsPage from './pages/ActualsPage';
 import CalendarPage from './pages/CalendarPage';
 import ClosingPage from './pages/ClosingPage';
 import Inbox from './pages/Inbox';
@@ -34,6 +35,9 @@ const SignedInApp: React.FC = () => (
           <Route path="tasks/new" element={<TaskEdit />} />
           <Route path="tasks/:id" element={<TaskEdit />} />
           <Route path="gantt" element={<GanttPage />} />
+          {/* 実績の見える化。/actuals/review は締めの直後に「残を見直す」（task #162） */}
+          <Route path="actuals" element={<ActualsPage />} />
+          <Route path="actuals/:view" element={<ActualsPage />} />
           <Route path="calendar" element={<CalendarPage />} />
           <Route path="closing" element={<ClosingPage />} />
           <Route path="inbox" element={<Inbox />} />

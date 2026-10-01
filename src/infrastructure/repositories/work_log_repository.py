@@ -1,12 +1,14 @@
 from __future__ import annotations
 
+from datetime import date
+
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from src.domain.entities.work_log import WorkLog
 from src.domain.repositories.work_log_repository import WorkLogRepository
 from src.domain.value_objects.work_log_source import WorkLogSource
-from src.infrastructure.database.models import WorkLogModel
+from src.infrastructure.database.models import TaskModel, WorkLogModel
 from src.shared.clock import utcnow
 
 
@@ -76,6 +78,25 @@ class SqlAlchemyWorkLogRepository(WorkLogRepository):
         )
         self._session.flush()
         return result.rowcount or 0
+
+    def find_for_user(
+        self, user_id: int, first_day: date | None = None, last_day: date | None = None
+    ) -> list[WorkLog]:
+        stmt = (
+            select(WorkLogModel)
+            .join(TaskModel, TaskModel.id == WorkLogModel.task_id)
+            .where(
+                WorkLogModel.user_id == user_id,
+                TaskModel.user_id == user_id,
+                WorkLogModel.deleted_at.is_(None),
+            )
+        )
+        if first_day is not None:
+            stmt = stmt.where(WorkLogModel.work_date >= first_day)
+        if last_day is not None:
+            stmt = stmt.where(WorkLogModel.work_date <= last_day)
+        stmt = stmt.order_by(WorkLogModel.work_date, WorkLogModel.task_id, WorkLogModel.id)
+        return [self._to_entity(m) for m in self._session.scalars(stmt)]
 
     def _to_entity(self, model: WorkLogModel) -> WorkLog:
         return WorkLog(
