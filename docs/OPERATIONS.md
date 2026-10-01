@@ -64,6 +64,28 @@ MACHINE_PRIVATE_KEY_KID=                 # 鍵を複数登録しているとき�
 ⚠ **`MACHINE_CLIENT_ID` が空なら定期照合は動かない**（ログにも何も出ない）。受け口のほうは
 名乗りが無くても効く。
 
+## 打刻アプリ（Android）から Start / Stop を叩けるようにしたいとき
+
+ADR-0018。アプリは assay に直接ログインし、打刻の 3 つの口（現在・Start・Stop）だけを assay の
+アクセストークンで叩く。⚠ **`APP_CLIENT_IDS` が空なら Bearer は 1 本も通らない**（既定）。
+
+1. assay にアプリ用の **public client** を登録する（PKCE、scope は `openid profile email offline_access`）。
+   WBS の Web と同じ assay のアプリに結び付けて名簿を 1 つにする。⚠ `resource` は送らない
+   （人のログインでは assay が `invalid_target` で断る）
+2. 環境変数を足して配り直す（⚠ 管理画面からは入れられない）:
+
+   ```bash
+   APP_CLIENT_IDS=<1 で出た client_id>      # 複数はカンマ区切りか JSON の配列
+   ```
+
+3. 使う人は **Web で 1 度ログインしておく**（結び付きが無いとアプリの口は 403）
+4. 確かめる:
+
+   ```bash
+   curl -s -o /dev/null -w '%{http_code}\n' -H 'Authorization: Bearer x' https://<ホスト>/api/time-entries/current   # 401
+   curl -s -o /dev/null -w '%{http_code}\n' -H 'Authorization: Bearer x' https://<ホスト>/api/tasks                  # 401（アプリの口ではない）
+   ```
+
 ## SSO を後から入れて、既に居る利用者を引き継ぎたいとき
 
 ⚠ **既定では、メールアドレスが同じでも既存の利用者へ寄せない**（ADR-0004）。移行のあいだ

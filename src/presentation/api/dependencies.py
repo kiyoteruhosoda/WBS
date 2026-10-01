@@ -10,6 +10,7 @@ from src.application.dto.auth_dto import AuthenticatedUserDTO
 from src.application.ports.identity_provider import IdentityProvider
 from src.application.ports.secret_generator import UrlSafeSecretGenerator
 from src.application.use_cases.authentication_use_cases import (
+    AppTokenAuthenticationUseCases,
     SessionAuthenticationUseCases,
     SsoLoginUseCases,
 )
@@ -167,6 +168,37 @@ def get_current_user(
     )
 
 CurrentUserDep = Annotated[AuthenticatedUserDTO, Depends(get_current_user)]
+
+
+def get_app_or_web_user(
+    request: Request, db: DbDep, settings: AuthSettingsDep, session_auth: SessionAuthDep
+) -> AuthenticatedUserDTO:
+    """アプリ（Android の打刻アプリ）からも叩いてよい口の利用者（ADR-0018）。
+
+    ⚠ **これを付けた口だけが assay のアクセストークンを受け取る**（打刻の Start / Stop /
+    現在）。ほかの口は :func:`get_current_user`（Web のセッション Cookie だけ）のまま。
+
+    - ``Authorization`` ヘッダーが**無ければ** :func:`get_current_user` と同じ
+    - **あれば Bearer だけで決め、Cookie へ落とさない。** 壊れたトークンを持ってきたアプリが、
+      同じ端末のブラウザの Cookie で通ってしまう（誰の操作か分からなくなる）のを防ぐ
+    - ``AUTH_MODE=single_user`` では何も見ない（従来どおり初期ユーザー）
+    """
+    authorization = request.headers.get("Authorization")
+    if not settings.sso_enabled or authorization is None:
+        return get_current_user(request, db, settings, session_auth)
+    scheme, _, token = authorization.partition(" ")
+    if scheme.lower() != "bearer" or not token.strip():
+        raise AuthenticationError("Authorization header must be a Bearer token")
+    provider = request.app.state.identity_provider
+    if provider is None:
+        raise AuthenticationError("SSO is not configured")
+    return AppTokenAuthenticationUseCases(
+        identity_provider=provider,
+        users=SqlAlchemyUserAccountRepository(db),
+        accepted_client_ids=settings.app_client_ids,
+    ).authenticate(token=token.strip())
+
+AppOrWebUserDep = Annotated[AuthenticatedUserDTO, Depends(get_app_or_web_user)]
 
 
 def get_calendar_event_use_cases(db: DbDep) -> CalendarEventUseCases:
