@@ -14,12 +14,20 @@ from src.application.use_cases.authentication_use_cases import (
     SsoLoginUseCases,
 )
 from src.application.use_cases.backchannel_logout_use_cases import ReceiveBackchannelLogout
+from src.application.use_cases.business_calendar_use_cases import BusinessCalendarUseCases
+from src.application.use_cases.calendar_event_use_cases import CalendarEventUseCases
 from src.application.use_cases.time_entry_use_cases import TimeEntryUseCases
 from src.domain.exceptions import AuthenticationError
 from src.infrastructure.auth.auth_settings import SINGLE_USER_ID, AuthSettings
 from src.infrastructure.database.session import get_db_session
 from src.infrastructure.repositories.auth_session_repository import (
     SqlAlchemyAuthSessionRepository,
+)
+from src.infrastructure.repositories.business_calendar_repository import (
+    SqlAlchemyBusinessCalendarRepository,
+)
+from src.infrastructure.repositories.calendar_event_repository import (
+    SqlAlchemyCalendarEventRepository,
 )
 from src.infrastructure.repositories.login_transaction_repository import (
     SqlAlchemyLoginTransactionRepository,
@@ -111,12 +119,12 @@ BackchannelLogoutDep = Annotated[
 
 
 def get_time_entry_use_cases(db: DbDep) -> TimeEntryUseCases:
-    # 予定のタスクを既定にする口（scheduled_tasks）は、予定の表ができたら繋ぐ（ADR-0008）。
-    # それまでは NoScheduledTask（直前の打刻のタスク → 未割当）。
+    # Start の既定のタスクは「いまの予定の回のタスク」から（ADR-0008・ADR-0009）。
     return TimeEntryUseCases(
         entries=SqlAlchemyTimeEntryRepository(db),
         tasks=SqlAlchemyTaskRepository(db),
         unit_of_work=db,
+        scheduled_tasks=get_calendar_event_use_cases(db),
     )
 
 TimeEntryUseCasesDep = Annotated[TimeEntryUseCases, Depends(get_time_entry_use_cases)]
@@ -147,3 +155,23 @@ def get_current_user(
     )
 
 CurrentUserDep = Annotated[AuthenticatedUserDTO, Depends(get_current_user)]
+
+
+def get_calendar_event_use_cases(db: DbDep) -> CalendarEventUseCases:
+    """予定のユースケース。確定（``UnitOfWork``）はこのリクエストの ``Session``。"""
+    return CalendarEventUseCases(
+        events=SqlAlchemyCalendarEventRepository(db),
+        calendars=SqlAlchemyBusinessCalendarRepository(db),
+        tasks=SqlAlchemyTaskRepository(db),
+        unit_of_work=db,
+    )
+
+CalendarEventUseCasesDep = Annotated[CalendarEventUseCases, Depends(get_calendar_event_use_cases)]
+
+
+def get_business_calendar_use_cases(db: DbDep) -> BusinessCalendarUseCases:
+    return BusinessCalendarUseCases(SqlAlchemyBusinessCalendarRepository(db), db)
+
+BusinessCalendarUseCasesDep = Annotated[
+    BusinessCalendarUseCases, Depends(get_business_calendar_use_cases)
+]

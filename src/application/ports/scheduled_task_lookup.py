@@ -1,8 +1,8 @@
 """「いまの予定に結ばれたタスク」を引く口（打刻の Start の既定のタスク）。
 
-task #154 の順番は **いまの予定のタスク → 直前の打刻のタスク → 未割当**。予定の表と API は
-別の段（task #156 の続き）で作っているので、今は何も返さない ``NoScheduledTask`` を繋いでおき、
-予定の表ができたら、その時刻に掛かっている予定の回の ``task_id`` を返す実装に差し替える（ADR-0008）。
+task #154 の順番は **いまの予定のタスク → 直前の打刻のタスク → 未割当**（ADR-0008）。
+実装は ``CalendarEventUseCases.task_scheduled_at``（ADR-0009）で、``get_time_entry_use_cases`` が渡す。
+``NoScheduledTask`` は渡されなかったとき（試験など）の既定。
 """
 
 from __future__ import annotations
@@ -22,7 +22,7 @@ class ScheduledTaskLookup(Protocol):
 
 
 class NoScheduledTask:
-    """予定の表ができるまでのつなぎ。いつも「予定は無い」と答える。"""
+    """いつも「予定は無い」と答える（予定の口を渡さないときの既定）。"""
 
     def task_scheduled_at(self, user_id: int, at: datetime) -> int | None:
         return None
