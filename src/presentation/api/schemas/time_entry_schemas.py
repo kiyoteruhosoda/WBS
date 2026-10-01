@@ -11,10 +11,21 @@ class StartTimeEntryRequest(BaseModel):
 
     ``task_id`` を**送らなければ**既定の順（いまの予定のタスク → 直前の打刻のタスク → 未割当）で
     決める。``null`` を送ると未割当で始める。
+
+    ``at`` は押した時刻（オフセット付き。ADR-0018）。アプリが電波の無いときに溜めた押下を
+    送るときに付ける。送らなければ「今」。未来（60 秒を超えるずれ）と 7 日より前は 422。
+    走っている打刻と同じ時刻なら送り直しとみなして何もしない。
     """
 
     task_id: int | None = None
     memo: str | None = Field(default=None, max_length=2000)
+    at: AwareDatetime | None = None
+
+
+class StopTimeEntryRequest(BaseModel):
+    """Stop。本文は空でよい。``at`` は押した時刻（Start と同じ規則。ADR-0018）。"""
+
+    at: AwareDatetime | None = None
 
 
 class TimeEntryUpdateRequest(BaseModel):

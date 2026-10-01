@@ -4,6 +4,8 @@ OIDC の認可コードフロー（PKCE 付き）を 2 つのユースケース�
 
 - ``SsoLoginUseCases``          — IdP との往復（開始・コールバック・IdP 側ログアウト）
 - ``SessionAuthenticationUseCases`` — 発行済みセッションから利用者を引く
+- ``AppTokenAuthenticationUseCases`` — アプリが持ってきた assay のアクセストークンから利用者を引く
+  （ADR-0018。打刻アプリ task #167）
 
 分けているのは、リクエストごとの本人確認に IdP を要らなくするため。ログイン後の
 毎リクエストは自前のセッションだけで済み、IdP が落ちていても操作を続けられる。
@@ -33,6 +35,7 @@ from src.domain.exceptions import AccessDeniedError, AuthenticationError
 from src.domain.repositories.auth_session_repository import AuthSessionRepository
 from src.domain.repositories.login_transaction_repository import LoginTransactionRepository
 from src.domain.repositories.user_account_repository import UserAccountRepository
+from src.domain.value_objects.federated_identity import FederatedIdentity
 from src.domain.value_objects.identity_claims import IdentityClaims
 from src.domain.value_objects.provisioning_policy import ProvisioningPolicy
 from src.domain.value_objects.redirect_target import RedirectTarget
@@ -71,6 +74,56 @@ class SessionAuthenticationUseCases:
     def revoke(self, *, token: str | None) -> None:
         if token:
             self._sessions.delete_by_token(token)
+
+
+class AppTokenAuthenticationUseCases:
+    """アプリ（assay に直接ログインした Android アプリ）のアクセストークンから利用者を決める。
+
+    受け取る条件（どれか 1 つでも外れたら 401）:
+
+    - 署名・``typ``・発行者・宛先・期限（``IdentityProvider.verify_access_token``）
+    - ``client_id`` が受け取ってよいアプリのもの（``APP_CLIENT_IDS``）
+    - ``sub_type`` が無い（機械のトークンではない）
+
+    利用者は ``(iss, sub)`` の結び付き（``federated_identities``）で引く。⚠ **ここでは利用者を
+    作らない**（作る・寄せるのは Web のログインだけ。ADR-0018）。結び付きが無ければ 403。
+    """
+
+    def __init__(
+        self,
+        *,
+        identity_provider: IdentityProvider,
+        users: UserAccountRepository,
+        accepted_client_ids: frozenset[str],
+    ) -> None:
+        self._idp = identity_provider
+        self._users = users
+        self._accepted_client_ids = accepted_client_ids
+
+    def authenticate(self, *, token: str) -> AuthenticatedUserDTO:
+        if not self._accepted_client_ids:
+            # 既定は閉じる。宣言の無い配備では、どのアプリのトークンも通さない
+            raise AuthenticationError("Bearer tokens are not accepted by this deployment")
+        claims = self._idp.verify_access_token(token)
+        subject = claims.get("sub")
+        if not isinstance(subject, str) or not subject.strip():
+            raise AuthenticationError("Access token has no subject")
+        if "sub_type" in claims:
+            # 値ではなく有無で見る（assay は機械のトークンにだけ載せる）
+            raise AuthenticationError("Machine tokens are not accepted here")
+        if str(claims.get("client_id") or "") not in self._accepted_client_ids:
+            raise AuthenticationError("Access token was issued to an application not accepted here")
+
+        user = self._users.find_by_identity(
+            FederatedIdentity(issuer=self._idp.federated_issuer, subject=subject)
+        )
+        if user is None:
+            raise AccessDeniedError(
+                "No account is linked to this sign-in yet; sign in to the web app once"
+            )
+        if not user.is_active:
+            raise AccessDeniedError(f"User account is deactivated: {user.email}")
+        return _to_dto(user)
 
 
 class SsoLoginUseCases:

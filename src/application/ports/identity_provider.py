@@ -59,6 +59,18 @@ class IdentityProvider(ABC):
         通らなければ ``InvalidLogoutTokenError`` を送出する。
         """
 
+    @abstractmethod
+    def verify_access_token(self, token: str) -> Mapping[str, Any]:
+        """アプリが ``Authorization: Bearer`` で持ってきた**利用者の**アクセストークンを確かめる
+        （ADR-0018）。
+
+        確かめるのは**署名・``typ``（``at+jwt``）・発行者・宛先・期限**まで。どのアプリの
+        トークンを受け取るか（``client_id``）・機械のトークンを断るか（``sub_type``）は
+        ユースケース側が決める。
+
+        通らなければ ``AuthenticationError`` を送出する。
+        """
+
     @property
     @abstractmethod
     def federated_issuer(self) -> str:

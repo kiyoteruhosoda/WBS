@@ -161,6 +161,9 @@ class FakeIdentityProvider(IdentityProvider):
     def verify_logout_token(self, token):
         raise InvalidLogoutTokenError("this fake does not serve logout tokens")
 
+    def verify_access_token(self, token):
+        raise AuthenticationError("this fake does not serve access tokens")
+
 
 def build(idp=None, users=None, policy=None):
     users_repo = InMemoryUsers(users)

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Iterator
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import pytest
 from sqlalchemy.exc import IntegrityError
@@ -11,7 +11,8 @@ from sqlalchemy.exc import IntegrityError
 from src.application.dto.auth_dto import AuthenticatedUserDTO
 from src.infrastructure.auth.auth_settings import SINGLE_USER_ID
 from src.infrastructure.database.models import TimeEntryModel, UserModel
-from src.presentation.api.dependencies import get_current_user, get_db
+from src.presentation.api.dependencies import get_app_or_web_user, get_current_user, get_db
+from src.shared.clock import utcnow
 
 OTHER_EMAIL = "other-timer@example.com"
 
@@ -47,11 +48,15 @@ def other_user_id(db) -> int:
 @pytest.fixture
 def two_users(client, other_user_id):
     class Switch:
+        # Start / Stop / 現在の口はアプリからも叩ける別の依存関数（ADR-0018）なので両方を差し替える
         def me(self) -> None:
             client.app.dependency_overrides.pop(get_current_user, None)
+            client.app.dependency_overrides.pop(get_app_or_web_user, None)
 
         def other(self) -> None:
-            client.app.dependency_overrides[get_current_user] = _as_user(other_user_id, OTHER_EMAIL)
+            as_other = _as_user(other_user_id, OTHER_EMAIL)
+            client.app.dependency_overrides[get_current_user] = as_other
+            client.app.dependency_overrides[get_app_or_web_user] = as_other
 
     switch = Switch()
     yield switch
@@ -259,3 +264,23 @@ def test_delete(client) -> None:
     assert client.delete(f"/api/time-entries/{entry['id']}").status_code == 204
     assert client.get(f"/api/time-entries/{entry['id']}").status_code == 404
     assert client.get("/api/time-entries/current").json()["entry"] is None
+
+
+def test_start_and_stop_at_the_pressed_time(client) -> None:
+    """アプリが電波の無いときに溜めた押下を、押した時刻で送る（ADR-0018）。"""
+    pressed = (utcnow() - timedelta(hours=3)).replace(microsecond=0)
+    started = _start(client, at=f"{(pressed + timedelta(hours=9)).isoformat()}+09:00")["started"]
+    assert started["started_at"] == f"{pressed.isoformat()}Z"
+    stop_at = pressed + timedelta(minutes=90)
+    res = client.post("/api/time-entries/stop", json={"at": f"{stop_at.isoformat()}Z"})
+    assert res.status_code == 200, res.text
+    assert res.json()["stopped"]["ended_at"] == f"{stop_at.isoformat()}Z"
+    assert res.json()["stopped"]["duration_seconds"] == 90 * 60
+
+
+def test_a_pressed_time_needs_an_offset_and_must_not_be_in_the_future(client) -> None:
+    naive = (utcnow() - timedelta(hours=1)).replace(microsecond=0).isoformat()
+    assert client.post("/api/time-entries/start", json={"at": naive}).status_code == 422
+    assert client.post("/api/time-entries/start", json={"at": "2100-01-01T00:00:00Z"}).status_code == 422
+    # 範囲の外の時刻は、止める打刻が無くても断る（送り手の時計の狂いに気づけるように）
+    assert client.post("/api/time-entries/stop", json={"at": "2100-01-01T00:00:00Z"}).status_code == 422

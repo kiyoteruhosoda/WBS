@@ -26,6 +26,9 @@ from src.infrastructure.auth.pkce import CODE_CHALLENGE_METHOD, code_challenge_f
 
 JWKS_CACHE_SECONDS = 300
 
+#: アクセストークンの ``typ``（RFC 9068）。ID トークンや停止の通知を Bearer に持ち込ませない。
+ACCESS_TOKEN_TYPE = "at+jwt"
+
 # JSON の真値として認める文字列。`email_verified` を素の ``bool()`` に通すと
 # ``bool("false")`` が True になり、「検証済みメールしか通さない」規則が
 # 文字列で真偽値を返す IdP でだけ素通しになる。
@@ -149,6 +152,32 @@ class OidcIdentityProvider(IdentityProvider):
         except jwt.PyJWTError as exc:
             # ⚠ **理由を送り手へ返さない。** 記録だけ残す（この口は未認証で叩ける）。
             raise InvalidLogoutTokenError(f"logout_token verification failed: {exc}") from exc
+        return claims
+
+    def verify_access_token(self, token: str) -> Mapping[str, Any]:
+        """アプリから来た利用者のアクセストークンを確かめる（ADR-0018）。
+
+        ⚠ **宛先は ``{issuer}/userinfo``。** assay は人のログインのトークンに宛名
+        （RFC 8707 の ``resource``）を載せない（assay の ADR-0042 決定 6、2026-09-30 に据え置き）。
+        どのアプリ宛てかは ``client_id`` で見分ける（ユースケース側）。
+        """
+        try:
+            discovery = self._discovery.get()
+            header = jwt.get_unverified_header(token)
+            if str(header.get("typ", "")).lower() != ACCESS_TOKEN_TYPE:
+                raise AuthenticationError("Bearer token is not an access token")
+            # ⚠ 鍵の取得も try の中（壊れた入力や JWKS の失敗が 500 に化けないように）
+            signing_key = self._get_jwks_client(discovery.jwks_uri).get_signing_key_from_jwt(token)
+            claims: dict[str, Any] = jwt.decode(
+                token,
+                signing_key.key,
+                algorithms=discovery.allowed_algorithms,
+                audience=f"{discovery.issuer.rstrip('/')}/userinfo",
+                issuer=discovery.issuer,
+                options={"require": ["exp", "iat", "iss", "aud", "sub"]},
+            )
+        except jwt.PyJWTError as exc:
+            raise AuthenticationError(f"Access token verification failed: {exc}") from exc
         return claims
 
     def build_end_session_url(self, *, post_logout_redirect_uri: str | None) -> str | None:

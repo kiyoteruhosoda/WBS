@@ -14,6 +14,8 @@ class StartTimerCommand:
     # None  = 未割当で始める（明示）
     task_id: int | None | UnsetType = UNSET
     memo: str | None = None
+    # 押した時刻（naive な UTC）。None は「今」。アプリが電波の無いときに溜めた押下を送る（ADR-0018）
+    at: datetime | None = None
 
 
 @dataclass

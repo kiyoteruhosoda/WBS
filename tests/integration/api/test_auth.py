@@ -55,6 +55,8 @@ class FakeIdentityProvider(IdentityProvider):
             ),
         }
         self.rejected: set[str] = set()
+        # アプリのアクセストークン（ADR-0018）。綴り → クレーム。署名の検証はインフラ層の責任
+        self.access_tokens: dict[str, dict] = {}
 
     @property
     def display_name(self) -> str:
@@ -80,6 +82,12 @@ class FakeIdentityProvider(IdentityProvider):
     @property
     def federated_issuer(self):
         return ISSUER
+
+    def verify_access_token(self, token):
+        claims = self.access_tokens.get(token)
+        if claims is None:
+            raise AuthenticationError("Access token verification failed")
+        return claims
 
     def verify_logout_token(self, token):
         if token in self.rejected:

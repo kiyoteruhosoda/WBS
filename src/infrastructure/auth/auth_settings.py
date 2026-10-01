@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import enum
+import json
 import os
 from dataclasses import dataclass
 from datetime import timedelta
@@ -53,6 +54,9 @@ class AuthSettings:
     machine_client_id: str = ""
     machine_private_key_file: str = ""
     machine_private_key_kid: str | None = None
+    #: assay のアクセストークン（``Authorization: Bearer``）を受け取ってよいアプリの
+    #: ``client_id``（ADR-0018）。⚠ **環境変数だけ。空なら Bearer は 1 本も通さない。**
+    app_client_ids: frozenset[str] = frozenset()
 
     @property
     def sso_enabled(self) -> bool:
@@ -88,6 +92,20 @@ def _env_float(key: str, default: float) -> float:
 def _env_domains(key: str) -> tuple[str, ...]:
     raw = os.getenv(key, "")
     return tuple(d.strip().lower() for d in raw.split(",") if d.strip())
+
+
+def _env_list(key: str) -> frozenset[str]:
+    """カンマ区切り（または JSON の配列）。空の要素は捨てる。"""
+    raw = os.getenv(key, "").strip()
+    if raw.startswith("["):
+        try:
+            parsed = json.loads(raw)
+        except ValueError as exc:
+            raise AuthConfigurationError(f"{key} must be a JSON array or comma-separated") from exc
+        items = [str(item) for item in parsed] if isinstance(parsed, list) else [str(parsed)]
+    else:
+        items = raw.split(",")
+    return frozenset(item.strip() for item in items if item.strip())
 
 
 def _env_samesite(key: str, *, cookie_secure: bool) -> str:
@@ -161,4 +179,5 @@ def load_auth_settings() -> AuthSettings:
         machine_client_id=os.getenv("MACHINE_CLIENT_ID", "").strip(),
         machine_private_key_file=os.getenv("MACHINE_PRIVATE_KEY_FILE", "").strip(),
         machine_private_key_kid=os.getenv("MACHINE_PRIVATE_KEY_KID", "").strip() or None,
+        app_client_ids=_env_list("APP_CLIENT_IDS"),
     )

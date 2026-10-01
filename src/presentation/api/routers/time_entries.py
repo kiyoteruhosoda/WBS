@@ -1,6 +1,8 @@
 """打刻（task #154 / ADR-0008）。
 
 普段は ``POST /start`` と ``POST /stop`` だけ。画面の上部は ``GET /current`` を見る。
+この 3 つだけは打刻アプリ（task #167）からも叩ける ——assay のアクセストークンを
+``Authorization: Bearer`` で受け取る（``AppOrWebUserDep``、ADR-0018）。
 期間の一覧・1 件の修正・削除と、補正（手で足す・分割・結合・まとめてタスクを振る・
 予定の回から作る）は締めの画面（#161 / ADR-0012）のため。
 確定済みの締めの期間に掛かる打刻は書き換えられない（409）。
@@ -22,11 +24,16 @@ from src.application.dto.time_entry_dto import (
 )
 from src.application.dto.unset import UNSET
 from src.domain.exceptions import ValidationError
-from src.presentation.api.dependencies import CurrentUserDep, TimeEntryUseCasesDep
+from src.presentation.api.dependencies import (
+    AppOrWebUserDep,
+    CurrentUserDep,
+    TimeEntryUseCasesDep,
+)
 from src.presentation.api.schemas.time_entry_schemas import (
     CurrentTimeEntryResponse,
     StartTimeEntryRequest,
     StartTimeEntryResponse,
+    StopTimeEntryRequest,
     StopTimeEntryResponse,
     TimeEntryAssignRequest,
     TimeEntryCreateRequest,
@@ -44,7 +51,7 @@ router = APIRouter(prefix="/time-entries", tags=["time-entries"])
 
 @router.get("/current", response_model=CurrentTimeEntryResponse)
 def get_current_time_entry(
-    uc: TimeEntryUseCasesDep, current_user: CurrentUserDep
+    uc: TimeEntryUseCasesDep, current_user: AppOrWebUserDep
 ) -> CurrentTimeEntryResponse:
     view = uc.current(current_user.user_id)
     return CurrentTimeEntryResponse(
@@ -56,7 +63,7 @@ def get_current_time_entry(
 @router.post("/start", response_model=StartTimeEntryResponse, status_code=status.HTTP_201_CREATED)
 def start_time_entry(
     uc: TimeEntryUseCasesDep,
-    current_user: CurrentUserDep,
+    current_user: AppOrWebUserDep,
     body: StartTimeEntryRequest | None = None,
 ) -> StartTimeEntryResponse:
     body = body or StartTimeEntryRequest()
@@ -65,6 +72,7 @@ def start_time_entry(
         # 送らなければ既定の順で決める。null は「未割当で始める」
         task_id=body.task_id if "task_id" in body.model_fields_set else UNSET,
         memo=body.memo,
+        at=to_naive_utc(body.at) if body.at is not None else None,
     )
     result = uc.start(command)
     return StartTimeEntryResponse(
@@ -76,9 +84,12 @@ def start_time_entry(
 
 @router.post("/stop", response_model=StopTimeEntryResponse)
 def stop_time_entry(
-    uc: TimeEntryUseCasesDep, current_user: CurrentUserDep
+    uc: TimeEntryUseCasesDep,
+    current_user: AppOrWebUserDep,
+    body: StopTimeEntryRequest | None = None,
 ) -> StopTimeEntryResponse:
-    view = uc.stop(current_user.user_id)
+    at = body.at if body is not None else None
+    view = uc.stop(current_user.user_id, to_naive_utc(at) if at is not None else None)
     return StopTimeEntryResponse(
         stopped=TimeEntryResponse.from_view(view) if view is not None else None,
         server_now=utcnow(),
