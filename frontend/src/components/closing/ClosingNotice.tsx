@@ -23,9 +23,14 @@ const ClosingNotice: React.FC = () => {
     <Alert
       severity="warning"
       data-testid="closing-notice"
-      sx={{ mb: '16px', cursor: 'pointer' }}
+      // 押す口（締めへ）は文と同じ高さに置き、狭い画面でも 1 文字ずつ折り返さない
+      sx={{ mb: '16px', cursor: 'pointer', alignItems: 'center', '& .MuiAlert-action': { pt: 0, alignItems: 'center' } }}
       onClick={open}
-      action={<Button color="inherit" size="small" onClick={(e) => { e.stopPropagation(); open(); }}>{t('closing.noticeOpen')}</Button>}
+      action={(
+        <Button color="inherit" size="small" sx={{ whiteSpace: 'nowrap', flexShrink: 0 }} onClick={(e) => { e.stopPropagation(); open(); }}>
+          {t('closing.noticeOpen')}
+        </Button>
+      )}
     >
       {t('closing.notice', { count: data.pending.length, from: label.from, to: label.to })}
     </Alert>

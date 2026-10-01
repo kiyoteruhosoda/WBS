@@ -1,5 +1,5 @@
 import React, { useEffect, useLayoutEffect, useMemo, useRef } from 'react';
-import { Box } from '@mui/material';
+import { Box, useMediaQuery } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
 import RepeatIcon from '@mui/icons-material/Repeat';
 import SwapHorizIcon from '@mui/icons-material/SwapHoriz';
@@ -32,6 +32,10 @@ const CHIP_MAX_WIDTH_RATIO = 0.8;
 // 予定と並べて重ねる帯（打刻）の幅と右の余白。予定のブロックが空けている右の 2 割に置く。
 const BAND_WIDTH = 10;
 const BAND_MARGIN_RIGHT = 3;
+// 見出し・終日の帯にも、時間グリッドの縦のスクロールバーと同じ幅の溝を取る。取らないと、スクロールバーが
+// 幅を取る環境（Windows の Chrome・Edge など）で、見出しと終日の列だけがスクロールバーの幅だけ広くなり、
+// 右へ行くほど日の列が本体とずれる。スクロールバーが重なって出る環境（スマホ・macOS）では溝は 0。
+const SCROLLBAR_GUTTER = { overflowY: 'hidden', scrollbarGutter: 'stable' } as const;
 
 interface Props extends Pick<CalendarInteractions, 'onCreateRange' | 'onRescheduleOccurrence' | 'onEditOccurrence' | 'onCreateEvent'> {
   dates: string[];
@@ -66,7 +70,10 @@ const WeekView: React.FC<Props> = ({
   linkedTasks, dropPreview, bands, occurrenceAction, scrollLeadMinutes,
 }) => {
   const { t, weekdays } = useI18n();
-  const c = useTheme().palette.calendar;
+  const theme = useTheme();
+  const c = theme.palette.calendar;
+  // 狭い画面で何日も並べるときは、見出しを曜日と日付の 2 行にする（1 行だと列の幅に収まらず、今日の太字が枠で切れる）
+  const stackHeader = useMediaQuery(theme.breakpoints.down('sm')) && dates.length > 1;
   const scrollRef = useRef<HTMLDivElement>(null);
   const columns = `${TIME_COLUMN_WIDTH}px repeat(${dates.length}, minmax(0, 1fr))`;
   const isCurrentWeek = dates.includes(today);
@@ -122,7 +129,10 @@ const WeekView: React.FC<Props> = ({
 
   // 日の境の縦線。今日の列は青い枠（上は見出し、中は終日の帯、下は時間グリッドで閉じる）。
   const divider = (date: string, part: 'top' | 'middle' | 'bottom') => {
-    if (date !== today) return { borderLeft: `1px solid ${c.gridLine}` };
+    if (date !== today) {
+      // 見出しは今日の列だけ上に 2px の枠が付く。ほかの列にも同じ厚みの透明な枠を置いて、文字の高さを揃える。
+      return { borderLeft: `1px solid ${c.gridLine}`, ...(part === 'top' ? { borderTop: '2px solid transparent' } : {}) };
+    }
     const blue = `2px solid ${c.blue}`;
     return {
       borderLeft: blue,
@@ -162,7 +172,7 @@ const WeekView: React.FC<Props> = ({
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0, bgcolor: c.surface }}>
       {/* 曜日と日付 */}
-      <Box sx={{ display: 'grid', gridTemplateColumns: columns, pt: '2px', flexShrink: 0 }}>
+      <Box sx={{ display: 'grid', gridTemplateColumns: columns, pt: '2px', flexShrink: 0, ...SCROLLBAR_GUTTER }}>
         <Box />
         {dates.map((date) => (
           <Box
@@ -173,19 +183,20 @@ const WeekView: React.FC<Props> = ({
             onClick={() => onSelectDate(date)}
             onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSelectDate(date); } }}
             sx={{
-              textAlign: 'center', fontSize: 11, pt: '2px', pb: '6px', cursor: 'pointer',
+              textAlign: 'center', fontSize: 11, lineHeight: 1.3, pt: '2px', pb: '6px', cursor: 'pointer',
+              whiteSpace: 'pre-line',
               color: headerColor(date), fontWeight: date === today || date === selectedDate ? 700 : 400,
               textDecoration: date === selectedDate ? 'underline' : 'none',
               ...divider(date, 'top'),
             }}
           >
-            {formatWeekHeader(date, t, weekdays)}
+            {stackHeader ? formatWeekHeader(date, t, weekdays).replace(' ', '\n') : formatWeekHeader(date, t, weekdays)}
           </Box>
         ))}
       </Box>
 
       {/* 終日の帯（祝日は 0 段目） */}
-      <Box sx={{ display: 'grid', gridTemplateColumns: columns, height: allDay.height, flexShrink: 0 }}>
+      <Box sx={{ display: 'grid', gridTemplateColumns: columns, height: allDay.height, flexShrink: 0, ...SCROLLBAR_GUTTER }}>
         <Box sx={{ fontSize: 10, alignSelf: 'center', mx: '2px', color: c.textSecondary }}>{t('calendar.allDay')}</Box>
         {dates.map((date, i) => {
           const blocks = allDay.blocks.filter((b) => b.column === i);
@@ -245,7 +256,7 @@ const WeekView: React.FC<Props> = ({
       </Box>
 
       {/* 時間グリッド（1px = 1 分） */}
-      <Box ref={scrollRef} data-testid="week-scroll" sx={{ flex: 1, minHeight: 0, overflowY: 'auto', overflowX: 'hidden' }}>
+      <Box ref={scrollRef} data-testid="week-scroll" sx={{ flex: 1, minHeight: 0, overflowY: 'auto', overflowX: 'hidden', scrollbarGutter: 'stable' }}>
         <Box sx={{ display: 'grid', gridTemplateColumns: columns, height: MINUTES_PER_DAY }}>
           <Box>
             {Array.from({ length: 24 }, (_, h) => (

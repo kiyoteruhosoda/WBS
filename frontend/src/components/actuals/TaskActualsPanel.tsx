@@ -49,7 +49,9 @@ const RemainingEditor: React.FC<{ row: TaskActualsRow; onSaved: (ok: boolean) =>
         value={value}
         error={invalid}
         onChange={(e) => setValue(e.target.value)}
-        slotProps={{ htmlInput: { min: 0, step: 0.25, 'aria-label': t('actuals.remainingInput') } }}
+        // 空の箱だけだと何を入れる欄か分からないので、見える名前（残（h））を付ける。空で保存すると既定へ戻る
+        label={t('actuals.remainingInput')}
+        slotProps={{ htmlInput: { min: 0, step: 0.25 } }}
         sx={{ width: 90 }}
       />
       <Button type="submit" size="small" variant="outlined" disabled={invalid || save.isPending}>
@@ -93,7 +95,8 @@ const TaskActualsPanel: React.FC<Props> = ({ reviewOnly, onReviewOnlyChange }) =
         <TableContainer sx={{ bgcolor: ds.paper, border: `1px solid ${ds.border}`, borderRadius: '10px' }}>
           <Table size="small">
             <TableHead>
-              <TableRow>
+              {/* 見出しは折り返さない（狭い画面で「予定済み」が 1 文字ずつ縦に並び、行が 3 倍の高さになる） */}
+              <TableRow sx={{ '& th': { whiteSpace: 'nowrap' } }}>
                 <TableCell>{t('actuals.colTask')}</TableCell>
                 <TableCell align="right">{t('actuals.colEstimate')}</TableCell>
                 <TableCell align="right" title={t('actuals.scheduledHelp')}>{t('actuals.colScheduled')}</TableCell>
