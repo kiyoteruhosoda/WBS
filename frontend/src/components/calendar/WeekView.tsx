@@ -8,26 +8,26 @@ import type { CalendarHoliday } from '../../types';
 import type { DaySegment } from '../../calendar/daySegments';
 import { formatSegmentTimeRange } from '../../calendar/daySegments';
 import {
-  ALL_DAY_CHIP_HEIGHT, ALL_DAY_ROW_HEIGHT, defaultScrollTop, layoutAllDayLane, layoutTimedSegments,
-  minuteAtOffset, pastShadeHeight,
+  ALL_DAY_CHIP_HEIGHT, ALL_DAY_ROW_HEIGHT, defaultScrollTop, layoutAllDayLane, layoutTimedSegments, pastShadeHeight,
 } from '../../calendar/weekLayout';
 import type { WeekEventBlock } from '../../calendar/weekLayout';
 import { holidaysByDate } from '../../calendar/monthCells';
 import { darken, eventColor } from '../../calendar/calendarColors';
 import { formatWeekHeader } from '../../calendar/calendarTitles';
 import { dayOfWeek, formatMinute, MINUTES_PER_DAY } from '../../calendar/zonedTime';
+import { formatTimingRange, ghostPieces, resizeEdgeAt, tapCreateMinute } from '../../calendar/weekGestures';
 import type { CalendarInteractions } from './calendarInteractions';
+import { useWeekDrag } from './useWeekDrag';
 
 // 時刻の列の幅（移植元 WeekCalendarView.xaml の ColumnDefinition 56）。
 export const TIME_COLUMN_WIDTH = 56;
 // 予定の左の余白と、列幅に対する最大の幅（移植元 ChipMarginLeft・0.8）。
 const CHIP_MARGIN_LEFT = 4;
 const CHIP_MAX_WIDTH_RATIO = 0.8;
-// 予定の上端・下端のつかみ（移植元 ResizeHandlePx）。
-const RESIZE_HANDLE_PX = 10;
 
-interface Props extends Pick<CalendarInteractions, 'onEventPointerDown' | 'onGridPointerDown' | 'onEditOccurrence' | 'onCreateEvent'> {
+interface Props extends Pick<CalendarInteractions, 'onCreateRange' | 'onRescheduleOccurrence' | 'onEditOccurrence' | 'onCreateEvent'> {
   dates: string[];
+  timeZone: string;
   segmentsByDate: ReadonlyMap<string, DaySegment[]>;
   holidays: readonly CalendarHoliday[];
   today: string;
@@ -42,8 +42,8 @@ interface Props extends Pick<CalendarInteractions, 'onEventPointerDown' | 'onGri
  * 週表示・平日表示（移植元 WeekCalendarView）。左に時刻の列、上に終日の帯、下に 1px = 1 分の時間グリッド。
  */
 const WeekView: React.FC<Props> = ({
-  dates, segmentsByDate, holidays, today, nowMinute, selectedDate, selectedSegmentKey,
-  onSelectDate, onSelectSegment, onEventPointerDown, onGridPointerDown, onEditOccurrence, onCreateEvent,
+  dates, timeZone, segmentsByDate, holidays, today, nowMinute, selectedDate, selectedSegmentKey,
+  onSelectDate, onSelectSegment, onCreateRange, onRescheduleOccurrence, onEditOccurrence, onCreateEvent,
 }) => {
   const { t, weekdays } = useI18n();
   const c = useTheme().palette.calendar;
@@ -51,6 +51,13 @@ const WeekView: React.FC<Props> = ({
   const columns = `${TIME_COLUMN_WIDTH}px repeat(${dates.length}, minmax(0, 1fr))`;
   const isCurrentWeek = dates.includes(today);
   const holidayMap = useMemo(() => holidaysByDate(holidays), [holidays]);
+  const drag = useWeekDrag({ dates, timeZone, scrollRef, onCreateRange, onRescheduleOccurrence });
+  const ghost = drag.ghost;
+  const ghostByDate = useMemo(() => {
+    const map = new Map<string, { startMinute: number; endMinute: number; first: boolean }>();
+    if (ghost) ghostPieces(ghost.timing).forEach((p, i) => map.set(p.date, { ...p, first: i === 0 }));
+    return map;
+  }, [ghost]);
 
   const allDay = useMemo(() => {
     const segments = dates.flatMap((d) => segmentsByDate.get(d) ?? []);
@@ -100,16 +107,20 @@ const WeekView: React.FC<Props> = ({
     };
   };
 
-  const gridPoint = (e: React.PointerEvent<HTMLElement> | React.MouseEvent<HTMLElement>, date: string) => {
+  // 上端・下端のつかみ。日をまたいで続く側の端（前日から・翌日へ）は伸ばせないので移動にする。
+  const edgeOf = (e: React.PointerEvent<HTMLElement>, segment: DaySegment): 'top' | 'bottom' | null => {
     const rect = e.currentTarget.getBoundingClientRect();
-    return { date, minute: minuteAtOffset(e.clientY - rect.top) };
+    const edge = resizeEdgeAt(e.clientY - rect.top, rect.height);
+    if (edge === 'top' && segment.continuesFromPreviousDay) return null;
+    if (edge === 'bottom' && segment.continuesToNextDay) return null;
+    return edge;
   };
 
-  const edgeOf = (e: React.PointerEvent<HTMLElement>): 'top' | 'bottom' | null => {
-    const rect = e.currentTarget.getBoundingClientRect();
-    if (e.clientY - rect.top <= RESIZE_HANDLE_PX) return 'top';
-    if (rect.bottom - e.clientY <= RESIZE_HANDLE_PX) return 'bottom';
-    return null;
+  // 空き枠のタップは作成の意図（:00 / :30 に丸める。移植元 OnLaneTapped）。
+  const onGridClick = (e: React.MouseEvent<HTMLElement>, date: string) => {
+    if (drag.shouldSuppressClick()) return;
+    onSelectDate(date);
+    if (onCreateEvent) onCreateEvent(date, tapCreateMinute(e.clientY - e.currentTarget.getBoundingClientRect().top));
   };
 
   const chipText = { color: c.onColor, fontSize: 10, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } as const;
@@ -207,11 +218,17 @@ const WeekView: React.FC<Props> = ({
             <Box
               key={date}
               data-date={date}
-              onPointerDown={onGridPointerDown ? (e) => onGridPointerDown(e, gridPoint(e, date)) : undefined}
-              onClick={() => onSelectDate(date)}
-              onDoubleClick={onCreateEvent ? (e) => onCreateEvent(date, gridPoint(e, date).minute) : undefined}
+              data-day-column={date}
+              onPointerDown={onCreateRange ? (e) => {
+                // 予定の上で押したら作らない（移植元 IsWithinEventChip）。
+                if (e.target instanceof Element && e.target.closest('[data-occurrence-id]')) return;
+                drag.onGridPointerDown(e);
+              } : undefined}
+              onClick={(e) => onGridClick(e, date)}
               sx={{
                 position: 'relative', minWidth: 0, height: MINUTES_PER_DAY, boxSizing: 'border-box',
+                // 指: 縦のスクロールは許す（範囲作りは長押しから）。長押しの選択・吹き出しは出さない。
+                touchAction: 'pan-y', userSelect: 'none', WebkitUserSelect: 'none', WebkitTouchCallout: 'none',
                 bgcolor: dayBackground(date),
                 // 正時の線と 30 分の線
                 backgroundImage: `linear-gradient(to bottom, ${c.gridLine} 1px, transparent 1px),`
@@ -226,13 +243,19 @@ const WeekView: React.FC<Props> = ({
                 const bg = eventColor(o.color_key);
                 const selected = segment.key === selectedSegmentKey;
                 const range = formatSegmentTimeRange(segment);
+                const dragging = ghost != null && ghost.occurrenceId === o.id;
                 return (
                   <Box
                     key={segment.key}
                     data-occurrence-id={o.id}
                     title={`${o.title}\n${range}${o.location ? `\n${o.location}` : ''}`}
-                    onPointerDown={onEventPointerDown ? (e) => { e.stopPropagation(); onEventPointerDown(e, segment, edgeOf(e)); } : undefined}
-                    onClick={(e) => { e.stopPropagation(); onSelectSegment(segment); }}
+                    onPointerDown={onRescheduleOccurrence ? (e) => { e.stopPropagation(); drag.onEventPointerDown(e, block, edgeOf(e, segment)); } : undefined}
+                    onPointerMove={onRescheduleOccurrence ? (e) => {
+                      // 端は上下の矢印、ほかは移動の矢印（移植元 OnChipPointerMoved）。ドラッグ中は変えない。
+                      if (ghost) return;
+                      e.currentTarget.style.cursor = edgeOf(e, segment) ? 'ns-resize' : 'move';
+                    } : undefined}
+                    onClick={(e) => { e.stopPropagation(); if (!drag.shouldSuppressClick()) onSelectSegment(segment); }}
                     onDoubleClick={onEditOccurrence ? (e) => { e.stopPropagation(); onEditOccurrence(o); } : undefined}
                     sx={{
                       position: 'absolute', zIndex: 1, boxSizing: 'border-box', overflow: 'hidden',
@@ -240,6 +263,7 @@ const WeekView: React.FC<Props> = ({
                       left: `calc(${block.leftRatio * 100}% + ${CHIP_MARGIN_LEFT}px)`,
                       width: `calc(${Math.min(block.widthRatio, CHIP_MAX_WIDTH_RATIO) * 100}% - ${CHIP_MARGIN_LEFT}px)`,
                       px: '4px', borderRadius: '2px', bgcolor: bg, cursor: 'pointer', touchAction: 'none',
+                      opacity: dragging ? 0.5 : 1,
                       border: selected ? `2px solid ${c.onColor}` : `1px solid ${darken(bg)}`,
                       boxShadow: selected ? `0 0 0 1px ${c.blue}` : 'none',
                       display: 'flex', flexDirection: 'column', justifyContent: block.height < 30 ? 'center' : 'flex-start',
@@ -253,6 +277,28 @@ const WeekView: React.FC<Props> = ({
                   </Box>
                 );
               })}
+              {/* ドラッグの行き先（半透明のゴースト。移植元 WeekInteractionOverlayView） */}
+              {ghost && (() => {
+                const piece = ghostByDate.get(date);
+                if (!piece) return null;
+                const fullWidth = ghost.kind === 'create';
+                return (
+                  <Box
+                    data-testid={piece.first ? 'drag-ghost' : undefined}
+                    sx={{
+                      position: 'absolute', zIndex: 4, pointerEvents: 'none', boxSizing: 'border-box',
+                      top: piece.startMinute, height: Math.max(piece.endMinute - piece.startMinute, 15),
+                      left: fullWidth ? 0 : `calc(${ghost.leftRatio * 100}% + ${CHIP_MARGIN_LEFT}px)`,
+                      width: fullWidth ? '100%' : `max(24px, calc(${Math.min(ghost.widthRatio, CHIP_MAX_WIDTH_RATIO) * 100}% - ${CHIP_MARGIN_LEFT}px))`,
+                      bgcolor: c.dragGhost, borderRadius: '6px',
+                      borderTop: piece.first ? `2px solid ${c.blue}` : 'none',
+                      px: '6px', pt: '4px', color: c.onColor, fontSize: 10, whiteSpace: 'nowrap', overflow: 'hidden',
+                    }}
+                  >
+                    {piece.first ? formatTimingRange(ghost.timing) : null}
+                  </Box>
+                );
+              })()}
               {/* 過ぎた時間の影（過ぎた日は下まで、今日は今まで） */}
               <Box sx={{
                 position: 'absolute', top: 0, left: 0, right: 0, zIndex: 2, pointerEvents: 'none',

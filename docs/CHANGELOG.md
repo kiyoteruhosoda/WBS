@@ -4,6 +4,16 @@
 
 ## 2026-10-01
 
+- **週表示のドラッグを入れた**（task #158）。空き枠のタップで作成（:00 / :30）、ドラッグで範囲（30 分単位）、
+  予定のドラッグで移動（日をまたいでよい）、上下端（10px・小さい塊は高さの 1/3）で伸ばし縮め（15 分単位・
+  最短 15 分）、端 48px で自動スクロール、Esc で中止、半透明のゴースト。ポインタイベントだけで追うので指でも
+  動く（空き枠は 300ms の長押しから）。判定と時刻の計算は `frontend/src/calendar/weekGestures.ts` の純関数
+  （移植元 `WeekGestureArbitrationService` / `WeekInteractionMapper` / `WeekAutoScrollService`）。
+  ⚠ **まだ API には繋いでいない**: 部品は意図（`onCreateRange` / `onRescheduleOccurrence`。繰り返しの回は
+  `scope: 'occurrence'` =「この回だけ移動」）を出すだけで、元に戻す・やり直しの履歴
+  （`calendar/operationHistory.ts`）も呼び手が持つ。見本ページ（`/calendar-preview`）はページの中の状態に当てる。
+  月表示のチップのドラッグは移植元に無いので入れていない。
+
 - **カレンダーの表示の部品を NolumiaScheduler に寄せて作った**（task #157 の第 1 段）。月（6×7・色チップ・
   「+N 件」・土日祝の背景・過去日の影・祝日チップ）、週・平日（時刻列 56px・終日の帯・1px = 1 分の
   時間グリッド・正時/30 分線・開いたら 9:00（今週は今の 4 時間前）へ送る・現在時刻の赤線・過去の影・

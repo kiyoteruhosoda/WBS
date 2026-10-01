@@ -128,6 +128,7 @@ const SchedulerCalendar: React.FC<SchedulerCalendarProps> = ({
         ) : (
           <WeekView
             dates={dates}
+            timeZone={timeZone}
             segmentsByDate={segmentsByDate}
             holidays={holidays}
             today={today}
@@ -136,8 +137,8 @@ const SchedulerCalendar: React.FC<SchedulerCalendarProps> = ({
             selectedSegmentKey={selectedSegmentKey}
             onSelectDate={selectDate}
             onSelectSegment={selectSegment}
-            onEventPointerDown={interactions.onEventPointerDown}
-            onGridPointerDown={interactions.onGridPointerDown}
+            onCreateRange={interactions.onCreateRange}
+            onRescheduleOccurrence={interactions.onRescheduleOccurrence}
             onEditOccurrence={interactions.onEditOccurrence}
             onCreateEvent={interactions.onCreateEvent}
           />

@@ -30,6 +30,8 @@ export interface CalendarPalette {
   weekHeaderText: string;
   /** 色の上に載せる文字（予定のチップ・今日の丸） */
   onColor: string;
+  /** ドラッグ中の行き先に描く半透明の青（移植元 GCalDragGhost） */
+  dragGhost: string;
 }
 
 export const calendarPalettes: Record<'light' | 'dark', CalendarPalette> = {
@@ -54,6 +56,7 @@ export const calendarPalettes: Record<'light' | 'dark', CalendarPalette> = {
     selectedCircle: '#70757a',
     weekHeaderText: '#5f6368',
     onColor: '#ffffff',
+    dragGhost: 'rgba(26, 115, 232, 0.35)', // #5A1A73E8
   },
   dark: {
     surface: '#1e1e1e',
@@ -76,6 +79,7 @@ export const calendarPalettes: Record<'light' | 'dark', CalendarPalette> = {
     selectedCircle: '#70757a',
     weekHeaderText: '#9aa0a6',
     onColor: '#ffffff',
+    dragGhost: 'rgba(26, 115, 232, 0.35)', // #5A1A73E8
   },
 };
 
