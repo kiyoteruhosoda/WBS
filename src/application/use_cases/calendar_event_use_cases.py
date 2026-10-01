@@ -21,6 +21,7 @@ from src.application.dto.calendar_event_dto import (
     CreateSingleEventCommand,
     MoveOccurrenceCommand,
     OccurrenceCommand,
+    OccurrenceView,
     RescheduleSingleEventCommand,
     SplitThisOccurrenceCommand,
     UpdateEventCommand,
@@ -42,10 +43,19 @@ from src.domain.value_objects.event_schedule import (
     RecurringEventSchedule,
     SingleEventSchedule,
 )
-from src.domain.value_objects.local_schedule_point import local_date_of, local_time_of
+from src.domain.value_objects.local_schedule_point import (
+    local_date_of,
+    local_time_of,
+    start_instant,
+    to_naive_utc,
+)
 from src.domain.value_objects.recurrence import RecurrenceRule
 from src.domain.value_objects.time_zone import TimeZoneId
 from src.shared.clock import utcnow
+
+
+SCHEDULED_TASK_LOOKBACK_DAYS = 7
+"""打刻の既定のタスクを探すとき、何日前に始まった回まで見るか（それより長い予定は見ない）。"""
 
 
 def _shift_clamped(day: date, days: int) -> date:
@@ -97,6 +107,72 @@ class CalendarEventUseCases:
         期間に入るものだけを返す。境目の回が投影で隣の日へ移りうるので、展開は前後 1 日
         広げて行う。省くと予定ごとのタイムゾーンの壁時計のまま返す。
         """
+        pairs = self._expand(user_id, from_date, to_date, viewer_time_zone)
+        return [occurrence for _, occurrence in pairs]
+
+    def list_occurrence_views(
+        self, user_id: int, from_date: date, to_date: date, viewer_time_zone: str
+    ) -> list[OccurrenceView]:
+        """``list_occurrences`` を閲覧者のゾーンで行い、画面へ渡す形（``OccurrenceView``）にする。
+
+        開始の UTC 瞬間は、投影した壁時計を閲覧者のゾーンで瞬間へ戻して出す（終日の回は
+        ずらさないので、閲覧者のその日の 0:00 になる）。
+        """
+        viewer = TimeZoneId(viewer_time_zone)
+        return [
+            OccurrenceView(
+                event_id=event.id,
+                event_version=event.version,
+                is_recurring=event.is_recurring(),
+                title=occurrence.title,
+                start_utc=start_instant(occurrence.date, occurrence.start_time, viewer.zone),
+                duration_minutes=occurrence.duration_minutes,
+                date=occurrence.date,
+                start_time=occurrence.start_time,
+                is_all_day=occurrence.is_all_day,
+                color_key=occurrence.color_key,
+                location=occurrence.location,
+                task_id=occurrence.task_id,
+                is_moved=occurrence.is_moved,
+                is_overridden=occurrence.is_overridden,
+                series_key=occurrence.series_key if event.is_recurring() else None,
+            )
+            for event, occurrence in self._expand(user_id, from_date, to_date, viewer_time_zone)
+            if event.id is not None
+        ]
+
+    def task_scheduled_at(self, user_id: int, at: datetime) -> int | None:
+        """``at``（naive な UTC）に掛かっている回に結ばれた、その利用者のタスク（打刻の既定、ADR-0008）。
+
+        ``ScheduledTaskLookup`` の実装。回が重なっていたら、いちばん後に始まった回を選ぶ
+        （同時なら短い方、さらに同じなら予定の id の小さい方）。始まりが 1 週間より前の
+        回（長い予定）は見ない。結んだタスクが消えている・他人のものなら飛ばす。
+        """
+        instant = to_naive_utc(at)
+        day = instant.date()
+        candidates: list[tuple[datetime, int, int, int]] = []
+        for event, occurrence in self._expand(
+            user_id,
+            _shift_clamped(day, -SCHEDULED_TASK_LOOKBACK_DAYS),
+            _shift_clamped(day, 1),
+            None,
+        ):
+            if occurrence.task_id is None or event.id is None:
+                continue
+            start = start_instant(occurrence.date, occurrence.start_time, event.time_zone.zone)
+            if not start <= instant < start + timedelta(minutes=occurrence.duration_minutes):
+                continue
+            candidates.append((start, occurrence.duration_minutes, event.id, occurrence.task_id))
+        candidates.sort(key=lambda c: (c[1], c[2]))  # 短い方・id の小さい方
+        candidates.sort(key=lambda c: c[0], reverse=True)  # 後に始まった方（安定ソート）
+        for _, _, _, task_id in candidates:
+            if self._tasks.find_by_id_for_user(task_id, user_id) is not None:
+                return task_id
+        return None
+
+    def _expand(
+        self, user_id: int, from_date: date, to_date: date, viewer_time_zone: str | None
+    ) -> list[tuple[CalendarEvent, EventOccurrence]]:
         if from_date > to_date:
             raise ValidationError("from_date must be on or before to_date")
         viewer = TimeZoneId(viewer_time_zone) if viewer_time_zone else None
@@ -105,7 +181,7 @@ class CalendarEventUseCases:
         expand_to = _shift_clamped(to_date, pad)
 
         calendars: dict[int, BusinessCalendar | None] = {}
-        results: list[EventOccurrence] = []
+        results: list[tuple[CalendarEvent, EventOccurrence]] = []
         for event in self._events.find_by_period(user_id, expand_from, expand_to):
             calendar = self._calendar_for(event, calendars)
             for occurrence in self._expander.expand(event, expand_from, expand_to, calendar):
@@ -113,8 +189,8 @@ class CalendarEventUseCases:
                     occurrence = to_display_time_zone(occurrence, event.time_zone, viewer)
                     if not from_date <= occurrence.date <= to_date:
                         continue
-                results.append(occurrence)
-        results.sort(key=lambda o: (o.date, o.start_time, o.event_id or 0))
+                results.append((event, occurrence))
+        results.sort(key=lambda pair: (pair[1].date, pair[1].start_time, pair[1].event_id or 0))
         return results
 
     # ── 作る ────────────────────────────────────────────────────────────

@@ -12,7 +12,7 @@ UTC へ直す）。「終日」は入力側の糖衣で、予定のタイムゾ�
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime, time
 
 from src.application.dto.unset import UNSET, UnsetType
 from src.domain.value_objects.event_color import EventColorKey
@@ -154,3 +154,29 @@ class ChangeFollowingOccurrencesCommand:
     task_id: int | None | UnsetType = UNSET
     """``UNSET`` は元の系列のタスクを引き継ぐ。"""
     expected_version: int | None = None
+
+
+@dataclass(frozen=True)
+class OccurrenceView:
+    """閲覧者のタイムゾーンへ投影した 1 回（API の応答の 1 件の元）。
+
+    ``date`` / ``start_time`` は閲覧者の壁時計、``start_utc`` はその瞬間（naive な UTC）。
+    ``series_key`` は繰り返しの回だけが持つ（予定のタイムゾーンでの鍵。回の操作でそのまま返す）。
+    ``event_version`` は回の操作で ``expected_version`` に渡す版。
+    """
+
+    event_id: int
+    event_version: int
+    is_recurring: bool
+    title: str
+    start_utc: datetime
+    duration_minutes: int
+    date: date
+    start_time: time
+    is_all_day: bool
+    color_key: EventColorKey
+    location: str | None
+    task_id: int | None
+    is_moved: bool
+    is_overridden: bool
+    series_key: OccurrenceKey | None

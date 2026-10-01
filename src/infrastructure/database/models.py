@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date, datetime, time
 from decimal import Decimal
 
 import sqlalchemy as sa
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 from src.shared.clock import utcnow
 
@@ -185,3 +185,118 @@ class TimeEntryModel(Base):
     source: Mapped[str] = mapped_column(sa.String(16), default="timer", nullable=False)
     created_at: Mapped[datetime] = mapped_column(sa.DateTime, default=utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(sa.DateTime, default=utcnow, onupdate=utcnow, nullable=False)
+
+
+# ── 予定（task #156、ADR-0009）──────────────────────────────────────────────
+class CalendarEventModel(Base):
+    """予定（集約 ``CalendarEvent``）。単発も繰り返しもこの 1 表。
+
+    ``start_utc`` は単発の開始、繰り返しの先頭の回（アンカー）の UTC の瞬間（naive）。
+    繰り返しの規則は値オブジェクトなので JSON の文字列で持つ（``recurrence_rule``）。
+    ``span_start_day`` / ``span_end_day`` は ``CalendarEvent.indexed_day_span()``
+    （``date.toordinal()``）で、期間で粗く絞るための索引付きの列。
+    ``version`` は楽観ロック（ORM の ``version_id_col`` で UPDATE の条件に入る）。
+    """
+
+    __tablename__ = "calendar_events"
+    __table_args__ = (
+        sa.Index("ix_calendar_events_user_span", "user_id", "span_start_day", "span_end_day"),
+    )
+    id: Mapped[int] = mapped_column(BigIntPK, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(sa.BigInteger().with_variant(sa.Integer(), "sqlite"), sa.ForeignKey("users.id"), nullable=False)
+    kind: Mapped[str] = mapped_column(sa.String(16), nullable=False)
+    title: Mapped[str] = mapped_column(sa.String(500), nullable=False)
+    time_zone: Mapped[str] = mapped_column(sa.String(64), nullable=False)
+    start_utc: Mapped[datetime] = mapped_column(sa.DateTime, nullable=False)
+    duration_minutes: Mapped[int] = mapped_column(sa.Integer, nullable=False)
+    recurrence_rule: Mapped[str | None] = mapped_column(sa.Text, nullable=True)
+    location: Mapped[str | None] = mapped_column(sa.String(500), nullable=True)
+    description: Mapped[str | None] = mapped_column(sa.Text, nullable=True)
+    color_key: Mapped[str] = mapped_column(sa.String(16), nullable=False)
+    task_id: Mapped[int | None] = mapped_column(sa.BigInteger().with_variant(sa.Integer(), "sqlite"), sa.ForeignKey("tasks.id"), nullable=True, index=True)
+    span_start_day: Mapped[int] = mapped_column(sa.Integer, nullable=False)
+    span_end_day: Mapped[int] = mapped_column(sa.Integer, nullable=False)
+    version: Mapped[int] = mapped_column(sa.Integer, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(sa.DateTime, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(sa.DateTime, nullable=False)
+
+    exceptions: Mapped[list[CalendarEventExceptionModel]] = relationship(
+        cascade="all, delete-orphan", order_by="CalendarEventExceptionModel.id", lazy="selectin"
+    )
+    moves: Mapped[list[CalendarEventMoveModel]] = relationship(
+        cascade="all, delete-orphan", order_by="CalendarEventMoveModel.id", lazy="selectin"
+    )
+
+    __mapper_args__ = {"version_id_col": version, "version_id_generator": False}
+
+
+class CalendarEventExceptionModel(Base):
+    """繰り返しの 1 回への例外（飛ばす・古いデータの上書き）。回は（候補日, 系列の開始時刻）で指す。"""
+
+    __tablename__ = "calendar_event_exceptions"
+    __table_args__ = (
+        sa.UniqueConstraint(
+            "event_id", "occurrence_date", "occurrence_time",
+            name="uq_calendar_event_exceptions_occurrence",
+        ),
+    )
+    id: Mapped[int] = mapped_column(BigIntPK, primary_key=True, autoincrement=True)
+    event_id: Mapped[int] = mapped_column(sa.BigInteger().with_variant(sa.Integer(), "sqlite"), sa.ForeignKey("calendar_events.id", ondelete="CASCADE"), nullable=False)
+    occurrence_date: Mapped[date] = mapped_column(sa.Date, nullable=False)
+    occurrence_time: Mapped[time | None] = mapped_column(sa.Time, nullable=True)
+    type: Mapped[str] = mapped_column(sa.String(16), nullable=False)
+    override_title: Mapped[str | None] = mapped_column(sa.String(500), nullable=True)
+    override_location: Mapped[str | None] = mapped_column(sa.String(500), nullable=True)
+    override_start_time: Mapped[time | None] = mapped_column(sa.Time, nullable=True)
+    override_duration_minutes: Mapped[int | None] = mapped_column(sa.Integer, nullable=True)
+
+
+class CalendarEventMoveModel(Base):
+    """繰り返しの 1 回を移した先（予定のタイムゾーンの壁時計）。"""
+
+    __tablename__ = "calendar_event_moves"
+    __table_args__ = (
+        sa.UniqueConstraint(
+            "event_id", "occurrence_date", "occurrence_time",
+            name="uq_calendar_event_moves_occurrence",
+        ),
+    )
+    id: Mapped[int] = mapped_column(BigIntPK, primary_key=True, autoincrement=True)
+    event_id: Mapped[int] = mapped_column(sa.BigInteger().with_variant(sa.Integer(), "sqlite"), sa.ForeignKey("calendar_events.id", ondelete="CASCADE"), nullable=False)
+    occurrence_date: Mapped[date] = mapped_column(sa.Date, nullable=False)
+    occurrence_time: Mapped[time | None] = mapped_column(sa.Time, nullable=True)
+    new_date: Mapped[date] = mapped_column(sa.Date, nullable=False)
+    new_start_time: Mapped[time | None] = mapped_column(sa.Time, nullable=True)
+    new_duration_minutes: Mapped[int | None] = mapped_column(sa.Integer, nullable=True)
+    title: Mapped[str | None] = mapped_column(sa.String(500), nullable=True)
+    location: Mapped[str | None] = mapped_column(sa.String(500), nullable=True)
+
+
+class BusinessCalendarModel(Base):
+    """営業日カレンダー。``workdays`` は曜日の略号（``MO``〜``SU``）をカンマでつないだもの。"""
+
+    __tablename__ = "business_calendars"
+    id: Mapped[int] = mapped_column(BigIntPK, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(sa.BigInteger().with_variant(sa.Integer(), "sqlite"), sa.ForeignKey("users.id"), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(sa.String(200), nullable=False)
+    time_zone: Mapped[str] = mapped_column(sa.String(64), nullable=False)
+    workdays: Mapped[str] = mapped_column(sa.String(32), nullable=False)
+    shift_on_holidays_only: Mapped[bool] = mapped_column(sa.Boolean, nullable=False)
+    is_enabled: Mapped[bool] = mapped_column(sa.Boolean, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(sa.DateTime, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(sa.DateTime, nullable=False)
+
+    holidays: Mapped[list[BusinessCalendarHolidayModel]] = relationship(
+        cascade="all, delete-orphan", order_by="BusinessCalendarHolidayModel.holiday_date", lazy="selectin"
+    )
+
+
+class BusinessCalendarHolidayModel(Base):
+    __tablename__ = "business_calendar_holidays"
+    __table_args__ = (
+        sa.UniqueConstraint("calendar_id", "holiday_date", name="uq_business_calendar_holidays_date"),
+    )
+    id: Mapped[int] = mapped_column(BigIntPK, primary_key=True, autoincrement=True)
+    calendar_id: Mapped[int] = mapped_column(sa.BigInteger().with_variant(sa.Integer(), "sqlite"), sa.ForeignKey("business_calendars.id", ondelete="CASCADE"), nullable=False)
+    holiday_date: Mapped[date] = mapped_column(sa.Date, nullable=False)
+    name: Mapped[str | None] = mapped_column(sa.String(200), nullable=True)
