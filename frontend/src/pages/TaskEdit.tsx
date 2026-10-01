@@ -160,7 +160,7 @@ const TaskEdit: React.FC = () => {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['tasks'] });
-      qc.invalidateQueries({ queryKey: ['dashboard-today'] });
+      qc.invalidateQueries({ queryKey: ['today'] });
       qc.invalidateQueries({ queryKey: ['kpi'] });
       qc.invalidateQueries({ queryKey: ['worklogs', id] });
       navigate('/tasks');

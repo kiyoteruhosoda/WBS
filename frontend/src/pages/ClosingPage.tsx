@@ -12,6 +12,7 @@ import {
   CLOSING_BOARD_KEY, PENDING_CLOSINGS_KEY, getClosingBoard, getPendingClosings, sendClosingRequest, sendClosingRequests,
 } from '../api/closing';
 import { getTasks } from '../api/tasks';
+import { TODAY_SUMMARY_KEY } from '../api/today';
 import { getCategories } from '../api/categories';
 import { categoryColor, ds } from '../theme';
 import { buildLinkedTasks } from '../calendar/taskScheduling';
@@ -133,12 +134,15 @@ const ClosingPage: React.FC = () => {
 
   const refresh = (periodChanged = false) => {
     void qc.invalidateQueries({ queryKey: [CLOSING_BOARD_KEY] });
+    // 上部の打刻ボタン（いま走っている打刻）と「今日」の要約も打刻を見ている（timer/useTimer.ts と同じ）
     void qc.invalidateQueries({ queryKey: ['time-entries'] });
+    void qc.invalidateQueries({ queryKey: TODAY_SUMMARY_KEY });
     if (periodChanged) {
       void qc.invalidateQueries({ queryKey: PENDING_CLOSINGS_KEY });
       // 実績（work_logs）が変わる
       void qc.invalidateQueries({ queryKey: ['tasks'] });
-      void qc.invalidateQueries({ queryKey: ['dashboard-today'] });
+      void qc.invalidateQueries({ queryKey: ['task'] });
+      void qc.invalidateQueries({ queryKey: ['worklogs'] });
       void qc.invalidateQueries({ queryKey: ['kpi'] });
     }
   };

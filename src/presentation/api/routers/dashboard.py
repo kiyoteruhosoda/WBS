@@ -4,16 +4,10 @@ from fastapi import APIRouter
 
 from src.application.use_cases.dashboard_use_cases import DashboardUseCases
 from src.presentation.api.dependencies import CurrentUserDep, DbDep
-from src.presentation.api.schemas.dashboard_schemas import KpiResponse, TodayBucketsResponse
+from src.presentation.api.schemas.dashboard_schemas import KpiResponse
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
-
-
-# 応答モデルを通さないと、タスクの時刻が Z 無しで出る（HANDOVER §14）。
-@router.get("/today", response_model=TodayBucketsResponse)
-def get_today_buckets(db: DbDep, current_user: CurrentUserDep) -> dict:
-    uc = DashboardUseCases(db)
-    return uc.get_today_buckets(current_user.user_id)
+# 今日のタスクの束は「今日」の画面の要約（/api/today）へ寄せた（ADR-0015）。ここは KPI だけ。
 
 
 @router.get("/kpi", response_model=KpiResponse)

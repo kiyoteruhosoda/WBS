@@ -755,7 +755,7 @@ GET /api/tasks?status=TODO&category_id=3&sort=-priority,due_date&page=1&per_page
 
 | メソッド | パス                     | 説明            |
 | ---- | ---------------------- | ------------- |
-| GET  | `/api/dashboard/today` | 今日のタスク（カテゴリ別） |
+| GET  | `/api/today`           | 今日の要約（打刻・実績・まだ予定を取っていないタスク。ADR-0015） |
 | GET  | `/api/dashboard/kpi`   | KPI 集計        |
 
 ### 8.2.3 作業ログ

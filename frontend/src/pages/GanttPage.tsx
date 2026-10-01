@@ -26,7 +26,7 @@ const GanttPage: React.FC = () => {
     mutationFn: (task: Task) => (task.status === 'DONE' ? reopenTask(task) : completeTask(task)),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['tasks'] });
-      qc.invalidateQueries({ queryKey: ['dashboard-today'] });
+      qc.invalidateQueries({ queryKey: ['today'] });
       qc.invalidateQueries({ queryKey: ['kpi'] });
     },
   });

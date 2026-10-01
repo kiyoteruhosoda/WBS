@@ -4,13 +4,14 @@ import { useTheme } from '@mui/material/styles';
 import RepeatIcon from '@mui/icons-material/Repeat';
 import SwapHorizIcon from '@mui/icons-material/SwapHoriz';
 import { useI18n } from '../../i18n';
-import type { CalendarHoliday } from '../../types';
+import type { CalendarHoliday, CalendarOccurrence } from '../../types';
 import type { DaySegment } from '../../calendar/daySegments';
 import { formatSegmentTimeRange } from '../../calendar/daySegments';
 import {
-  ALL_DAY_CHIP_HEIGHT, ALL_DAY_ROW_HEIGHT, defaultScrollTop, layoutAllDayLane, layoutTimedSegments, pastShadeHeight,
+  ALL_DAY_CHIP_HEIGHT, ALL_DAY_ROW_HEIGHT, MINIMUM_BAND_HEIGHT, defaultScrollTop, layoutAllDayLane, layoutTimedSegments,
+  pastShadeHeight,
 } from '../../calendar/weekLayout';
-import type { WeekEventBlock } from '../../calendar/weekLayout';
+import type { DayBand, WeekEventBlock } from '../../calendar/weekLayout';
 import { holidaysByDate } from '../../calendar/monthCells';
 import { darken } from '../../calendar/calendarColors';
 import type { LinkedTask } from '../../calendar/taskScheduling';
@@ -28,6 +29,9 @@ export const TIME_COLUMN_WIDTH = 56;
 // 予定の左の余白と、列幅に対する最大の幅（移植元 ChipMarginLeft・0.8）。
 const CHIP_MARGIN_LEFT = 4;
 const CHIP_MAX_WIDTH_RATIO = 0.8;
+// 予定と並べて重ねる帯（打刻）の幅と右の余白。予定のブロックが空けている右の 2 割に置く。
+const BAND_WIDTH = 10;
+const BAND_MARGIN_RIGHT = 3;
 
 interface Props extends Pick<CalendarInteractions, 'onCreateRange' | 'onRescheduleOccurrence' | 'onEditOccurrence' | 'onCreateEvent'> {
   dates: string[];
@@ -45,6 +49,12 @@ interface Props extends Pick<CalendarInteractions, 'onCreateRange' | 'onReschedu
   linkedTasks?: ReadonlyMap<number, LinkedTask>;
   /** タスクの一覧から引いている途中の行き先 */
   dropPreview?: TaskDropPreview | null;
+  /** 日ごとに、予定と並べて重ねる帯（「今日」の画面の打刻。task #160） */
+  bands?: ReadonlyMap<string, readonly DayBand[]>;
+  /** 予定のブロックの題名の横に置く操作（「今日」の画面の Start。押してもブロックの選択にはしない） */
+  occurrenceAction?: (occurrence: CalendarOccurrence) => React.ReactNode;
+  /** 今日を含むとき、開いた位置を今の何分前にするか（既定は 4 時間前） */
+  scrollLeadMinutes?: number;
 }
 
 /**
@@ -53,7 +63,7 @@ interface Props extends Pick<CalendarInteractions, 'onCreateRange' | 'onReschedu
 const WeekView: React.FC<Props> = ({
   dates, timeZone, segmentsByDate, holidays, deadlines, today, nowMinute, selectedDate, selectedSegmentKey,
   onSelectDate, onSelectSegment, onCreateRange, onRescheduleOccurrence, onEditOccurrence, onCreateEvent,
-  linkedTasks, dropPreview,
+  linkedTasks, dropPreview, bands, occurrenceAction, scrollLeadMinutes,
 }) => {
   const { t, weekdays } = useI18n();
   const c = useTheme().palette.calendar;
@@ -91,8 +101,8 @@ const WeekView: React.FC<Props> = ({
   const firstDate = dates[0];
   useLayoutEffect(() => {
     const el = scrollRef.current;
-    if (el) el.scrollTop = defaultScrollTop(isCurrentWeek, nowRef.current);
-  }, [firstDate, dates.length, isCurrentWeek]);
+    if (el) el.scrollTop = defaultScrollTop(isCurrentWeek, nowRef.current, scrollLeadMinutes);
+  }, [firstDate, dates.length, isCurrentWeek, scrollLeadMinutes]);
 
   const dayBackground = (date: string): string => {
     const dow = dayOfWeek(date);
@@ -303,6 +313,7 @@ const WeekView: React.FC<Props> = ({
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: '2px', minWidth: 0 }}>
                       <Box sx={{ ...chipText, flex: 1 }}>{o.title}</Box>
                       {occurrenceMark(segment)}
+                      {occurrenceAction?.(o)}
                     </Box>
                     {taskLabel && block.height >= 32 && (
                       <Box data-testid="occurrence-task" sx={{ ...chipText, fontSize: 9, fontWeight: 600 }}>
@@ -353,6 +364,20 @@ const WeekView: React.FC<Props> = ({
                   </Box>
                 );
               })()}
+              {/* 予定と並べて重ねる帯（打刻。task #160） */}
+              {(bands?.get(date) ?? []).map((band) => (
+                <Box
+                  key={band.key}
+                  data-testid="day-band"
+                  title={band.label}
+                  sx={{
+                    position: 'absolute', zIndex: 3, boxSizing: 'border-box', right: BAND_MARGIN_RIGHT, width: BAND_WIDTH,
+                    top: band.startMinute, height: Math.max(band.endMinute - band.startMinute, MINIMUM_BAND_HEIGHT),
+                    bgcolor: band.color, borderRadius: '3px', border: `1px solid ${darken(band.color)}`,
+                    boxShadow: band.running ? `0 0 0 2px ${c.surface}, 0 0 0 3px ${band.color}` : 'none',
+                  }}
+                />
+              ))}
               {/* 過ぎた時間の影（過ぎた日は下まで、今日は今まで） */}
               <Box sx={{
                 position: 'absolute', top: 0, left: 0, right: 0, zIndex: 2, pointerEvents: 'none',

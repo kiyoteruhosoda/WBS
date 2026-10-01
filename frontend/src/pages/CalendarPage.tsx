@@ -243,6 +243,7 @@ const CalendarPage: React.FC = () => {
     // 「予定済みの時間」が変わる
     void qc.invalidateQueries({ queryKey: ['tasks'] });
     void qc.invalidateQueries({ queryKey: ['task'] });
+    void qc.invalidateQueries({ queryKey: ['today'] });
     notify('calendar.taskScheduled', 'success', { title: draft.title, range: formatTimingRange(draft) });
   });
 

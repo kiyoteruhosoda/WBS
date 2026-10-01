@@ -68,15 +68,6 @@ export interface InboxItem {
   created_at: string;
 }
 
-export interface DashboardToday {
-  buckets: {
-    OVERDUE: Task[];
-    TODAY: Task[];
-    TOMORROW: Task[];
-    DOING: Task[];
-  };
-}
-
 export interface DashboardKpi {
   total_tasks: number;
   incomplete_tasks: number;
@@ -340,6 +331,30 @@ export interface StopTimeEntryResult {
   server_now: string;
 }
 
+// 「今日」の画面の要約（task #160、ADR-0015）。時刻は Z 付きの UTC
+export interface TaskActual {
+  /** 未割当の打刻は null */
+  task_id: number | null;
+  task_title: string | null;
+  seconds: number;
+}
+
+export interface TodaySummary {
+  /** 利用者のタイムゾーンでの今日（YYYY-MM-DD）。予定の回はこの日を問う */
+  date: string;
+  time_zone: string;
+  /** 今日の区切り（[開始, 終了)） */
+  day_start: string;
+  day_end: string;
+  server_now: string;
+  running: TimeEntry | null;
+  /** 今日に掛かる打刻（日をまたぐものはそのまま。切るのは画面） */
+  entries: TimeEntry[];
+  /** 今日の分だけの合計（走っている打刻は server_now まで） */
+  total_seconds: number;
+  actuals: TaskActual[];
+  /** 今日やるべきタスクのうち、まだ予定を取っていないもの（優先度の点の高い順） */
+  tasks_to_schedule: Task[];
 // ── 締め（task #161 / ADR-0012）。仕様の正は /api/docs ──────────────────
 
 export interface ClosingPeriodRange {

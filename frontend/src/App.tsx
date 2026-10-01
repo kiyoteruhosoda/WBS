@@ -5,7 +5,6 @@ import { ThemeProvider } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
 import { theme } from './theme';
 import Layout from './components/Layout';
-import Dashboard from './pages/Dashboard';
 import Today from './pages/Today';
 import TaskList from './pages/TaskList';
 import TaskEdit from './pages/TaskEdit';
@@ -30,8 +29,9 @@ const App: React.FC = () => (
       <I18nProvider>
         <Routes>
           <Route path="/" element={<Layout />}>
-            <Route index element={<Dashboard />} />
-            <Route path="today" element={<Today />} />
+            {/* 「今日」が最初の画面（ダッシュボードはここへ寄せた。ADR-0015）。古い /today は寄せ先へ */}
+            <Route index element={<Today />} />
+            <Route path="today" element={<Navigate to="/" replace />} />
             <Route path="tasks" element={<TaskList />} />
             <Route path="tasks/new" element={<TaskEdit />} />
             <Route path="tasks/:id" element={<TaskEdit />} />
