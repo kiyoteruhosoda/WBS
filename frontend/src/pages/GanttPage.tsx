@@ -8,6 +8,8 @@ import { ds } from '../theme';
 import { useI18n } from '../i18n';
 import type { TranslationKey } from '../i18n/translations';
 import GanttChart from '../components/GanttChart';
+import { ACTUAL_DAY_COLOR } from '../actuals/actualsView';
+import { ACTUALS_KEY, getGanttActuals } from '../api/actuals';
 
 const legend: { labelKey: TranslationKey; color: string }[] = [
   { labelKey: 'status.TODO', color: ds.todoGray },
@@ -21,6 +23,9 @@ const GanttPage: React.FC = () => {
   const { t } = useI18n();
   const { data, isLoading, error } = useQuery({ queryKey: ['tasks'], queryFn: () => getTasks() });
   const { data: categories } = useQuery({ queryKey: ['categories'], queryFn: getCategories });
+  // 実績の帯（確定した実績。task #162）。取れなくても計画の帯は出す
+  const { data: actualSpans } = useQuery({ queryKey: [...ACTUALS_KEY, 'gantt'], queryFn: () => getGanttActuals() });
+  const actuals = useMemo(() => new Map((actualSpans ?? []).map((s) => [s.task_id, s])), [actualSpans]);
 
   const toggleDone = useMutation({
     mutationFn: (task: Task) => (task.status === 'DONE' ? reopenTask(task) : completeTask(task)),
@@ -54,6 +59,10 @@ const GanttPage: React.FC = () => {
               {t(l.labelKey)}
             </Box>
           ))}
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: 12, color: ds.textSub }}>
+            <Box sx={{ width: 12, height: 6, borderRadius: '3px', bgcolor: ACTUAL_DAY_COLOR }} />
+            {t('gantt.legendActual')}
+          </Box>
         </Box>
       </Box>
 
@@ -65,7 +74,7 @@ const GanttPage: React.FC = () => {
           {t('gantt.empty')}
         </Box>
       ) : (
-        <GanttChart tasks={tasks} categories={categories} onToggleDone={(t) => toggleDone.mutate(t)} />
+        <GanttChart tasks={tasks} categories={categories} actuals={actuals} onToggleDone={(t) => toggleDone.mutate(t)} />
       )}
     </Box>
   );

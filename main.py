@@ -21,6 +21,7 @@ from src.infrastructure.database.session import init_engine
 from src.infrastructure.logging.structured_logger import setup_logging
 from src.presentation.api.reconciliation import start_reconciliation_worker
 from src.presentation.api.routers import (
+    actuals,
     admin,
     auth,
     business_calendars,
@@ -122,6 +123,7 @@ def create_app(database_url: str | None = None, db_path: str | None = None) -> F
     app.include_router(dashboard.router, prefix="/api")
     app.include_router(today.router, prefix="/api")
     app.include_router(gantt.router, prefix="/api")
+    app.include_router(actuals.router, prefix="/api")
     app.include_router(reviews.router, prefix="/api")
     app.include_router(settings.router, prefix="/api")
     app.include_router(calendar.router, prefix="/api")

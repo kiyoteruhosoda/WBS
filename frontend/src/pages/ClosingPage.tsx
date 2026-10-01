@@ -4,7 +4,7 @@ import {
   Alert, Box, Button, Chip, Dialog, DialogActions, DialogContent, DialogTitle, IconButton, MenuItem, Popover, Select,
   Snackbar, ToggleButton, Tooltip,
 } from '@mui/material';
-import { useSearchParams } from 'react-router-dom';
+import { Link as RouterLink, useSearchParams } from 'react-router-dom';
 import { useI18n } from '../i18n';
 import type { TranslationKey } from '../i18n/translations';
 import type { CalendarOccurrence, TimeEntry } from '../types';
@@ -13,6 +13,7 @@ import {
 } from '../api/closing';
 import { getTasks } from '../api/tasks';
 import { TODAY_SUMMARY_KEY } from '../api/today';
+import { ACTUALS_KEY } from '../api/actuals';
 import { getCategories } from '../api/categories';
 import { categoryColor, ds } from '../theme';
 import { buildLinkedTasks } from '../calendar/taskScheduling';
@@ -144,6 +145,8 @@ const ClosingPage: React.FC = () => {
       void qc.invalidateQueries({ queryKey: ['task'] });
       void qc.invalidateQueries({ queryKey: ['worklogs'] });
       void qc.invalidateQueries({ queryKey: ['kpi'] });
+      // 実績の見える化（残を見直す・期間ごと・ガントの実績の帯。task #162）
+      void qc.invalidateQueries({ queryKey: ACTUALS_KEY });
     }
   };
 
@@ -345,7 +348,17 @@ const ClosingPage: React.FC = () => {
 
       {(boardQuery.isError || pendingQuery.isError) && <Alert severity="error">{t('common.loadError')}</Alert>}
       {readOnly && board?.period.closed_at && (
-        <Alert severity="success">{t('closing.closedReadOnly')}</Alert>
+        <Alert
+          severity="success"
+          action={(
+            // 確定で実績が入ったら、残を手で見直す（残は自動で減らさない。task #162 / ADR-0017）
+            <Button component={RouterLink} to="/actuals/review" color="inherit" size="small" data-testid="closing-review-remaining">
+              {t('closing.reviewRemaining')}
+            </Button>
+          )}
+        >
+          {t('closing.closedReadOnly')}
+        </Alert>
       )}
 
       {/* 打刻の操作 */}
