@@ -16,7 +16,10 @@ from fastapi.testclient import TestClient
 from src.application.dto.auth_dto import AuthenticatedUserDTO
 from src.infrastructure.database.models import UserModel
 from src.presentation.api.dependencies import get_app_or_web_user, get_db
-from tests.integration.api.test_app_bearer import app_client, bearer  # noqa: F401 - fixture を借りる
+from tests.integration.api.test_app_bearer import (  # noqa: F401 - fixture を借りる
+    app_client,
+    bearer,
+)
 from tests.integration.api.test_auth import sign_in, sso_provider  # noqa: F401 - fixture を借りる
 
 WEEKLY_MON_WED = {"type": "WEEKLY", "interval": 1, "weekly": {"weekdays": ["MO", "WE"]}}
