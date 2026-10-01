@@ -31,7 +31,7 @@ export interface GanttActualSpan {
 
 export type ReportUnit = 'closing' | 'week' | 'month';
 export type TimeSource = 'planned' | 'tracked' | 'confirmed';
-export type BreakdownGroupBy = 'category' | 'milestone';
+export type BreakdownGroupBy = 'category' | 'milestone' | 'project';
 
 export interface PeriodComparison {
   first_day: string;
@@ -58,7 +58,7 @@ export interface PeriodReport {
 }
 
 export interface BreakdownGroup {
-  // category:<id> / milestone:<id> / none（未分類）/ unassigned（タスク外）
+  // category:<id> / milestone:<id> / project:<id>（枝の合計）/ none（未分類）/ unassigned（タスク外）
   key: string;
   name: string | null;
   color: string | null;

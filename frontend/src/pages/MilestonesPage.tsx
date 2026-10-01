@@ -3,9 +3,11 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Alert, Box, Button, CircularProgress, Dialog, DialogActions, DialogContent,
   DialogTitle, IconButton, Table, TableBody, TableCell, TableContainer, TableHead,
-  TableRow, TextField,
+  TableRow, TextField, MenuItem,
 } from '@mui/material';
-import { getMilestones, createMilestone, updateMilestone, deleteMilestone } from '../api/milestones';
+import { getScopedMilestones, createMilestone, updateMilestone, deleteMilestone } from '../api/milestones';
+import { pickableProjects, scopeParams } from '../projects/projectScope';
+import { useProjectScope } from '../projects/useProjectScope';
 import type { Milestone } from '../types';
 import { formatDate } from '../utils/format';
 import { useI18n } from '../i18n';
@@ -16,20 +18,29 @@ interface FormData {
   name: string;
   due_date: string;
   description: string;
+  // '' = 未分類（どのタスクにも付けられる）
+  project_id: string;
 }
 
-const emptyForm: FormData = { name: '', due_date: '', description: '' };
+const emptyForm: FormData = { name: '', due_date: '', description: '', project_id: '' };
 
 const toForm = (m: Milestone): FormData => ({
   name: m.name,
   due_date: m.due_date ?? '',
   description: m.description ?? '',
+  project_id: m.project_id === null ? '' : String(m.project_id),
 });
 
 const MilestonesPage: React.FC = () => {
   const { t } = useI18n();
   const qc = useQueryClient();
-  const { data, isLoading, error } = useQuery({ queryKey: ['milestones'], queryFn: getMilestones });
+  // サイドバーで選んだプロジェクト（と子孫）のものだけ（task #187、ADR-0024）
+  const { scope, projects } = useProjectScope();
+  const { data, isLoading, error } = useQuery({
+    queryKey: ['milestones', 'scope', scope],
+    queryFn: () => getScopedMilestones(scopeParams(scope)),
+  });
+  const pathOf = (id: number | null) => (id === null ? null : projects.find((p) => p.id === id)?.path ?? null);
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Milestone | null>(null);
@@ -39,11 +50,16 @@ const MilestonesPage: React.FC = () => {
 
   useEffect(() => {
     if (!dialogOpen) return;
-    setForm(editing ? toForm(editing) : emptyForm);
+    // 新しく作るときは、いま絞っているプロジェクトに入れておく
+    setForm(editing ? toForm(editing) : { ...emptyForm, project_id: typeof scope === 'number' ? String(scope) : '' });
     setShowNameError(false);
-  }, [dialogOpen, editing]);
+  }, [dialogOpen, editing, scope]);
 
-  const invalidate = () => qc.invalidateQueries({ queryKey: ['milestones'] });
+  const invalidate = () => {
+    qc.invalidateQueries({ queryKey: ['milestones'] });
+    // 別のプロジェクトへ移すと、届かなくなったタスクから外れる
+    qc.invalidateQueries({ queryKey: ['tasks'] });
+  };
 
   const save = useMutation({
     mutationFn: (payload: Partial<Milestone>) =>
@@ -65,6 +81,7 @@ const MilestonesPage: React.FC = () => {
       name: form.name.trim(),
       due_date: form.due_date || null,
       description: form.description.trim() || null,
+      project_id: form.project_id === '' ? null : Number(form.project_id),
     });
   };
 
@@ -102,7 +119,14 @@ const MilestonesPage: React.FC = () => {
                   .sort((a, b) => (a.due_date ?? '9999').localeCompare(b.due_date ?? '9999'))
                   .map((m) => (
                     <TableRow key={m.id} hover sx={{ cursor: 'pointer' }} onClick={() => openEdit(m)}>
-                      <TableCell sx={{ fontSize: 13, fontWeight: 500, color: ds.text }}>{m.name}</TableCell>
+                      <TableCell sx={{ fontSize: 13, fontWeight: 500, color: ds.text }}>
+                        {m.name}
+                        {pathOf(m.project_id) && (
+                          <Box sx={{ fontSize: 11, fontWeight: 400, color: ds.textMuted }} title={t('milestone.project')}>
+                            {pathOf(m.project_id)}
+                          </Box>
+                        )}
+                      </TableCell>
                       <TableCell sx={{ fontSize: 13, color: ds.textSub }}>
                         {m.due_date ? formatDate(m.due_date) : t('common.dueNone')}
                       </TableCell>
@@ -150,6 +174,25 @@ const MilestonesPage: React.FC = () => {
             helperText={nameError ? t('milestone.nameRequired') : undefined}
             onChange={(e) => setForm({ ...form, name: e.target.value })}
           />
+          <TextField
+            select fullWidth size="small" label={t('milestone.project')}
+            value={form.project_id}
+            onChange={(e) => setForm({ ...form, project_id: e.target.value })}
+            slotProps={{
+              inputLabel: { shrink: true },
+              select: {
+                displayEmpty: true,
+                renderValue: (v) => (v === '' ? t('scope.none') : projects.find((p) => String(p.id) === v)?.path ?? ''),
+              },
+            }}
+          >
+            <MenuItem value="">{t('scope.none')}</MenuItem>
+            {pickableProjects(projects, editing?.project_id ?? null).map(({ project, depth }) => (
+              <MenuItem key={project.id} value={String(project.id)} sx={{ pl: `${16 + depth * 14}px` }}>
+                {project.name}
+              </MenuItem>
+            ))}
+          </TextField>
           <TextField
             fullWidth size="small" type="date" label={t('milestone.dueDate')}
             slotProps={{ inputLabel: { shrink: true } }}

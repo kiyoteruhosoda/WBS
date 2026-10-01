@@ -77,6 +77,16 @@ export const FolderIcon: React.FC<IconProps> = (p) => base(p, (
   <path d="M3.5 7a2 2 0 0 1 2-2h4l2 2.5h7a2 2 0 0 1 2 2V17a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2V7z" />
 ));
 
+// プロジェクト（入れ子）: 枝の付いた 3 つの箱
+export const TreeIcon: React.FC<IconProps> = (p) => base(p, (
+  <>
+    <rect x="3.5" y="3.5" width="7" height="5" rx="1.2" />
+    <rect x="13.5" y="10" width="7" height="4.5" rx="1.2" />
+    <rect x="13.5" y="16.5" width="7" height="4.5" rx="1.2" />
+    <path d="M7 8.5v10.25h6.5M7 12.25h6.5" />
+  </>
+));
+
 export const FlagIcon: React.FC<IconProps> = (p) => base(p, (
   <>
     <path d="M6 21V4" />

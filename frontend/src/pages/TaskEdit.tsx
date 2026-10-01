@@ -11,7 +11,7 @@ import { getTask, createTask, updateTask, getTaskDependencies, addDependency, re
 import { getWorklogs, createWorklog, deleteWorklog } from '../api/worklogs';
 import { getCategories } from '../api/categories';
 import { getMilestones } from '../api/milestones';
-import type { Task, TaskStatus, DependencyType } from '../types';
+import type { Milestone, Task, TaskStatus, DependencyType } from '../types';
 import { formatDate, formatHours, priorityBand, priorityBandValue, todayDate } from '../utils/format';
 import type { PriorityBand } from '../utils/format';
 import { useI18n } from '../i18n';
@@ -19,6 +19,8 @@ import { ds } from '../theme';
 import { PlusIcon, TrashIcon } from '../components/icons';
 import MoreTimeIcon from '@mui/icons-material/MoreTime';
 import { scheduleTaskPath } from '../calendar/taskScheduling';
+import { milestoneReachable, pickableProjects } from '../projects/projectScope';
+import { useProjectScope } from '../projects/useProjectScope';
 
 const STATUSES: TaskStatus[] = ['TODO', 'DOING', 'WAITING', 'DONE', 'CANCELLED'];
 const DEP_TYPES: DependencyType[] = ['FS', 'SS', 'FF', 'SF'];
@@ -38,13 +40,15 @@ interface FormData {
   remaining_hours: string;
   parent_task_id: string;
   milestone_id: string;
+  // '' = 未分類。子タスクは親と同じ（選べない。ADR-0024）
+  project_id: string;
   memo: string;
 }
 
 const defaultForm: FormData = {
   title: '', category_id: '', priority: 3, urgency: 3, status: 'TODO',
   start_date: '', due_date: '', estimated_hours: '', actual_hours: '', remaining_hours: '',
-  parent_task_id: '', milestone_id: '', memo: '',
+  parent_task_id: '', milestone_id: '', project_id: '', memo: '',
 };
 
 const toForm = (t: Task): FormData => ({
@@ -54,7 +58,7 @@ const toForm = (t: Task): FormData => ({
   actual_hours: String(t.actual_hours ?? 0),
   remaining_hours: t.remaining_hours_entered === null ? '' : String(t.remaining_hours_entered),
   parent_task_id: String(t.parent_task_id ?? ''),
-  milestone_id: String(t.milestone_id ?? ''), memo: t.memo ?? '',
+  milestone_id: String(t.milestone_id ?? ''), project_id: String(t.project_id ?? ''), memo: t.memo ?? '',
 });
 
 // ユーザー設定タイムゾーンでの「今日」を YYYY-MM-DD にする（実績差分の記録日）
@@ -130,6 +134,8 @@ const TaskEdit: React.FC = () => {
   const [wlMemo, setWlMemo] = useState('');
   const [depPredId, setDepPredId] = useState('');
   const [depType, setDepType] = useState<DependencyType>('FS');
+  const [milestoneCleared, setMilestoneCleared] = useState(false);
+  const { scope, projects } = useProjectScope();
 
   const { data: task, isLoading: taskLoading } = useQuery({
     queryKey: ['task', id], queryFn: () => getTask(Number(id)), enabled: !isNew,
@@ -143,7 +149,23 @@ const TaskEdit: React.FC = () => {
     queryKey: ['deps', id], queryFn: () => getTaskDependencies(Number(id)), enabled: !isNew,
   });
 
+  const isChild = form.parent_task_id !== '';
+  const projectNumber = form.project_id ? Number(form.project_id) : null;
+  // 選べるマイルストーン: このプロジェクトとその祖先のもの・未分類のもの（ADR-0024）
+  const reachableMilestones = (milestonesList: Milestone[] | undefined, projectId: number | null) =>
+    (milestonesList ?? []).filter((m) => milestoneReachable(projects, m.project_id, projectId));
+  const changeProject = (value: string) => {
+    const next = value ? Number(value) : null;
+    const current = milestones?.find((m) => String(m.id) === form.milestone_id);
+    const keep = current === undefined || milestoneReachable(projects, current.project_id, next);
+    setMilestoneCleared(!keep);
+    setForm({ ...form, project_id: value, milestone_id: keep ? form.milestone_id : '' });
+  };
   useEffect(() => { if (task) setForm(toForm(task)); }, [task]);
+  // 新しいタスクは、いま絞っているプロジェクトに入れておく
+  useEffect(() => {
+    if (isNew && typeof scope === 'number') setForm((f) => (f.project_id === '' ? { ...f, project_id: String(scope) } : f));
+  }, [isNew, scope]);
 
   const save = useMutation({
     mutationFn: async (data: Partial<Task>) => {
@@ -163,6 +185,7 @@ const TaskEdit: React.FC = () => {
       qc.invalidateQueries({ queryKey: ['today'] });
       qc.invalidateQueries({ queryKey: ['kpi'] });
       qc.invalidateQueries({ queryKey: ['worklogs', id] });
+      qc.invalidateQueries({ queryKey: ['task'] });
       navigate('/tasks');
     },
   });
@@ -201,6 +224,8 @@ const TaskEdit: React.FC = () => {
       remaining_hours: form.remaining_hours === '' ? null : Number(form.remaining_hours),
       parent_task_id: form.parent_task_id ? Number(form.parent_task_id) : null,
       milestone_id: form.milestone_id ? Number(form.milestone_id) : null,
+      // 子タスクは親のプロジェクトに入る（送らない。親を移すと子孫も移る）
+      ...(isChild ? {} : { project_id: form.project_id ? Number(form.project_id) : null }),
       memo: form.memo || null,
     });
   };
@@ -402,16 +427,48 @@ const TaskEdit: React.FC = () => {
             </Box>
           )}
 
+          {/* プロジェクト（task #187）。子タスクは親と同じで、ここでは選べない */}
+          <Box>
+            <FieldLabel>{t('taskEdit.project')}</FieldLabel>
+            {isChild ? (
+              <TextField
+                fullWidth size="small" disabled
+                value={task?.project_path ?? t('scope.none')}
+                helperText={t('taskEdit.projectFromParent')}
+              />
+            ) : (
+              <Select
+                fullWidth size="small" displayEmpty
+                value={form.project_id}
+                onChange={e => changeProject(String(e.target.value))}
+                // 選んだ後は道筋で出す（同じ名前の子プロジェクトが別の枝にあっても取り違えない）
+                renderValue={(v) => (v === '' ? t('scope.none') : projects.find((p) => String(p.id) === v)?.path ?? '')}
+              >
+                <MenuItem value="">{t('scope.none')}</MenuItem>
+                {pickableProjects(projects, task?.project_id ?? null).map(({ project, depth }) => (
+                  <MenuItem key={project.id} value={String(project.id)} sx={{ pl: `${16 + depth * 14}px` }}>
+                    {project.name}
+                  </MenuItem>
+                ))}
+              </Select>
+            )}
+          </Box>
+
           <Box>
             <FieldLabel>{t('taskEdit.milestone')}</FieldLabel>
             <Select
               fullWidth size="small" displayEmpty
               value={form.milestone_id}
-              onChange={e => setForm({ ...form, milestone_id: String(e.target.value) })}
+              onChange={e => { setMilestoneCleared(false); setForm({ ...form, milestone_id: String(e.target.value) }); }}
             >
               <MenuItem value="">{t('taskEdit.none')}</MenuItem>
-              {milestones?.map(m => <MenuItem key={m.id} value={String(m.id)}>{m.name}</MenuItem>)}
+              {reachableMilestones(milestones, isChild ? (task?.project_id ?? null) : projectNumber).map(m => (
+                <MenuItem key={m.id} value={String(m.id)}>{m.name}</MenuItem>
+              ))}
             </Select>
+            <Box sx={{ fontSize: 12, color: milestoneCleared ? ds.dangerText : ds.textMuted, mt: '4px' }}>
+              {milestoneCleared ? t('taskEdit.milestoneCleared') : t('taskEdit.milestoneHint')}
+            </Box>
           </Box>
 
           <Box sx={{

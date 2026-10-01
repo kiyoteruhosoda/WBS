@@ -5,6 +5,8 @@ import {
   Alert, Box, CircularProgress, Table, TableBody, TableCell, TableContainer, TableHead, TableRow,
 } from '@mui/material';
 import { ACTUALS_KEY, getPeriodReport } from '../../api/actuals';
+import { scopeParams } from '../../projects/projectScope';
+import { useProjectScope } from '../../projects/useProjectScope';
 import { formatRatio, rangeParams } from '../../actuals/actualsView';
 import { dateRangeParts, formatSecondsAsHours, formatSignedSecondsAsHours } from '../../utils/format';
 import type { RangeValue } from '../../actuals/actualsView';
@@ -33,9 +35,10 @@ const PairBar: React.FC<{ task: number; offTask: number; max: number; color: str
 const PeriodsPanel: React.FC = () => {
   const { t } = useI18n();
   const [range, setRange] = useState<RangeValue>({ unit: 'closing', from: '', to: '' });
+  const { scope } = useProjectScope();
   const { data, isLoading, error } = useQuery({
-    queryKey: [...ACTUALS_KEY, 'periods', range],
-    queryFn: () => getPeriodReport(range.unit, rangeParams(range)),
+    queryKey: [...ACTUALS_KEY, 'periods', range, scope],
+    queryFn: () => getPeriodReport(range.unit, rangeParams(range), scopeParams(scope)),
   });
   const max = Math.max(0, ...(data?.periods ?? []).flatMap((p) => [p.planned_seconds, p.tracked_seconds]));
 

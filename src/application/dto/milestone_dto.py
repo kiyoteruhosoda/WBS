@@ -12,6 +12,8 @@ class CreateMilestoneDTO:
     name: str
     due_date: date | None = None
     description: str | None = None
+    # 空 = 未分類（どのタスクにも付けられる）
+    project_id: int | None = None
 
 @dataclass
 class UpdateMilestoneDTO:
@@ -19,3 +21,4 @@ class UpdateMilestoneDTO:
     name: str | UnsetType = UNSET
     due_date: date | None | UnsetType = UNSET
     description: str | None | UnsetType = UNSET
+    project_id: int | None | UnsetType = UNSET

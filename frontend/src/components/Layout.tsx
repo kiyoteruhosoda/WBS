@@ -1,16 +1,18 @@
 import React, { useState } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
-import { Box, Button, Drawer, IconButton, ListItemText, Menu, MenuItem, useMediaQuery } from '@mui/material';
+import { Box, Button, Chip, Drawer, IconButton, ListItemText, Menu, MenuItem, useMediaQuery } from '@mui/material';
 import MenuIcon from '@mui/icons-material/Menu';
 import { ds } from '../theme';
 import { useI18n } from '../i18n';
 import { useAuth } from '../auth/AuthProvider';
 import TimerButton from './TimerButton';
 import ClosingNotice from './closing/ClosingNotice';
+import ProjectScopeSelect from './ProjectScopeSelect';
+import { useProjectScope } from '../projects/useProjectScope';
 import type { TranslationKey } from '../i18n/translations';
 import {
   CheckListIcon, BarsIcon, CalendarIcon, InboxIcon,
-  CheckIcon, PlusIcon, TodayIcon, SlidersIcon, FolderIcon, FlagIcon, ClosingIcon, GridIcon,
+  CheckIcon, PlusIcon, TodayIcon, SlidersIcon, FolderIcon, FlagIcon, ClosingIcon, GridIcon, TreeIcon,
 } from './icons';
 
 const SIDEBAR_WIDTH = 224;
@@ -24,6 +26,7 @@ const navItems: { labelKey: TranslationKey; path: string; icon: React.FC<{ size?
   { labelKey: 'nav.closing', path: '/closing', icon: ClosingIcon },
   { labelKey: 'nav.actuals', path: '/actuals', icon: GridIcon },
   { labelKey: 'nav.inbox', path: '/inbox', icon: InboxIcon },
+  { labelKey: 'nav.projects', path: '/projects', icon: TreeIcon },
   { labelKey: 'nav.categories', path: '/categories', icon: FolderIcon },
   { labelKey: 'nav.milestones', path: '/milestones', icon: FlagIcon },
   { labelKey: 'nav.settings', path: '/settings', icon: SlidersIcon },
@@ -39,6 +42,7 @@ const pageTitles: { pattern: RegExp; titleKey: TranslationKey }[] = [
   { pattern: /^\/closing$/, titleKey: 'nav.closing' },
   { pattern: /^\/actuals(\/\w+)?$/, titleKey: 'nav.actuals' },
   { pattern: /^\/inbox$/, titleKey: 'nav.inbox' },
+  { pattern: /^\/projects$/, titleKey: 'nav.projects' },
   { pattern: /^\/categories$/, titleKey: 'nav.categories' },
   { pattern: /^\/milestones$/, titleKey: 'nav.milestones' },
   { pattern: /^\/settings$/, titleKey: 'settings.title' },
@@ -85,7 +89,9 @@ const Sidebar: React.FC<{ onNavigate?: () => void }> = ({ onNavigate }) => {
         </Box>
         <Box sx={{ fontSize: 15, fontWeight: 700, color: ds.text }}>{t('app.name')}</Box>
       </Box>
-      <Box sx={{ pt: '8px', flex: 1 }}>
+      {/* 表示するプロジェクト（task #187）。タスク・ガント・カレンダーの期限・実績・マイルストーンが従う */}
+      <ProjectScopeSelect />
+      <Box sx={{ pt: '4px', flex: 1, overflowY: 'auto' }}>
         {navItems.map((item) => (
           <NavItem
             key={item.path}
@@ -144,6 +150,33 @@ const AccountButton: React.FC = () => {
   );
 };
 
+/** プロジェクトの絞り込みに従う画面（ここで絞り込み中と出す。task #187） */
+const SCOPED_PATHS = /^\/(tasks|gantt|calendar|actuals|milestones)(\/|$)/;
+
+/** 絞り込み中の印。外すと全部に戻る。 */
+const ScopeBadge: React.FC = () => {
+  const { t } = useI18n();
+  const location = useLocation();
+  const { scope, setScope, projects } = useProjectScope();
+  if (scope === 'all' || !SCOPED_PATHS.test(location.pathname) || /^\/tasks\/(new|\d+)$/.test(location.pathname)) {
+    return null;
+  }
+  const name = scope === 'none' ? t('scope.none') : projects.find((p) => p.id === scope)?.path;
+  if (name === undefined) return null;
+  return (
+    <Chip
+      size="small"
+      label={t('scope.badge', { name })}
+      onDelete={() => setScope('all')}
+      title={t('scope.clear')}
+      sx={{
+        maxWidth: { xs: 140, sm: 320 }, bgcolor: ds.primaryPale, color: ds.primary, fontWeight: 600,
+        '& .MuiChip-label': { overflow: 'hidden', textOverflow: 'ellipsis' },
+      }}
+    />
+  );
+};
+
 const Layout: React.FC = () => {
   const [mobileOpen, setMobileOpen] = useState(false);
   const navigate = useNavigate();
@@ -196,6 +229,7 @@ const Layout: React.FC = () => {
           }}>
             {title}
           </Box>
+          <ScopeBadge />
           <Box sx={{ flex: 1 }} />
           {/* 打刻（task #154）。どの画面でも上部に出す */}
           <TimerButton />

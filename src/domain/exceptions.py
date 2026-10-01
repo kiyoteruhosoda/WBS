@@ -42,3 +42,17 @@ class MachineNotBoundToApplicationError(DomainException):
 
     ⚠ **障害ではなく準備待ち。** 結び付けるまで毎周回ここへ来るので、警告にしない。
     """
+
+class ProjectCycleError(ConflictError):
+    """プロジェクトを自分か自分の子孫の下へ移そうとした（通すと枝がどこからも辿れなくなる）。"""
+
+    def __init__(self) -> None:
+        super().__init__("a project cannot be moved under itself or its own sub-project")
+
+class ProjectNotEmptyError(ConflictError):
+    """中にタスク・子プロジェクト・マイルストーンがあるプロジェクトは消さない（保管を使う）。"""
+
+    def __init__(self) -> None:
+        super().__init__(
+            "the project still has sub-projects, tasks or milestones; archive it or move them out first"
+        )

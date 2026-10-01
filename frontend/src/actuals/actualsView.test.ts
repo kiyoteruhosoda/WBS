@@ -69,5 +69,8 @@ describe('積み上げ', () => {
     const milestone = { key: 'milestone:9', name: 'β', color: null };
     expect(groupFill(milestone, 0, categoryFill)).toBe('#2a78d6');
     expect(groupFill(milestone, 8, categoryFill)).toBe('#8E8E93');
+    // プロジェクト（task #187）: 自分の色、無ければ並び順の固定色
+    expect(groupFill({ key: 'project:3', name: '仕事', color: '#0017C1' }, 0, categoryFill)).toBe('#0017C1');
+    expect(groupFill({ key: 'project:4', name: '私用', color: null }, 1, categoryFill)).toBe('#eb6834');
   });
 });

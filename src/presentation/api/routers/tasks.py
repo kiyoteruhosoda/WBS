@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, status
+from typing import Annotated
+
+from fastapi import APIRouter, Query, status
 
 from src.application.dto.task_dto import CreateTaskDTO, UpdateTaskDTO
 from src.presentation.api.dependencies import CurrentUserDep, TaskUseCasesDep
@@ -21,8 +23,14 @@ def list_tasks(
     category_id: int | None = None,
     milestone_id: int | None = None,
     parent_task_id: int | None = None,
+    project_id: Annotated[
+        int | None, Query(description="このプロジェクトと、その子孫のプロジェクトのタスクだけ")
+    ] = None,
+    unclassified: Annotated[
+        bool, Query(description="true ならプロジェクトの無い（未分類の）タスクだけ")
+    ] = False,
 ) -> list[TaskResponse]:
-    filters = {}
+    filters: dict = {}
     if status_filter:
         filters["status"] = status_filter
     if category_id is not None:
@@ -31,6 +39,10 @@ def list_tasks(
         filters["milestone_id"] = milestone_id
     if parent_task_id is not None:
         filters["parent_task_id"] = parent_task_id
+    if project_id is not None:
+        filters["project_id"] = project_id
+    if unclassified:
+        filters["unclassified"] = True
     return [TaskResponse(**t) for t in uc.list_tasks(current_user.user_id, filters)]
 
 
@@ -50,6 +62,7 @@ def create_task(body: TaskCreateRequest, uc: TaskUseCasesDep, current_user: Curr
         memo=body.memo,
         parent_task_id=body.parent_task_id,
         milestone_id=body.milestone_id,
+        project_id=body.project_id,
     )
     return TaskResponse(**uc.create_task(dto))
 
@@ -75,6 +88,9 @@ def update_task(task_id: int, body: TaskUpdateRequest, uc: TaskUseCasesDep, curr
         memo=body.memo,
         parent_task_id=body.parent_task_id,
         milestone_id=body.milestone_id,
+        milestone_id_given="milestone_id" in body.model_fields_set,
+        project_id=body.project_id,
+        project_id_given="project_id" in body.model_fields_set,
     )
     return TaskResponse(**uc.update_task(task_id, current_user.user_id, dto))
 

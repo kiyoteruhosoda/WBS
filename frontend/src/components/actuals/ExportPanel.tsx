@@ -2,6 +2,8 @@
 import React, { useState } from 'react';
 import { Box, Button, MenuItem, TextField } from '@mui/material';
 import { exportCsvUrl } from '../../api/actuals';
+import { scopeParams } from '../../projects/projectScope';
+import { useProjectScope } from '../../projects/useProjectScope';
 import { previousClosingPeriod } from '../../actuals/actualsView';
 import { useI18n } from '../../i18n';
 import { ds } from '../../theme';
@@ -12,6 +14,7 @@ const ExportPanel: React.FC = () => {
   const { t } = useI18n();
   const [range, setRange] = useState(() => previousClosingPeriod(todayDate()));
   const [source, setSource] = useState<TimeSource>('confirmed');
+  const { scope } = useProjectScope();
   const valid = range.from !== '' && range.to !== '' && range.from <= range.to;
 
   return (
@@ -37,7 +40,7 @@ const ExportPanel: React.FC = () => {
           component="a"
           variant="contained"
           disabled={!valid}
-          href={valid ? exportCsvUrl(range.from, range.to, source) : undefined}
+          href={valid ? exportCsvUrl(range.from, range.to, source, scopeParams(scope)) : undefined}
           download
         >
           {t('actuals.exportDownload')}

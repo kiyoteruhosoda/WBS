@@ -139,7 +139,8 @@ class PeriodReportResponse(BaseModel):
 
 
 class BreakdownGroupResponse(BaseModel):
-    """``key`` は ``category:<id>`` / ``milestone:<id>`` / ``none``（未分類）/ ``unassigned``（タスク外）。"""
+    """``key`` は ``category:<id>`` / ``milestone:<id>`` / ``project:<id>`` / ``none``（未分類）/
+    ``unassigned``（タスク外）。プロジェクトは枝ごとの合計（子孫の分を含む）。"""
 
     key: str
     name: str | None

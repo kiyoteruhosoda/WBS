@@ -19,11 +19,21 @@ class SqlAlchemyMilestoneRepository(MilestoneRepository):
             return None
         return self._to_entity(model)
 
-    def find_all(self, user_id: int) -> list[Milestone]:
+    def find_all(
+        self,
+        user_id: int,
+        *,
+        project_ids: list[int] | None = None,
+        unclassified: bool = False,
+    ) -> list[Milestone]:
         stmt = select(MilestoneModel).where(
             MilestoneModel.user_id == user_id,
             MilestoneModel.deleted_at.is_(None),
         ).order_by(MilestoneModel.due_date.nullslast(), MilestoneModel.id)
+        if project_ids is not None:
+            stmt = stmt.where(MilestoneModel.project_id.in_(project_ids))
+        if unclassified:
+            stmt = stmt.where(MilestoneModel.project_id.is_(None))
         return [self._to_entity(m) for m in self._session.scalars(stmt)]
 
     def save(self, milestone: Milestone) -> Milestone:
@@ -33,6 +43,7 @@ class SqlAlchemyMilestoneRepository(MilestoneRepository):
                 name=milestone.name,
                 due_date=milestone.due_date,
                 description=milestone.description,
+                project_id=milestone.project_id,
             )
             self._session.add(model)
             self._session.flush()
@@ -44,6 +55,7 @@ class SqlAlchemyMilestoneRepository(MilestoneRepository):
             model.name = milestone.name
             model.due_date = milestone.due_date
             model.description = milestone.description
+            model.project_id = milestone.project_id
             model.updated_at = utcnow()
             self._session.flush()
             return self._to_entity(model)
@@ -61,6 +73,7 @@ class SqlAlchemyMilestoneRepository(MilestoneRepository):
             name=model.name,
             due_date=model.due_date,
             description=model.description,
+            project_id=model.project_id,
             deleted_at=model.deleted_at,
             created_at=model.created_at,
             updated_at=model.updated_at,

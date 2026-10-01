@@ -20,6 +20,8 @@ import PriorityChip from '../components/PriorityChip';
 import ProgressBar from '../components/ProgressBar';
 import CategoryDot from '../components/CategoryDot';
 import { SearchIcon } from '../components/icons';
+import { scopeParams } from '../projects/projectScope';
+import { useProjectScope } from '../projects/useProjectScope';
 
 const STATUSES: TaskStatus[] = ['TODO', 'DOING', 'WAITING', 'DONE', 'CANCELLED'];
 
@@ -46,7 +48,12 @@ const TaskList: React.FC = () => {
   const [sortKey, setSortKey] = useState<SortKey>('priority_score');
   const [sortDesc, setSortDesc] = useState(false);
 
-  const { data, isLoading, error } = useQuery({ queryKey: ['tasks'], queryFn: () => getTasks() });
+  // サイドバーで選んだプロジェクト（と子孫）だけ。絞りはサーバ（task #187、ADR-0024）
+  const { scope } = useProjectScope();
+  const { data, isLoading, error } = useQuery({
+    queryKey: ['tasks', 'scope', scope],
+    queryFn: () => getTasks(scopeParams(scope)),
+  });
   const { data: categories } = useQuery({ queryKey: ['categories'], queryFn: getCategories });
   const { data: milestones } = useQuery({ queryKey: ['milestones'], queryFn: getMilestones });
 
@@ -165,11 +172,18 @@ const TaskList: React.FC = () => {
                       <TableCell>
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                           <CategoryDot categoryId={task.category_id} categories={categories} size={7} />
-                          <Box sx={{
-                            fontSize: 13, fontWeight: 500, color: task.status === 'DONE' ? ds.textMuted : ds.text,
-                            textDecoration: task.status === 'DONE' ? 'line-through' : 'none',
-                          }}>
-                            {task.title}
+                          <Box sx={{ minWidth: 0 }}>
+                            <Box sx={{
+                              fontSize: 13, fontWeight: 500, color: task.status === 'DONE' ? ds.textMuted : ds.text,
+                              textDecoration: task.status === 'DONE' ? 'line-through' : 'none',
+                            }}>
+                              {task.title}
+                            </Box>
+                            {task.project_path && (
+                              <Box sx={{ fontSize: 11, color: ds.textMuted }} title={t('taskList.project')}>
+                                {task.project_path}
+                              </Box>
+                            )}
                           </Box>
                         </Box>
                       </TableCell>
