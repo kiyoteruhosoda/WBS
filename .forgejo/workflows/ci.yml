@@ -90,7 +90,9 @@ jobs:
         if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         run: npm run lint
 
-      # vitest はまだ入っていない。入れたらここに `npm run test` を足す。
+      - name: vitest (純関数の試験)
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: npm run test
 
       - name: Build (tsc -b && vite build)
         if: ${{ !cancelled() && steps.install.outcome == 'success' }}

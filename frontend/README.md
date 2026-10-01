@@ -12,6 +12,7 @@
 | `/tasks/new`, `/tasks/:id` | タスク作成/編集 | 中央寄せカードフォーム。優先度・緊急度は 高/中/低 のpill選択（5/3/1 に対応）。編集時は作業ログ・依存関係タブあり |
 | `/gantt` | ガントチャート | 自作コンポーネント（`components/GanttChart.tsx`）。今日ライン・土日シェード・ステータス色バー（進捗フィル） |
 | `/calendar` | カレンダー | 自作の月グリッド。期限日にカテゴリ色pill、マイルストーンは紫pill |
+| `/calendar-preview` | カレンダー（見本） | 予定の表示の部品（`components/calendar/`）を見本データで並べる。予定の API と繋いだら `/calendar` を置き換えて消す |
 | `/inbox` | インボックス | クイックメモの追加・タスク変換・削除 |
 
 ## デザイン
@@ -24,6 +25,10 @@
 - アイコンはすべてインラインSVG（`src/components/icons.tsx`、viewBox 24 / stroke 1.8〜2.6 / round）。
 - 共通部品: `StatusChip`（遅延判定込み）・`PriorityChip`（高/中/低）・`ProgressBar`・`CategoryDot`・`Layout`（サイドバー224px＋トップバー58px）。
 - ガント・カレンダーは外部ライブラリ不使用（自作）。
+- 予定のカレンダー（`components/calendar/`）は NolumiaScheduler（WinUI 版）の見た目に寄せていて、色は
+  `ds` ではなく MUI テーマの `palette.calendar`（`src/calendar/calendarColors.ts`、明暗の 2 組）から読む。
+  日付は `YYYY-MM-DD`、時刻はその日の 0:00 からの分で持ち、閲覧者のタイムゾーン（利用者設定）で
+  日を割る。配置などの純関数は `src/calendar/` にあり、`*.test.ts` が vitest の試験。
 
 ## API 契約上の注意
 
@@ -41,4 +46,5 @@
 npm run dev      # 開発サーバー（/api は localhost:8000 へプロキシ）
 npm run build    # 型チェック + 本番ビルド
 npm run lint     # oxlint
+npm run test     # vitest（src/**/*.test.ts）
 ```

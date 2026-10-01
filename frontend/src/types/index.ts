@@ -146,6 +146,67 @@ export interface LogoutResult {
   end_session_url: string | null;
 }
 
+// ── 予定（task #156 のドメイン。API は Alembic の後に足す） ─────────────────────
+
+/** 予定の色（ドメインの `EventColorKey`。Google カレンダーの色名。`DEFAULT` は色の指定なし）。 */
+export type EventColorKey =
+  | 'DEFAULT'
+  | 'TOMATO'
+  | 'TANGERINE'
+  | 'BANANA'
+  | 'BASIL'
+  | 'SAGE'
+  | 'PEACOCK'
+  | 'BLUEBERRY'
+  | 'LAVENDER'
+  | 'GRAPE'
+  | 'GRAPHITE';
+
+/** 繰り返しの元の鍵（予定のタイムゾーンでの候補日・系列の開始時刻）。この回だけの移動・飛ばしで回を指す。 */
+export interface OccurrenceSeriesKey {
+  date: string; // YYYY-MM-DD
+  start_time: string; // HH:MM
+}
+
+/**
+ * 予定の 1 回（API の応答の 1 件）。
+ *
+ * ドメインの `list_occurrences(viewer_time_zone=...)` が返す `EventOccurrence`（閲覧者のタイムゾーンへ
+ * 投影済み）を、そのまま JSON にした形。画面はこれを受けて、閲覧者のローカル 0:00 で日ごとに割る。
+ * - 時刻付きの回は `start`（UTC の瞬間）＋ `duration_minutes` で置く（終了は持たない。time-model §1）。
+ * - 終日（ローカル 0:00 ＋ 1440 分）は「浮いた日」で、`date` の日にそのまま置く（ゾーンでずらさない）。
+ */
+export interface CalendarOccurrence {
+  /** 回の識別子（React の key・選択に使う）。`event_id` と系列の鍵から作る */
+  id: string;
+  event_id: number;
+  title: string;
+  /** 開始の UTC 瞬間（Z 付き ISO 8601） */
+  start: string;
+  duration_minutes: number;
+  /** 閲覧者のローカル日（YYYY-MM-DD）。終日の回はこの日に置く */
+  date: string;
+  /** 終日（0:00 開始 ＋ 1440 分）。ドメインの `is_all_day` */
+  is_all_day: boolean;
+  color_key: EventColorKey;
+  location: string | null;
+  /** 結んだ WBS のタスク（任意） */
+  task_id: number | null;
+  /** 繰り返しの予定の回か */
+  is_recurring: boolean;
+  /** この回だけ動かした（振替） */
+  is_moved: boolean;
+  /** この回だけ中身を変えた（古いデータの上書き例外） */
+  is_overridden: boolean;
+  series_key: OccurrenceSeriesKey | null;
+}
+
+/** 祝日・休日（有効な営業日カレンダーから集めたもの）。 */
+export interface CalendarHoliday {
+  date: string; // YYYY-MM-DD
+  name: string | null;
+}
+
 // 打刻（task #154）。時刻は Z 付きの UTC
 export type TimeEntrySource = 'timer' | 'manual' | 'split';
 

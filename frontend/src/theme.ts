@@ -1,4 +1,17 @@
 import { createTheme } from '@mui/material/styles';
+import type { ThemeOptions } from '@mui/material/styles';
+import { calendarPalettes } from './calendar/calendarColors';
+import type { CalendarPalette } from './calendar/calendarColors';
+
+// カレンダーの色（明暗）をテーマに載せる。部品は `theme.palette.calendar` から読む。
+declare module '@mui/material/styles' {
+  interface Palette {
+    calendar: CalendarPalette;
+  }
+  interface PaletteOptions {
+    calendar?: CalendarPalette;
+  }
+}
 
 // デジタル庁デザインシステム準拠トークン（design handoff README 参照）
 export const ds = {
@@ -50,6 +63,18 @@ export const categoryColor = (categoryId: number | null | undefined, apiColor?: 
 
 export const fontFamily = "'Noto Sans JP', system-ui, sans-serif";
 
+const typography: ThemeOptions['typography'] = {
+  fontFamily,
+  fontSize: 14,
+  h5: { fontSize: 22, fontWeight: 700 },
+  h6: { fontSize: 16, fontWeight: 700 },
+  subtitle2: { fontSize: 13, fontWeight: 700 },
+  body1: { fontSize: 14 },
+  body2: { fontSize: 13 },
+  caption: { fontSize: 12 },
+  button: { fontWeight: 700, fontSize: 14 },
+};
+
 export const theme = createTheme({
   palette: {
     mode: 'light',
@@ -60,18 +85,9 @@ export const theme = createTheme({
     text: { primary: ds.text, secondary: ds.textSub },
     divider: ds.border,
     background: { default: ds.canvas, paper: ds.paper },
+    calendar: calendarPalettes.light,
   },
-  typography: {
-    fontFamily,
-    fontSize: 14,
-    h5: { fontSize: 22, fontWeight: 700 },
-    h6: { fontSize: 16, fontWeight: 700 },
-    subtitle2: { fontSize: 13, fontWeight: 700 },
-    body1: { fontSize: 14 },
-    body2: { fontSize: 13 },
-    caption: { fontSize: 12 },
-    button: { fontWeight: 700, fontSize: 14 },
-  },
+  typography,
   shape: { borderRadius: 8 },
   components: {
     MuiButton: {
@@ -113,5 +129,25 @@ export const theme = createTheme({
         root: { textTransform: 'none', fontWeight: 700 },
       },
     },
+  },
+});
+
+// 暗いテーマ。いまはカレンダーの見本ページ（/calendar-preview）だけが使う。他の画面は `ds` の明るい色を
+// 直に書いているので、アプリ全体を暗くするのは別の課題。
+export const darkTheme = createTheme({
+  palette: {
+    mode: 'dark',
+    primary: { main: '#8ab4f8' },
+    background: { default: calendarPalettes.dark.surface, paper: calendarPalettes.dark.surface },
+    calendar: calendarPalettes.dark,
+  },
+  typography,
+  shape: { borderRadius: 8 },
+  components: {
+    MuiButton: {
+      defaultProps: { disableElevation: true },
+      styleOverrides: { root: { textTransform: 'none', borderRadius: 8, lineHeight: 1.5 } },
+    },
+    MuiPaper: { defaultProps: { elevation: 0 } },
   },
 });
