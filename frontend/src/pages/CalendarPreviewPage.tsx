@@ -93,7 +93,8 @@ const CalendarPreviewPage: React.FC = () => {
   const timeZone = resolveTimeZone(timezone);
   const [dark, setDark] = useState(false);
   const [lastAction, setLastAction] = useState<string | null>(null);
-  const today = toZonedPoint(Date.now(), timeZone).date;
+  const [openedAt] = useState(() => Date.now());
+  const today = toZonedPoint(openedAt, timeZone).date;
   const { occurrences, holidays } = useMemo(() => buildSamples(today, timeZone), [today, timeZone]);
 
   const report = (action: string, title: string) => setLastAction(t('calendar.previewAction', { action, title }));

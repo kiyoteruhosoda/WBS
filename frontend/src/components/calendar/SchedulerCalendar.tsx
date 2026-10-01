@@ -32,16 +32,13 @@ export interface SchedulerCalendarProps extends CalendarInteractions {
 }
 
 const useClock = (fixed: Date | undefined): number => {
-  const [now, setNow] = useState(() => (fixed ?? new Date()).getTime());
+  const [live, setLive] = useState(() => Date.now());
   useEffect(() => {
-    if (fixed) {
-      setNow(fixed.getTime());
-      return;
-    }
-    const id = window.setInterval(() => setNow(Date.now()), 60_000);
+    if (fixed) return;
+    const id = window.setInterval(() => setLive(Date.now()), 60_000);
     return () => window.clearInterval(id);
   }, [fixed]);
-  return now;
+  return fixed ? fixed.getTime() : live;
 };
 
 const EMPTY_HOLIDAYS: readonly CalendarHoliday[] = [];

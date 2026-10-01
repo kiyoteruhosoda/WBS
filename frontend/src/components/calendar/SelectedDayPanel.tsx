@@ -4,8 +4,8 @@ import { useTheme } from '@mui/material/styles';
 import AddIcon from '@mui/icons-material/Add';
 import CloseIcon from '@mui/icons-material/Close';
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
-import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import { useI18n } from '../../i18n';
+import { TrashIcon } from '../icons';
 import type { CalendarHoliday } from '../../types';
 import type { DaySegment } from '../../calendar/daySegments';
 import { formatOccurrenceTimeRange } from '../../calendar/daySegments';
@@ -88,7 +88,7 @@ const SelectedDayPanel: React.FC<Props> = ({
                 )}
                 {onDeleteOccurrence && (
                   <IconButton aria-label={t('calendar.deleteEvent')} onClick={() => onDeleteOccurrence(o)} sx={iconButton}>
-                    <DeleteOutlineIcon fontSize="small" />
+                    <TrashIcon size={18} />
                   </IconButton>
                 )}
               </Box>
