@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { splitIntoDaySegments } from './daySegments';
 import {
-  COLUMN_GAP_RATIO, defaultScrollTop, layoutAllDayLane, layoutTimedSegments, pastShadeHeight,
+  COLUMN_GAP_RATIO, HOUR_LABEL_CLEARANCE, defaultScrollTop, hourLabelMinutes, layoutAllDayLane, layoutTimedSegments,
+  pastShadeHeight, scrollTopForHour,
 } from './weekLayout';
 import { TOKYO, hm, occurrence } from './testOccurrences';
 
@@ -144,12 +145,26 @@ describe('layoutAllDayLane（DefaultWeekAllDayLayoutStrategy）', () => {
 
 describe('週の表示の細かいところ', () => {
   it('開いたら今週は今の 4 時間前、それ以外は 9:00 へ送る', () => {
-    expect(defaultScrollTop(false, hm(15))).toBe(540);
-    expect(defaultScrollTop(true, hm(15))).toBe(hm(11));
+    // 正時の文字が上で切れないよう、正時の 8px 手前で止める
+    expect(defaultScrollTop(false, hm(15))).toBe(540 - HOUR_LABEL_CLEARANCE);
+    expect(defaultScrollTop(true, hm(15))).toBe(hm(11) - HOUR_LABEL_CLEARANCE);
     expect(defaultScrollTop(true, hm(2))).toBe(0);
-    expect(defaultScrollTop(true, hm(15), 60)).toBe(hm(14));
+    expect(defaultScrollTop(true, hm(15), 60)).toBe(hm(14) - HOUR_LABEL_CLEARANCE);
     // 正時に揃える（15:37 の 4 時間前は 11:37 → 11:00）
-    expect(defaultScrollTop(true, hm(15, 37))).toBe(hm(11));
+    expect(defaultScrollTop(true, hm(15, 37))).toBe(hm(11) - HOUR_LABEL_CLEARANCE);
+  });
+
+  it('正時へ送る位置は文字の上半分の分だけ手前（0:00 より上には行かない）', () => {
+    expect(scrollTopForHour(hm(8))).toBe(hm(8) - HOUR_LABEL_CLEARANCE);
+    expect(scrollTopForHour(0)).toBe(0);
+  });
+
+  it('時刻の文字は 1:00〜23:00 の正時に置き、0:00 は出さない', () => {
+    const minutes = hourLabelMinutes();
+    expect(minutes).toHaveLength(23);
+    expect(minutes[0]).toBe(hm(1));
+    expect(minutes[22]).toBe(hm(23));
+    expect(minutes).not.toContain(0);
   });
 
   it('過ぎた日は下まで、今日は今まで影を落とす', () => {
