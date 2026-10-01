@@ -19,6 +19,10 @@ class TimeEntryRepository(ABC):
         """タスクの付いた打刻のうち、いちばん新しいもののタスク。"""
 
     @abstractmethod
+    def find_earliest_started_at(self, user_id: int) -> datetime | None:
+        """いちばん古い打刻の始まり（未確定の期間を数える起点）。"""
+
+    @abstractmethod
     def find_overlapping(self, user_id: int, start: datetime, end: datetime) -> list[TimeEntry]:
         """``[start, end)`` に掛かる打刻を始まりの順に。走っている打刻は終わりが無いものとして扱う。"""
 

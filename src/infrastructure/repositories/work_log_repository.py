@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from src.domain.entities.work_log import WorkLog
 from src.domain.repositories.work_log_repository import WorkLogRepository
+from src.domain.value_objects.work_log_source import WorkLogSource
 from src.infrastructure.database.models import WorkLogModel
 from src.shared.clock import utcnow
 
@@ -34,6 +35,9 @@ class SqlAlchemyWorkLogRepository(WorkLogRepository):
                 work_date=work_log.work_date,
                 hours=work_log.hours,
                 memo=work_log.memo,
+                source=work_log.source.value,
+                closing_period_id=work_log.closing_period_id,
+                duration_seconds=work_log.duration_seconds,
             )
             self._session.add(model)
             self._session.flush()
@@ -55,6 +59,24 @@ class SqlAlchemyWorkLogRepository(WorkLogRepository):
             model.deleted_at = utcnow()
             self._session.flush()
 
+    def find_by_closing_period(self, closing_period_id: int) -> list[WorkLog]:
+        stmt = (
+            select(WorkLogModel)
+            .where(
+                WorkLogModel.closing_period_id == closing_period_id,
+                WorkLogModel.deleted_at.is_(None),
+            )
+            .order_by(WorkLogModel.work_date, WorkLogModel.task_id, WorkLogModel.id)
+        )
+        return [self._to_entity(m) for m in self._session.scalars(stmt)]
+
+    def delete_by_closing_period(self, closing_period_id: int) -> int:
+        result = self._session.execute(
+            delete(WorkLogModel).where(WorkLogModel.closing_period_id == closing_period_id)
+        )
+        self._session.flush()
+        return result.rowcount or 0
+
     def _to_entity(self, model: WorkLogModel) -> WorkLog:
         return WorkLog(
             id=model.id,
@@ -66,4 +88,7 @@ class SqlAlchemyWorkLogRepository(WorkLogRepository):
             deleted_at=model.deleted_at,
             created_at=model.created_at,
             updated_at=model.updated_at,
+            source=WorkLogSource(model.source),
+            closing_period_id=model.closing_period_id,
+            duration_seconds=model.duration_seconds,
         )

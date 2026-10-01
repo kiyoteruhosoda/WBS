@@ -306,7 +306,7 @@ export interface BusinessCalendar {
 }
 
 // 打刻（task #154）。時刻は Z 付きの UTC
-export type TimeEntrySource = 'timer' | 'manual' | 'split';
+export type TimeEntrySource = 'timer' | 'manual' | 'split' | 'schedule';
 
 export interface TimeEntry {
   id: number;

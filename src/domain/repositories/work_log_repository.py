@@ -14,3 +14,9 @@ class WorkLogRepository(ABC):
     def save(self, work_log: WorkLog) -> WorkLog: ...
     @abstractmethod
     def soft_delete(self, work_log_id: int) -> None: ...
+    @abstractmethod
+    def find_by_closing_period(self, closing_period_id: int) -> list[WorkLog]:
+        """締めでその期間から作った実績（日付・タスクの順）。"""
+    @abstractmethod
+    def delete_by_closing_period(self, closing_period_id: int) -> int:
+        """締めでその期間から作った実績を消す（物理削除。打刻から作り直せるため）。消した数を返す。"""

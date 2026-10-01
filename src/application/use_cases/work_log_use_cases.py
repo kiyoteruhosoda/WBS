@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from src.application.dto.work_log_dto import CreateWorkLogDTO, UpdateWorkLogDTO
 from src.application.use_cases.ownership import owned_by
 from src.domain.entities.work_log import WorkLog
-from src.domain.exceptions import NotFoundError
+from src.domain.exceptions import ConflictError, NotFoundError
 from src.infrastructure.repositories.task_repository import SqlAlchemyTaskRepository
 from src.infrastructure.repositories.work_log_repository import SqlAlchemyWorkLogRepository
 
@@ -34,6 +34,7 @@ class WorkLogUseCases:
 
     def update_work_log(self, work_log_id: int, user_id: int, dto: UpdateWorkLogDTO) -> WorkLog:
         wl = self._owned(work_log_id, user_id)
+        self._ensure_not_from_closing(wl)
         if dto.work_date is not None:
             wl.work_date = dto.work_date
         if dto.hours is not None:
@@ -45,9 +46,17 @@ class WorkLogUseCases:
         return saved
 
     def delete_work_log(self, work_log_id: int, user_id: int) -> None:
-        self._owned(work_log_id, user_id)
+        self._ensure_not_from_closing(self._owned(work_log_id, user_id))
         self._repo.soft_delete(work_log_id)
         self._session.commit()
+
+    @staticmethod
+    def _ensure_not_from_closing(work_log: WorkLog) -> None:
+        """締めで作った実績は直接は直させない（打刻を直すには期間を開け直す。ADR-0012）。"""
+        if work_log.is_from_closing:
+            raise ConflictError(
+                "This work log was created by closing a period; reopen the period to change it"
+            )
 
     def _owned(self, work_log_id: int, user_id: int) -> WorkLog:
         return owned_by(

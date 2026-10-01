@@ -1,7 +1,9 @@
 """打刻（task #154 / ADR-0008）。
 
 普段は ``POST /start`` と ``POST /stop`` だけ。画面の上部は ``GET /current`` を見る。
-期間の一覧・1 件の修正・削除は締めの画面（#161）のため。
+期間の一覧・1 件の修正・削除と、補正（手で足す・分割・結合・まとめてタスクを振る・
+予定の回から作る）は締めの画面（#161 / ADR-0012）のため。
+確定済みの締めの期間に掛かる打刻は書き換えられない（409）。
 """
 
 from __future__ import annotations
@@ -11,7 +13,13 @@ from typing import Annotated
 from fastapi import APIRouter, Query, status
 from pydantic import AwareDatetime
 
-from src.application.dto.time_entry_dto import StartTimerCommand, UpdateTimeEntryCommand
+from src.application.dto.time_entry_dto import (
+    CreateTimeEntryCommand,
+    EntryFromOccurrenceCommand,
+    MergeTimeEntriesCommand,
+    StartTimerCommand,
+    UpdateTimeEntryCommand,
+)
 from src.application.dto.unset import UNSET
 from src.domain.exceptions import ValidationError
 from src.presentation.api.dependencies import CurrentUserDep, TimeEntryUseCasesDep
@@ -20,7 +28,13 @@ from src.presentation.api.schemas.time_entry_schemas import (
     StartTimeEntryRequest,
     StartTimeEntryResponse,
     StopTimeEntryResponse,
+    TimeEntryAssignRequest,
+    TimeEntryCreateRequest,
+    TimeEntryFromOccurrenceRequest,
+    TimeEntryMergeRequest,
     TimeEntryResponse,
+    TimeEntrySplitRequest,
+    TimeEntrySplitResponse,
     TimeEntryUpdateRequest,
 )
 from src.shared.clock import to_naive_utc, utcnow
@@ -81,6 +95,74 @@ def list_time_entries(
     """``[start, end)`` に掛かる打刻を始まりの順に。日をまたぐ打刻は両方の日に出る。"""
     views = uc.list_in_period(current_user.user_id, to_naive_utc(start), to_naive_utc(end))
     return [TimeEntryResponse.from_view(v) for v in views]
+
+
+@router.post("", response_model=TimeEntryResponse, status_code=status.HTTP_201_CREATED)
+def create_time_entry(
+    body: TimeEntryCreateRequest, uc: TimeEntryUseCasesDep, current_user: CurrentUserDep
+) -> TimeEntryResponse:
+    """空き時間に打刻を足す（``source=manual``）。止まった打刻だけを作れる。"""
+    command = CreateTimeEntryCommand(
+        user_id=current_user.user_id,
+        started_at=to_naive_utc(body.started_at),
+        ended_at=to_naive_utc(body.ended_at),
+        task_id=body.task_id,
+        memo=body.memo,
+    )
+    return TimeEntryResponse.from_view(uc.create(command))
+
+
+@router.post("/merge", response_model=TimeEntryResponse)
+def merge_time_entries(
+    body: TimeEntryMergeRequest, uc: TimeEntryUseCasesDep, current_user: CurrentUserDep
+) -> TimeEntryResponse:
+    """つなぐ。いちばん早い打刻が残り、始まりから最後の終わりまでの 1 本になる（ほかは消える）。"""
+    command = MergeTimeEntriesCommand(
+        user_id=current_user.user_id,
+        entry_ids=body.entry_ids,
+        task_id=body.task_id if "task_id" in body.model_fields_set else UNSET,
+    )
+    return TimeEntryResponse.from_view(uc.merge(command))
+
+
+@router.post("/assign", response_model=list[TimeEntryResponse])
+def assign_task_to_time_entries(
+    body: TimeEntryAssignRequest, uc: TimeEntryUseCasesDep, current_user: CurrentUserDep
+) -> list[TimeEntryResponse]:
+    """まとめてタスクを振る（``null`` で未割当へ戻す）。"""
+    views = uc.assign_task(current_user.user_id, body.entry_ids, body.task_id)
+    return [TimeEntryResponse.from_view(v) for v in views]
+
+
+@router.post(
+    "/from-occurrence", response_model=TimeEntryResponse, status_code=status.HTTP_201_CREATED
+)
+def create_time_entry_from_occurrence(
+    body: TimeEntryFromOccurrenceRequest, uc: TimeEntryUseCasesDep, current_user: CurrentUserDep
+) -> TimeEntryResponse:
+    """予定の回をそのまま打刻にする（``source=schedule``）。終日の回・まだ終わっていない回は 422。"""
+    command = EntryFromOccurrenceCommand(
+        user_id=current_user.user_id,
+        event_id=body.event_id,
+        start=to_naive_utc(body.start),
+        task_id=body.task_id if "task_id" in body.model_fields_set else UNSET,
+    )
+    return TimeEntryResponse.from_view(uc.create_from_occurrence(command))
+
+
+@router.post("/{entry_id}/split", response_model=TimeEntrySplitResponse)
+def split_time_entry(
+    entry_id: int,
+    body: TimeEntrySplitRequest,
+    uc: TimeEntryUseCasesDep,
+    current_user: CurrentUserDep,
+) -> TimeEntrySplitResponse:
+    """``at`` で 2 本に分ける。元の打刻は ``at`` で終わり、続きは新しい打刻（``source=split``）。"""
+    result = uc.split(entry_id, current_user.user_id, to_naive_utc(body.at))
+    return TimeEntrySplitResponse(
+        first=TimeEntryResponse.from_view(result.first),
+        second=TimeEntryResponse.from_view(result.second),
+    )
 
 
 @router.get("/{entry_id}", response_model=TimeEntryResponse)
