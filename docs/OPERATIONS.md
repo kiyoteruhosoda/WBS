@@ -69,13 +69,16 @@ MACHINE_PRIVATE_KEY_KID=                 # 鍵を複数登録しているとき�
 ADR-0018。アプリは assay に直接ログインし、打刻の 3 つの口（現在・Start・Stop）だけを assay の
 アクセストークンで叩く。⚠ **`APP_CLIENT_IDS` が空なら Bearer は 1 本も通らない**（既定）。
 
-1. assay にアプリ用の **public client** を登録する（PKCE、scope は `openid profile email offline_access`）。
+1. assay にアプリ用の **public client** を登録する（PKCE、scope は `openid profile email offline_access`、戻り先は `https://<ホスト>/app/oauth2redirect`）。
    WBS の Web と同じ assay のアプリに結び付けて名簿を 1 つにする。⚠ `resource` は送らない
    （人のログインでは assay が `invalid_target` で断る）
 2. 環境変数を足して配り直す（⚠ 管理画面からは入れられない）:
 
    ```bash
    APP_CLIENT_IDS=<1 で出た client_id>      # 複数はカンマ区切りか JSON の配列
+   # App Links（ADR-0019）。アプリのログインの戻り先をアプリへ渡す宣言
+   ANDROID_APP_PACKAGE=com.nolumia.wbstimer
+   ANDROID_APP_CERT_FINGERPRINTS=<署名証明書の SHA-256 指紋>   # deploy-repo の resources/flutter-apps.json の cert_sha256
    ```
 
 3. 使う人は **Web で 1 度ログインしておく**（結び付きが無いとアプリの口は 403）
@@ -84,6 +87,7 @@ ADR-0018。アプリは assay に直接ログインし、打刻の 3 つの口�
    ```bash
    curl -s -o /dev/null -w '%{http_code}\n' -H 'Authorization: Bearer x' https://<ホスト>/api/time-entries/current   # 401
    curl -s -o /dev/null -w '%{http_code}\n' -H 'Authorization: Bearer x' https://<ホスト>/api/tasks                  # 401（アプリの口ではない）
+   curl -s https://<ホスト>/.well-known/assetlinks.json                                                              # 200 と JSON（text/html なら nginx が裏へ渡していない）
    ```
 
 ## SSO を後から入れて、既に居る利用者を引き継ぎたいとき

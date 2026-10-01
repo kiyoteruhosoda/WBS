@@ -4,6 +4,10 @@
 
 ## 2026-10-01
 
+- **打刻アプリのログインの戻り先を WBS に置いた**（task #167、ADR-0019）。`/.well-known/assetlinks.json` を api が
+  `ANDROID_APP_PACKAGE` / `ANDROID_APP_CERT_FINGERPRINTS` から出し（どちらかが空なら 404）、画面の nginx がこの 1 本
+  だけを裏へ渡す。戻り先の案内画面 `/app/oauth2redirect` をログインの外に置いた（認可コードがあれば「アプリに戻る」）。
+
 - **打刻アプリ（task #167）が assay のアクセストークンで打刻を叩けるようにした**（ADR-0018）。
   `GET /api/time-entries/current`・`POST /start`・`POST /stop` の 3 つだけが `Authorization: Bearer` を受け取る
   （署名・`typ=at+jwt`・発行者・`aud={issuer}/userinfo`・期限を JWKS で確かめ、`client_id` が `APP_CLIENT_IDS` に

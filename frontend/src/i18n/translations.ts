@@ -343,6 +343,12 @@ const ja = {
   'login.errorFailed': 'ログインに失敗しました。もう一度お試しください。',
   'login.errorGeneric': 'ログインを完了できませんでした。',
 
+  'appReturn.title': '打刻アプリへ戻ります',
+  'appReturn.tapToReturn': 'アプリが開かないときは、下のボタンを押してください。',
+  'appReturn.returnToApp': 'アプリに戻る',
+  'appReturn.body': 'この画面は打刻アプリのログインの戻り先です。アプリが入っていない端末では何も起きません。',
+  'appReturn.openWeb': 'Web の画面を開く',
+
   'account.signOut': 'ログアウト',
 
   'timer.start': '開始',
@@ -782,6 +788,12 @@ const en: Record<TranslationKey, string> = {
   'login.errorAccessDenied': 'This account cannot sign in. Please contact your administrator.',
   'login.errorFailed': 'Sign-in failed. Please try again.',
   'login.errorGeneric': 'Could not complete sign-in.',
+
+  'appReturn.title': 'Returning to the timer app',
+  'appReturn.tapToReturn': 'If the app does not open, tap the button below.',
+  'appReturn.returnToApp': 'Return to the app',
+  'appReturn.body': 'This page is where the timer app returns after signing in. Nothing happens on a device without the app.',
+  'appReturn.openWeb': 'Open the web app',
 
   'account.signOut': 'Sign out',
 

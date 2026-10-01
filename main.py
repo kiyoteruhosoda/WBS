@@ -22,6 +22,7 @@ from src.infrastructure.logging.structured_logger import setup_logging
 from src.presentation.api.reconciliation import start_reconciliation_worker
 from src.presentation.api.routers import (
     admin,
+    app_links,
     auth,
     business_calendars,
     calendar,
@@ -105,6 +106,8 @@ def create_app(database_url: str | None = None, db_path: str | None = None) -> F
     # /health はコンテナ内部の healthcheck 用、/api/health は nginx プロキシ経由の
     # 外形監視用（nginx は /api/ プレフィックスを剥がさずそのまま転送する）。
     app.include_router(health.router)
+    # App Links の検証ファイル（ADR-0019）。画面の nginx がこの 1 本だけ裏へ渡す
+    app.include_router(app_links.router)
     app.include_router(health.router, prefix="/api")
     app.include_router(ops.router)
     # フロントエンドは nginx 経由の /api/ しか届かないため、/info 等も /api 配下に公開する
