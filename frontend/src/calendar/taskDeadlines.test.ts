@@ -10,7 +10,8 @@ import { TOKYO, occurrence } from './testOccurrences';
 
 const task = (id: number, title: string, due: string | null, patch: Partial<Task> = {}): Task => ({
   id, user_id: 1, title, category_id: null, priority: 3, urgency: 3, status: 'TODO', start_date: null, due_date: due,
-  estimated_hours: null, remaining_hours: null, actual_hours: 0, progress_percent: 0, priority_score: 0, memo: null,
+  estimated_hours: null, remaining_hours: null, remaining_hours_entered: null, actual_hours: 0, has_subtasks: false,
+  rollup_actual_hours: 0, rollup_remaining_hours: null, progress_percent: 0, priority_score: 0, memo: null,
   parent_task_id: null, milestone_id: null, completed_at: null, deleted_at: null,
   created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z', ...patch,
 });
