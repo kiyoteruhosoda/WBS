@@ -9,7 +9,8 @@ import { TrashIcon } from '../icons';
 import type { CalendarHoliday } from '../../types';
 import type { DaySegment } from '../../calendar/daySegments';
 import { formatOccurrenceTimeRange } from '../../calendar/daySegments';
-import { eventColor } from '../../calendar/calendarColors';
+import type { LinkedTask } from '../../calendar/taskScheduling';
+import { linkedTaskLabel, occurrenceColor } from '../../calendar/taskScheduling';
 import { formatSelectedDay } from '../../calendar/calendarTitles';
 import type { CalendarInteractions } from './calendarInteractions';
 import type { CalendarDeadline } from '../../calendar/taskDeadlines';
@@ -23,12 +24,14 @@ interface Props extends Pick<CalendarInteractions, 'onCreateEvent' | 'onEditOccu
   timeZone: string;
   selectedSegmentKey: string | null;
   onClose: () => void;
+  /** 予定に結んだタスクの印（色・題名） */
+  linkedTasks?: ReadonlyMap<number, LinkedTask>;
 }
 
 /** 選んだ日の予定の一覧（移植元 CalendarPage.xaml の SelectedDayPanel）。 */
 const SelectedDayPanel: React.FC<Props> = ({
   date, segments, deadlines, holidays, timeZone, selectedSegmentKey, onClose, onCreateEvent, onEditOccurrence, onDeleteOccurrence,
-  onOpenDeadline,
+  onOpenDeadline, linkedTasks,
 }) => {
   const { t, weekdays } = useI18n();
   const c = useTheme().palette.calendar;
@@ -77,6 +80,7 @@ const SelectedDayPanel: React.FC<Props> = ({
               o.is_moved ? t('calendar.badgeMoved') : null,
               o.is_overridden ? t('calendar.badgeModified') : null,
             ].filter(Boolean).join('  ');
+            const taskLabel = linkedTaskLabel(o, linkedTasks);
             return (
               <Box
                 component="li"
@@ -87,11 +91,16 @@ const SelectedDayPanel: React.FC<Props> = ({
                   bgcolor: segment.key === selectedSegmentKey ? c.surfaceVariant : 'transparent',
                 }}
               >
-                <Box sx={{ width: 4, height: 32, borderRadius: '2px', bgcolor: eventColor(o.color_key), flexShrink: 0 }} />
+                <Box sx={{ width: 4, height: 32, borderRadius: '2px', bgcolor: occurrenceColor(o, linkedTasks), flexShrink: 0 }} />
                 <Box sx={{ flex: 1, minWidth: 0 }}>
                   <Box sx={{ fontSize: 14, color: c.textPrimary, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {o.title}
                   </Box>
+                  {taskLabel && (
+                    <Box sx={{ fontSize: 12, color: c.textSecondary, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {t('calendar.linkedTask', { title: taskLabel })}
+                    </Box>
+                  )}
                   <Box sx={{ fontSize: 12, color: c.textSecondary }}>
                     {range ?? t('calendar.allDay')}
                     {o.location ? `  ${o.location}` : ''}

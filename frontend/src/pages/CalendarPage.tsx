@@ -3,10 +3,10 @@ import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-quer
 import {
   Alert, Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, Snackbar,
 } from '@mui/material';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useI18n } from '../i18n';
 import type { TranslationKey } from '../i18n/translations';
-import type { CalendarEvent, CalendarOccurrence } from '../types';
+import type { CalendarEvent, CalendarOccurrence, Task } from '../types';
 import { getTasks } from '../api/tasks';
 import { getMilestones } from '../api/milestones';
 import { getCategories } from '../api/categories';
@@ -17,7 +17,9 @@ import SchedulerCalendar from '../components/calendar/SchedulerCalendar';
 import EventEditDialog from '../components/calendar/EventEditDialog';
 import type { EventEditTarget } from '../components/calendar/EventEditDialog';
 import RecurringScopeDialog from '../components/calendar/RecurringScopeDialog';
-import type { CreateRange, OccurrenceReschedule } from '../components/calendar/calendarInteractions';
+import TaskSchedulePanel from '../components/calendar/TaskSchedulePanel';
+import type { WeekSlot } from '../components/calendar/weekSlotLocator';
+import type { CreateRange, OccurrenceReschedule, TaskDropPreview } from '../components/calendar/calendarInteractions';
 import type { CalendarDeadline } from '../calendar/taskDeadlines';
 import { buildDeadlines } from '../calendar/taskDeadlines';
 import { formFromEvent, newEventForm, planOccurrenceDelete } from '../calendar/eventForm';
@@ -32,6 +34,13 @@ import {
   canRedo, canUndo, emptyHistory, recordOperation, redoOperation, undoOperation,
 } from '../calendar/operationHistory';
 import { resolveTimeZone, toZonedPoint } from '../calendar/zonedTime';
+import type { TaskEventDraft } from '../calendar/taskScheduling';
+import {
+  SCHEDULE_TASK_PARAM, buildLinkedTasks, draftFromDrop, draftFromSlot, parseScheduleTaskParam, schedulableTasks,
+  taskEventRequest,
+} from '../calendar/taskScheduling';
+import { formatTimingRange } from '../calendar/weekGestures';
+import { categoryColor } from '../theme';
 
 type VisibleRange = { from: string; to: string };
 
@@ -42,6 +51,8 @@ interface Notice {
 
 const OCCURRENCES = 'calendar-occurrences';
 const HOLIDAYS = 'calendar-holidays';
+/** 「時間を取る」で枠を押しただけのとき・日の一覧の「＋」から作るときの開始（9:00） */
+const DEFAULT_SLOT_START_MINUTE = 9 * 60;
 
 /**
  * カレンダー（task #157）。予定 API（ADR-0009）の回と祝日を表示している期間ごとに取り、
@@ -76,6 +87,26 @@ const CalendarPage: React.FC = () => {
   const { data: milestones } = useQuery({ queryKey: ['milestones'], queryFn: getMilestones });
   const { data: categories } = useQuery({ queryKey: ['categories'], queryFn: getCategories });
   const { data: businessCalendars } = useQuery({ queryKey: ['business-calendars'], queryFn: getBusinessCalendars });
+
+  const linkedTasks = useMemo(
+    () => buildLinkedTasks(tasks ?? [], categories ?? [], categoryColor),
+    [tasks, categories],
+  );
+  const panelTasks = useMemo(() => schedulableTasks(tasks ?? []), [tasks]);
+
+  // 「時間を取る」の最中のタスク（task #159）。URL のクエリで持つ（タスクの画面から渡ってくる）。
+  const [searchParams, setSearchParams] = useSearchParams();
+  const schedulingTaskId = parseScheduleTaskParam(searchParams.get(SCHEDULE_TASK_PARAM));
+  const schedulingTask = schedulingTaskId != null ? (tasks ?? []).find((t) => t.id === schedulingTaskId) ?? null : null;
+  const setSchedulingTask = useCallback((taskId: number | null) => {
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      if (taskId == null) next.delete(SCHEDULE_TASK_PARAM);
+      else next.set(SCHEDULE_TASK_PARAM, String(taskId));
+      return next;
+    }, { replace: true });
+  }, [setSearchParams]);
+  const [dropPreview, setDropPreview] = useState<TaskDropPreview | null>(null);
 
   const deadlines = useMemo(
     () => (range ? buildDeadlines(tasks ?? [], milestones ?? [], categories ?? [], range) : []),
@@ -203,6 +234,52 @@ const CalendarPage: React.FC = () => {
     });
   };
 
+  // ── タスクから作る（task #159） ─────────────────────────────────────
+
+  const createTaskEvent = (draft: TaskEventDraft) => exclusive(async () => {
+    await sendCalendarRequest(taskEventRequest(draft, timeZone));
+    setSchedulingTask(null);
+    refresh();
+    // 「予定済みの時間」が変わる
+    void qc.invalidateQueries({ queryKey: ['tasks'] });
+    void qc.invalidateQueries({ queryKey: ['task'] });
+    notify('calendar.taskScheduled', 'success', { title: draft.title, range: formatTimingRange(draft) });
+  });
+
+  const onCreateEvent = (date: string, minute?: number) => {
+    if (schedulingTask) {
+      void createTaskEvent(draftFromSlot(schedulingTask, { date, startMinute: minute ?? DEFAULT_SLOT_START_MINUTE }));
+      return;
+    }
+    openCreate(date, minute);
+  };
+
+  const onCreateRange = (r: CreateRange) => {
+    if (schedulingTask) {
+      void createTaskEvent(draftFromSlot(schedulingTask, r));
+      return;
+    }
+    openCreate(r.date, r.startMinute, r.endMinute);
+  };
+
+  const onTaskDragOver = (task: Task, slot: WeekSlot | null) => {
+    const draft = slot ? draftFromDrop(task, slot) : null;
+    const next: TaskDropPreview | null = draft
+      ? { date: draft.date, startMinute: draft.startMinute, durationMinutes: draft.durationMinutes, title: draft.title }
+      : null;
+    setDropPreview((prev) => {
+      if (prev === next) return prev;
+      if (prev && next && prev.date === next.date && prev.startMinute === next.startMinute
+        && prev.durationMinutes === next.durationMinutes && prev.title === next.title) return prev;
+      return next;
+    });
+  };
+
+  const onTaskDrop = (task: Task, slot: WeekSlot) => {
+    setDropPreview(null);
+    void createTaskEvent(draftFromDrop(task, slot));
+  };
+
   const openDeadline = (deadline: CalendarDeadline) =>
     navigate(deadline.kind === 'task' ? `/tasks/${deadline.id}` : '/milestones');
 
@@ -213,24 +290,55 @@ const CalendarPage: React.FC = () => {
       {(occurrencesQuery.isError || holidaysQuery.isError) && (
         <Alert severity="error">{t('common.loadError')}</Alert>
       )}
-      <Box sx={{ height: { xs: 'calc(100vh - 140px)', md: 'calc(100vh - 160px)' }, minHeight: 640 }}>
-        <SchedulerCalendar
-          occurrences={occurrencesQuery.data ?? []}
-          holidays={holidaysQuery.data ?? []}
-          deadlines={deadlines}
-          timeZone={timeZone}
-          onVisibleRangeChange={onVisibleRangeChange}
-          onCreateEvent={(date, minute) => openCreate(date, minute)}
-          onCreateRange={(r: CreateRange) => openCreate(r.date, r.startMinute, r.endMinute)}
-          onEditOccurrence={(o) => void openEdit(o)}
-          onDeleteOccurrence={setDeleteTarget}
-          onOpenDeadline={openDeadline}
-          onRescheduleOccurrence={(change) => void reschedule(change)}
-          onUndo={() => void undo()}
-          onRedo={() => void redo()}
-          canUndo={!busy && canUndo(history)}
-          canRedo={!busy && canRedo(history)}
-        />
+      {schedulingTask && (
+        <Alert
+          severity="info"
+          data-testid="scheduling-task-banner"
+          action={<Button color="inherit" size="small" onClick={() => setSchedulingTask(null)}>{t('calendar.schedulingStop')}</Button>}
+        >
+          {t('calendar.schedulingTask', { title: schedulingTask.title })}
+        </Alert>
+      )}
+      <Box sx={{ display: 'flex', flexDirection: { xs: 'column', md: 'row' }, gap: '12px', alignItems: 'stretch' }}>
+        {/* タスクの一覧（広い画面は右、狭い画面は上で折りたたむ） */}
+        <Box sx={{
+          order: { xs: 1, md: 2 }, width: { xs: '100%', md: 260 }, flexShrink: 0,
+          height: { md: 'calc(100vh - 160px)' }, minHeight: { md: 640 },
+        }}>
+          <TaskSchedulePanel
+            tasks={panelTasks}
+            categories={categories ?? []}
+            selectedTaskId={schedulingTask?.id ?? null}
+            onSelectTask={(task) => setSchedulingTask(task.id === schedulingTask?.id ? null : task.id)}
+            onDragOver={onTaskDragOver}
+            onDragEnd={() => setDropPreview(null)}
+            onDropTask={onTaskDrop}
+          />
+        </Box>
+        <Box sx={{
+          order: { xs: 2, md: 1 }, flex: 1, minWidth: 0,
+          height: { xs: 'calc(100vh - 140px)', md: 'calc(100vh - 160px)' }, minHeight: 640,
+        }}>
+          <SchedulerCalendar
+            occurrences={occurrencesQuery.data ?? []}
+            holidays={holidaysQuery.data ?? []}
+            deadlines={deadlines}
+            timeZone={timeZone}
+            onVisibleRangeChange={onVisibleRangeChange}
+            onCreateEvent={onCreateEvent}
+            onCreateRange={onCreateRange}
+            linkedTasks={linkedTasks}
+            dropPreview={dropPreview}
+            onEditOccurrence={(o) => void openEdit(o)}
+            onDeleteOccurrence={setDeleteTarget}
+            onOpenDeadline={openDeadline}
+            onRescheduleOccurrence={(change) => void reschedule(change)}
+            onUndo={() => void undo()}
+            onRedo={() => void redo()}
+            canUndo={!busy && canUndo(history)}
+            canRedo={!busy && canRedo(history)}
+          />
+        </Box>
       </Box>
 
       {editTarget && (

@@ -9,6 +9,17 @@ export interface CreateRange {
   endMinute: number;
 }
 
+/**
+ * タスクの一覧から時間グリッドへ引いている途中の行き先（task #159）。週表示にゴーストで描く。
+ * 日と分は閲覧者のローカル。
+ */
+export interface TaskDropPreview {
+  date: string;
+  startMinute: number;
+  durationMinutes: number;
+  title: string;
+}
+
 /** 回の時刻 ＋ その開始の UTC 瞬間（API の `start` にそのまま渡せる Z 付き ISO 8601）。 */
 export interface OccurrenceSchedule extends OccurrenceTiming {
   start: string;

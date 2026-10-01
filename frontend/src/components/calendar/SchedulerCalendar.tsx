@@ -16,7 +16,8 @@ import CalendarHeader from './CalendarHeader';
 import MonthView from './MonthView';
 import WeekView from './WeekView';
 import SelectedDayPanel from './SelectedDayPanel';
-import type { CalendarInteractions } from './calendarInteractions';
+import type { CalendarInteractions, TaskDropPreview } from './calendarInteractions';
+import type { LinkedTask } from '../../calendar/taskScheduling';
 import type { CalendarDeadline } from '../../calendar/taskDeadlines';
 import { groupDeadlinesByDate } from '../../calendar/taskDeadlines';
 
@@ -33,6 +34,10 @@ export interface SchedulerCalendarProps extends CalendarInteractions {
   now?: Date;
   /** 表示する期間が変わった（API に問い直す口。両端を含む閲覧者のローカル日） */
   onVisibleRangeChange?: (range: { from: string; to: string }) => void;
+  /** 予定に結んだタスクの印（色・題名。task #159） */
+  linkedTasks?: ReadonlyMap<number, LinkedTask>;
+  /** タスクの一覧から週表示へ引いている途中の行き先 */
+  dropPreview?: TaskDropPreview | null;
 }
 
 const useClock = (fixed: Date | undefined): number => {
@@ -54,7 +59,7 @@ const EMPTY_DEADLINES: readonly CalendarDeadline[] = [];
  */
 const SchedulerCalendar: React.FC<SchedulerCalendarProps> = ({
   occurrences, holidays = EMPTY_HOLIDAYS, deadlines = EMPTY_DEADLINES, timeZone: requestedTimeZone, initialMode = 'week', now: fixedNow,
-  onVisibleRangeChange, ...interactions
+  onVisibleRangeChange, linkedTasks, dropPreview, ...interactions
 }) => {
   const { t, weekdays, lang } = useI18n();
   const c = useTheme().palette.calendar;
@@ -130,6 +135,7 @@ const SchedulerCalendar: React.FC<SchedulerCalendarProps> = ({
             selectedDate={selectedDate}
             timeZone={timeZone}
             onSelectDate={selectDate}
+            linkedTasks={linkedTasks}
           />
         ) : (
           <WeekView
@@ -148,6 +154,8 @@ const SchedulerCalendar: React.FC<SchedulerCalendarProps> = ({
             onRescheduleOccurrence={interactions.onRescheduleOccurrence}
             onEditOccurrence={interactions.onEditOccurrence}
             onCreateEvent={interactions.onCreateEvent}
+            linkedTasks={linkedTasks}
+            dropPreview={dropPreview}
           />
         )}
       </Box>
@@ -164,6 +172,7 @@ const SchedulerCalendar: React.FC<SchedulerCalendarProps> = ({
           onEditOccurrence={interactions.onEditOccurrence}
           onDeleteOccurrence={interactions.onDeleteOccurrence}
           onOpenDeadline={interactions.onOpenDeadline}
+          linkedTasks={linkedTasks}
         />
       )}
     </Box>

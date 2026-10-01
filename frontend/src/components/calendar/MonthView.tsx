@@ -4,7 +4,8 @@ import { useTheme } from '@mui/material/styles';
 import { useI18n } from '../../i18n';
 import type { MonthCell } from '../../calendar/monthCells';
 import { availableChipRows, visibleChipCount } from '../../calendar/monthCells';
-import { eventColor } from '../../calendar/calendarColors';
+import type { LinkedTask } from '../../calendar/taskScheduling';
+import { occurrenceColor } from '../../calendar/taskScheduling';
 import { formatOccurrenceTimeRange } from '../../calendar/daySegments';
 import DeadlineChip from './DeadlineChip';
 
@@ -13,13 +14,15 @@ interface Props {
   selectedDate: string | null;
   timeZone: string;
   onSelectDate: (date: string) => void;
+  /** 予定に結んだタスクの印（色） */
+  linkedTasks?: ReadonlyMap<number, LinkedTask>;
 }
 
 // 移植元の既定のマスの高さ。これより低くはしない。
 const MIN_CELL_HEIGHT = 88;
 
 /** 月表示（移植元 CalendarPage.xaml の MonthGrid）。6×7 のマスに色チップを入るだけ並べる。 */
-const MonthView: React.FC<Props> = ({ cells, selectedDate, timeZone, onSelectDate }) => {
+const MonthView: React.FC<Props> = ({ cells, selectedDate, timeZone, onSelectDate, linkedTasks }) => {
   const { t, weekdays } = useI18n();
   const c = useTheme().palette.calendar;
   const gridRef = useRef<HTMLDivElement>(null);
@@ -125,7 +128,7 @@ const MonthView: React.FC<Props> = ({ cells, selectedDate, timeZone, onSelectDat
                       title={range ? `${o.title}\n${range}` : o.title}
                       sx={{
                         height: 14, lineHeight: '14px', borderRadius: '3px', mx: '1px', px: '3px',
-                        bgcolor: eventColor(o.color_key), color: c.onColor, fontSize: 10,
+                        bgcolor: occurrenceColor(o, linkedTasks), color: c.onColor, fontSize: 10,
                         overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                       }}
                     >
