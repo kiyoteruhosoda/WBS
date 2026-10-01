@@ -50,7 +50,8 @@ describe('buildDeadlines', () => {
 });
 
 describe('期限の置き場所', () => {
-  const deadlines = buildDeadlines([task(1, '設計書', '2026-05-04'), task(2, '見積', '2026-05-04')], [], [], RANGE);
+  // 同じ日の中は題名の順なので、並びが決まるよう英字で始める。
+  const deadlines = buildDeadlines([task(1, 'A 設計書', '2026-05-04'), task(2, 'B 見積', '2026-05-04')], [], [], RANGE);
 
   it('月表示: その日のマスに期限を載せる', () => {
     const cells = buildMonthCells('2026-05-01', '2026-05-01', new Map(), [], groupDeadlinesByDate(deadlines));

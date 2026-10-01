@@ -212,7 +212,8 @@ const BusinessCalendarSettings: React.FC = () => {
   const { t, timezone } = useI18n();
   const invalidate = useInvalidate();
   const { data: calendars, isLoading, error } = useQuery({ queryKey: ['business-calendars'], queryFn: getBusinessCalendars });
-  const thisYear = yearMonthOf(toZonedPoint(Date.now(), resolveTimeZone(timezone)).date).year;
+  const [openedAt] = useState(() => Date.now());
+  const thisYear = yearMonthOf(toZonedPoint(openedAt, resolveTimeZone(timezone)).date).year;
   const create = useMutation({
     mutationFn: () => createBusinessCalendar({
       name: t('bizcal.defaultName'), workdays: WEEKDAYS_MON_FRI, shift_on_holidays_only: false, is_enabled: true,
