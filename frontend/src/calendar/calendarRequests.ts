@@ -94,6 +94,16 @@ export const occurrenceActionRequest = (
   body: { occurrence: key, expected_version: expectedVersion },
 });
 
+/**
+ * タスクの分類の回に済みを付ける・外す（ADR-0025）。繰り返しは回の鍵、単発は鍵なし（null）。
+ * 予定の版は進まないので `expected_version` は送らない。
+ */
+export const occurrenceDoneRequest = (occurrence: CalendarOccurrence, done: boolean): CalendarRequest => ({
+  method: 'PUT',
+  url: `${eventUrl(occurrence.event_id)}/done`,
+  body: { occurrence: occurrence.is_recurring && occurrence.series_key ? occurrenceKeyOf(occurrence) : null, done },
+});
+
 export const deleteEventRequest = (eventId: number, expectedVersion: number): CalendarRequest => ({
   method: 'DELETE',
   url: eventUrl(eventId),
@@ -178,6 +188,13 @@ export const applyScheduleToOccurrences = (
     is_all_day: false,
     is_moved: markMoved ? true : o.is_moved,
   }));
+
+/** 済みの付け外しを応答を待たずに見せる（失敗したら取り直して戻る）。 */
+export const withOccurrenceDone = (
+  occurrences: readonly CalendarOccurrence[],
+  occurrenceId: string,
+  done: boolean,
+): CalendarOccurrence[] => occurrences.map((o) => (o.id === occurrenceId ? { ...o, is_done: done } : o));
 
 // ── 応答の誤り ────────────────────────────────────────────────────────────
 

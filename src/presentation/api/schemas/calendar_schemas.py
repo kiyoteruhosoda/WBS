@@ -8,6 +8,10 @@
 
 通知（``alarm``、ADR-0021）は、作るときに省くと既定（4 つとも入り）、直すときに省くと今のまま
 （この回だけ・以降は元の系列のもの）。``null`` は通知なし。
+
+分類（``event_type``、ADR-0025）は ``EVENT``（予定）/ ``TASK``（タスク）。作るときに省くと予定、
+直すときに省くと今のまま（この回だけ・以降は元の系列のもの）。``TASK`` は ``task_id`` が要る（無ければ 422）。
+タスクの回の済みは ``PUT /calendar/events/{id}/done`` で付け外しし、回の一覧の ``is_done`` に出る。
 """
 
 from __future__ import annotations
@@ -23,7 +27,7 @@ from src.application.recurrence_rule_mapping import (
     recurrence_rule_to_mapping,
 )
 from src.domain.entities.business_calendar import BusinessCalendar, Holiday
-from src.domain.entities.calendar_event import CalendarEvent
+from src.domain.entities.calendar_event import CalendarEvent, EventType
 from src.domain.value_objects.event_alarm import EventAlarm
 from src.domain.value_objects.event_color import EventColorKey
 from src.domain.value_objects.event_schedule import OccurrenceKey
@@ -153,6 +157,10 @@ ALARM_FIELD_ON_CREATE = "通知。省くと既定（4 つとも入り）、null 
 ALARM_FIELD_ON_UPDATE = "通知。省くと今のまま、null は通知を外す"
 ALARM_FIELD_ON_SPLIT = "通知。省くと元の系列のもの、null は通知なし"
 
+EVENT_TYPE_ON_CREATE = "分類。EVENT = 予定（既定）/ TASK = タスク（回ごとに済みを付ける。task_id が要る）"
+EVENT_TYPE_ON_UPDATE = "分類。省く・null は今のまま。TASK は task_id が要る"
+EVENT_TYPE_ON_SPLIT = "分類。省く・null は元の系列のもの。TASK は task_id が要る"
+
 
 # ── 回の鍵 ──────────────────────────────────────────────────────────────────
 
@@ -198,6 +206,7 @@ class CalendarEventCreateRequest(_StartsAt):
     task_id: int | None = None
     recurrence: RecurrenceRuleSchema | None = None
     alarm: EventAlarmSchema | None = Field(default=None, description=ALARM_FIELD_ON_CREATE)
+    event_type: EventType = Field(default=EventType.EVENT, description=EVENT_TYPE_ON_CREATE)
 
 
 class CalendarEventUpdateRequest(BaseModel):
@@ -211,6 +220,7 @@ class CalendarEventUpdateRequest(BaseModel):
     duration_minutes: int | None = Field(default=None, gt=0, le=MAX_DURATION_MINUTES)
     color_key: EventColorKey | None = Field(default=None, description="null は今の色のまま")
     alarm: EventAlarmSchema | None = Field(default=None, description=ALARM_FIELD_ON_UPDATE)
+    event_type: EventType | None = Field(default=None, description=EVENT_TYPE_ON_UPDATE)
     expected_version: int | None = None
 
 
@@ -226,6 +236,7 @@ class SeriesUpdateRequest(BaseModel):
     task_id: int | None = None
     color_key: EventColorKey = EventColorKey.DEFAULT
     alarm: EventAlarmSchema | None = Field(default=None, description=ALARM_FIELD_ON_UPDATE)
+    event_type: EventType | None = Field(default=None, description=EVENT_TYPE_ON_UPDATE)
     expected_version: int | None = None
 
 
@@ -243,6 +254,7 @@ class FollowingOccurrencesChangeRequest(_StartsAt):
     color_key: EventColorKey = EventColorKey.DEFAULT
     task_id: int | None = None
     alarm: EventAlarmSchema | None = Field(default=None, description=ALARM_FIELD_ON_SPLIT)
+    event_type: EventType | None = Field(default=None, description=EVENT_TYPE_ON_SPLIT)
     expected_version: int | None = None
 
 
@@ -259,6 +271,7 @@ class ThisOccurrenceChangeRequest(_StartsAt):
     color_key: EventColorKey = EventColorKey.DEFAULT
     task_id: int | None = None
     alarm: EventAlarmSchema | None = Field(default=None, description=ALARM_FIELD_ON_SPLIT)
+    event_type: EventType | None = Field(default=None, description=EVENT_TYPE_ON_SPLIT)
     expected_version: int | None = None
 
 
@@ -267,6 +280,21 @@ class OccurrenceActionRequest(BaseModel):
 
     occurrence: OccurrenceKeySchema
     expected_version: int | None = None
+
+
+class OccurrenceDoneRequest(BaseModel):
+    """タスクの分類の予定の回に済みを付ける・外す（ADR-0025）。予定の版は進まない。"""
+
+    occurrence: OccurrenceKeySchema | None = Field(
+        default=None, description="繰り返しの回の鍵（回の一覧の series_key）。単発は null"
+    )
+    done: bool = Field(description="true で済みにする・false で外す")
+
+
+class OccurrenceDoneResponse(BaseModel):
+    event_id: int
+    occurrence: OccurrenceKeyResponse | None
+    done: bool
 
 
 class OccurrenceMoveRequest(_StartsAt):
@@ -308,6 +336,7 @@ class CalendarEventResponse(BaseModel):
     color_key: EventColorKey
     task_id: int | None
     alarm: EventAlarmSchema | None = Field(description="通知。null は通知を持たない")
+    event_type: EventType = Field(description="分類。EVENT = 予定 / TASK = タスク")
     exceptions: list[EventExceptionResponse]
     moves: list[EventMoveResponse]
     version: int
@@ -339,6 +368,7 @@ class CalendarEventResponse(BaseModel):
             color_key=event.color_key,
             task_id=event.task_id,
             alarm=EventAlarmSchema.from_alarm(event.alarm),
+            event_type=event.event_type,
             exceptions=[
                 EventExceptionResponse(
                     occurrence=OccurrenceKeyResponse.from_key(e.occurrence_key), type=e.type.value
@@ -392,6 +422,8 @@ class CalendarOccurrenceResponse(BaseModel):
     alarm: EventAlarmSchema | None = Field(
         description="予定の通知（繰り返しは系列のもの。移した回も同じ）。null は通知を持たない"
     )
+    event_type: EventType = Field(description="予定の分類。EVENT = 予定 / TASK = タスク")
+    is_done: bool = Field(description="タスクの分類の回に済みが付いている（予定の分類は常に false）")
 
     @classmethod
     def from_view(cls, view: OccurrenceView) -> CalendarOccurrenceResponse:
@@ -421,6 +453,8 @@ class CalendarOccurrenceResponse(BaseModel):
             is_overridden=view.is_overridden,
             series_key=series_key,
             alarm=EventAlarmSchema.from_alarm(view.alarm),
+            event_type=view.event_type,
+            is_done=view.is_done,
         )
 
 

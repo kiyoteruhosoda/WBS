@@ -196,6 +196,7 @@ const CalendarPage: React.FC = () => {
             dropPreview={dropPreview}
             onEditOccurrence={editing.openEdit}
             onDeleteOccurrence={editing.askDelete}
+            onToggleDone={editing.toggleDone}
             onOpenDeadline={openDeadline}
             onRescheduleOccurrence={editing.reschedule}
             onUndo={editing.undo}

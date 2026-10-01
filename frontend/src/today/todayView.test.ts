@@ -4,7 +4,7 @@ import { groupSegmentsByDate } from '../calendar/daySegments';
 import { fromZonedPoint } from '../calendar/zonedTime';
 import { TOKYO, hm, occurrence } from '../calendar/testOccurrences';
 import {
-  currentAndNext, entryBands, liveActuals, nextFreeStartMinute, occurrenceStartOf, taskUrgencyOf,
+  currentAndNext, entryBands, liveActuals, nextFreeStartMinute, occurrenceStartOf, routineTasksOf, taskUrgencyOf,
 } from './todayView';
 
 const DAY = '2026-09-10';
@@ -162,5 +162,20 @@ describe('「予定を作る」で開く枠（task #185）', () => {
     const segments = segmentsOf(occurrence('evening', DAY, hm(22), 120));
     expect(nextFreeStartMinute(segments, hm(22, 10), 30)).toBe(hm(22, 15));
     expect(nextFreeStartMinute([], hm(23, 50), 30)).toBe(hm(23, 30));
+  });
+});
+
+describe('今日やること（タスクの分類の回、ADR-0025）', () => {
+  it('その日のタスクの分類の回だけを、終日を先に始まりの順で並べる（済みも残す）', () => {
+    const list = [
+      { ...occurrence('late', '2026-05-04', hm(17), 30), event_type: 'TASK' as const },
+      { ...occurrence('meeting', '2026-05-04', hm(10), 60) },
+      { ...occurrence('early', '2026-05-04', hm(9), 15), event_type: 'TASK' as const, is_done: true },
+      { ...occurrence('allday', '2026-05-04', 0, 1440), event_type: 'TASK' as const },
+      { ...occurrence('tomorrow', '2026-05-05', hm(9), 15), event_type: 'TASK' as const },
+    ];
+    expect(routineTasksOf(list, '2026-05-04').map((o) => [o.id, o.is_done])).toEqual([
+      ['allday', false], ['early', true], ['late', false],
+    ]);
   });
 });

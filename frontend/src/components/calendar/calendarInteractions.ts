@@ -57,6 +57,8 @@ export interface CalendarInteractions {
   onCreateRange?: (range: CreateRange) => void;
   /** 週のグリッドで回を動かした・伸ばし縮めた（15 分単位・最短 15 分） */
   onRescheduleOccurrence?: (change: OccurrenceReschedule) => void;
+  /** タスクの分類の回の済みを切り替える（ADR-0025）。省くと印だけ出す */
+  onToggleDone?: (occurrence: CalendarOccurrence) => void;
   onUndo?: () => void;
   onRedo?: () => void;
   canUndo?: boolean;

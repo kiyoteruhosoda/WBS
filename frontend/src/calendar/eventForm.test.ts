@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import type { EventForm } from './eventForm';
 import {
-  DEFAULT_ALARM, buildAdjustment, buildRecurrence, endOf, endTimeOptions, formFromEvent, isAlarmOn, newEventForm,
-  parseTime, planEventSave, planOccurrenceDelete, startTimeOptions, withAlarmOffset, withAlarmOn, withEndMinute,
-  withRepeat, withStartMinute,
+  DEFAULT_ALARM, buildAdjustment, buildRecurrence, endOf, endTimeOptions, formFromEvent, isAlarmOn, needsNewTask,
+  newEventForm, parseTime, planEventSave, planOccurrenceDelete, startTimeOptions, withAlarmOffset, withAlarmOn,
+  withEndMinute, withLinkedTask, withRepeat, withStartMinute,
 } from './eventForm';
 import { apiOccurrence, recurringEvent, recurringOccurrence, singleEvent } from './calendarFixtures';
 
@@ -172,7 +172,7 @@ describe('保存 → API の呼び出し', () => {
         url: '/calendar/events',
         body: {
           title: '打ち合わせ', location: null, description: null, color_key: 'DEFAULT', task_id: null,
-          alarm: DEFAULT_ALARM, time_zone: TOKYO, start: '2026-05-04T00:00:00.000Z', duration_minutes: 30, recurrence: null,
+          alarm: DEFAULT_ALARM, event_type: 'EVENT', time_zone: TOKYO, start: '2026-05-04T00:00:00.000Z', duration_minutes: 30, recurrence: null,
         },
       }],
     });
@@ -199,7 +199,7 @@ describe('保存 → API の呼び出し', () => {
         url: '/calendar/events/5',
         body: {
           title: '設計レビュー', location: '会議室A', description: '資料は前日まで', color_key: 'TOMATO', task_id: 12,
-          alarm: singleEvent().alarm, start: '2026-05-04T01:00:00.000Z', duration_minutes: 60, expected_version: 3,
+          alarm: singleEvent().alarm, event_type: 'EVENT', start: '2026-05-04T01:00:00.000Z', duration_minutes: 60, expected_version: 3,
         },
       }],
     });
@@ -219,7 +219,7 @@ describe('保存 → API の呼び出し', () => {
         url: '/calendar/events/7/occurrences/split',
         body: {
           title: '定例（臨時）', location: null, description: null, color_key: 'BLUEBERRY', task_id: null,
-          alarm: recurringEvent().alarm, occurrence: { date: '2026-07-14', start_time: '10:00' }, start: '2026-07-14T01:00:00.000Z',
+          alarm: recurringEvent().alarm, event_type: 'EVENT', occurrence: { date: '2026-07-14', start_time: '10:00' }, start: '2026-07-14T01:00:00.000Z',
           duration_minutes: 30, expected_version: 4,
         },
       }],
@@ -334,5 +334,32 @@ describe('通知（ADR-0021）', () => {
     const expected = { ...recurringEvent().alarm, notify_1_min: true };
     expect(planEventSave(changed, context, 'following')).toMatchObject({ requests: [{ body: { alarm: expected } }] });
     expect(planEventSave(changed, context, 'all')).toMatchObject({ requests: [{ body: { alarm: expected } }] });
+  });
+});
+
+describe('分類（予定 / タスク、ADR-0025）', () => {
+  it('新しい予定は分類「予定」、既存の予定は保存してある分類を読む', () => {
+    expect(fresh().eventType).toBe('EVENT');
+    const { form } = formFromEvent(singleEvent({ event_type: 'TASK' }), apiOccurrence(), TODAY);
+    expect(form.eventType).toBe('TASK');
+  });
+
+  it('分類を保存の本文に載せる', () => {
+    expect(planEventSave(fresh({ eventType: 'TASK', taskId: 3 }), { mode: 'create' }, null))
+      .toMatchObject({ requests: [{ body: { event_type: 'TASK', task_id: 3 } }] });
+  });
+
+  it('タスクを選んでいなければ「同じ名前のタスクを作って結ぶ」、外したら入力の誤り', () => {
+    const form = fresh({ eventType: 'TASK', taskId: null, linkNewTask: true });
+    expect(needsNewTask(form)).toBe(true);
+    expect(planEventSave(form, { mode: 'create' }, null)).toMatchObject({ kind: 'requests' });
+    expect(planEventSave(withLinkedTask(form, 42), { mode: 'create' }, null))
+      .toMatchObject({ requests: [{ body: { event_type: 'TASK', task_id: 42 } }] });
+    expect(needsNewTask(withLinkedTask(form, 42))).toBe(false);
+
+    expect(planEventSave({ ...form, linkNewTask: false }, { mode: 'create' }, null))
+      .toEqual({ kind: 'invalid', error: 'taskRequired' });
+    // 予定の分類はタスクが無くてよい
+    expect(needsNewTask(fresh({ taskId: null }))).toBe(false);
   });
 });

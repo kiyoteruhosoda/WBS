@@ -9,6 +9,7 @@ import pytest
 from src.domain.entities.calendar_event import (
     CalendarEvent,
     EventKind,
+    EventType,
     ExceptionType,
 )
 from src.domain.exceptions import ConflictError, NotFoundError, ValidationError
@@ -247,3 +248,56 @@ def test_indexed_day_span_adds_the_margin() -> None:
     start, end = event.indexed_day_span()
     assert start == date(2026, 5, 20).toordinal() - 31
     assert end == date(2026, 5, 20).toordinal() + 31
+
+
+# ── 分類（task #190 / ADR-0025）──────────────────────────────────────────
+
+
+def test_event_type_defaults_to_event() -> None:
+    event = single_event(utc(2026, 4, 20, 10, 0))
+    assert event.event_type == EventType.EVENT
+    assert not event.is_task()
+
+
+def test_task_type_needs_a_task() -> None:
+    with pytest.raises(ValidationError):
+        CalendarEvent.create_single(
+            user_id=1, title="日報", time_zone=TOKYO,
+            schedule=SingleEventSchedule(utc(2026, 4, 20, 10, 0), 30), created_at=NOW,
+            event_type=EventType.TASK,
+        )
+    event = CalendarEvent.create_single(
+        user_id=1, title="日報", time_zone=TOKYO,
+        schedule=SingleEventSchedule(utc(2026, 4, 20, 10, 0), 30), created_at=NOW,
+        task_id=7, event_type=EventType.TASK,
+    )
+    assert event.is_task()
+
+
+def test_change_details_keeps_the_event_type_unless_given() -> None:
+    event = single_event(utc(2026, 4, 20, 10, 0))
+    event.change_details(
+        title="日報", location=None, description=None, task_id=7, updated_at=NOW,
+        event_type=EventType.TASK,
+    )
+    assert event.event_type == EventType.TASK
+    version = event.version
+    event.change_details(title="日報", location=None, description=None, task_id=8, updated_at=NOW)
+    assert (event.event_type, event.task_id) == (EventType.TASK, 8)
+
+    # タスクのまま結びを外すのは断る（何も変えない）
+    with pytest.raises(ValidationError):
+        event.change_details(
+            title="別の題名", location=None, description=None, task_id=None, updated_at=NOW
+        )
+    assert (event.title, event.task_id, event.version) == ("日報", 8, version + 1)
+
+    event.change_details(
+        title="日報", location=None, description=None, task_id=None, updated_at=NOW,
+        event_type=EventType.EVENT,
+    )
+    assert (event.event_type, event.task_id) == (EventType.EVENT, None)
+
+
+def test_series_start_time_is_the_local_wall_clock() -> None:
+    assert weekly_monday_from_0420().series_start_time() == time(10, 0)

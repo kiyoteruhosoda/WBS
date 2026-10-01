@@ -9,6 +9,7 @@ import { occurrenceColor } from '../../calendar/taskScheduling';
 import { pastEventColor } from '../../calendar/calendarColors';
 import { formatOccurrenceTimeRange } from '../../calendar/daySegments';
 import DeadlineChip from './DeadlineChip';
+import DoneMark from './DoneMark';
 
 interface Props {
   cells: MonthCell[];
@@ -134,8 +135,13 @@ const MonthView: React.FC<Props> = ({ cells, selectedDate, timeZone, onSelectDat
                         bgcolor: cell.isPast ? pastEventColor(occurrenceColor(o, linkedTasks), c) : occurrenceColor(o, linkedTasks),
                         color: c.onColor, fontSize: 10,
                         overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                        // タスクの分類の回は印を付け、済みは薄く・取り消し線（ADR-0025）
+                        opacity: o.is_done ? 0.55 : 1, textDecoration: o.is_done ? 'line-through' : 'none',
                       }}
                     >
+                      {o.event_type === 'TASK' && (
+                        <DoneMark done={o.is_done} color={c.onColor} size={10} sx={{ verticalAlign: '-1px', mr: '2px' }} />
+                      )}
                       {o.title}
                     </Box>
                   );

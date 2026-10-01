@@ -4,7 +4,7 @@
 // 直す（time-model §4）。新しい予定は閲覧者のタイムゾーン（利用者設定）で作る。
 
 import type {
-  AdjustmentRuleData, CalendarEvent, CalendarOccurrence, EventAlarmData, EventColorKey, MonthlyRuleData,
+  AdjustmentRuleData, CalendarEvent, CalendarEventType, CalendarOccurrence, EventAlarmData, EventColorKey, MonthlyRuleData,
   RecurrenceRuleData, WeekdayCode, YearlyRuleData,
 } from '../types';
 import type { CalendarRequest } from './calendarRequests';
@@ -84,6 +84,10 @@ export interface EventForm {
   adjustmentCalendarId: number | null;
   colorKey: EventColorKey;
   taskId: number | null;
+  /** 分類（ADR-0025）: 予定 / タスク（回ごとに済みを付ける。WBS のタスクに結ぶ） */
+  eventType: CalendarEventType;
+  /** 分類がタスクでタスクを選んでいないとき、保存で「同じ名前のタスク」を作って結ぶ */
+  linkNewTask: boolean;
   /** 通知。null は通知を持たない（既存の予定で一度も入れていないもの）。保存ではそのまま送る */
   alarm: EventAlarmData | null;
 }
@@ -224,6 +228,8 @@ export const newEventForm = (
     adjustmentCalendarId: calendarIds.length === 1 ? calendarIds[0] : null,
     colorKey: 'DEFAULT',
     taskId: null,
+    eventType: 'EVENT',
+    linkNewTask: true,
     alarm: DEFAULT_ALARM,
   });
 };
@@ -319,6 +325,7 @@ export const formFromEvent = (
     durationMinutes: allDay ? DEFAULT_DURATION_MINUTES : Math.max(MIN_DURATION_MINUTES, duration),
     colorKey: event.color_key,
     taskId: event.task_id,
+    eventType: event.event_type ?? 'EVENT',
     alarm: event.alarm,
   };
   if (event.recurrence && !isMovedOccurrence) form = withRecurrenceRule(form, event.recurrence);
@@ -386,11 +393,21 @@ const details = (form: EventForm) => ({
   color_key: form.colorKey,
   task_id: form.taskId,
   alarm: form.alarm,
+  event_type: form.eventType,
 });
+
+// ── 分類（ADR-0025）────────────────────────────────────────────────────────
+
+/** 保存の前に「同じ名前のタスク」を作って結ぶか（分類がタスクで、タスクを選んでいない）。 */
+export const needsNewTask = (form: Pick<EventForm, 'eventType' | 'taskId' | 'linkNewTask'>): boolean =>
+  form.eventType === 'TASK' && form.taskId == null && form.linkNewTask;
+
+/** 作ったタスク（または選んだタスク）を結ぶ。 */
+export const withLinkedTask = (form: EventForm, taskId: number): EventForm => ({ ...form, taskId });
 
 // ── 保存・削除の段取り ────────────────────────────────────────────────────
 
-export type FormError = 'titleRequired' | 'weekdayRequired' | 'endDateBeforeStart';
+export type FormError = 'titleRequired' | 'weekdayRequired' | 'endDateBeforeStart' | 'taskRequired';
 
 export type SavePlan =
   | { kind: 'requests'; requests: CalendarRequest[] }
@@ -408,6 +425,9 @@ const seriesStartDate = (event: CalendarEvent): string => toZonedPoint(Date.pars
 
 const validate = (form: EventForm, seriesStart: string | null): FormError | null => {
   if (form.title.trim() === '') return 'titleRequired';
+  // タスクの分類は WBS のタスクに結ぶ（打刻・締めで実績を確定するのに要る）。選んでいなければ「同じ名前の
+  // タスクを作って結ぶ」が入っていること（作るのは送る直前。`needsNewTask` → `withLinkedTask` で計画し直す）
+  if (form.eventType === 'TASK' && form.taskId == null && !form.linkNewTask) return 'taskRequired';
   if (!isRecurringForm(form)) return null;
   if (form.repeat === 'WEEKLY' && form.weekdays.length === 0) return 'weekdayRequired';
   if (form.hasEndDate && form.endDate < (seriesStart ?? form.startDate)) return 'endDateBeforeStart';

@@ -16,14 +16,14 @@ import { formFromEvent, newEventForm, planOccurrenceDelete } from '../../calenda
 import type { RecurringScope } from '../../calendar/eventForm';
 import type { RescheduleEntry } from '../../calendar/calendarRequests';
 import {
-  applyScheduleToOccurrences, errorDetailOf, isConflictError, redoRequest, rescheduleEntryOf, rescheduleRequest,
-  undoRequest, withEventVersion, withOccurrenceEventVersion,
+  applyScheduleToOccurrences, errorDetailOf, isConflictError, occurrenceDoneRequest, redoRequest, rescheduleEntryOf,
+  rescheduleRequest, undoRequest, withEventVersion, withOccurrenceDone, withOccurrenceEventVersion,
 } from '../../calendar/calendarRequests';
 import type { OperationHistory } from '../../calendar/operationHistory';
 import {
   canRedo, canUndo, emptyHistory, recordOperation, redoOperation, undoOperation,
 } from '../../calendar/operationHistory';
-import { queriesAfterEventWrite } from '../../calendar/calendarQueries';
+import { OCCURRENCES_QUERY, queriesAfterEventWrite } from '../../calendar/calendarQueries';
 import { toZonedPoint } from '../../calendar/zonedTime';
 
 export interface CalendarNotice {
@@ -140,6 +140,16 @@ export const useCalendarEditing = ({ occurrencesKey, timeZone, tasks }: Options)
     notify('calendar.redone', 'info');
   });
 
+  // ── 済み（タスクの分類の回、ADR-0025）──────────────────────────────────
+
+  /** 済みを切り替える。応答を待たずに見せ、失敗したら取り直して戻る。予定の版は進まない（履歴はそのまま）。 */
+  const toggleDone = (occurrence: CalendarOccurrence) => exclusive(async () => {
+    const done = !occurrence.is_done;
+    patchOccurrences((list) => withOccurrenceDone(list, occurrence.id, done));
+    await sendCalendarRequest(occurrenceDoneRequest(occurrence, done));
+    void qc.invalidateQueries({ queryKey: [OCCURRENCES_QUERY] });
+  });
+
   // ── 作る・直す・消す ──────────────────────────────────────────────────
 
   const calendarIds = (businessCalendars ?? []).map((c) => c.id);
@@ -228,6 +238,7 @@ export const useCalendarEditing = ({ occurrencesKey, timeZone, tasks }: Options)
     redo: () => void redo(),
     openCreate,
     openEdit: (occurrence: CalendarOccurrence) => void openEdit(occurrence),
+    toggleDone: (occurrence: CalendarOccurrence) => void toggleDone(occurrence),
     askDelete: setDeleteTarget,
     exclusive,
     refresh,

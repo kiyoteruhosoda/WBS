@@ -359,3 +359,43 @@ def test_0006_leaves_existing_events_without_an_alarm_and_downgrades_cleanly(tmp
             assert connection.exec_driver_sql("SELECT COUNT(*) FROM calendar_events").scalar() == 1
     finally:
         engine.dispose()
+
+
+def test_0008_makes_existing_events_plain_events_and_downgrades_cleanly(tmp_path):
+    # task #190 / ADR-0025: 既存の予定は分類「予定」（EVENT）。済みの表は下げると消える
+    url = _url(tmp_path, "event_types.db")
+    engine = sa.create_engine(url)
+    try:
+        with engine.begin() as connection:
+            config = alembic_config(connection)
+            previous = ScriptDirectory.from_config(config).get_revision("0008").down_revision
+            command.upgrade(config, previous)
+        with engine.begin() as connection:
+            connection.exec_driver_sql(
+                "INSERT INTO users (id, email, display_name, timezone, language, is_active, "
+                "created_at, updated_at) VALUES "
+                "(1, 'taro@example.com', '太郎', 'Asia/Tokyo', 'ja', 1, '2026-01-01', '2026-01-01')"
+            )
+            connection.exec_driver_sql(
+                "INSERT INTO calendar_events (id, user_id, kind, title, time_zone, start_utc, "
+                "duration_minutes, color_key, span_start_day, span_end_day, version, "
+                "created_at, updated_at) VALUES (1, 1, 'SINGLE', '定例', 'Asia/Tokyo', "
+                "'2026-10-05 00:00:00', 60, 'DEFAULT', 1, 2, 1, '2026-01-01', '2026-01-01')"
+            )
+        with engine.begin() as connection:
+            command.upgrade(alembic_config(connection), "0008")
+        with engine.connect() as connection:
+            assert connection.exec_driver_sql(
+                "SELECT event_type FROM calendar_events"
+            ).scalar() == "EVENT"
+        assert "calendar_event_completions" in sa.inspect(engine).get_table_names()
+
+        with engine.begin() as connection:
+            command.downgrade(alembic_config(connection), previous)
+        inspector = sa.inspect(engine)
+        assert "calendar_event_completions" not in inspector.get_table_names()
+        assert "event_type" not in {c["name"] for c in inspector.get_columns("calendar_events")}
+        with engine.connect() as connection:
+            assert connection.exec_driver_sql("SELECT COUNT(*) FROM calendar_events").scalar() == 1
+    finally:
+        engine.dispose()

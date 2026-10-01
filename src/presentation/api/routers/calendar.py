@@ -7,6 +7,7 @@
 - 繰り返しの編集: すべて（``PUT .../series``）・この回以降（``POST .../occurrences/following``）・
   この回だけ（``POST .../occurrences/split``）
 - 回の操作: 飛ばす・戻す・移動・移動の取り消し・以降を消す（``POST .../occurrences/<操作>``）
+- タスクの分類の回の済み（ADR-0025）: ``PUT .../done``
 
 他人の予定は 404。``expected_version`` が今の版と違えば 409。
 """
@@ -24,6 +25,7 @@ from src.application.dto.calendar_event_dto import (
     CreateSingleEventCommand,
     MoveOccurrenceCommand,
     OccurrenceCommand,
+    OccurrenceDoneCommand,
     SplitThisOccurrenceCommand,
     UpdateEventCommand,
     UpdateRecurringSeriesCommand,
@@ -47,6 +49,9 @@ from src.presentation.api.schemas.calendar_schemas import (
     FollowingOccurrencesChangeRequest,
     HolidaySchema,
     OccurrenceActionRequest,
+    OccurrenceDoneRequest,
+    OccurrenceDoneResponse,
+    OccurrenceKeyResponse,
     OccurrenceMoveRequest,
     SeriesUpdateRequest,
     ThisOccurrenceChangeRequest,
@@ -162,6 +167,7 @@ def create_event(
                 color_key=body.color_key,
                 task_id=body.task_id,
                 alarm=_alarm_input(body.alarm, body.model_fields_set),
+                event_type=body.event_type,
             )
         )
     else:
@@ -178,6 +184,7 @@ def create_event(
                 color_key=body.color_key,
                 task_id=body.task_id,
                 alarm=_alarm_input(body.alarm, body.model_fields_set),
+                event_type=body.event_type,
             )
         )
     return CalendarEventResponse.from_event(created)
@@ -200,6 +207,7 @@ def update_event(
             duration_minutes=body.duration_minutes,
             color_key=body.color_key,
             alarm=_alarm_input(body.alarm, body.model_fields_set),
+            event_type=body.event_type,
             expected_version=body.expected_version,
         )
     )
@@ -224,6 +232,7 @@ def update_series(
             color_key=body.color_key,
             anchor_utc=body.start,
             alarm=_alarm_input(body.alarm, body.model_fields_set),
+            event_type=body.event_type,
             expected_version=body.expected_version,
         )
     )
@@ -269,6 +278,7 @@ def change_following_occurrences(
             color_key=body.color_key,
             task_id=body.task_id if "task_id" in body.model_fields_set else UNSET,
             alarm=_alarm_input(body.alarm, body.model_fields_set),
+            event_type=body.event_type,
             expected_version=body.expected_version,
         )
     )
@@ -300,6 +310,7 @@ def split_this_occurrence(
             color_key=body.color_key,
             task_id=body.task_id if "task_id" in body.model_fields_set else UNSET,
             alarm=_alarm_input(body.alarm, body.model_fields_set),
+            event_type=body.event_type,
             expected_version=body.expected_version,
         )
     )
@@ -364,6 +375,28 @@ def cancel_move_occurrence(
         _occurrence_command(event_id, body, current_user.user_id)
     )
     return CalendarEventResponse.from_event(updated)
+
+
+@router.put("/events/{event_id}/done", response_model=OccurrenceDoneResponse)
+def set_occurrence_done(
+    event_id: int, body: OccurrenceDoneRequest, current_user: CurrentUserDep, events: CalendarEventUseCasesDep
+) -> OccurrenceDoneResponse:
+    """タスクの分類の予定の回に済みを付ける・外す（ADR-0025）。
+
+    単発は ``occurrence`` を null、繰り返しは回の ``series_key`` を渡す（移した回も元の鍵）。
+    予定の分類が「予定」なら 422、系列に無い回（飛ばした回など）は 404。予定の版は進まない。
+    """
+    key = body.occurrence.to_key() if body.occurrence is not None else None
+    done = events.set_occurrence_done(
+        OccurrenceDoneCommand(
+            event_id=event_id, user_id=current_user.user_id, occurrence_key=key, done=body.done
+        )
+    )
+    return OccurrenceDoneResponse(
+        event_id=event_id,
+        occurrence=OccurrenceKeyResponse.from_key(key) if key is not None else None,
+        done=done,
+    )
 
 
 @router.post(
