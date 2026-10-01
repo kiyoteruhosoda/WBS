@@ -4,21 +4,25 @@ import { useTheme } from '@mui/material/styles';
 import { useI18n } from '../../i18n';
 import type { MonthCell } from '../../calendar/monthCells';
 import { availableChipRows, visibleChipCount } from '../../calendar/monthCells';
-import { eventColor } from '../../calendar/calendarColors';
+import type { LinkedTask } from '../../calendar/taskScheduling';
+import { occurrenceColor } from '../../calendar/taskScheduling';
 import { formatOccurrenceTimeRange } from '../../calendar/daySegments';
+import DeadlineChip from './DeadlineChip';
 
 interface Props {
   cells: MonthCell[];
   selectedDate: string | null;
   timeZone: string;
   onSelectDate: (date: string) => void;
+  /** 予定に結んだタスクの印（色） */
+  linkedTasks?: ReadonlyMap<number, LinkedTask>;
 }
 
 // 移植元の既定のマスの高さ。これより低くはしない。
 const MIN_CELL_HEIGHT = 88;
 
 /** 月表示（移植元 CalendarPage.xaml の MonthGrid）。6×7 のマスに色チップを入るだけ並べる。 */
-const MonthView: React.FC<Props> = ({ cells, selectedDate, timeZone, onSelectDate }) => {
+const MonthView: React.FC<Props> = ({ cells, selectedDate, timeZone, onSelectDate, linkedTasks }) => {
   const { t, weekdays } = useI18n();
   const c = useTheme().palette.calendar;
   const gridRef = useRef<HTMLDivElement>(null);
@@ -72,8 +76,11 @@ const MonthView: React.FC<Props> = ({ cells, selectedDate, timeZone, onSelectDat
         {cells.map((cell) => {
           const selected = cell.date === selectedDate;
           const rows = availableChipRows(cellHeight, cell.holiday != null);
-          const shown = visibleChipCount(cell.segments.length, rows);
-          const extra = cell.segments.length - shown;
+          // 予定のチップの後に期限のチップを続け、あふれは合わせて「+N 件」。
+          const total = cell.segments.length + cell.deadlines.length;
+          const shown = visibleChipCount(total, rows);
+          const extra = total - shown;
+          const shownDeadlines = cell.deadlines.slice(0, Math.max(0, shown - cell.segments.length));
           return (
             <Box
               key={cell.date}
@@ -121,7 +128,7 @@ const MonthView: React.FC<Props> = ({ cells, selectedDate, timeZone, onSelectDat
                       title={range ? `${o.title}\n${range}` : o.title}
                       sx={{
                         height: 14, lineHeight: '14px', borderRadius: '3px', mx: '1px', px: '3px',
-                        bgcolor: eventColor(o.color_key), color: c.onColor, fontSize: 10,
+                        bgcolor: occurrenceColor(o, linkedTasks), color: c.onColor, fontSize: 10,
                         overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                       }}
                     >
@@ -129,6 +136,11 @@ const MonthView: React.FC<Props> = ({ cells, selectedDate, timeZone, onSelectDat
                     </Box>
                   );
                 })}
+                {shownDeadlines.map((deadline) => (
+                  <Box key={deadline.key} sx={{ mx: '1px' }}>
+                    <DeadlineChip deadline={deadline} height={14} fontSize={10} />
+                  </Box>
+                ))}
               </Box>
               {extra > 0 && (
                 <Box sx={{ fontSize: 10, m: '1px 3px 0', color: c.textSecondary }}>

@@ -4,8 +4,10 @@ import { useNavigate } from 'react-router-dom';
 import {
   Box, CircularProgress, Alert, Table, TableBody, TableCell, TableHead,
   TableRow, TableSortLabel, Select, MenuItem, FormControl, InputLabel,
-  TableContainer, OutlinedInput, InputAdornment, TextField,
+  TableContainer, OutlinedInput, InputAdornment, TextField, IconButton, Tooltip,
 } from '@mui/material';
+import MoreTimeIcon from '@mui/icons-material/MoreTime';
+import { formatHours, scheduleTaskPath } from '../calendar/taskScheduling';
 import { getTasks } from '../api/tasks';
 import { getCategories } from '../api/categories';
 import { getMilestones } from '../api/milestones';
@@ -149,12 +151,15 @@ const TaskList: React.FC = () => {
                   </TableCell>
                   <TableCell sx={{ minWidth: 140 }}>{t('taskList.progress')}</TableCell>
                   <TableCell>{t('taskList.status')}</TableCell>
+                  <TableCell>{t('taskList.scheduled')}</TableCell>
+                  <TableCell padding="checkbox" />
                 </TableRow>
               </TableHead>
               <TableBody>
                 {items.map(task => {
                   const overdue = isOverdue(task);
-                  const dueToday = isDueToday(task) && task.status !== 'DONE' && task.status !== 'CANCELLED';
+                  const closed = task.status === 'DONE' || task.status === 'CANCELLED';
+                  const dueToday = isDueToday(task) && !closed;
                   return (
                     <TableRow key={task.id} hover sx={{ cursor: 'pointer' }} onClick={() => navigate(`/tasks/${task.id}`)}>
                       <TableCell>
@@ -187,12 +192,35 @@ const TaskList: React.FC = () => {
                         />
                       </TableCell>
                       <TableCell><StatusChip task={task} /></TableCell>
+                      <TableCell>
+                        <Box sx={{ fontSize: 13, color: ds.textSub, whiteSpace: 'nowrap' }}>
+                          {formatHours(task.scheduled_hours)}
+                        </Box>
+                        {task.unscheduled_hours != null && task.unscheduled_hours > 0 && !closed && (
+                          <Box sx={{ fontSize: 11, color: ds.textMuted, whiteSpace: 'nowrap' }}>
+                            {t('taskList.unscheduled', { hours: formatHours(task.unscheduled_hours) })}
+                          </Box>
+                        )}
+                      </TableCell>
+                      <TableCell padding="checkbox">
+                        {!closed && (
+                          <Tooltip title={t('task.scheduleTime')}>
+                            <IconButton
+                              size="small"
+                              aria-label={t('task.scheduleTime')}
+                              onClick={(e) => { e.stopPropagation(); navigate(scheduleTaskPath(task.id)); }}
+                            >
+                              <MoreTimeIcon fontSize="small" />
+                            </IconButton>
+                          </Tooltip>
+                        )}
+                      </TableCell>
                     </TableRow>
                   );
                 })}
                 {items.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={5} sx={{ textAlign: 'center', py: '32px', color: ds.textMuted, fontSize: 13 }}>
+                    <TableCell colSpan={7} sx={{ textAlign: 'center', py: '32px', color: ds.textMuted, fontSize: 13 }}>
                       {t('taskList.empty')}
                     </TableCell>
                   </TableRow>

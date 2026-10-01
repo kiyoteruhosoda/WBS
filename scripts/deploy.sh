@@ -333,7 +333,7 @@ docker image prune -f >/dev/null 2>&1 || true
 
 log "Deployed version:"
 "${COMPOSE[@]}" exec -T api sh -c \
-  'echo "  version=${APP_VERSION:-unknown} git_sha=${GIT_SHA:-unknown} build_time=${BUILD_TIME:-unknown}"' \
+  'cat /app/src/infrastructure/version.json 2>/dev/null || echo "  version.json not found"' \
   || warn "Could not read version info from api container"
 
 echo -e "\033[32m${TAG} Deploy complete (mode: $MODE)\033[0m"

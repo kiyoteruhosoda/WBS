@@ -12,12 +12,16 @@ import {
 } from '../../calendar/weekLayout';
 import type { WeekEventBlock } from '../../calendar/weekLayout';
 import { holidaysByDate } from '../../calendar/monthCells';
-import { darken, eventColor } from '../../calendar/calendarColors';
+import { darken } from '../../calendar/calendarColors';
+import type { LinkedTask } from '../../calendar/taskScheduling';
+import { linkedTaskLabel, occurrenceColor } from '../../calendar/taskScheduling';
 import { formatWeekHeader } from '../../calendar/calendarTitles';
 import { dayOfWeek, formatMinute, MINUTES_PER_DAY } from '../../calendar/zonedTime';
 import { formatTimingRange, ghostPieces, resizeEdgeAt, tapCreateMinute } from '../../calendar/weekGestures';
-import type { CalendarInteractions } from './calendarInteractions';
+import type { CalendarInteractions, TaskDropPreview } from './calendarInteractions';
 import { useWeekDrag } from './useWeekDrag';
+import DeadlineChip from './DeadlineChip';
+import type { CalendarDeadline } from '../../calendar/taskDeadlines';
 
 // 時刻の列の幅（移植元 WeekCalendarView.xaml の ColumnDefinition 56）。
 export const TIME_COLUMN_WIDTH = 56;
@@ -30,20 +34,26 @@ interface Props extends Pick<CalendarInteractions, 'onCreateRange' | 'onReschedu
   timeZone: string;
   segmentsByDate: ReadonlyMap<string, DaySegment[]>;
   holidays: readonly CalendarHoliday[];
+  deadlines: readonly CalendarDeadline[];
   today: string;
   nowMinute: number;
   selectedDate: string | null;
   selectedSegmentKey: string | null;
   onSelectDate: (date: string) => void;
   onSelectSegment: (segment: DaySegment) => void;
+  /** 予定に結んだタスクの印（色・題名） */
+  linkedTasks?: ReadonlyMap<number, LinkedTask>;
+  /** タスクの一覧から引いている途中の行き先 */
+  dropPreview?: TaskDropPreview | null;
 }
 
 /**
  * 週表示・平日表示（移植元 WeekCalendarView）。左に時刻の列、上に終日の帯、下に 1px = 1 分の時間グリッド。
  */
 const WeekView: React.FC<Props> = ({
-  dates, timeZone, segmentsByDate, holidays, today, nowMinute, selectedDate, selectedSegmentKey,
+  dates, timeZone, segmentsByDate, holidays, deadlines, today, nowMinute, selectedDate, selectedSegmentKey,
   onSelectDate, onSelectSegment, onCreateRange, onRescheduleOccurrence, onEditOccurrence, onCreateEvent,
+  linkedTasks, dropPreview,
 }) => {
   const { t, weekdays } = useI18n();
   const c = useTheme().palette.calendar;
@@ -58,11 +68,16 @@ const WeekView: React.FC<Props> = ({
     if (ghost) ghostPieces(ghost.timing).forEach((p, i) => map.set(p.date, { ...p, first: i === 0 }));
     return map;
   }, [ghost]);
+  const dropByDate = useMemo(() => {
+    const map = new Map<string, { startMinute: number; endMinute: number; first: boolean }>();
+    if (dropPreview) ghostPieces(dropPreview).forEach((p, i) => map.set(p.date, { ...p, first: i === 0 }));
+    return map;
+  }, [dropPreview]);
 
   const allDay = useMemo(() => {
     const segments = dates.flatMap((d) => segmentsByDate.get(d) ?? []);
-    return layoutAllDayLane(segments, dates[0], dates.length, holidays);
-  }, [dates, segmentsByDate, holidays]);
+    return layoutAllDayLane(segments, dates[0], dates.length, holidays, deadlines);
+  }, [dates, segmentsByDate, holidays, deadlines]);
 
   const blocksByDate = useMemo(() => {
     const map = new Map<string, WeekEventBlock[]>();
@@ -172,8 +187,23 @@ const WeekView: React.FC<Props> = ({
               sx={{ position: 'relative', minWidth: 0, bgcolor: hasEvents ? c.allDayTint : 'transparent', ...divider(date, 'middle') }}
             >
               {blocks.map((b) => {
+                if (b.deadline) {
+                  return (
+                    <Box
+                      key={b.deadline.key}
+                      sx={{ position: 'absolute', top: b.row * ALL_DAY_ROW_HEIGHT + 1, left: 0, right: '4px' }}
+                    >
+                      <DeadlineChip
+                        deadline={b.deadline}
+                        height={ALL_DAY_CHIP_HEIGHT}
+                        fontSize={10}
+                        onClick={(e) => { e.stopPropagation(); onSelectDate(date); }}
+                      />
+                    </Box>
+                  );
+                }
                 const segment = b.segment;
-                const bg = segment ? eventColor(segment.occurrence.color_key) : c.red;
+                const bg = segment ? occurrenceColor(segment.occurrence, linkedTasks) : c.red;
                 const title = segment ? segment.occurrence.title : b.holiday?.name ?? '';
                 const selected = segment != null && segment.key === selectedSegmentKey;
                 return (
@@ -240,15 +270,16 @@ const WeekView: React.FC<Props> = ({
               {(blocksByDate.get(date) ?? []).map((block) => {
                 const segment = block.segment;
                 const o = segment.occurrence;
-                const bg = eventColor(o.color_key);
+                const bg = occurrenceColor(o, linkedTasks);
                 const selected = segment.key === selectedSegmentKey;
                 const range = formatSegmentTimeRange(segment);
+                const taskLabel = linkedTaskLabel(o, linkedTasks);
                 const dragging = ghost != null && ghost.occurrenceId === o.id;
                 return (
                   <Box
                     key={segment.key}
                     data-occurrence-id={o.id}
-                    title={`${o.title}\n${range}${o.location ? `\n${o.location}` : ''}`}
+                    title={`${o.title}\n${range}${taskLabel ? `\n${t('calendar.linkedTask', { title: taskLabel })}` : ''}${o.location ? `\n${o.location}` : ''}`}
                     onPointerDown={onRescheduleOccurrence ? (e) => { e.stopPropagation(); drag.onEventPointerDown(e, block, edgeOf(e, segment)); } : undefined}
                     onPointerMove={onRescheduleOccurrence ? (e) => {
                       // 端は上下の矢印、ほかは移動の矢印（移植元 OnChipPointerMoved）。ドラッグ中は変えない。
@@ -273,7 +304,12 @@ const WeekView: React.FC<Props> = ({
                       <Box sx={{ ...chipText, flex: 1 }}>{o.title}</Box>
                       {occurrenceMark(segment)}
                     </Box>
-                    {block.height >= 32 && <Box sx={{ ...chipText, fontSize: 9, opacity: 0.9 }}>{range}</Box>}
+                    {taskLabel && block.height >= 32 && (
+                      <Box data-testid="occurrence-task" sx={{ ...chipText, fontSize: 9, fontWeight: 600 }}>
+                        {t('calendar.linkedTask', { title: taskLabel })}
+                      </Box>
+                    )}
+                    {block.height >= (taskLabel ? 46 : 32) && <Box sx={{ ...chipText, fontSize: 9, opacity: 0.9 }}>{range}</Box>}
                   </Box>
                 );
               })}
@@ -296,6 +332,24 @@ const WeekView: React.FC<Props> = ({
                     }}
                   >
                     {piece.first ? formatTimingRange(ghost.timing) : null}
+                  </Box>
+                );
+              })()}
+              {/* タスクの一覧から引いている行き先（task #159） */}
+              {dropPreview && (() => {
+                const piece = dropByDate.get(date);
+                if (!piece) return null;
+                return (
+                  <Box
+                    data-testid={piece.first ? 'task-drop-ghost' : undefined}
+                    sx={{
+                      position: 'absolute', zIndex: 4, pointerEvents: 'none', boxSizing: 'border-box',
+                      top: piece.startMinute, height: Math.max(piece.endMinute - piece.startMinute, 15), left: 0, width: '100%',
+                      bgcolor: c.dragGhost, borderRadius: '6px', borderTop: piece.first ? `2px solid ${c.blue}` : 'none',
+                      px: '6px', pt: '4px', color: c.onColor, fontSize: 10, whiteSpace: 'nowrap', overflow: 'hidden',
+                    }}
+                  >
+                    {piece.first ? `${formatTimingRange(dropPreview)}  ${dropPreview.title}` : null}
                   </Box>
                 );
               })()}

@@ -1,5 +1,7 @@
 import React, { useEffect, useMemo, useRef } from 'react';
-import { Box, Checkbox } from '@mui/material';
+import { Box, Checkbox, IconButton, Tooltip } from '@mui/material';
+import MoreTimeIcon from '@mui/icons-material/MoreTime';
+import { scheduleTaskPath } from '../calendar/taskScheduling';
 import { useNavigate } from 'react-router-dom';
 import type { Task, Category } from '../types';
 import { displayStatus, parseDate, todayDate } from '../utils/format';
@@ -45,6 +47,8 @@ interface Props {
 const GanttChart: React.FC<Props> = ({ tasks, categories, showMeta = true, onToggleDone }) => {
   const navigate = useNavigate();
   const { t, weekdays } = useI18n();
+  // 行の中では `t` をタスクの変数に使っているので、訳は別名で持つ
+  const tr = t;
   const today = todayDate();
 
   const { rangeStart, days } = useMemo(() => {
@@ -115,6 +119,18 @@ const GanttChart: React.FC<Props> = ({ tasks, categories, showMeta = true, onTog
               {t.title}
             </Box>
             {showMeta && <PriorityChip priority={t.priority} />}
+            {t.status !== 'DONE' && t.status !== 'CANCELLED' && (
+              <Tooltip title={tr('task.scheduleTime')}>
+                <IconButton
+                  size="small"
+                  aria-label={tr('task.scheduleTime')}
+                  onClick={() => navigate(scheduleTaskPath(t.id))}
+                  sx={{ p: '4px', color: ds.textSub }}
+                >
+                  <MoreTimeIcon sx={{ fontSize: 18 }} />
+                </IconButton>
+              </Tooltip>
+            )}
           </Box>
         ))}
       </Box>

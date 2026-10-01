@@ -132,8 +132,8 @@ export const theme = createTheme({
   },
 });
 
-// 暗いテーマ。いまはカレンダーの見本ページ（/calendar-preview）だけが使う。他の画面は `ds` の明るい色を
-// 直に書いているので、アプリ全体を暗くするのは別の課題。
+// 暗いテーマ（カレンダーの部品は `palette.calendar` の暗い側で描ける）。いまは使う画面が無い。
+// 他の画面は `ds` の明るい色を直に書いているので、アプリ全体を暗くするのは別の課題。
 export const darkTheme = createTheme({
   palette: {
     mode: 'dark',

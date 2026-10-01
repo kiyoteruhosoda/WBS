@@ -47,6 +47,11 @@ class UserClock:
         self._zones[user_id] = resolved
         return resolved
 
+    def zone_name(self, user_id: int) -> str:
+        """利用者のタイムゾーンの IANA 名（``zone`` が UTC に倒したときは ``"UTC"``）。"""
+        zone = self.zone(user_id)
+        return zone.key if isinstance(zone, ZoneInfo) else "UTC"
+
     def today(self, user_id: int) -> date:
         cached = self._today.get(user_id)
         if cached is not None:

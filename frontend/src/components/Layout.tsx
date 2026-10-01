@@ -35,7 +35,6 @@ const pageTitles: { pattern: RegExp; titleKey: TranslationKey }[] = [
   { pattern: /^\/tasks$/, titleKey: 'nav.tasks' },
   { pattern: /^\/gantt$/, titleKey: 'nav.gantt' },
   { pattern: /^\/calendar$/, titleKey: 'nav.calendar' },
-  { pattern: /^\/calendar-preview$/, titleKey: 'calendar.previewTitle' },
   { pattern: /^\/inbox$/, titleKey: 'nav.inbox' },
   { pattern: /^\/categories$/, titleKey: 'nav.categories' },
   { pattern: /^\/milestones$/, titleKey: 'nav.milestones' },

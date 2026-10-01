@@ -17,6 +17,7 @@ from src.application.use_cases.backchannel_logout_use_cases import ReceiveBackch
 from src.application.use_cases.business_calendar_use_cases import BusinessCalendarUseCases
 from src.application.use_cases.calendar_event_use_cases import CalendarEventUseCases
 from src.application.use_cases.closing_use_cases import ClosingUseCases
+from src.application.use_cases.task_use_cases import TaskUseCases
 from src.application.use_cases.time_entry_use_cases import TimeEntryUseCases
 from src.domain.exceptions import AuthenticationError
 from src.infrastructure.auth.auth_settings import SINGLE_USER_ID, AuthSettings
@@ -176,6 +177,13 @@ def get_calendar_event_use_cases(db: DbDep) -> CalendarEventUseCases:
     )
 
 CalendarEventUseCasesDep = Annotated[CalendarEventUseCases, Depends(get_calendar_event_use_cases)]
+
+
+def get_task_use_cases(db: DbDep) -> TaskUseCases:
+    """タスクのユースケース。「予定済みの時間」は予定のユースケースから引く（ADR-0014）。"""
+    return TaskUseCases(db, scheduled_time=get_calendar_event_use_cases(db))
+
+TaskUseCasesDep = Annotated[TaskUseCases, Depends(get_task_use_cases)]
 
 
 def get_business_calendar_use_cases(db: DbDep) -> BusinessCalendarUseCases:

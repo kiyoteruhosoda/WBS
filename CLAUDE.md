@@ -111,6 +111,20 @@ presentation/web/
 
 ---
 
+## ビルドとデプロイ
+
+成果物は api（`Dockerfile`）と web（`frontend/Dockerfile`）の 2 本のイメージ。押す口は deck
+（build → pin → deploy）で、build の表は deploy-repo の `resources/build-matrix.json`。
+
+- **版はビルドの前に刻む**（ADR-0011）。`scripts/generate_version.sh` が
+  `src/infrastructure/version.json` を作り、`/info` がそれを読む。build-matrix の `wbs-api` の
+  `pre_build` が `true` でないと、イメージは `git_sha: "dev"` を名乗る（ビルドは緑のまま）。
+- **`--build-arg` で版を渡さない。`Dockerfile` に版を受け取る `ARG` を足さない。**
+  deck は互換のため `COMMIT_HASH` などを渡してくるが、受け口が無いので無視される。
+- **生成物 `src/infrastructure/version.json` をコミットしない**（`.gitignore` 済み）。
+
+---
+
 ## 権限管理
 
 - 認可は **ロールではなく scope（権限コード値）** で行う。ロール名での分岐禁止。

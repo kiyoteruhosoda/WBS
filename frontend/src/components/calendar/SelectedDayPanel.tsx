@@ -9,22 +9,29 @@ import { TrashIcon } from '../icons';
 import type { CalendarHoliday } from '../../types';
 import type { DaySegment } from '../../calendar/daySegments';
 import { formatOccurrenceTimeRange } from '../../calendar/daySegments';
-import { eventColor } from '../../calendar/calendarColors';
+import type { LinkedTask } from '../../calendar/taskScheduling';
+import { linkedTaskLabel, occurrenceColor } from '../../calendar/taskScheduling';
 import { formatSelectedDay } from '../../calendar/calendarTitles';
 import type { CalendarInteractions } from './calendarInteractions';
+import type { CalendarDeadline } from '../../calendar/taskDeadlines';
+import DeadlineChip from './DeadlineChip';
 
-interface Props extends Pick<CalendarInteractions, 'onCreateEvent' | 'onEditOccurrence' | 'onDeleteOccurrence'> {
+interface Props extends Pick<CalendarInteractions, 'onCreateEvent' | 'onEditOccurrence' | 'onDeleteOccurrence' | 'onOpenDeadline'> {
   date: string;
   segments: readonly DaySegment[];
+  deadlines: readonly CalendarDeadline[];
   holidays: readonly CalendarHoliday[];
   timeZone: string;
   selectedSegmentKey: string | null;
   onClose: () => void;
+  /** 予定に結んだタスクの印（色・題名） */
+  linkedTasks?: ReadonlyMap<number, LinkedTask>;
 }
 
 /** 選んだ日の予定の一覧（移植元 CalendarPage.xaml の SelectedDayPanel）。 */
 const SelectedDayPanel: React.FC<Props> = ({
-  date, segments, holidays, timeZone, selectedSegmentKey, onClose, onCreateEvent, onEditOccurrence, onDeleteOccurrence,
+  date, segments, deadlines, holidays, timeZone, selectedSegmentKey, onClose, onCreateEvent, onEditOccurrence, onDeleteOccurrence,
+  onOpenDeadline, linkedTasks,
 }) => {
   const { t, weekdays } = useI18n();
   const c = useTheme().palette.calendar;
@@ -49,6 +56,19 @@ const SelectedDayPanel: React.FC<Props> = ({
       {holidayNames.length > 0 && (
         <Box sx={{ fontSize: 12, mx: '12px', mb: '4px', color: c.holidayText }}>{holidayNames.join('  /  ')}</Box>
       )}
+      {deadlines.length > 0 && (
+        <Box data-testid="selected-day-deadlines" sx={{ display: 'flex', flexDirection: 'column', gap: '4px', mx: '12px', mb: '6px' }}>
+          {deadlines.map((d) => (
+            <DeadlineChip
+              key={d.key}
+              deadline={d}
+              height={28}
+              fontSize={13}
+              onClick={onOpenDeadline ? () => onOpenDeadline(d) : undefined}
+            />
+          ))}
+        </Box>
+      )}
       {segments.length === 0 ? (
         <Box sx={{ fontSize: 13, mx: '12px', my: '8px', color: c.textSecondary }}>{t('calendar.noEvents')}</Box>
       ) : (
@@ -60,6 +80,7 @@ const SelectedDayPanel: React.FC<Props> = ({
               o.is_moved ? t('calendar.badgeMoved') : null,
               o.is_overridden ? t('calendar.badgeModified') : null,
             ].filter(Boolean).join('  ');
+            const taskLabel = linkedTaskLabel(o, linkedTasks);
             return (
               <Box
                 component="li"
@@ -70,11 +91,16 @@ const SelectedDayPanel: React.FC<Props> = ({
                   bgcolor: segment.key === selectedSegmentKey ? c.surfaceVariant : 'transparent',
                 }}
               >
-                <Box sx={{ width: 4, height: 32, borderRadius: '2px', bgcolor: eventColor(o.color_key), flexShrink: 0 }} />
+                <Box sx={{ width: 4, height: 32, borderRadius: '2px', bgcolor: occurrenceColor(o, linkedTasks), flexShrink: 0 }} />
                 <Box sx={{ flex: 1, minWidth: 0 }}>
                   <Box sx={{ fontSize: 14, color: c.textPrimary, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {o.title}
                   </Box>
+                  {taskLabel && (
+                    <Box sx={{ fontSize: 12, color: c.textSecondary, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {t('calendar.linkedTask', { title: taskLabel })}
+                    </Box>
+                  )}
                   <Box sx={{ fontSize: 12, color: c.textSecondary }}>
                     {range ?? t('calendar.allDay')}
                     {o.location ? `  ${o.location}` : ''}

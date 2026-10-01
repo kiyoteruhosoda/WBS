@@ -2,6 +2,7 @@
 
 import type { CalendarHoliday } from '../types';
 import type { DaySegment } from './daySegments';
+import type { CalendarDeadline } from './taskDeadlines';
 import { dayOfWeek, firstOfMonth } from './zonedTime';
 import { monthGridDates } from './calendarNavigation';
 
@@ -15,6 +16,8 @@ export interface MonthCell {
   dayOfWeek: number;
   holiday: CalendarHoliday | null;
   segments: DaySegment[];
+  /** その日が期限のタスク・マイルストーン（予定の後に並べる） */
+  deadlines: CalendarDeadline[];
 }
 
 /** 日付 → 祝日（同じ日に 2 つあれば先のもの）。 */
@@ -29,6 +32,7 @@ export const buildMonthCells = (
   today: string,
   segmentsByDate: ReadonlyMap<string, DaySegment[]>,
   holidays: readonly CalendarHoliday[],
+  deadlinesByDate: ReadonlyMap<string, CalendarDeadline[]> = new Map(),
 ): MonthCell[] => {
   const holidayMap = holidaysByDate(holidays);
   const monthKey = firstOfMonth(month);
@@ -40,6 +44,7 @@ export const buildMonthCells = (
     dayOfWeek: dayOfWeek(date),
     holiday: holidayMap.get(date) ?? null,
     segments: segmentsByDate.get(date) ?? [],
+    deadlines: deadlinesByDate.get(date) ?? [],
   }));
 };
 
