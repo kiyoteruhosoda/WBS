@@ -195,12 +195,14 @@ class CalendarEventModel(Base):
     繰り返しの規則は値オブジェクトなので JSON の文字列で持つ（``recurrence_rule``）。
     ``span_start_day`` / ``span_end_day`` は ``CalendarEvent.indexed_day_span()``
     （``date.toordinal()``）で、期間で粗く絞るための索引付きの列。
-    ``version`` は楽観ロック（ORM の ``version_id_col`` で UPDATE の条件に入る）。
+    ``version`` は楽観ロック（リポジトリが「読んだ版なら書き換える」UPDATE で確かめる）。
     """
 
     __tablename__ = "calendar_events"
     __table_args__ = (
         sa.Index("ix_calendar_events_user_span", "user_id", "span_start_day", "span_end_day"),
+        # 消した予定の id を使い回さない（古い画面が、同じ id の別の予定を直してしまわないように）
+        {"sqlite_autoincrement": True},
     )
     id: Mapped[int] = mapped_column(BigIntPK, primary_key=True, autoincrement=True)
     user_id: Mapped[int] = mapped_column(sa.BigInteger().with_variant(sa.Integer(), "sqlite"), sa.ForeignKey("users.id"), nullable=False)
@@ -226,8 +228,6 @@ class CalendarEventModel(Base):
     moves: Mapped[list[CalendarEventMoveModel]] = relationship(
         cascade="all, delete-orphan", order_by="CalendarEventMoveModel.id", lazy="selectin"
     )
-
-    __mapper_args__ = {"version_id_col": version, "version_id_generator": False}
 
 
 class CalendarEventExceptionModel(Base):
@@ -276,6 +276,7 @@ class BusinessCalendarModel(Base):
     """営業日カレンダー。``workdays`` は曜日の略号（``MO``〜``SU``）をカンマでつないだもの。"""
 
     __tablename__ = "business_calendars"
+    __table_args__ = ({"sqlite_autoincrement": True},)
     id: Mapped[int] = mapped_column(BigIntPK, primary_key=True, autoincrement=True)
     user_id: Mapped[int] = mapped_column(sa.BigInteger().with_variant(sa.Integer(), "sqlite"), sa.ForeignKey("users.id"), nullable=False, index=True)
     name: Mapped[str] = mapped_column(sa.String(200), nullable=False)

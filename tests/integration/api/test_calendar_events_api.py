@@ -70,7 +70,7 @@ def _create(client, **fields) -> dict:
 
 
 def _weekly(client, **fields) -> dict:
-    return _create(client, title="定例", recurrence=WEEKLY_MON_WED, **fields)
+    return _create(client, **{"title": "定例", "recurrence": WEEKLY_MON_WED, **fields})
 
 
 def _occurrences(client, start: str, end: str, **params) -> list[dict]:
@@ -366,7 +366,11 @@ def test_following_from_the_first_occurrence_replaces_the_series(client) -> None
               "recurrence": WEEKLY_MON_WED},
     )
     assert res.status_code == 201, res.text
-    assert client.get(f"/api/calendar/events/{series['id']}").status_code == 404
+    # 元の系列は消え、新しい系列だけが残る（SQLite は消えた id を使い回しうるので id では比べない）
+    events = client.get(
+        "/api/calendar/events", params={"from": "2026-10-05", "to": "2026-10-11"}
+    ).json()
+    assert [e["title"] for e in events] == ["全部入れ替え"]
     assert {o["title"] for o in _occurrences(client, "2026-10-05", "2026-10-11")} == {"全部入れ替え"}
 
 

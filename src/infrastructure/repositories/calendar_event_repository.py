@@ -3,8 +3,9 @@
 - 例外と移動は子表（``calendar_event_exceptions`` / ``calendar_event_moves``）。保存のたびに
   集約の今の中身で置き換える。
 - 期間で引くときは ``span_start_day`` / ``span_end_day``（``indexed_day_span()``）で粗く絞る。
-- 楽観ロック: ``version`` は ORM の ``version_id_col``。UPDATE / DELETE の条件に**読んだときの**
-  版が入り、間に別の書き込みがあれば 0 行になって ``ConflictError``。
+- 楽観ロック: 書く前に ``UPDATE ... SET version = <新しい版> WHERE id = ? AND version = <読んだ版>``
+  を出し、1 行に当たらなければ（間に別の書き込みがあった）``ConflictError``。当たれば行の鍵を
+  握ったまま残りを書く。消すときも同じ確かめをしてから消す。
 - ⚠ ``save`` / ``delete`` は flush までで commit しない。確定はユースケースの ``UnitOfWork``。
 """
 
@@ -13,9 +14,8 @@ from __future__ import annotations
 import json
 from datetime import date
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.orm import Session
-from sqlalchemy.orm.exc import StaleDataError
 
 from src.application.recurrence_rule_mapping import (
     recurrence_rule_from_mapping,
@@ -70,7 +70,7 @@ class SqlAlchemyCalendarEventRepository(CalendarEventRepository):
             model = CalendarEventModel(user_id=event.user_id)
             self._copy_to_model(event, model)
             self._session.add(model)
-            self._flush(event)
+            self._session.flush()
             event.id = model.id
             return event
 
@@ -78,34 +78,40 @@ class SqlAlchemyCalendarEventRepository(CalendarEventRepository):
         if model is None or model.user_id != event.user_id:
             # 読んでから保存するまでの間に消された（または持ち主が違う）。
             raise ConflictError(f"calendar event {event.id} no longer exists")
+        self._claim_version(model, event.version)
         # 子表は置き換える。⚠ 同じ回の鍵を消して入れ直すと、ORM は INSERT を DELETE より先に
         #   出すので一意制約に当たる。先に消して flush してから入れる。
         model.exceptions.clear()
         model.moves.clear()
-        self._flush(event)
+        self._session.flush()
         self._copy_to_model(event, model)
-        self._flush(event)
+        self._session.flush()
         return event
 
     def delete(self, event_id: int) -> None:
         model = self._session.get(CalendarEventModel, event_id)
         if model is None:
             return
+        self._claim_version(model, model.version)
         self._session.delete(model)
-        try:
-            self._session.flush()
-        except StaleDataError as exc:
-            raise ConflictError(f"calendar event {event_id} was changed by someone else") from exc
+        self._session.flush()
 
     # ── 内側 ────────────────────────────────────────────────────────────
 
-    def _flush(self, event: CalendarEvent) -> None:
-        try:
-            self._session.flush()
-        except StaleDataError as exc:
-            raise ConflictError(
-                f"calendar event {event.id} was changed by someone else"
-            ) from exc
+    def _claim_version(self, model: CalendarEventModel, new_version: int) -> None:
+        """この接続が読んだ版のままなら版を ``new_version`` にする。違えば ``ConflictError``。
+
+        ``model.version`` はこの接続が読んだ（または前に書いた）版。条件付きの UPDATE が当たった
+        時点で行（SQLite は DB）の書き込みの鍵を握るので、確定までの間に割り込まれない。
+        """
+        table = CalendarEventModel.__table__
+        result = self._session.execute(
+            update(table)
+            .where(table.c.id == model.id, table.c.version == model.version)
+            .values(version=new_version)
+        )
+        if result.rowcount != 1:
+            raise ConflictError(f"calendar event {model.id} was changed by someone else")
 
     @staticmethod
     def _copy_to_model(event: CalendarEvent, model: CalendarEventModel) -> None:

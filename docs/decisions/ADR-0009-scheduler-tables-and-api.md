@@ -32,6 +32,8 @@ API を足す。ADR-0007 から持ち越した判断は 4 つ: リポジトリ�
 - **期間の索引の番号は `date.toordinal()`**（`CalendarEvent.indexed_day_span()` の値、余白 ±31 日込み）。
   移植元の `DayNumber` より 1 大きいが、比べる相手も同じ数え方なので揃っていればよい。
   索引は `(user_id, span_start_day, span_end_day)`。
+- `calendar_events` と `business_calendars` は SQLite の `AUTOINCREMENT` で、**消した id を使い回さない**
+  （使い回すと、古い画面が同じ id・同じ版 1 の別の予定を直してしまいうる）。
 - 時刻は `DATETIME`（naive な UTC）・壁時計の時刻は `TIME`・列挙は文字列（ネイティブ ENUM にしない）。
 
 ### リポジトリ
@@ -39,9 +41,12 @@ API を足す。ADR-0007 から持ち越した判断は 4 つ: リポジトリ�
 - **`save` / `delete` は flush までで commit しない。** 確定はユースケースの最後に `UnitOfWork.commit()`
   で 1 度（API では、このリクエストの `Session`）。「この回だけ」「以降」は 2 件を書くので、途中で
   落ちたら両方とも残らない。
-- **楽観ロックは表でも効かせる。** `version` を ORM の `version_id_col` にし、UPDATE / DELETE の条件に
-  **読んだときの**版を入れる。ユースケースの `ensure_version(expected_version)`（画面が読んだ版との比較）を
-  抜けても、読んでから書くまでの間に別のリクエストが書いていれば 0 行になり `ConflictError`（409）。
+- **楽観ロックは表でも効かせる。** 書く前に `UPDATE calendar_events SET version = <新しい版>
+  WHERE id = ? AND version = <この接続が読んだ版>` を出し、1 行に当たらなければ `ConflictError`（409）。
+  消すときも同じ確かめをしてから消す。ユースケースの `ensure_version(expected_version)`（画面が読んだ版との
+  比較）を抜けても、読んでから書くまでの間に別のリクエストが書いていれば止まる。当たった時点で書き込みの
+  鍵を握るので、確定までの間に割り込まれない。ORM の `version_id_col` は使わなかった（版をアプリで
+  決める使い方では SQLite で食い違いを検出しなかった）。
 - 子表は保存のたびに集約の今の中身で置き換える。⚠ 同じ回の鍵を消して入れ直すと、ORM は INSERT を
   DELETE より先に出すので一意制約に当たる。先に消して flush してから入れる。
 

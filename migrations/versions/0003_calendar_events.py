@@ -47,6 +47,8 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(["task_id"], ["tasks.id"]),
         sa.ForeignKeyConstraint(["user_id"], ["users.id"]),
         sa.PrimaryKeyConstraint("id"),
+        # 消した id を使い回さない（古い画面が同じ id の別の予定を直さないように）
+        sqlite_autoincrement=True,
     )
     op.create_index(
         "ix_calendar_events_user_span",
@@ -106,6 +108,7 @@ def upgrade() -> None:
         sa.Column("updated_at", sa.DateTime(), nullable=False),
         sa.ForeignKeyConstraint(["user_id"], ["users.id"]),
         sa.PrimaryKeyConstraint("id"),
+        sqlite_autoincrement=True,
     )
     op.create_index(
         "ix_business_calendars_user_id", "business_calendars", ["user_id"], unique=False
