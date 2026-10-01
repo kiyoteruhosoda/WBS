@@ -49,7 +49,7 @@ interface Notice {
 const FOCUS_MS = 2500;
 
 /**
- * 締め（task #161 / ADR-0012・ADR-0015）。普段は Start / Stop しかさせない代わりに、ここで打刻を楽に直して
+ * 締め（task #161 / ADR-0012・ADR-0016）。普段は Start / Stop しかさせない代わりに、ここで打刻を楽に直して
  * 期間を確定する。左に予定・右に打刻の時間グリッド、気付かせる物の一覧、日ごと・タスクごとの合計。
  */
 const ClosingPage: React.FC = () => {

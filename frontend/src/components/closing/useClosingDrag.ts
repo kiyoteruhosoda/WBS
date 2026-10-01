@@ -10,7 +10,7 @@ import {
   draggedEntryRange, entryCreateRange, laneIndexAt, sameRange, zonedInstant,
 } from '../../closing/entryGestures';
 
-// 締めの画面の打刻のドラッグ（task #161 / ADR-0015）。週表示の `useWeekDrag` と同じ道（ポインタイベントだけで
+// 締めの画面の打刻のドラッグ（task #161 / ADR-0016）。週表示の `useWeekDrag` と同じ道（ポインタイベントだけで
 // 追う・8px 動けば移動・端のつかみを縦に動かせば伸ばす・指は長押しで空き時間から作る・Esc で取り消す）で、
 // 違いは「右の打刻の列だけを相手にする」「秒を保つ」「Shift で 1 分刻み」。
 

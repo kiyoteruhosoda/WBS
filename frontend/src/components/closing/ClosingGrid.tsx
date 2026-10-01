@@ -58,7 +58,7 @@ interface Props {
 }
 
 /**
- * 締めの画面の時間グリッド（task #161 / ADR-0015）。週表示と同じ 1px = 1 分の時間グリッドで、
+ * 締めの画面の時間グリッド（task #161 / ADR-0016）。週表示と同じ 1px = 1 分の時間グリッドで、
  * 各日の列を左（予定）と右（打刻）の 2 本に分ける。期間（最大 16 日）を横に並べ、入らなければ横に送る。
  */
 const ClosingGrid: React.FC<Props> = ({
@@ -301,7 +301,8 @@ const ClosingGrid: React.FC<Props> = ({
             key={date}
             data-date={date}
             sx={{
-              display: 'grid', gridTemplateColumns: '1fr 1fr', height: MINUTES_PER_DAY, position: 'relative',
+              // zIndex 0 で重なりの文脈を閉じる（ゴーストが横に貼り付いた時刻の列の上へ出ない）
+              display: 'grid', gridTemplateColumns: '1fr 1fr', height: MINUTES_PER_DAY, position: 'relative', zIndex: 0,
               borderLeft: `1px solid ${c.gridLine}`, bgcolor: dayBackground(date),
             }}
           >
