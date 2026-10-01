@@ -45,6 +45,9 @@ services:
       MACHINE_PRIVATE_KEY_KID: ${MACHINE_PRIVATE_KEY_KID:-}
       # 打刻アプリの assay の client_id（ADR-0018）。空なら Bearer は通さない。
       APP_CLIENT_IDS: ${APP_CLIENT_IDS:-}
+      # App Links の検証ファイルの中身（ADR-0019）。どちらかが空ならファイルを出さない。
+      ANDROID_APP_PACKAGE: ${ANDROID_APP_PACKAGE:-}
+      ANDROID_APP_CERT_FINGERPRINTS: ${ANDROID_APP_CERT_FINGERPRINTS:-}
       AUTH_SESSION_TTL_HOURS: ${AUTH_SESSION_TTL_HOURS:-12}
       AUTH_COOKIE_NAME: ${AUTH_COOKIE_NAME:-wbs_session}
       AUTH_COOKIE_SECURE: ${AUTH_COOKIE_SECURE:-true}

@@ -57,6 +57,11 @@ class AuthSettings:
     #: assay のアクセストークン（``Authorization: Bearer``）を受け取ってよいアプリの
     #: ``client_id``（ADR-0018）。⚠ **環境変数だけ。空なら Bearer は 1 本も通さない。**
     app_client_ids: frozenset[str] = frozenset()
+    #: App Links の検証ファイル（``/.well-known/assetlinks.json``）の中身（ADR-0019）。
+    #: アプリ（打刻アプリ）のパッケージ名と、署名証明書の SHA-256 指紋（``AA:BB:…``）。
+    #: ⚠ **環境変数だけ。どちらかが空ならファイルは出さない（404）。**
+    android_app_package: str = ""
+    android_app_cert_fingerprints: tuple[str, ...] = ()
 
     @property
     def sso_enabled(self) -> bool:
@@ -180,4 +185,6 @@ def load_auth_settings() -> AuthSettings:
         machine_private_key_file=os.getenv("MACHINE_PRIVATE_KEY_FILE", "").strip(),
         machine_private_key_kid=os.getenv("MACHINE_PRIVATE_KEY_KID", "").strip() or None,
         app_client_ids=_env_list("APP_CLIENT_IDS"),
+        android_app_package=os.getenv("ANDROID_APP_PACKAGE", "").strip(),
+        android_app_cert_fingerprints=tuple(sorted(_env_list("ANDROID_APP_CERT_FINGERPRINTS"))),
     )

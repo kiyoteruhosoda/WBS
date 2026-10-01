@@ -21,6 +21,7 @@ def clean_auth_env(monkeypatch):
         "OIDC_ALLOWED_EMAIL_DOMAINS", "OIDC_REQUIRE_VERIFIED_EMAIL", "AUTH_SESSION_TTL_HOURS",
         "AUTH_COOKIE_NAME", "AUTH_COOKIE_SECURE", "AUTH_COOKIE_SAMESITE",
         "AUTH_POST_LOGOUT_REDIRECT_URI", "OIDC_HTTP_TIMEOUT_SECONDS", "APP_CLIENT_IDS",
+        "ANDROID_APP_PACKAGE", "ANDROID_APP_CERT_FINGERPRINTS",
     ]:
         monkeypatch.delenv(key, raising=False)
 
@@ -123,3 +124,17 @@ def test_a_broken_app_client_ids_list_is_refused(monkeypatch) -> None:
     _use_oidc(monkeypatch, APP_CLIENT_IDS='["app-1"')
     with pytest.raises(AuthConfigurationError):
         load_auth_settings()
+
+
+def test_app_links_are_off_by_default(monkeypatch) -> None:
+    settings = load_auth_settings()
+    assert settings.android_app_package == ""
+    assert settings.android_app_cert_fingerprints == ()
+
+
+def test_app_links_values_are_read(monkeypatch) -> None:
+    monkeypatch.setenv("ANDROID_APP_PACKAGE", " com.nolumia.wbstimer ")
+    monkeypatch.setenv("ANDROID_APP_CERT_FINGERPRINTS", '["BB:00", "AA:00"]')
+    settings = load_auth_settings()
+    assert settings.android_app_package == "com.nolumia.wbstimer"
+    assert settings.android_app_cert_fingerprints == ("AA:00", "BB:00")
