@@ -120,3 +120,27 @@ export const taskUrgencyOf = (
   }
   return task.status === 'DOING' ? 'doing' : 'started';
 };
+
+/** 「予定を作る」で開く枠の刻み（分）。週表示のドラッグの刻み（15 分）に揃える。 */
+export const FREE_SLOT_STEP_MINUTES = 15;
+
+/**
+ * 「予定を作る」（task #185）で開く枠の開始: 今の後の最初の 15 分刻みで、時刻のある予定と重ならず
+ * `durationMinutes` が今日の中に収まる位置。空きが無ければ、重なってもよいので今の後の 15 分刻み
+ * （今日の終わりに収まるように前へ寄せる）。終日の予定は時間を塞がないので見ない。
+ */
+export const nextFreeStartMinute = (
+  segments: readonly DaySegment[],
+  nowMinute: number,
+  durationMinutes: number,
+): number => {
+  const step = FREE_SLOT_STEP_MINUTES;
+  const first = Math.ceil(Math.max(0, nowMinute) / step) * step;
+  const latest = Math.floor((MINUTES_PER_DAY - durationMinutes) / step) * step;
+  const timed = segments.filter((s) => !s.isAllDay);
+  for (let start = first; start <= latest; start += step) {
+    const end = start + durationMinutes;
+    if (!timed.some((s) => s.startMinute < end && start < s.endMinute)) return start;
+  }
+  return Math.max(0, Math.min(first, latest));
+};

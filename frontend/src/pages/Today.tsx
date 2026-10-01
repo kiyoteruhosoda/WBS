@@ -1,7 +1,12 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Alert, Box, Button, ButtonBase, CircularProgress, useMediaQuery } from '@mui/material';
+import {
+  Alert, Box, Button, ButtonBase, CircularProgress, IconButton, Tooltip, useMediaQuery,
+} from '@mui/material';
 import { useTheme } from '@mui/material/styles';
+import AddIcon from '@mui/icons-material/Add';
+import UndoIcon from '@mui/icons-material/Undo';
+import RedoIcon from '@mui/icons-material/Redo';
 import { useNavigate } from 'react-router-dom';
 import { useI18n } from '../i18n';
 import type { TranslationKey } from '../i18n/translations';
@@ -13,6 +18,7 @@ import { getCategories } from '../api/categories';
 import { getMilestones } from '../api/milestones';
 import { getDashboardKpi } from '../api/dashboard';
 import WeekView from '../components/calendar/WeekView';
+import { useCalendarEditing } from '../components/calendar/useCalendarEditing';
 import CategoryDot from '../components/CategoryDot';
 import { useHeightToViewportBottom } from '../components/useHeightToViewportBottom';
 import TimerFailureNotice from '../components/TimerFailureNotice';
@@ -22,6 +28,8 @@ import { groupSegmentsByDate } from '../calendar/daySegments';
 import type { DaySegment } from '../calendar/daySegments';
 import type { DayBand } from '../calendar/weekLayout';
 import { buildDeadlines } from '../calendar/taskDeadlines';
+import { HOLIDAYS_QUERY, OCCURRENCES_QUERY } from '../calendar/calendarQueries';
+import { DEFAULT_DURATION_MINUTES } from '../calendar/eventForm';
 import type { LinkedTask } from '../calendar/taskScheduling';
 import { buildLinkedTasks, scheduleTaskPath } from '../calendar/taskScheduling';
 import { formatMinute, resolveTimeZone, toZonedPoint } from '../calendar/zonedTime';
@@ -30,7 +38,7 @@ import type { CurrentSnapshot } from '../timer/timerState';
 import { useCurrentTimeEntry, useTimerWrites } from '../timer/useTimer';
 import type { TaskUrgency } from '../today/todayView';
 import {
-  TASKS_SHOWN_FIRST, currentAndNext, entryBands, liveActuals, occurrenceStartOf, taskUrgencyOf,
+  TASKS_SHOWN_FIRST, currentAndNext, entryBands, liveActuals, nextFreeStartMinute, occurrenceStartOf, taskUrgencyOf,
 } from '../today/todayView';
 import { formatClockDuration, formatExactDuration, formatHours } from '../utils/format';
 
@@ -39,9 +47,8 @@ import { formatClockDuration, formatExactDuration, formatHours } from '../utils/
 //   2. 今日やるべきタスクのうち、まだ時間を取っていないもの（押すと「時間を取る」）
 //   3. 今日の実績（打刻の合計、タスク別）と全体の KPI
 // スマホ幅では上から この順。広い画面では左にグリッド、右に残りを積む。
+// グリッドではカレンダーの週表示と同じ操作で予定を作る・動かす・直す（task #185、ADR-0022）。
 
-const OCCURRENCES = 'calendar-occurrences';
-const HOLIDAYS = 'calendar-holidays';
 const UNASSIGNED_COLOR = ds.todoGray;
 /** グリッドを開いたとき、今の何分前を上端にするか（狭い画面でも今と次の予定が見える） */
 const SCROLL_LEAD_MINUTES = 60;
@@ -416,13 +423,14 @@ const Today: React.FC = () => {
   }, [date, now.date, qc]);
 
   const range = date ? { from: date, to: date } : null;
+  const occurrencesKey = useMemo(() => [OCCURRENCES_QUERY, date, date, timeZone] as const, [date, timeZone]);
   const occurrencesQuery = useQuery({
-    queryKey: [OCCURRENCES, date, date, timeZone],
+    queryKey: occurrencesKey,
     queryFn: () => getOccurrences(range as { from: string; to: string }, timeZone),
     enabled: range != null,
   });
   const holidaysQuery = useQuery({
-    queryKey: [HOLIDAYS, date, date],
+    queryKey: [HOLIDAYS_QUERY, date, date],
     queryFn: () => getHolidays(range as { from: string; to: string }),
     enabled: range != null,
   });
@@ -431,6 +439,8 @@ const Today: React.FC = () => {
   const { data: milestones } = useQuery({ queryKey: ['milestones'], queryFn: getMilestones });
   const { data: current } = useCurrentTimeEntry();
   const writes = useTimerWrites();
+  // 予定の書き込みと編集の画面はカレンダーと同じもの（task #185）
+  const editing = useCalendarEditing({ occurrencesKey, timeZone, tasks: tasks ?? [] });
 
   const linkedTasks = useMemo(
     () => buildLinkedTasks(tasks ?? [], categories ?? [], categoryColor),
@@ -462,6 +472,14 @@ const Today: React.FC = () => {
   const { current: currentSegment, next: nextSegment } = currentAndNext(todaySegments, now.date === date ? now.minute : -1);
   const start = (taskId: number) => writes.start.mutate(taskId);
   const taskTitle = (taskId: number | null) => (taskId != null ? linkedTasks.get(taskId)?.title : undefined);
+  // 「予定を作る」: 今の後で空いている最初の 15 分刻みから（今日を見ていないときは編集画面の既定の 9:00）
+  const addEvent = () => editing.openCreate(
+    date,
+    now.date === date ? nextFreeStartMinute(todaySegments, now.minute, DEFAULT_DURATION_MINUTES) : undefined,
+  );
+  // 予定を押したら編集（カレンダーは選んで日の一覧を出し二度押しで編集するが、ここには日の一覧が無い）
+  const editSegment = (segment: DaySegment) => editing.openEdit(segment.occurrence);
+  const toolButton = { width: 36, height: 36, color: ds.textSub } as const;
 
   return (
     <Box ref={fill.ref} sx={{
@@ -492,6 +510,35 @@ const Today: React.FC = () => {
         ...card, gridArea: 'grid', display: 'flex', flexDirection: 'column',
         height: { xs: '46vh', md: 'auto' }, minHeight: { xs: 300 }, alignSelf: { md: 'stretch' },
       }} data-testid="today-grid">
+        <Box sx={{ ...cardHeader, alignItems: 'center', py: '4px', pr: '8px', flexShrink: 0 }}>
+          <Box sx={sectionTitle}>{t('today.events')}</Box>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: '2px' }}>
+            <Tooltip title={t('calendar.undo')}>
+              <span>
+                <IconButton aria-label={t('calendar.undo')} onClick={editing.undo} disabled={!editing.canUndo} sx={toolButton}>
+                  <UndoIcon sx={{ fontSize: 18 }} />
+                </IconButton>
+              </span>
+            </Tooltip>
+            <Tooltip title={t('calendar.redo')}>
+              <span>
+                <IconButton aria-label={t('calendar.redo')} onClick={editing.redo} disabled={!editing.canRedo} sx={toolButton}>
+                  <RedoIcon sx={{ fontSize: 18 }} />
+                </IconButton>
+              </span>
+            </Tooltip>
+            <Button
+              size="small"
+              startIcon={<AddIcon />}
+              onClick={addEvent}
+              disabled={editing.busy}
+              data-testid="today-add-event"
+              sx={{ minHeight: 36, ml: '4px', whiteSpace: 'nowrap' }}
+            >
+              {t('calendar.addEvent')}
+            </Button>
+          </Box>
+        </Box>
         {occurrencesQuery.isError && <Alert severity="error" sx={{ borderRadius: 0 }}>{t('common.loadError')}</Alert>}
         <Box sx={{ flex: 1, minHeight: 0 }}>
           <WeekView
@@ -505,7 +552,10 @@ const Today: React.FC = () => {
             selectedDate={null}
             selectedSegmentKey={null}
             onSelectDate={() => undefined}
-            onSelectSegment={() => undefined}
+            onSelectSegment={editSegment}
+            onCreateEvent={editing.openCreate}
+            onCreateRange={(r) => editing.openCreate(r.date, r.startMinute, r.endMinute)}
+            onRescheduleOccurrence={editing.reschedule}
             linkedTasks={linkedTasks}
             bands={bands}
             scrollLeadMinutes={SCROLL_LEAD_MINUTES}
@@ -532,6 +582,7 @@ const Today: React.FC = () => {
       <KpiCard />
 
       <TimerFailureNotice failure={writes.failure} onClose={writes.clearFailure} />
+      {editing.dialogs}
     </Box>
   );
 };

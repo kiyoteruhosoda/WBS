@@ -4,7 +4,7 @@ import { groupSegmentsByDate } from '../calendar/daySegments';
 import { fromZonedPoint } from '../calendar/zonedTime';
 import { TOKYO, hm, occurrence } from '../calendar/testOccurrences';
 import {
-  currentAndNext, entryBands, liveActuals, occurrenceStartOf, taskUrgencyOf,
+  currentAndNext, entryBands, liveActuals, nextFreeStartMinute, occurrenceStartOf, taskUrgencyOf,
 } from './todayView';
 
 const DAY = '2026-09-10';
@@ -135,5 +135,32 @@ describe('今日やるべき理由', () => {
     expect(taskUrgencyOf({ due_date: '2026-09-11', status: 'TODO' }, DAY)).toBe('tomorrow');
     expect(taskUrgencyOf({ due_date: '2026-09-30', status: 'DOING' }, DAY)).toBe('doing');
     expect(taskUrgencyOf({ due_date: null, status: 'TODO' }, DAY)).toBe('started');
+  });
+});
+
+describe('「予定を作る」で開く枠（task #185）', () => {
+  const segmentsOf = (...list: ReturnType<typeof occurrence>[]) => groupSegmentsByDate(list, TOKYO).get(DAY) ?? [];
+
+  it('予定が無ければ、今の後の最初の 15 分刻み', () => {
+    expect(nextFreeStartMinute([], hm(10, 7), 30)).toBe(hm(10, 15));
+    expect(nextFreeStartMinute([], hm(10), 30)).toBe(hm(10));
+  });
+
+  it('時刻のある予定と重ならない最初の位置へ送る（終日の予定は見ない）', () => {
+    const segments = segmentsOf(
+      occurrence('a', DAY, hm(10), 60),
+      occurrence('b', DAY, hm(11, 15), 30),
+      occurrence('allday', DAY, 0, 1440),
+    );
+    // 10:00〜11:00 が埋まり、11:00〜11:15 は 30 分に足りない → 11:45
+    expect(nextFreeStartMinute(segments, hm(10, 5), 30)).toBe(hm(11, 45));
+    // 15 分なら 11:00 に入る
+    expect(nextFreeStartMinute(segments, hm(10, 5), 15)).toBe(hm(11));
+  });
+
+  it('今日の中に空きが無ければ、今の後の刻み（今日の終わりに収める）', () => {
+    const segments = segmentsOf(occurrence('evening', DAY, hm(22), 120));
+    expect(nextFreeStartMinute(segments, hm(22, 10), 30)).toBe(hm(22, 15));
+    expect(nextFreeStartMinute([], hm(23, 50), 30)).toBe(hm(23, 30));
   });
 });
