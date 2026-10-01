@@ -219,6 +219,16 @@ const ja = {
   'login.errorGeneric': 'ログインを完了できませんでした。',
 
   'account.signOut': 'ログアウト',
+
+  'timer.start': '開始',
+  'timer.stop': '停止',
+  'timer.unassigned': 'タスクなし',
+  'timer.startWithTask': 'タスクを選んで開始',
+  'timer.changeTask': 'タスクを変える',
+  'timer.noTasks': '進行中のタスクがありません',
+  'timer.longRunning': '12 時間を超えています（止め忘れなら、あとでまとめて直せます）',
+  'timer.error': '打刻できませんでした。もう一度押してください',
+  'timer.elapsed': '経過時間',
 };
 
 const en: Record<TranslationKey, string> = {
@@ -438,6 +448,16 @@ const en: Record<TranslationKey, string> = {
   'login.errorGeneric': 'Could not complete sign-in.',
 
   'account.signOut': 'Sign out',
+
+  'timer.start': 'Start',
+  'timer.stop': 'Stop',
+  'timer.unassigned': 'No task',
+  'timer.startWithTask': 'Start with a task',
+  'timer.changeTask': 'Change task',
+  'timer.noTasks': 'No open tasks',
+  'timer.longRunning': 'Running for over 12 hours (if you forgot to stop it, you can fix it later)',
+  'timer.error': 'Could not record the time. Please try again',
+  'timer.elapsed': 'Elapsed time',
 };
 
 export type TranslationKey = keyof typeof ja;

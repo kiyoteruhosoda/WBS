@@ -1,0 +1,118 @@
+"""打刻（task #154 / ADR-0008）。
+
+普段は ``POST /start`` と ``POST /stop`` だけ。画面の上部は ``GET /current`` を見る。
+期間の一覧・1 件の修正・削除は締めの画面（#161）のため。
+"""
+
+from __future__ import annotations
+
+from typing import Annotated
+
+from fastapi import APIRouter, Query, status
+from pydantic import AwareDatetime
+
+from src.application.dto.time_entry_dto import StartTimerCommand, UpdateTimeEntryCommand
+from src.application.dto.unset import UNSET
+from src.domain.exceptions import ValidationError
+from src.presentation.api.dependencies import CurrentUserDep, TimeEntryUseCasesDep
+from src.presentation.api.schemas.time_entry_schemas import (
+    CurrentTimeEntryResponse,
+    StartTimeEntryRequest,
+    StartTimeEntryResponse,
+    StopTimeEntryResponse,
+    TimeEntryResponse,
+    TimeEntryUpdateRequest,
+)
+from src.shared.clock import to_naive_utc, utcnow
+
+router = APIRouter(prefix="/time-entries", tags=["time-entries"])
+
+
+@router.get("/current", response_model=CurrentTimeEntryResponse)
+def get_current_time_entry(
+    uc: TimeEntryUseCasesDep, current_user: CurrentUserDep
+) -> CurrentTimeEntryResponse:
+    view = uc.current(current_user.user_id)
+    return CurrentTimeEntryResponse(
+        entry=TimeEntryResponse.from_view(view) if view is not None else None,
+        server_now=utcnow(),
+    )
+
+
+@router.post("/start", response_model=StartTimeEntryResponse, status_code=status.HTTP_201_CREATED)
+def start_time_entry(
+    uc: TimeEntryUseCasesDep,
+    current_user: CurrentUserDep,
+    body: StartTimeEntryRequest | None = None,
+) -> StartTimeEntryResponse:
+    body = body or StartTimeEntryRequest()
+    command = StartTimerCommand(
+        user_id=current_user.user_id,
+        # 送らなければ既定の順で決める。null は「未割当で始める」
+        task_id=body.task_id if "task_id" in body.model_fields_set else UNSET,
+        memo=body.memo,
+    )
+    result = uc.start(command)
+    return StartTimeEntryResponse(
+        started=TimeEntryResponse.from_view(result.started),
+        stopped=TimeEntryResponse.from_view(result.stopped) if result.stopped else None,
+        server_now=utcnow(),
+    )
+
+
+@router.post("/stop", response_model=StopTimeEntryResponse)
+def stop_time_entry(
+    uc: TimeEntryUseCasesDep, current_user: CurrentUserDep
+) -> StopTimeEntryResponse:
+    view = uc.stop(current_user.user_id)
+    return StopTimeEntryResponse(
+        stopped=TimeEntryResponse.from_view(view) if view is not None else None,
+        server_now=utcnow(),
+    )
+
+
+@router.get("", response_model=list[TimeEntryResponse])
+def list_time_entries(
+    uc: TimeEntryUseCasesDep,
+    current_user: CurrentUserDep,
+    start: Annotated[AwareDatetime, Query(description="区間の始まり（含む）。オフセット付き")],
+    end: Annotated[AwareDatetime, Query(description="区間の終わり（含まない）。オフセット付き")],
+) -> list[TimeEntryResponse]:
+    """``[start, end)`` に掛かる打刻を始まりの順に。日をまたぐ打刻は両方の日に出る。"""
+    views = uc.list_in_period(current_user.user_id, to_naive_utc(start), to_naive_utc(end))
+    return [TimeEntryResponse.from_view(v) for v in views]
+
+
+@router.get("/{entry_id}", response_model=TimeEntryResponse)
+def get_time_entry(
+    entry_id: int, uc: TimeEntryUseCasesDep, current_user: CurrentUserDep
+) -> TimeEntryResponse:
+    return TimeEntryResponse.from_view(uc.get(entry_id, current_user.user_id))
+
+
+@router.patch("/{entry_id}", response_model=TimeEntryResponse)
+def update_time_entry(
+    entry_id: int,
+    body: TimeEntryUpdateRequest,
+    uc: TimeEntryUseCasesDep,
+    current_user: CurrentUserDep,
+) -> TimeEntryResponse:
+    sent = body.model_fields_set
+    if "started_at" in sent and body.started_at is None:
+        raise ValidationError("started_at cannot be null")
+    if "ended_at" in sent and body.ended_at is None:
+        raise ValidationError("ended_at cannot be null (a stopped entry cannot run again)")
+    command = UpdateTimeEntryCommand(
+        started_at=to_naive_utc(body.started_at) if body.started_at is not None else UNSET,
+        ended_at=to_naive_utc(body.ended_at) if body.ended_at is not None else UNSET,
+        task_id=body.task_id if "task_id" in sent else UNSET,
+        memo=body.memo if "memo" in sent else UNSET,
+    )
+    return TimeEntryResponse.from_view(uc.update(entry_id, current_user.user_id, command))
+
+
+@router.delete("/{entry_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_time_entry(
+    entry_id: int, uc: TimeEntryUseCasesDep, current_user: CurrentUserDep
+) -> None:
+    uc.delete(entry_id, current_user.user_id)

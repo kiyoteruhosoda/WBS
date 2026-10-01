@@ -155,3 +155,33 @@ class LoginTransactionModel(Base):
     redirect_path: Mapped[str] = mapped_column(sa.String(512), nullable=False)
     created_at: Mapped[datetime] = mapped_column(sa.DateTime, nullable=False)
     expires_at: Mapped[datetime] = mapped_column(sa.DateTime, nullable=False, index=True)
+
+class TimeEntryModel(Base):
+    """打刻（下書き。締めで確定したものが ``work_logs`` になる。ADR-0008）。
+
+    ⚠ **走っている打刻（``ended_at`` が空）は 1 人 1 本**を、部分一意索引
+    ``uq_time_entries_running_per_user`` で DB でも守る（同時に 2 回 Start が来ても
+    2 本目は IntegrityError になる）。
+    """
+
+    __tablename__ = "time_entries"
+    __table_args__ = (
+        sa.Index(
+            "uq_time_entries_running_per_user",
+            "user_id",
+            unique=True,
+            sqlite_where=sa.text("ended_at IS NULL"),
+            postgresql_where=sa.text("ended_at IS NULL"),
+        ),
+        sa.Index("ix_time_entries_user_id_started_at", "user_id", "started_at"),
+    )
+    id: Mapped[int] = mapped_column(BigIntPK, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(sa.BigInteger().with_variant(sa.Integer(), "sqlite"), sa.ForeignKey("users.id"), nullable=False)
+    task_id: Mapped[int | None] = mapped_column(sa.BigInteger().with_variant(sa.Integer(), "sqlite"), sa.ForeignKey("tasks.id"), nullable=True)
+    started_at: Mapped[datetime] = mapped_column(sa.DateTime, nullable=False)
+    ended_at: Mapped[datetime | None] = mapped_column(sa.DateTime, nullable=True)
+    memo: Mapped[str | None] = mapped_column(sa.Text, nullable=True)
+    # TimeEntrySource の値（timer / manual / split）。ネイティブ ENUM にしない
+    source: Mapped[str] = mapped_column(sa.String(16), default="timer", nullable=False)
+    created_at: Mapped[datetime] = mapped_column(sa.DateTime, default=utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(sa.DateTime, default=utcnow, onupdate=utcnow, nullable=False)

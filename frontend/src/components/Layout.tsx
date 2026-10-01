@@ -5,6 +5,7 @@ import MenuIcon from '@mui/icons-material/Menu';
 import { ds } from '../theme';
 import { useI18n } from '../i18n';
 import { useAuth } from '../auth/AuthProvider';
+import TimerButton from './TimerButton';
 import type { TranslationKey } from '../i18n/translations';
 import {
   GridIcon, CheckListIcon, BarsIcon, CalendarIcon, InboxIcon,
@@ -176,7 +177,7 @@ const Layout: React.FC = () => {
           sx={{
             height: TOPBAR_HEIGHT, flexShrink: 0, bgcolor: ds.paper,
             borderBottom: `1px solid ${ds.border}`,
-            display: 'flex', alignItems: 'center', gap: 2, px: '20px',
+            display: 'flex', alignItems: 'center', gap: { xs: 1, sm: 2 }, px: { xs: '8px', sm: '20px' },
             position: 'sticky', top: 0, zIndex: 10,
           }}
         >
@@ -185,16 +186,35 @@ const Layout: React.FC = () => {
               <MenuIcon />
             </IconButton>
           )}
-          <Box sx={{ fontSize: 16, fontWeight: 700, color: ds.text, whiteSpace: 'nowrap' }}>{title}</Box>
+          {/* スマホ幅では打刻ボタンに場所を譲る（題名は左のメニューで分かる） */}
+          <Box sx={{
+            display: { xs: 'none', sm: 'block' },
+            fontSize: 16, fontWeight: 700, color: ds.text, whiteSpace: 'nowrap',
+            overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0,
+          }}>
+            {title}
+          </Box>
           <Box sx={{ flex: 1 }} />
-          <Button
-            variant="contained"
-            onClick={() => navigate('/tasks/new')}
-            startIcon={<PlusIcon size={16} />}
-            sx={{ px: '18px', py: '7px', whiteSpace: 'nowrap' }}
-          >
-            {t('action.newTask')}
-          </Button>
+          {/* 打刻（task #154）。どの画面でも上部に出す */}
+          <TimerButton />
+          {isDesktop ? (
+            <Button
+              variant="contained"
+              onClick={() => navigate('/tasks/new')}
+              startIcon={<PlusIcon size={16} />}
+              sx={{ px: '18px', py: '7px', whiteSpace: 'nowrap' }}
+            >
+              {t('action.newTask')}
+            </Button>
+          ) : (
+            <IconButton
+              onClick={() => navigate('/tasks/new')}
+              aria-label={t('action.newTask')}
+              sx={{ color: ds.primary, flexShrink: 0 }}
+            >
+              <PlusIcon size={20} />
+            </IconButton>
+          )}
           <AccountButton />
         </Box>
 
