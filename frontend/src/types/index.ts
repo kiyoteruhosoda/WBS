@@ -355,6 +355,8 @@ export interface TodaySummary {
   actuals: TaskActual[];
   /** 今日やるべきタスクのうち、まだ予定を取っていないもの（優先度の点の高い順） */
   tasks_to_schedule: Task[];
+}
+
 // ── 締め（task #161 / ADR-0012）。仕様の正は /api/docs ──────────────────
 
 export interface ClosingPeriodRange {
