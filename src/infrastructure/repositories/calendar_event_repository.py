@@ -5,7 +5,8 @@
 - 期間で引くときは ``span_start_day`` / ``span_end_day``（``indexed_day_span()``）で粗く絞る。
 - 楽観ロック: 書く前に ``UPDATE ... SET version = <新しい版> WHERE id = ? AND version = <読んだ版>``
   を出し、1 行に当たらなければ（間に別の書き込みがあった）``ConflictError``。当たれば行の鍵を
-  握ったまま残りを書く。消すときも同じ確かめをしてから消す。
+  握ったまま残りを書く。消すときも同じ確かめをしてから消す。「読んだ版」はこのリポジトリが
+  読んだときに覚えておく（⚠ ORM の identity map は弱参照なので、行の写しは読み直されうる）。
 - ⚠ ``save`` / ``delete`` は flush までで commit しない。確定はユースケースの ``UnitOfWork``。
 """
 
@@ -48,10 +49,12 @@ from src.infrastructure.database.models import (
 class SqlAlchemyCalendarEventRepository(CalendarEventRepository):
     def __init__(self, session: Session) -> None:
         self._session = session
+        self._read_versions: dict[int, int] = {}
+        """予定の id → このリポジトリが読んだ（または書いた）版。"""
 
     def find_by_id(self, event_id: int) -> CalendarEvent | None:
         model = self._session.get(CalendarEventModel, event_id)
-        return self._to_entity(model) if model is not None else None
+        return self._read(model) if model is not None else None
 
     def find_by_period(self, user_id: int, from_date: date, to_date: date) -> list[CalendarEvent]:
         stmt = (
@@ -63,7 +66,7 @@ class SqlAlchemyCalendarEventRepository(CalendarEventRepository):
             )
             .order_by(CalendarEventModel.id)
         )
-        return [self._to_entity(m) for m in self._session.scalars(stmt)]
+        return [self._read(m) for m in self._session.scalars(stmt)]
 
     def save(self, event: CalendarEvent) -> CalendarEvent:
         if event.id is None:
@@ -72,13 +75,14 @@ class SqlAlchemyCalendarEventRepository(CalendarEventRepository):
             self._session.add(model)
             self._session.flush()
             event.id = model.id
+            self._read_versions[model.id] = event.version
             return event
 
         model = self._session.get(CalendarEventModel, event.id)
         if model is None or model.user_id != event.user_id:
             # 読んでから保存するまでの間に消された（または持ち主が違う）。
             raise ConflictError(f"calendar event {event.id} no longer exists")
-        self._claim_version(model, event.version)
+        self._claim_version(model.id, event.version)
         # 子表は置き換える。⚠ 同じ回の鍵を消して入れ直すと、ORM は INSERT を DELETE より先に
         #   出すので一意制約に当たる。先に消して flush してから入れる。
         model.exceptions.clear()
@@ -86,32 +90,41 @@ class SqlAlchemyCalendarEventRepository(CalendarEventRepository):
         self._session.flush()
         self._copy_to_model(event, model)
         self._session.flush()
+        self._read_versions[model.id] = event.version
         return event
 
     def delete(self, event_id: int) -> None:
         model = self._session.get(CalendarEventModel, event_id)
         if model is None:
             return
-        self._claim_version(model, model.version)
+        self._claim_version(event_id, None)
         self._session.delete(model)
         self._session.flush()
+        self._read_versions.pop(event_id, None)
 
     # ── 内側 ────────────────────────────────────────────────────────────
 
-    def _claim_version(self, model: CalendarEventModel, new_version: int) -> None:
-        """この接続が読んだ版のままなら版を ``new_version`` にする。違えば ``ConflictError``。
+    def _read(self, model: CalendarEventModel) -> CalendarEvent:
+        self._read_versions[model.id] = model.version
+        return self._to_entity(model)
 
-        ``model.version`` はこの接続が読んだ（または前に書いた）版。条件付きの UPDATE が当たった
-        時点で行（SQLite は DB）の書き込みの鍵を握るので、確定までの間に割り込まれない。
+    def _claim_version(self, event_id: int, new_version: int | None) -> None:
+        """読んだ版のままなら版を ``new_version``（None は据え置き）にする。違えば ``ConflictError``。
+
+        条件付きの UPDATE が当たった時点で行（SQLite は DB）の書き込みの鍵を握るので、確定までの
+        間に割り込まれない。読まずに書こうとしたもの（このリポジトリで読んでいない id）も断る。
         """
+        read_version = self._read_versions.get(event_id)
+        if read_version is None:
+            raise ConflictError(f"calendar event {event_id} must be read before it is written")
         table = CalendarEventModel.__table__
         result = self._session.execute(
             update(table)
-            .where(table.c.id == model.id, table.c.version == model.version)
-            .values(version=new_version)
+            .where(table.c.id == event_id, table.c.version == read_version)
+            .values(version=read_version if new_version is None else new_version)
         )
         if result.rowcount != 1:
-            raise ConflictError(f"calendar event {model.id} was changed by someone else")
+            raise ConflictError(f"calendar event {event_id} was changed by someone else")
 
     @staticmethod
     def _copy_to_model(event: CalendarEvent, model: CalendarEventModel) -> None:

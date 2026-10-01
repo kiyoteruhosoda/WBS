@@ -156,18 +156,6 @@ def test_a_save_based_on_a_stale_read_is_a_conflict(sessions) -> None:
     first_session.commit()
 
     theirs.change_details(title="後", location=None, description=None, task_id=None, updated_at=NOW)
-    from src.infrastructure.database.models import CalendarEventModel  # 一時の診断
-
-    fresh = sessions()
-    observed = (
-        fresh.get(CalendarEventModel, event_id).version,
-        second_session.get(CalendarEventModel, event_id).version,
-        theirs.version,
-        first_session is second_session,
-        first_session.get_bind() is second_session.get_bind(),
-        str(first_session.get_bind().pool.__class__.__name__),
-    )
-    assert observed == (2, 1, 2, False, True, "QueuePool")
     with pytest.raises(ConflictError):
         second.save(theirs)
     second_session.rollback()
