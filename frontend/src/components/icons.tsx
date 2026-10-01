@@ -156,3 +156,16 @@ export const SwapIcon: React.FC<IconProps> = (p) => base(p, (
     <path d="M10 12.5L6.5 16l3.5 3.5" />
   </>
 ));
+
+// 打刻ボタン（塗りの三角・四角。stroke は細い縁取りとして同じ色で引く）
+export const PlayIcon: React.FC<IconProps> = (p) => base({ strokeWidth: 2, ...p }, (
+  <path d="M8 5.5v13l10.5-6.5z" fill="currentColor" />
+));
+
+export const StopIcon: React.FC<IconProps> = (p) => base({ strokeWidth: 2, ...p }, (
+  <rect x="6.5" y="6.5" width="11" height="11" rx="1.5" fill="currentColor" />
+));
+
+export const ChevronDownIcon: React.FC<IconProps> = (p) => base({ strokeWidth: 2, ...p }, (
+  <path d="M6 9.5l6 6 6-6" />
+));
