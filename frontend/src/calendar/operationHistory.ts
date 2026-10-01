@@ -1,6 +1,6 @@
 // 操作の履歴（元に戻す・やり直し）。移植元 `CalendarViewModel` の `_undoStack` / `_redoStack`。
 //
-// 中身は呼び手が決める（見本ページは「前と後の回」、API と繋いだ後は「前と後の時刻」）。
+// 中身は呼び手が決める（カレンダーの画面は「前と後の時刻」と予定の版。`calendarRequests.ts` の `RescheduleEntry`）。
 // 新しい操作を積むと、やり直しの側は捨てる。
 
 export interface OperationHistory<T> {

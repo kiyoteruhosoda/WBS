@@ -12,10 +12,13 @@ import { formatOccurrenceTimeRange } from '../../calendar/daySegments';
 import { eventColor } from '../../calendar/calendarColors';
 import { formatSelectedDay } from '../../calendar/calendarTitles';
 import type { CalendarInteractions } from './calendarInteractions';
+import type { CalendarDeadline } from '../../calendar/taskDeadlines';
+import DeadlineChip from './DeadlineChip';
 
-interface Props extends Pick<CalendarInteractions, 'onCreateEvent' | 'onEditOccurrence' | 'onDeleteOccurrence'> {
+interface Props extends Pick<CalendarInteractions, 'onCreateEvent' | 'onEditOccurrence' | 'onDeleteOccurrence' | 'onOpenDeadline'> {
   date: string;
   segments: readonly DaySegment[];
+  deadlines: readonly CalendarDeadline[];
   holidays: readonly CalendarHoliday[];
   timeZone: string;
   selectedSegmentKey: string | null;
@@ -24,7 +27,8 @@ interface Props extends Pick<CalendarInteractions, 'onCreateEvent' | 'onEditOccu
 
 /** 選んだ日の予定の一覧（移植元 CalendarPage.xaml の SelectedDayPanel）。 */
 const SelectedDayPanel: React.FC<Props> = ({
-  date, segments, holidays, timeZone, selectedSegmentKey, onClose, onCreateEvent, onEditOccurrence, onDeleteOccurrence,
+  date, segments, deadlines, holidays, timeZone, selectedSegmentKey, onClose, onCreateEvent, onEditOccurrence, onDeleteOccurrence,
+  onOpenDeadline,
 }) => {
   const { t, weekdays } = useI18n();
   const c = useTheme().palette.calendar;
@@ -48,6 +52,19 @@ const SelectedDayPanel: React.FC<Props> = ({
       </Box>
       {holidayNames.length > 0 && (
         <Box sx={{ fontSize: 12, mx: '12px', mb: '4px', color: c.holidayText }}>{holidayNames.join('  /  ')}</Box>
+      )}
+      {deadlines.length > 0 && (
+        <Box data-testid="selected-day-deadlines" sx={{ display: 'flex', flexDirection: 'column', gap: '4px', mx: '12px', mb: '6px' }}>
+          {deadlines.map((d) => (
+            <DeadlineChip
+              key={d.key}
+              deadline={d}
+              height={28}
+              fontSize={13}
+              onClick={onOpenDeadline ? () => onOpenDeadline(d) : undefined}
+            />
+          ))}
+        </Box>
       )}
       {segments.length === 0 ? (
         <Box sx={{ fontSize: 13, mx: '12px', my: '8px', color: c.textSecondary }}>{t('calendar.noEvents')}</Box>

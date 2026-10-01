@@ -1,173 +1,278 @@
-import React, { useMemo, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { Box, Button, CircularProgress, Alert, IconButton } from '@mui/material';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
+import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query';
+import {
+  Alert, Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, Snackbar,
+} from '@mui/material';
 import { useNavigate } from 'react-router-dom';
+import { useI18n } from '../i18n';
+import type { TranslationKey } from '../i18n/translations';
+import type { CalendarEvent, CalendarOccurrence } from '../types';
 import { getTasks } from '../api/tasks';
 import { getMilestones } from '../api/milestones';
 import { getCategories } from '../api/categories';
-import { ds, categoryColor } from '../theme';
-import { parseDate, todayDate } from '../utils/format';
-import { useI18n } from '../i18n';
-import { ChevronLeftIcon, ChevronRightIcon } from '../components/icons';
+import {
+  getBusinessCalendars, getEvent, getHolidays, getOccurrences, sendCalendarRequest,
+} from '../api/calendar';
+import SchedulerCalendar from '../components/calendar/SchedulerCalendar';
+import EventEditDialog from '../components/calendar/EventEditDialog';
+import type { EventEditTarget } from '../components/calendar/EventEditDialog';
+import RecurringScopeDialog from '../components/calendar/RecurringScopeDialog';
+import type { CreateRange, OccurrenceReschedule } from '../components/calendar/calendarInteractions';
+import type { CalendarDeadline } from '../calendar/taskDeadlines';
+import { buildDeadlines } from '../calendar/taskDeadlines';
+import { formFromEvent, newEventForm, planOccurrenceDelete } from '../calendar/eventForm';
+import type { RecurringScope } from '../calendar/eventForm';
+import type { RescheduleEntry } from '../calendar/calendarRequests';
+import {
+  applyScheduleToOccurrences, errorDetailOf, isConflictError, redoRequest, rescheduleEntryOf, rescheduleRequest,
+  undoRequest, withEventVersion, withOccurrenceEventVersion,
+} from '../calendar/calendarRequests';
+import type { OperationHistory } from '../calendar/operationHistory';
+import {
+  canRedo, canUndo, emptyHistory, recordOperation, redoOperation, undoOperation,
+} from '../calendar/operationHistory';
+import { resolveTimeZone, toZonedPoint } from '../calendar/zonedTime';
 
-interface Pill {
-  key: string;
-  label: string;
-  color: string;
-  taskId?: number;
+type VisibleRange = { from: string; to: string };
+
+interface Notice {
+  message: string;
+  severity: 'success' | 'info' | 'warning' | 'error';
 }
 
-const dateKey = (d: Date): string =>
-  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+const OCCURRENCES = 'calendar-occurrences';
+const HOLIDAYS = 'calendar-holidays';
 
+/**
+ * カレンダー（task #157）。予定 API（ADR-0009）の回と祝日を表示している期間ごとに取り、
+ * タスク・マイルストーンの期限も終日の帯に出す。ドラッグで動かした回は API へ書き、
+ * 元に戻す・やり直しも API 越しに行う（ADR-0010）。
+ */
 const CalendarPage: React.FC = () => {
+  const { t, timezone } = useI18n();
   const navigate = useNavigate();
-  const { t, lang, weekdays } = useI18n();
-  const now = todayDate();
-  const [year, setYear] = useState(now.getFullYear());
-  const [month, setMonth] = useState(now.getMonth()); // 0-11
+  const qc = useQueryClient();
+  const timeZone = resolveTimeZone(timezone);
 
-  const { data: tasksData, isLoading, error } = useQuery({ queryKey: ['tasks'], queryFn: () => getTasks() });
+  const [range, setRange] = useState<VisibleRange | null>(null);
+  const onVisibleRangeChange = useCallback((next: VisibleRange) => {
+    setRange((prev) => (prev && prev.from === next.from && prev.to === next.to ? prev : next));
+  }, []);
+
+  const occurrencesKey = useMemo(() => [OCCURRENCES, range?.from, range?.to, timeZone] as const, [range, timeZone]);
+  const occurrencesQuery = useQuery({
+    queryKey: occurrencesKey,
+    queryFn: () => getOccurrences(range as VisibleRange, timeZone),
+    enabled: range != null,
+    placeholderData: keepPreviousData,
+  });
+  const holidaysQuery = useQuery({
+    queryKey: [HOLIDAYS, range?.from, range?.to],
+    queryFn: () => getHolidays(range as VisibleRange),
+    enabled: range != null,
+    placeholderData: keepPreviousData,
+  });
+  const { data: tasks } = useQuery({ queryKey: ['tasks'], queryFn: () => getTasks() });
   const { data: milestones } = useQuery({ queryKey: ['milestones'], queryFn: getMilestones });
   const { data: categories } = useQuery({ queryKey: ['categories'], queryFn: getCategories });
+  const { data: businessCalendars } = useQuery({ queryKey: ['business-calendars'], queryFn: getBusinessCalendars });
 
-  const pillMap = useMemo(() => {
-    const map = new Map<string, Pill[]>();
-    const push = (key: string, pill: Pill) => {
-      if (!map.has(key)) map.set(key, []);
-      map.get(key)!.push(pill);
-    };
-    for (const t of tasksData ?? []) {
-      const d = parseDate(t.due_date);
-      if (!d) continue;
-      const cat = categories?.find((c) => c.id === t.category_id);
-      push(dateKey(d), { key: `task-${t.id}`, label: t.title, color: categoryColor(t.category_id, cat?.color), taskId: t.id });
-    }
-    for (const m of milestones ?? []) {
-      const d = parseDate(m.due_date);
-      if (!d) continue;
-      push(dateKey(d), { key: `ms-${m.id}`, label: `◆ ${m.name}`, color: '#6B46C1' });
-    }
-    return map;
-  }, [tasksData, milestones, categories]);
+  const deadlines = useMemo(
+    () => (range ? buildDeadlines(tasks ?? [], milestones ?? [], categories ?? [], range) : []),
+    [tasks, milestones, categories, range],
+  );
 
-  // 月グリッド（日曜はじまり・当月を含む週すべて）
-  const cells = useMemo(() => {
-    const first = new Date(year, month, 1);
-    const start = new Date(year, month, 1 - first.getDay());
-    const lastDay = new Date(year, month + 1, 0);
-    const weeks = Math.ceil((first.getDay() + lastDay.getDate()) / 7);
-    return Array.from({ length: weeks * 7 }, (_, i) =>
-      new Date(start.getFullYear(), start.getMonth(), start.getDate() + i));
-  }, [year, month]);
+  const [history, setHistory] = useState<OperationHistory<RescheduleEntry>>(() => emptyHistory<RescheduleEntry>());
+  const [editTarget, setEditTarget] = useState<EventEditTarget | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<CalendarOccurrence | null>(null);
+  const [notice, setNotice] = useState<Notice | null>(null);
+  const [busy, setBusy] = useState(false);
+  const busyRef = useRef(false);
 
-  const moveMonth = (delta: number) => {
-    const d = new Date(year, month + delta, 1);
-    setYear(d.getFullYear());
-    setMonth(d.getMonth());
+  const today = () => toZonedPoint(Date.now(), timeZone).date;
+  const notify = (key: TranslationKey, severity: Notice['severity'], params?: Record<string, string | number>) =>
+    setNotice({ message: t(key, params), severity });
+
+  const refresh = () => {
+    void qc.invalidateQueries({ queryKey: [OCCURRENCES] });
+    void qc.invalidateQueries({ queryKey: [HOLIDAYS] });
   };
 
-  if (isLoading) return <Box sx={{ display: 'flex', justifyContent: 'center', mt: 6 }}><CircularProgress /></Box>;
-  if (error) return <Alert severity="error">{t('common.loadError')}</Alert>;
+  /** 409: ほかで変わっていた。最新を取り直し、履歴は捨てる（古い版の操作は当てられない）。 */
+  const onConflict = () => {
+    setHistory(emptyHistory<RescheduleEntry>());
+    refresh();
+    notify('calendar.conflict', 'warning');
+  };
 
-  const todayKey = dateKey(todayDate());
-  const monthName = lang === 'ja'
-    ? String(month + 1)
-    : new Date(year, month, 1).toLocaleString('en-US', { month: 'long' });
+  const onFailure = (error: unknown) => {
+    if (isConflictError(error)) { onConflict(); return; }
+    refresh();
+    notify('calendar.saveFailed', 'error', { detail: errorDetailOf(error) ?? '' });
+  };
+
+  /** 書き込みを 1 つずつ（ドラッグ中に次の書き込みを重ねない）。 */
+  const exclusive = async (run: () => Promise<void>) => {
+    if (busyRef.current) return;
+    busyRef.current = true;
+    setBusy(true);
+    try {
+      await run();
+    } catch (error) {
+      onFailure(error);
+    } finally {
+      busyRef.current = false;
+      setBusy(false);
+    }
+  };
+
+  const patchOccurrences = (patch: (list: CalendarOccurrence[]) => CalendarOccurrence[]) =>
+    qc.setQueryData<CalendarOccurrence[]>(occurrencesKey, (list) => (list ? patch(list) : list));
+
+  const afterWrite = (eventId: number, written: CalendarEvent | null) => {
+    if (written) patchOccurrences((list) => withOccurrenceEventVersion(list, eventId, written.version));
+    refresh();
+  };
+
+  // ── ドラッグ ──────────────────────────────────────────────────────────
+
+  const reschedule = (change: OccurrenceReschedule) => exclusive(async () => {
+    const eventId = change.occurrence.event_id;
+    // 応答を待たずに新しい位置で見せる（失敗したら取り直して戻る）。
+    patchOccurrences((list) => applyScheduleToOccurrences(list, change.occurrence.id, change.after, change.scope === 'occurrence'));
+    const event = change.scope === 'event' ? await getEvent(eventId) : null;
+    const written = await sendCalendarRequest(rescheduleRequest(change, event));
+    if (!written) return;
+    setHistory((h) => withEventVersion(recordOperation(h, rescheduleEntryOf(change, written.version)), eventId, written.version));
+    afterWrite(eventId, written);
+  });
+
+  const undo = () => exclusive(async () => {
+    const step = undoOperation(history);
+    if (!step) return;
+    const { entry } = step;
+    const event = entry.scope === 'event' ? await getEvent(entry.eventId) : null;
+    const written = await sendCalendarRequest(undoRequest(entry, event));
+    if (!written) return;
+    setHistory(withEventVersion(step.history, entry.eventId, written.version));
+    afterWrite(entry.eventId, written);
+    notify('calendar.undone', 'info');
+  });
+
+  const redo = () => exclusive(async () => {
+    const step = redoOperation(history);
+    if (!step) return;
+    const { entry } = step;
+    const event = entry.scope === 'event' ? await getEvent(entry.eventId) : null;
+    const written = await sendCalendarRequest(redoRequest(entry, event));
+    if (!written) return;
+    setHistory(withEventVersion(step.history, entry.eventId, written.version));
+    afterWrite(entry.eventId, written);
+    notify('calendar.redone', 'info');
+  });
+
+  // ── 作る・直す・消す ──────────────────────────────────────────────────
+
+  const calendarIds = (businessCalendars ?? []).map((c) => c.id);
+
+  const openCreate = (date: string, startMinute?: number, endMinute?: number) => setEditTarget({
+    form: newEventForm({ date, startMinute, endMinute, timeZone, today: today(), calendarIds }),
+    context: { mode: 'create' },
+  });
+
+  const openEdit = (occurrence: CalendarOccurrence) => exclusive(async () => {
+    const event = await getEvent(occurrence.event_id);
+    setEditTarget(formFromEvent(event, occurrence, today()));
+  });
+
+  /** 編集画面で保存・削除したら、ドラッグの履歴は捨てる（版が進み、古い操作は当てられない）。 */
+  const afterDialogWrite = (key: TranslationKey) => {
+    setEditTarget(null);
+    setHistory(emptyHistory<RescheduleEntry>());
+    refresh();
+    notify(key, 'success');
+  };
+
+  const deleteOccurrence = (occurrence: CalendarOccurrence, scope: RecurringScope | null) => {
+    const request = planOccurrenceDelete(occurrence, scope);
+    setDeleteTarget(null);
+    if (!request) return;
+    void exclusive(async () => {
+      await sendCalendarRequest(request);
+      afterDialogWrite('calendar.deleted');
+    });
+  };
+
+  const openDeadline = (deadline: CalendarDeadline) =>
+    navigate(deadline.kind === 'task' ? `/tasks/${deadline.id}` : '/milestones');
+
+  const askDeleteScope = deleteTarget != null && deleteTarget.is_recurring && deleteTarget.series_key != null;
 
   return (
-    <Box>
-      {/* カレンダーコントロール */}
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: '10px', mb: '14px' }}>
-        <IconButton
-          onClick={() => moveMonth(-1)}
-          sx={{ border: `1px solid ${ds.border}`, borderRadius: '8px', width: 34, height: 34, color: ds.textSub }}
-        >
-          <ChevronLeftIcon size={16} />
-        </IconButton>
-        <Box sx={{ fontSize: 18, fontWeight: 700, color: ds.text, minWidth: 130, textAlign: 'center' }}>
-          {t('calendar.monthTitle', { year, month: monthName })}
-        </Box>
-        <IconButton
-          onClick={() => moveMonth(1)}
-          sx={{ border: `1px solid ${ds.border}`, borderRadius: '8px', width: 34, height: 34, color: ds.textSub }}
-        >
-          <ChevronRightIcon size={16} />
-        </IconButton>
-        <Button
-          variant="text"
-          onClick={() => { setYear(now.getFullYear()); setMonth(now.getMonth()); }}
-          sx={{ color: ds.primary, fontWeight: 700, px: '10px', py: '4px' }}
-        >
-          {t('common.today')}
-        </Button>
+    <Box sx={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+      {(occurrencesQuery.isError || holidaysQuery.isError) && (
+        <Alert severity="error">{t('common.loadError')}</Alert>
+      )}
+      <Box sx={{ height: { xs: 'calc(100vh - 140px)', md: 'calc(100vh - 160px)' }, minHeight: 640 }}>
+        <SchedulerCalendar
+          occurrences={occurrencesQuery.data ?? []}
+          holidays={holidaysQuery.data ?? []}
+          deadlines={deadlines}
+          timeZone={timeZone}
+          onVisibleRangeChange={onVisibleRangeChange}
+          onCreateEvent={(date, minute) => openCreate(date, minute)}
+          onCreateRange={(r: CreateRange) => openCreate(r.date, r.startMinute, r.endMinute)}
+          onEditOccurrence={(o) => void openEdit(o)}
+          onDeleteOccurrence={setDeleteTarget}
+          onOpenDeadline={openDeadline}
+          onRescheduleOccurrence={(change) => void reschedule(change)}
+          onUndo={() => void undo()}
+          onRedo={() => void redo()}
+          canUndo={!busy && canUndo(history)}
+          canRedo={!busy && canRedo(history)}
+        />
       </Box>
 
-      <Box sx={{ bgcolor: ds.paper, border: `1px solid ${ds.border}`, borderRadius: '10px', overflow: 'hidden' }}>
-        {/* 曜日ヘッダ */}
-        <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', bgcolor: '#F7F7F8', borderBottom: `1px solid ${ds.border}` }}>
-          {weekdays.map((w, i) => (
-            <Box key={w} sx={{
-              textAlign: 'center', py: '10px', fontSize: 13, fontWeight: 700,
-              color: i === 0 ? ds.dangerText : i === 6 ? ds.primary : ds.textSub,
-            }}>
-              {w}
-            </Box>
-          ))}
-        </Box>
+      {editTarget && (
+        <EventEditDialog
+          target={editTarget}
+          viewerTimeZone={timeZone}
+          tasks={tasks ?? []}
+          businessCalendars={businessCalendars ?? []}
+          onClose={() => setEditTarget(null)}
+          onSaved={() => afterDialogWrite('calendar.saved')}
+          onConflict={() => { setEditTarget(null); onConflict(); }}
+          onDelete={setDeleteTarget}
+        />
+      )}
 
-        {/* 日付グリッド */}
-        <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)' }}>
-          {cells.map((d, i) => {
-            const inMonth = d.getMonth() === month;
-            const key = dateKey(d);
-            const isToday = key === todayKey;
-            const dow = d.getDay();
-            const pills = pillMap.get(key) ?? [];
-            const numColor = !inMonth ? '#B7B7BB' : dow === 0 ? ds.dangerText : dow === 6 ? ds.primary : ds.text;
-            return (
-              <Box key={i} sx={{
-                minHeight: { xs: 72, md: 104 }, p: '6px',
-                borderBottom: '1px solid #ECECEE',
-                borderLeft: i % 7 === 0 ? 'none' : '1px solid #ECECEE',
-                bgcolor: inMonth ? 'transparent' : '#FAFAFB',
-              }}>
-                <Box sx={{ display: 'flex', mb: '4px' }}>
-                  {isToday ? (
-                    <Box sx={{
-                      width: 24, height: 24, borderRadius: '50%', bgcolor: ds.primary, color: '#fff',
-                      display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 700,
-                    }}>
-                      {d.getDate()}
-                    </Box>
-                  ) : (
-                    <Box sx={{ fontSize: 13, fontWeight: 700, color: numColor, px: '4px' }}>{d.getDate()}</Box>
-                  )}
-                </Box>
-                {pills.slice(0, 2).map((p) => (
-                  <Box
-                    key={p.key}
-                    onClick={p.taskId != null ? () => navigate(`/tasks/${p.taskId}`) : undefined}
-                    sx={{
-                      bgcolor: p.color, color: '#fff', fontSize: 11, fontWeight: 700,
-                      borderRadius: '4px', px: '6px', py: '1px', mb: '3px',
-                      overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                      cursor: p.taskId != null ? 'pointer' : 'default',
-                      '&:hover': p.taskId != null ? { opacity: 0.85 } : undefined,
-                    }}
-                    title={p.label}
-                  >
-                    {p.label}
-                  </Box>
-                ))}
-                {pills.length > 2 && (
-                  <Box sx={{ fontSize: 11, color: ds.textMuted, px: '4px' }}>+{pills.length - 2}</Box>
-                )}
-              </Box>
-            );
-          })}
-        </Box>
-      </Box>
+      <RecurringScopeDialog
+        open={askDeleteScope}
+        purpose="delete"
+        onCancel={() => setDeleteTarget(null)}
+        onChoose={(scope) => deleteTarget && deleteOccurrence(deleteTarget, scope)}
+      />
+      <Dialog open={deleteTarget != null && !askDeleteScope} onClose={() => setDeleteTarget(null)} maxWidth="xs" fullWidth>
+        <DialogTitle>{t('calendar.deleteConfirmTitle')}</DialogTitle>
+        <DialogContent>{t('calendar.deleteConfirm', { title: deleteTarget?.title ?? '' })}</DialogContent>
+        <DialogActions>
+          <Button onClick={() => setDeleteTarget(null)}>{t('calendar.cancel')}</Button>
+          <Button color="error" variant="contained" onClick={() => deleteTarget && deleteOccurrence(deleteTarget, null)}>
+            {t('calendar.delete')}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Snackbar
+        open={notice != null}
+        autoHideDuration={4000}
+        onClose={() => setNotice(null)}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+      >
+        <Alert severity={notice?.severity ?? 'info'} onClose={() => setNotice(null)} sx={{ width: '100%' }}>
+          {notice?.message}
+        </Alert>
+      </Snackbar>
     </Box>
   );
 };

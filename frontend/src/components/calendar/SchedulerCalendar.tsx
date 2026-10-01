@@ -17,15 +17,19 @@ import MonthView from './MonthView';
 import WeekView from './WeekView';
 import SelectedDayPanel from './SelectedDayPanel';
 import type { CalendarInteractions } from './calendarInteractions';
+import type { CalendarDeadline } from '../../calendar/taskDeadlines';
+import { groupDeadlinesByDate } from '../../calendar/taskDeadlines';
 
 export interface SchedulerCalendarProps extends CalendarInteractions {
   /** 表示している期間の回（API の応答をそのまま） */
   occurrences: readonly CalendarOccurrence[];
   holidays?: readonly CalendarHoliday[];
+  /** タスク・マイルストーンの期限（終日の帯に、予定とは違う見た目で出す） */
+  deadlines?: readonly CalendarDeadline[];
   /** 閲覧者のタイムゾーン（利用者設定）。省くとブラウザのもの */
   timeZone?: string | null;
   initialMode?: CalendarMode;
-  /** 固定の「今」（見本・試験用）。省くと 1 分ごとに進む時計 */
+  /** 固定の「今」（試験用）。省くと 1 分ごとに進む時計 */
   now?: Date;
   /** 表示する期間が変わった（API に問い直す口。両端を含む閲覧者のローカル日） */
   onVisibleRangeChange?: (range: { from: string; to: string }) => void;
@@ -42,13 +46,14 @@ const useClock = (fixed: Date | undefined): number => {
 };
 
 const EMPTY_HOLIDAYS: readonly CalendarHoliday[] = [];
+const EMPTY_DEADLINES: readonly CalendarDeadline[] = [];
 
 /**
  * カレンダー（月・週・平日）。移植元 NolumiaScheduler の CalendarPage に寄せた外枠。
  * データの取り方は持たない（`occurrences` を受けて描くだけ）。
  */
 const SchedulerCalendar: React.FC<SchedulerCalendarProps> = ({
-  occurrences, holidays = EMPTY_HOLIDAYS, timeZone: requestedTimeZone, initialMode = 'week', now: fixedNow,
+  occurrences, holidays = EMPTY_HOLIDAYS, deadlines = EMPTY_DEADLINES, timeZone: requestedTimeZone, initialMode = 'week', now: fixedNow,
   onVisibleRangeChange, ...interactions
 }) => {
   const { t, weekdays, lang } = useI18n();
@@ -76,6 +81,7 @@ const SchedulerCalendar: React.FC<SchedulerCalendarProps> = ({
   }, [range, onVisibleRangeChange]);
 
   const segmentsByDate = useMemo(() => groupSegmentsByDate(occurrences, timeZone), [occurrences, timeZone]);
+  const deadlinesByDate = useMemo(() => groupDeadlinesByDate(deadlines), [deadlines]);
   const dates = useMemo(() => visibleDates(position), [position]);
 
   const clearSelection = () => {
@@ -120,7 +126,7 @@ const SchedulerCalendar: React.FC<SchedulerCalendarProps> = ({
       <Box sx={{ flex: 1, minHeight: 0, overflow: position.mode === 'month' ? 'auto' : 'hidden' }}>
         {position.mode === 'month' ? (
           <MonthView
-            cells={buildMonthCells(position.month, today, segmentsByDate, holidays)}
+            cells={buildMonthCells(position.month, today, segmentsByDate, holidays, deadlinesByDate)}
             selectedDate={selectedDate}
             timeZone={timeZone}
             onSelectDate={selectDate}
@@ -131,6 +137,7 @@ const SchedulerCalendar: React.FC<SchedulerCalendarProps> = ({
             timeZone={timeZone}
             segmentsByDate={segmentsByDate}
             holidays={holidays}
+            deadlines={deadlines}
             today={today}
             nowMinute={nowMinute}
             selectedDate={selectedDate}
@@ -148,6 +155,7 @@ const SchedulerCalendar: React.FC<SchedulerCalendarProps> = ({
         <SelectedDayPanel
           date={selectedDate}
           segments={segmentsByDate.get(selectedDate) ?? []}
+          deadlines={deadlinesByDate.get(selectedDate) ?? []}
           holidays={holidays}
           timeZone={timeZone}
           selectedSegmentKey={selectedSegmentKey}
@@ -155,6 +163,7 @@ const SchedulerCalendar: React.FC<SchedulerCalendarProps> = ({
           onCreateEvent={interactions.onCreateEvent}
           onEditOccurrence={interactions.onEditOccurrence}
           onDeleteOccurrence={interactions.onDeleteOccurrence}
+          onOpenDeadline={interactions.onOpenDeadline}
         />
       )}
     </Box>

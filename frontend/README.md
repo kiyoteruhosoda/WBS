@@ -11,8 +11,8 @@
 | `/tasks` | タスク一覧 | 検索・ステータス/カテゴリ/マイルストーン絞り込み・並び替え（クライアント側） |
 | `/tasks/new`, `/tasks/:id` | タスク作成/編集 | 中央寄せカードフォーム。優先度・緊急度は 高/中/低 のpill選択（5/3/1 に対応）。編集時は作業ログ・依存関係タブあり |
 | `/gantt` | ガントチャート | 自作コンポーネント（`components/GanttChart.tsx`）。今日ライン・土日シェード・ステータス色バー（進捗フィル） |
-| `/calendar` | カレンダー | 自作の月グリッド。期限日にカテゴリ色pill、マイルストーンは紫pill |
-| `/calendar-preview` | カレンダー（見本） | 予定の表示の部品（`components/calendar/`）を見本データで並べる。予定の API と繋いだら `/calendar` を置き換えて消す |
+| `/calendar` | カレンダー | 予定（`/api/calendar/*`）の月・週・平日表示。週表示のドラッグで作る・動かす・伸ばす（元に戻す・やり直しも API 越し）。タスク・マイルストーンの期限を終日の帯に枠だけのチップで出す。予定の編集はダイアログ（`components/calendar/EventEditDialog.tsx`） |
+| `/settings` | 個人設定 | 言語・タイムゾーン、営業日カレンダーと祝日（日本の祝日を年で入れる） |
 | `/inbox` | インボックス | クイックメモの追加・タスク変換・削除 |
 
 ## デザイン
@@ -29,6 +29,9 @@
   `ds` ではなく MUI テーマの `palette.calendar`（`src/calendar/calendarColors.ts`、明暗の 2 組）から読む。
   日付は `YYYY-MM-DD`、時刻はその日の 0:00 からの分で持ち、閲覧者のタイムゾーン（利用者設定）で
   日を割る。配置などの純関数は `src/calendar/` にあり、`*.test.ts` が vitest の試験。
+- 予定 API への書き込みは、`src/calendar/calendarRequests.ts`（ドラッグ・元に戻す・削除）と
+  `src/calendar/eventForm.ts`（編集画面の保存）が呼び出しをデータ（`CalendarRequest`）として組み立て、
+  `src/api/calendar.ts` の `sendCalendarRequest` だけが送る。版の食い違い（409）は最新を取り直して知らせる。
 
 ## API 契約上の注意
 

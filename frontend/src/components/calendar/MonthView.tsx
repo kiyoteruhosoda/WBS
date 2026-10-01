@@ -6,6 +6,7 @@ import type { MonthCell } from '../../calendar/monthCells';
 import { availableChipRows, visibleChipCount } from '../../calendar/monthCells';
 import { eventColor } from '../../calendar/calendarColors';
 import { formatOccurrenceTimeRange } from '../../calendar/daySegments';
+import DeadlineChip from './DeadlineChip';
 
 interface Props {
   cells: MonthCell[];
@@ -72,8 +73,11 @@ const MonthView: React.FC<Props> = ({ cells, selectedDate, timeZone, onSelectDat
         {cells.map((cell) => {
           const selected = cell.date === selectedDate;
           const rows = availableChipRows(cellHeight, cell.holiday != null);
-          const shown = visibleChipCount(cell.segments.length, rows);
-          const extra = cell.segments.length - shown;
+          // 予定のチップの後に期限のチップを続け、あふれは合わせて「+N 件」。
+          const total = cell.segments.length + cell.deadlines.length;
+          const shown = visibleChipCount(total, rows);
+          const extra = total - shown;
+          const shownDeadlines = cell.deadlines.slice(0, Math.max(0, shown - cell.segments.length));
           return (
             <Box
               key={cell.date}
@@ -129,6 +133,11 @@ const MonthView: React.FC<Props> = ({ cells, selectedDate, timeZone, onSelectDat
                     </Box>
                   );
                 })}
+                {shownDeadlines.map((deadline) => (
+                  <Box key={deadline.key} sx={{ mx: '1px' }}>
+                    <DeadlineChip deadline={deadline} height={14} fontSize={10} />
+                  </Box>
+                ))}
               </Box>
               {extra > 0 && (
                 <Box sx={{ fontSize: 10, m: '1px 3px 0', color: c.textSecondary }}>
