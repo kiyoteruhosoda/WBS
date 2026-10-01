@@ -66,6 +66,7 @@ class SqlAlchemyTaskRepository(TaskRepository):
             model.start_date = task.start_date
             model.due_date = task.due_date
             model.estimated_hours = task.estimated_hours
+            model.remaining_hours = task.remaining_hours
             model.memo = task.memo
             model.parent_task_id = task.parent_task_id
             model.milestone_id = task.milestone_id
@@ -95,6 +96,15 @@ class SqlAlchemyTaskRepository(TaskRepository):
         ).scalar()
         return float(result or 0)
 
+    def get_actual_hours_by_task(self, user_id: int) -> dict[int, float]:
+        rows = self._session.execute(
+            select(WorkLogModel.task_id, func.sum(WorkLogModel.hours))
+            .join(TaskModel, TaskModel.id == WorkLogModel.task_id)
+            .where(TaskModel.user_id == user_id, WorkLogModel.deleted_at.is_(None))
+            .group_by(WorkLogModel.task_id)
+        )
+        return {task_id: float(total or 0) for task_id, total in rows}
+
     def _to_entity(self, model: TaskModel) -> Task:
         return Task(
             id=model.id,
@@ -107,6 +117,7 @@ class SqlAlchemyTaskRepository(TaskRepository):
             start_date=model.start_date,
             due_date=model.due_date,
             estimated_hours=model.estimated_hours,
+            remaining_hours=model.remaining_hours,
             memo=model.memo,
             parent_task_id=model.parent_task_id,
             milestone_id=model.milestone_id,
@@ -127,6 +138,7 @@ class SqlAlchemyTaskRepository(TaskRepository):
             start_date=task.start_date,
             due_date=task.due_date,
             estimated_hours=task.estimated_hours,
+            remaining_hours=task.remaining_hours,
             memo=task.memo,
             parent_task_id=task.parent_task_id,
             milestone_id=task.milestone_id,

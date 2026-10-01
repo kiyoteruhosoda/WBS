@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from src.domain.repositories.task_dependency_repository import TaskDependencyRepository
 from src.domain.repositories.task_repository import TaskRepository
+from src.domain.services.task_progress_board import TaskProgressBoard
 
 
 class GanttUseCases:
@@ -14,6 +15,8 @@ class GanttUseCases:
         # 自分の依存だけを引く（task_dependencies に持ち主の列は無く、リポジトリがタスクを辿って絞る）。
         deps = self._dependencies.find_all_for_user(user_id)
         task_ids = {t.id for t in tasks}
+        # 進捗率は一覧・ダッシュボードと同じ式（親は子孫の積み上げ。ADR-0010）
+        board = TaskProgressBoard(tasks, self._tasks.get_actual_hours_by_task(user_id))
         result = []
         for task in tasks:
             task_deps = [
@@ -34,9 +37,7 @@ class GanttUseCases:
                     "due_date": str(task.due_date) if task.due_date else None,
                     "status": task.status.value,
                     "parent_task_id": task.parent_task_id,
-                    "progress_percent": task.progress_percent(
-                        self._tasks.get_actual_hours(task.id)
-                    ),
+                    "progress_percent": board.progress_percent(task),
                     "dependencies": task_deps,
                 }
             )
