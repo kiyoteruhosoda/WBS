@@ -149,5 +149,16 @@ class InMemoryWorkLogRepository(WorkLogRepository):
             del self._rows[i]
         return len(doomed)
 
+    def find_for_user(
+        self, user_id: int, first_day: date | None = None, last_day: date | None = None
+    ) -> list[WorkLog]:
+        found = [
+            copy.deepcopy(w) for w in self._rows.values()
+            if w.user_id == user_id
+            and (first_day is None or w.work_date >= first_day)
+            and (last_day is None or w.work_date <= last_day)
+        ]
+        return sorted(found, key=lambda w: (w.work_date, w.task_id, w.id or 0))
+
     def all(self) -> list[WorkLog]:
         return [copy.deepcopy(w) for w in self._rows.values()]

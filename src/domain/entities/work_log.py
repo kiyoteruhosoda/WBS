@@ -27,3 +27,10 @@ class WorkLog:
     @property
     def is_from_closing(self) -> bool:
         return self.source is WorkLogSource.CLOSING
+
+    @property
+    def seconds(self) -> int:
+        """長さ（秒）。締めの行は正確な長さ、手で書いた行は ``hours`` から出す。"""
+        if self.duration_seconds is not None:
+            return self.duration_seconds
+        return round(self.hours * 3600)

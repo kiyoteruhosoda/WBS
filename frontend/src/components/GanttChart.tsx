@@ -4,6 +4,8 @@ import MoreTimeIcon from '@mui/icons-material/MoreTime';
 import { scheduleTaskPath } from '../calendar/taskScheduling';
 import { useNavigate } from 'react-router-dom';
 import type { Task, Category } from '../types';
+import type { GanttActualSpan } from '../types/actuals';
+import { ACTUAL_DAY_COLOR, ACTUAL_STRIP_COLOR, formatSeconds, ganttActualLayout } from '../actuals/actualsView';
 import { displayStatus, parseDate, todayDate } from '../utils/format';
 import type { DisplayStatus } from '../utils/format';
 import { useI18n } from '../i18n';
@@ -18,6 +20,10 @@ const LEFT_WIDTH = 360;
 // 表示範囲は今日を基準にクランプする（過去・未来に古いタスクがあっても今日ラインが常に見えるようにする）
 const MAX_PAST_DAYS = 30;
 const MAX_FUTURE_DAYS = 59;
+// 実績の帯（計画の帯の下に細く並べる。task #162）
+const PLAN_BAR_HEIGHT = 22;
+const PLAN_BAR_HEIGHT_WITH_ACTUAL = 18;
+const ACTUAL_STRIP_HEIGHT = 7;
 
 const dateOnly = (d: Date): Date => new Date(d.getFullYear(), d.getMonth(), d.getDate());
 const addDays = (d: Date, n: number): Date => new Date(d.getFullYear(), d.getMonth(), d.getDate() + n);
@@ -42,9 +48,11 @@ interface Props {
   categories?: Category[];
   showMeta?: boolean;
   onToggleDone?: (task: Task) => void;
+  /** タスクごとの実績の帯（確定した実績の最初〜最後の日と、日ごとの実績）。渡せば計画の帯の下に出す */
+  actuals?: Map<number, GanttActualSpan>;
 }
 
-const GanttChart: React.FC<Props> = ({ tasks, categories, showMeta = true, onToggleDone }) => {
+const GanttChart: React.FC<Props> = ({ tasks, categories, showMeta = true, onToggleDone, actuals }) => {
   const navigate = useNavigate();
   const { t, weekdays } = useI18n();
   // 行の中では `t` をタスクの変数に使っているので、訳は別名で持つ
@@ -177,6 +185,42 @@ const GanttChart: React.FC<Props> = ({ tasks, categories, showMeta = true, onTog
               const s = parse(t.start_date) ?? parse(t.due_date);
               const e = parse(t.due_date) ?? parse(t.start_date);
               let bar: React.ReactNode = null;
+              const actualLayout = ganttActualLayout(actuals?.get(t.id), rangeStart, days.length);
+              const hasActual = actualLayout.strip !== null;
+              // 実績の帯があれば計画の帯を少し細くして上へ寄せ、下に実績の帯を置く
+              const planHeight = hasActual ? PLAN_BAR_HEIGHT_WITH_ACTUAL : PLAN_BAR_HEIGHT;
+              const planTop = hasActual ? 5 : (ROW_HEIGHT - PLAN_BAR_HEIGHT) / 2;
+              const span = actuals?.get(t.id);
+              const actualStrip = actualLayout.strip && span ? (
+                <Box
+                  aria-label={tr('gantt.actualTip', { first: span.first_date, last: span.last_date })}
+                  title={tr('gantt.actualTip', { first: span.first_date, last: span.last_date })}
+                  sx={{
+                    position: 'absolute',
+                    left: actualLayout.strip.startIdx * DAY_WIDTH + 3,
+                    width: (actualLayout.strip.endIdx - actualLayout.strip.startIdx + 1) * DAY_WIDTH - 6,
+                    top: planTop + planHeight + 4, height: ACTUAL_STRIP_HEIGHT,
+                    borderRadius: '4px', bgcolor: ACTUAL_STRIP_COLOR,
+                  }}
+                />
+              ) : null;
+              const actualCells = actualLayout.cells.map((c) => {
+                const day = days[c.idx];
+                const label = tr('gantt.actualDayTip', {
+                  date: `${day.getMonth() + 1}/${day.getDate()}`, hours: formatSeconds(c.seconds),
+                });
+                return (
+                  <Box
+                    key={c.idx}
+                    title={label}
+                    sx={{
+                      position: 'absolute', left: c.idx * DAY_WIDTH + 8, width: DAY_WIDTH - 16,
+                      top: planTop + planHeight + 4, height: ACTUAL_STRIP_HEIGHT,
+                      borderRadius: '4px', bgcolor: ACTUAL_DAY_COLOR,
+                    }}
+                  />
+                );
+              });
               if (s && e) {
                 const startIdx = Math.max(0, diffDays(s, rangeStart));
                 const endIdx = Math.min(days.length - 1, diffDays(e, rangeStart));
@@ -189,7 +233,7 @@ const GanttChart: React.FC<Props> = ({ tasks, categories, showMeta = true, onTog
                     <Box
                       onClick={() => navigate(`/tasks/${t.id}`)}
                       sx={{
-                        position: 'absolute', left, width, top: (ROW_HEIGHT - 22) / 2, height: 22,
+                        position: 'absolute', left, width, top: planTop, height: planHeight,
                         borderRadius: '6px', cursor: 'pointer', overflow: 'hidden',
                         bgcolor: colors.track,
                         border: st === 'TODO' ? `1.5px dashed ${ds.todoGray}` : 'none',
@@ -209,6 +253,8 @@ const GanttChart: React.FC<Props> = ({ tasks, categories, showMeta = true, onTog
                   borderBottom: '1px solid #ECECEE', '&:last-child': { borderBottom: 'none' },
                 }}>
                   {bar}
+                  {actualStrip}
+                  {actualCells}
                 </Box>
               );
             })}
