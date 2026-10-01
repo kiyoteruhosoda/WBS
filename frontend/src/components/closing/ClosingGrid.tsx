@@ -6,19 +6,20 @@ import type { CalendarOccurrence, TimeEntry } from '../../types';
 import type { DaySegment } from '../../calendar/daySegments';
 import { formatSegmentTimeRange } from '../../calendar/daySegments';
 import type { WeekEventBlock } from '../../calendar/weekLayout';
-import { layoutTimedSegments } from '../../calendar/weekLayout';
+import { layoutTimedSegments, scrollTopForHour } from '../../calendar/weekLayout';
 import { ghostPieces, resizeEdgeAt } from '../../calendar/weekGestures';
 import { darken } from '../../calendar/calendarColors';
 import type { LinkedTask } from '../../calendar/taskScheduling';
 import { occurrenceColor } from '../../calendar/taskScheduling';
 import { formatWeekHeader } from '../../calendar/calendarTitles';
-import { MINUTES_PER_DAY, dayOfWeek, formatMinute } from '../../calendar/zonedTime';
+import { MINUTES_PER_DAY, dayOfWeek } from '../../calendar/zonedTime';
 import type { EntryMarks, EntrySegment } from '../../closing/closingBoard';
 import { formatEntryRange, formatEntrySegmentRange, zonedMinuteOf } from '../../closing/closingBoard';
 import type { EntryRange } from '../../closing/closingRequests';
 import { entryTiming, snapMinutesFor } from '../../closing/entryGestures';
 import { ENTRY_LANE_ATTRIBUTE, useClosingDrag } from './useClosingDrag';
 import { entryElementId, occurrenceElementId } from './closingElementIds';
+import HourLabels from '../calendar/HourLabels';
 
 /** 時刻の列の幅（週表示と同じ）。 */
 const TIME_COLUMN_WIDTH = 56;
@@ -103,7 +104,7 @@ const ClosingGrid: React.FC<Props> = ({
   useLayoutEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
-    el.scrollTop = DEFAULT_SCROLL_MINUTE;
+    el.scrollTop = scrollTopForHour(DEFAULT_SCROLL_MINUTE);
     el.scrollLeft = 0;
   }, [firstDate]);
 
@@ -289,11 +290,7 @@ const ClosingGrid: React.FC<Props> = ({
 
         {/* 時刻の列（左に貼り付く） */}
         <Box sx={{ position: 'sticky', left: 0, zIndex: 4, bgcolor: c.surface, height: MINUTES_PER_DAY }}>
-          {Array.from({ length: 24 }, (_, h) => (
-            <Box key={h} sx={{ height: 60, fontSize: 10, lineHeight: 1, pl: '4px', color: c.textSecondary }}>
-              {formatMinute(h * 60)}
-            </Box>
-          ))}
+          <HourLabels color={c.textSecondary} paddingLeft={4} />
         </Box>
 
         {dates.map((date) => (

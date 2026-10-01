@@ -17,11 +17,12 @@ import { darken, pastEventColor } from '../../calendar/calendarColors';
 import type { LinkedTask } from '../../calendar/taskScheduling';
 import { linkedTaskLabel, occurrenceColor } from '../../calendar/taskScheduling';
 import { formatWeekHeader } from '../../calendar/calendarTitles';
-import { dayOfWeek, formatMinute, MINUTES_PER_DAY } from '../../calendar/zonedTime';
+import { dayOfWeek, MINUTES_PER_DAY } from '../../calendar/zonedTime';
 import { formatTimingRange, ghostPieces, resizeEdgeAt, tapCreateMinute } from '../../calendar/weekGestures';
 import type { CalendarInteractions, TaskDropPreview } from './calendarInteractions';
 import { useWeekDrag } from './useWeekDrag';
 import DeadlineChip from './DeadlineChip';
+import HourLabels from './HourLabels';
 import type { CalendarDeadline } from '../../calendar/taskDeadlines';
 
 // 時刻の列の幅（移植元 WeekCalendarView.xaml の ColumnDefinition 56）。
@@ -273,12 +274,8 @@ const WeekView: React.FC<Props> = ({
       {/* 時間グリッド（1px = 1 分） */}
       <Box ref={scrollRef} data-testid="week-scroll" sx={{ flex: 1, minHeight: 0, overflowY: 'auto', overflowX: 'hidden', scrollbarGutter: 'stable' }}>
         <Box sx={{ display: 'grid', gridTemplateColumns: columns, height: MINUTES_PER_DAY }}>
-          <Box>
-            {Array.from({ length: 24 }, (_, h) => (
-              <Box key={h} sx={{ height: 60, fontSize: 10, lineHeight: 1, pl: '2px', color: c.textSecondary }}>
-                {formatMinute(h * 60)}
-              </Box>
-            ))}
+          <Box sx={{ position: 'relative' }}>
+            <HourLabels color={c.textSecondary} paddingLeft={2} />
           </Box>
           {dates.map((date) => (
             <Box

@@ -212,14 +212,32 @@ export const layoutAllDayLane = (
 };
 
 /**
+ * 時刻列の文字を置く正時（分）。文字は縦の真ん中を正時の線に合わせる（Google カレンダーと同じ。ADR-0023）。
+ * 0:00 は上半分が列の外に出て切れるので出さない。
+ */
+export const hourLabelMinutes = (): number[] => Array.from({ length: 23 }, (_, i) => (i + 1) * 60);
+
+/** 正時の線（1px）の縦の真ん中。線は正時の分の位置から 1px 下へ引いている。 */
+export const HOUR_LINE_CENTER_OFFSET = 0.5;
+
+/**
+ * 正時へ送るとき、その時刻の文字が上で半分切れないように手前に残す高さ（px = 分）。
+ * 文字（10px）の上半分と少しの余白。
+ */
+export const HOUR_LABEL_CLEARANCE = 8;
+
+/** 正時（分）へ送るときの scrollTop。その正時の文字が上の端で切れないよう少し手前で止める。 */
+export const scrollTopForHour = (hourMinute: number): number => Math.max(0, hourMinute - HOUR_LABEL_CLEARANCE);
+
+/**
  * 開いたときに送る位置（移植元 `WeekCalendarView.ComputeDefaultAnchor`）。
  * 今週なら今の時刻の 4 時間前（`leadMinutes`）を正時に切り下げた位置、それ以外は 9:00。
  */
 export const defaultScrollTop = (isCurrentWeek: boolean, nowMinute: number, leadMinutes = 240): number => {
   const nineAm = 9 * 60;
   const anchor = isCurrentWeek && nowMinute > 0 ? nowMinute - leadMinutes : nineAm;
-  // 正時に揃える（半端な位置で開くと、いちばん上の時刻の目盛りが終日の帯の下に半分隠れる）
-  return Math.max(0, Math.floor(anchor / 60) * 60);
+  // 正時に揃え、その時刻の文字が上の端で半分切れないよう少し手前で止める
+  return scrollTopForHour(Math.max(0, Math.floor(anchor / 60) * 60));
 };
 
 /** 過去の影の高さ（移植元 `WeekDayColumn.PastShadeHeight`）。過ぎた日は下まで、今日は今まで。 */
