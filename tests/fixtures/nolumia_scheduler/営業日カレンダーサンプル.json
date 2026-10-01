@@ -1,0 +1,24 @@
+{
+  "id": "jp_default",
+  "name": "Japan Default Business Calendar",
+  "timezone": "Asia/Tokyo",
+  "workdaysOfWeek": ["MO", "TU", "WE", "TH", "FR"],
+  "holidays": [
+    {
+      "date": "2026-01-01",
+      "name": "元日"
+    },
+    {
+      "date": "2026-01-12",
+      "name": "成人の日"
+    },
+    {
+      "date": "2026-02-11",
+      "name": "建国記念の日"
+    },
+    {
+      "date": "2026-04-29",
+      "name": "昭和の日"
+    }
+  ]
+}

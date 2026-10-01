@@ -1,0 +1,30 @@
+{
+  "id": "evt_rec_004",
+  "kind": "Recurring",
+  "title": "毎週レビュー日",
+  "location": null,
+  "visibility": "Private",
+  "eventType": "review",
+  "description": null,
+  "timezone": "Asia/Tokyo",
+  "allDay": true,
+  "startDate": "2026-04-20",
+  "startTime": null,
+  "endTime": null,
+  "recurrence": {
+    "ruleType": "WEEKLY",
+    "interval": 1,
+    "endDate": "2026-12-31",
+    "weekly": {
+      "weekdays": ["FR"]
+    },
+    "monthly": null,
+    "yearly": null,
+    "adjustment": null
+  },
+  "exceptions": [],
+  "moves": [],
+  "createdAt": "2026-04-20T10:10:00+09:00",
+  "updatedAt": "2026-04-20T10:10:00+09:00",
+  "version": 1
+}

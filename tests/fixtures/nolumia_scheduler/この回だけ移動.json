@@ -1,0 +1,42 @@
+{
+  "id": "evt_rec_007",
+  "kind": "Recurring",
+  "title": "月次報告会",
+  "location": "会議室D",
+  "visibility": "Public",
+  "eventType": "meeting",
+  "description": null,
+  "timezone": "Asia/Tokyo",
+  "allDay": false,
+  "startDate": "2026-04-06",
+  "startTime": "13:00:00",
+  "endTime": "14:00:00",
+  "recurrence": {
+    "ruleType": "MONTHLY",
+    "interval": 1,
+    "endDate": "2026-12-31",
+    "weekly": null,
+    "monthly": {
+      "mode": "NTH_WEEKDAY",
+      "weekIndex": 1,
+      "weekday": "MO"
+    },
+    "yearly": null,
+    "adjustment": null
+  },
+  "exceptions": [],
+  "moves": [
+    {
+      "occurrenceLocal": "2026-06-01T13:00:00",
+      "newDate": "2026-06-02",
+      "newStartTime": "15:00:00",
+      "newEndTime": "16:00:00",
+      "title": "月次報告会（振替）",
+      "location": "会議室E",
+      "visibility": "Public"
+    }
+  ],
+  "createdAt": "2026-04-20T10:40:00+09:00",
+  "updatedAt": "2026-04-20T10:40:00+09:00",
+  "version": 1
+}

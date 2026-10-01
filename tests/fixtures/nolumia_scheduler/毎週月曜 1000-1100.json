@@ -1,0 +1,30 @@
+{
+  "id": "evt_rec_001",
+  "kind": "Recurring",
+  "title": "週次定例",
+  "location": "会議室A",
+  "visibility": "Public",
+  "eventType": "meeting",
+  "description": null,
+  "timezone": "Asia/Tokyo",
+  "allDay": false,
+  "startDate": "2026-04-20",
+  "startTime": "10:00:00",
+  "endTime": "11:00:00",
+  "recurrence": {
+    "ruleType": "WEEKLY",
+    "interval": 1,
+    "endDate": "2026-12-31",
+    "weekly": {
+      "weekdays": ["MO"]
+    },
+    "monthly": null,
+    "yearly": null,
+    "adjustment": null
+  },
+  "exceptions": [],
+  "moves": [],
+  "createdAt": "2026-04-20T09:40:00+09:00",
+  "updatedAt": "2026-04-20T09:40:00+09:00",
+  "version": 1
+}
