@@ -204,6 +204,17 @@ def test_a_subtask_belongs_to_the_project_of_its_parent(client) -> None:
     assert client.get(f"/api/tasks/{grandchild['id']}").json()["project_id"] is None
 
 
+def test_a_subtask_whose_parent_was_deleted_can_still_be_edited(client) -> None:
+    work = _project(client, "仕事")
+    parent = _task(client, "親", project_id=work["id"])
+    child = _task(client, "子", parent_task_id=parent["id"])
+    client.delete(f"/api/tasks/{parent['id']}")
+
+    res = client.put(f"/api/tasks/{child['id']}", json={"title": "子（親なし）", "project_id": None})
+    assert res.status_code == 200, res.text
+    assert res.json()["project_id"] is None
+
+
 def test_changing_the_parent_task_moves_the_branch_into_the_new_parents_project(client) -> None:
     work = _project(client, "仕事")
     home = _project(client, "私用")

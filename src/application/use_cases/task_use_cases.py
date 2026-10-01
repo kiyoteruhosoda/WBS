@@ -176,8 +176,13 @@ class TaskUseCases:
 
     def _project_for_update(self, task: Task, user_id: int, dto: UpdateTaskDTO) -> int | None:
         """更新の後に属するプロジェクト。親があれば親のもの（違う値を送られたら 422）。"""
-        if task.parent_task_id is not None:
-            parent = self._owned_task(task.parent_task_id, user_id)
+        # ⚠ 親を消した（論理削除）子は、根として扱う（親が見つからないだけで直せなくしない）
+        parent = (
+            self._repo.find_by_id_for_user(task.parent_task_id, user_id)
+            if task.parent_task_id is not None
+            else None
+        )
+        if parent is not None:
             if dto.project_id_given and dto.project_id != parent.project_id:
                 raise ValidationError("a subtask belongs to the project of its parent task")
             return parent.project_id
