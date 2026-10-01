@@ -2,6 +2,15 @@
 
 完了した重要な変更の要約（新しいものを上に）。詳しい経緯は `history/` を参照。
 
+## 2026-10-01
+
+- **スキーマを Alembic で管理するようにした**（ADR-0005、task #153）。起動のたびの `create_all` と
+  手書きの列補完をやめ、今の形を baseline（`migrations/versions/0001_baseline.py`）にした。
+  DB を上げるのは entrypoint（`scripts/run_db_migrations.py`）だけで、アプリは DB が head で
+  なければ起動しない。⚠ **`alembic_version` の無い既存の DB は、旧経路の補完を 1 回なぞって
+  baseline と形が揃ったと確かめてから stamp する**（揃わなければ全部巻き戻して起動を止める）。
+  列補完が作っていなかった索引 `ix_auth_sessions_idp_session_id` はこのとき作られる。
+
 ## 2026-09-20
 
 - **IdP で止めた人が、このアプリでも止まるようにした**（ADR-0003）。⚠ **これまでは
