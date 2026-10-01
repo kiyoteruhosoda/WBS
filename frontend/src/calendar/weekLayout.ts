@@ -213,12 +213,13 @@ export const layoutAllDayLane = (
 
 /**
  * 開いたときに送る位置（移植元 `WeekCalendarView.ComputeDefaultAnchor`）。
- * 今週なら今の時刻の 4 時間前（`leadMinutes`）、それ以外は 9:00。
+ * 今週なら今の時刻の 4 時間前（`leadMinutes`）を正時に切り下げた位置、それ以外は 9:00。
  */
 export const defaultScrollTop = (isCurrentWeek: boolean, nowMinute: number, leadMinutes = 240): number => {
   const nineAm = 9 * 60;
   const anchor = isCurrentWeek && nowMinute > 0 ? nowMinute - leadMinutes : nineAm;
-  return Math.max(0, anchor);
+  // 正時に揃える（半端な位置で開くと、いちばん上の時刻の目盛りが終日の帯の下に半分隠れる）
+  return Math.max(0, Math.floor(anchor / 60) * 60);
 };
 
 /** 過去の影の高さ（移植元 `WeekDayColumn.PastShadeHeight`）。過ぎた日は下まで、今日は今まで。 */

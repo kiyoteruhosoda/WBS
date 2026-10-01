@@ -402,8 +402,10 @@ const ClosingPage: React.FC = () => {
       )}
 
       <Box sx={{ display: 'flex', flexDirection: { xs: 'column', lg: 'row' }, gap: '12px', alignItems: 'stretch' }}>
+        {/* 縦に積む幅（lg 未満）で flex: 1 にすると、高さの指定より中身の高さ（1 日 1440px）が勝って
+            グリッドが内側でスクロールしなくなる（8:00 へ送れず、見出しも上へ流れる）。横に並べるときだけ伸ばす。 */}
         <Box sx={{
-          flex: 1, minWidth: 0, border: `1px solid ${ds.border}`, borderRadius: '8px', overflow: 'hidden',
+          flex: { xs: '0 0 auto', lg: 1 }, minWidth: 0, border: `1px solid ${ds.border}`, borderRadius: '8px', overflow: 'hidden',
           height: { xs: 'calc(100vh - 220px)', md: 'calc(100vh - 260px)' }, minHeight: 520,
         }}>
           {board ? (

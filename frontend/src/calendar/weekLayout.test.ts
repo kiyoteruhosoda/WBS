@@ -148,6 +148,8 @@ describe('週の表示の細かいところ', () => {
     expect(defaultScrollTop(true, hm(15))).toBe(hm(11));
     expect(defaultScrollTop(true, hm(2))).toBe(0);
     expect(defaultScrollTop(true, hm(15), 60)).toBe(hm(14));
+    // 正時に揃える（15:37 の 4 時間前は 11:37 → 11:00）
+    expect(defaultScrollTop(true, hm(15, 37))).toBe(hm(11));
   });
 
   it('過ぎた日は下まで、今日は今まで影を落とす', () => {

@@ -1,8 +1,9 @@
 import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  Alert, Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, Snackbar,
+  Alert, Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, Snackbar, useMediaQuery,
 } from '@mui/material';
+import { useTheme } from '@mui/material/styles';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useI18n } from '../i18n';
 import type { TranslationKey } from '../i18n/translations';
@@ -18,6 +19,7 @@ import EventEditDialog from '../components/calendar/EventEditDialog';
 import type { EventEditTarget } from '../components/calendar/EventEditDialog';
 import RecurringScopeDialog from '../components/calendar/RecurringScopeDialog';
 import TaskSchedulePanel from '../components/calendar/TaskSchedulePanel';
+import { useHeightToViewportBottom } from '../components/useHeightToViewportBottom';
 import type { WeekSlot } from '../components/calendar/weekSlotLocator';
 import type { CreateRange, OccurrenceReschedule, TaskDropPreview } from '../components/calendar/calendarInteractions';
 import type { CalendarDeadline } from '../calendar/taskDeadlines';
@@ -285,6 +287,9 @@ const CalendarPage: React.FC = () => {
     navigate(deadline.kind === 'task' ? `/tasks/${deadline.id}` : '/milestones');
 
   const askDeleteScope = deleteTarget != null && deleteTarget.is_recurring && deleteTarget.series_key != null;
+  // 広い画面はカレンダーとタスクの一覧を画面の下端まで（下の余白は main の 24px）。狭い画面は縦に積んでページごと送る。
+  const wide = useMediaQuery(useTheme().breakpoints.up('md'));
+  const fill = useHeightToViewportBottom<HTMLDivElement>(24, wide);
 
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
@@ -300,12 +305,15 @@ const CalendarPage: React.FC = () => {
           {t('calendar.schedulingTask', { title: schedulingTask.title })}
         </Alert>
       )}
-      <Box sx={{ display: 'flex', flexDirection: { xs: 'column', md: 'row' }, gap: '12px', alignItems: 'stretch' }}>
+      <Box
+        ref={fill.ref}
+        sx={{
+          display: 'flex', flexDirection: { xs: 'column', md: 'row' }, gap: '12px', alignItems: 'stretch',
+          height: { md: fill.height != null ? `${fill.height}px` : 'calc(100vh - 160px)' }, minHeight: { md: 640 },
+        }}
+      >
         {/* タスクの一覧（広い画面は右、狭い画面は上で折りたたむ） */}
-        <Box sx={{
-          order: { xs: 1, md: 2 }, width: { xs: '100%', md: 260 }, flexShrink: 0,
-          height: { md: 'calc(100vh - 160px)' }, minHeight: { md: 640 },
-        }}>
+        <Box sx={{ order: { xs: 1, md: 2 }, width: { xs: '100%', md: 260 }, flexShrink: 0, height: { md: '100%' } }}>
           <TaskSchedulePanel
             tasks={panelTasks}
             categories={categories ?? []}
@@ -316,9 +324,11 @@ const CalendarPage: React.FC = () => {
             onDropTask={onTaskDrop}
           />
         </Box>
+        {/* 狭い画面（縦に積む）で flex: 1 にすると、高さの指定より中身の高さ（1 日 1440px）が勝って
+            時間グリッドが内側でスクロールしなくなる（今の時刻へ送れず 0:00 から出る）。広い画面だけ伸ばす。 */}
         <Box sx={{
-          order: { xs: 2, md: 1 }, flex: 1, minWidth: 0,
-          height: { xs: 'calc(100vh - 140px)', md: 'calc(100vh - 160px)' }, minHeight: 640,
+          order: { xs: 2, md: 1 }, flex: { xs: '0 0 auto', md: 1 }, minWidth: 0,
+          height: { xs: 'calc(100svh - 140px)', md: '100%' }, minHeight: { xs: 480 },
         }}>
           <SchedulerCalendar
             occurrences={occurrencesQuery.data ?? []}

@@ -14,6 +14,7 @@ import { getMilestones } from '../api/milestones';
 import { getDashboardKpi } from '../api/dashboard';
 import WeekView from '../components/calendar/WeekView';
 import CategoryDot from '../components/CategoryDot';
+import { useHeightToViewportBottom } from '../components/useHeightToViewportBottom';
 import TimerFailureNotice from '../components/TimerFailureNotice';
 import { PlayIcon, StopIcon } from '../components/icons';
 import { categoryColor, ds } from '../theme';
@@ -396,6 +397,8 @@ const Today: React.FC = () => {
   const qc = useQueryClient();
   const theme = useTheme();
   const wide = useMediaQuery(theme.breakpoints.up('md'));
+  // 広い画面の時間グリッドは画面の下端まで（上に締めの知らせが出ても、ページ全体ははみ出さない）
+  const fill = useHeightToViewportBottom<HTMLDivElement>(24, wide);
   const nowMs = useMinuteClock();
 
   const summaryQuery = useQuery({ queryKey: TODAY_SUMMARY_KEY, queryFn: fetchSummary, refetchInterval: 60_000 });
@@ -460,8 +463,11 @@ const Today: React.FC = () => {
   const taskTitle = (taskId: number | null) => (taskId != null ? linkedTasks.get(taskId)?.title : undefined);
 
   return (
-    <Box sx={{
+    <Box ref={fill.ref} sx={{
       display: 'grid', gap: '12px', alignItems: 'start',
+      // 広い画面は箱ごと画面の下端まで。高さを決めずに時間グリッドだけに高さを持たせると、右の列の最後の
+      // 1fr の行がグリッドの高さぶん伸びて、ページの下に数百 px の空きができる。
+      height: { md: fill.height != null ? `${fill.height}px` : 'calc(100vh - 140px)' }, minHeight: { md: 560 },
       gridTemplateColumns: { xs: 'minmax(0, 1fr)', md: 'minmax(0, 1fr) minmax(300px, 380px)' },
       gridTemplateAreas: {
         xs: '"now" "grid" "tasks" "actuals" "kpi"',
@@ -483,7 +489,7 @@ const Today: React.FC = () => {
 
       <Box sx={{
         ...card, gridArea: 'grid', display: 'flex', flexDirection: 'column',
-        height: { xs: '46vh', md: 'calc(100vh - 140px)' }, minHeight: { xs: 300, md: 560 },
+        height: { xs: '46vh', md: 'auto' }, minHeight: { xs: 300 }, alignSelf: { md: 'stretch' },
       }} data-testid="today-grid">
         {occurrencesQuery.isError && <Alert severity="error" sx={{ borderRadius: 0 }}>{t('common.loadError')}</Alert>}
         <Box sx={{ flex: 1, minHeight: 0 }}>

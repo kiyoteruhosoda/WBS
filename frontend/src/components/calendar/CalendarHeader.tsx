@@ -70,7 +70,10 @@ const CalendarHeader: React.FC<Props> = ({
           data-testid="calendar-title"
           sx={{
             fontSize: { xs: 15, sm: 18 }, fontWeight: 600, color: c.textPrimary, textAlign: 'center',
-            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+            overflow: 'hidden', textOverflow: 'ellipsis',
+            // 狭い画面は 2 行まで折り返す（1 行のままだと週の範囲の終わりの日が「…」で切れて見えない）
+            whiteSpace: { xs: 'normal', sm: 'nowrap' }, lineHeight: { xs: 1.25, sm: 'normal' },
+            display: { xs: '-webkit-box', sm: 'block' }, WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
           }}
         >
           {title}
