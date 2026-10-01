@@ -1,16 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
-  formatRatio, formatSeconds, formatSignedSeconds, ganttActualLayout, groupFill,
+  formatRatio, ganttActualLayout, groupFill,
   previousClosingPeriod, stackSegments, totalOf, UNASSIGNED_FILL, UNGROUPED_COLOR,
 } from './actualsView';
 
-describe('時間の表示', () => {
-  it('秒を時間に、差に符号を付ける', () => {
-    expect(formatSeconds(5400)).toBe('1.5h');
-    expect(formatSeconds(1200)).toBe('0.33h');
-    expect(formatSignedSeconds(3600)).toBe('+1h');
-    expect(formatSignedSeconds(-1800)).toBe('−0.5h');
-    expect(formatSignedSeconds(0)).toBe('±0h');
+describe('割合の表示', () => {
+  it('百分率に。分母 0 は「—」', () => {
     expect(formatRatio(0.3333)).toBe('33%');
     expect(formatRatio(null)).toBe('—');
   });

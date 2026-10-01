@@ -163,7 +163,3 @@ export const linkedTaskLabel = (
   const title = linkedTasks?.get(occurrence.task_id)?.title;
   return title && title !== occurrence.title ? title : null;
 };
-
-/** 時間の表示（`1.5h`。小数は 2 桁まで、末尾の 0 は落とす）。null は「—」。 */
-export const formatHours = (hours: number | null | undefined): string =>
-  hours == null ? '—' : `${Number(hours.toFixed(2))}h`;

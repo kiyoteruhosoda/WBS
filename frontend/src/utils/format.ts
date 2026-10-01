@@ -34,28 +34,67 @@ export const parseDate = (dateStr: string | null | undefined): Date | null => {
   return isNaN(d.getTime()) ? null : d;
 };
 
-export const formatDate = (dateStr: string | null | undefined): string => {
-  const d = parseDate(dateStr);
+// ── 日付の書き方（ADR-0020）─────────────────────────────────────────
+// 文の中・表の中の日付は `M/D`（ゼロ埋めしない）。今年（利用者のタイムゾーンの「今日」の年）でなければ
+// `YYYY/M/D`。期間は `M/D〜M/D` の形で、年は初日が今年でないときだけ初日に、末日の年が初日と違うときだけ末日に付ける。
+// 例外（ここを通さない）: カレンダーの見出し（移植元の書式）・締めの画面の見出し（年を常に出す）・ガントの日の軸。
+
+type DateInput = string | Date | null | undefined;
+
+const toDate = (value: DateInput): Date | null => (value instanceof Date ? value : parseDate(value));
+
+const monthDay = (d: Date): string => `${d.getMonth() + 1}/${d.getDate()}`;
+
+/** 日付 1 つ。今年なら `9/30`、ほかの年なら `2025/9/30`。無ければ「—」。 */
+export const formatDate = (value: DateInput): string => {
+  const d = toDate(value);
   if (!d) return '—';
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}/${m}/${day}`;
+  return d.getFullYear() === todayDate().getFullYear() ? monthDay(d) : `${d.getFullYear()}/${monthDay(d)}`;
 };
 
-export const formatShortDate = (dateStr: string | null | undefined): string => {
-  const d = parseDate(dateStr);
-  if (!d) return '—';
-  return `${d.getMonth() + 1}/${d.getDate()}`;
+/**
+ * 期間の両端。並べ方（`{from}〜{to}`）は翻訳の側（`common.dateRange` など）。
+ * 初日は `formatDate` と同じ。末日は初日と同じ年なら年を省く（`2025/12/16〜12/31`、`2025/12/16〜2026/1/15`）。
+ */
+export const dateRangeParts = (from: DateInput, to: DateInput): { from: string; to: string } => {
+  const a = toDate(from);
+  const b = toDate(to);
+  if (!b) return { from: formatDate(a), to: '—' };
+  const sameYear = a ? a.getFullYear() === b.getFullYear() : b.getFullYear() === todayDate().getFullYear();
+  return { from: formatDate(a), to: sameYear ? monthDay(b) : `${b.getFullYear()}/${monthDay(b)}` };
 };
 
-export const formatMonthDay = (dateStr: string | null | undefined, lang: 'ja' | 'en' = 'ja'): { month: string; day: string } => {
-  const d = parseDate(dateStr);
-  if (!d) return { month: '', day: '—' };
-  const month = lang === 'ja'
-    ? `${d.getMonth() + 1}月`
-    : d.toLocaleString('en-US', { month: 'short' });
-  return { month, day: String(d.getDate()) };
+// ── 時間の書き方（ADR-0020）─────────────────────────────────────────
+// 工数（見積・予定・残・実績の合計・確定実績・差）は時間の小数 `1.5h`（小数 2 桁まで、末尾の 0 は落とす）。
+// 打刻を見て直す場面（今日・締め・タイマー）の量は時刻と並べて読むので `H:MM`（走っている経過と正確な長さは `H:MM:SS`）。
+// 締めの表の 15 分丸め（`formatQuarterHours`）も `H:MM` の側。
+
+/** 工数の時間（`1.5h`）。null は「—」。 */
+export const formatHours = (hours: number | null | undefined): string =>
+  hours == null ? '—' : `${Number(hours.toFixed(2))}h`;
+
+/** 秒で来る工数を `1.5h` に。 */
+export const formatSecondsAsHours = (seconds: number): string => formatHours(seconds / 3600);
+
+/** 差（打刻 − 予定）。正なら「+」を付ける。 */
+export const formatSignedSecondsAsHours = (seconds: number): string => {
+  if (seconds === 0) return '±0h';
+  return `${seconds > 0 ? '+' : '−'}${formatSecondsAsHours(Math.abs(seconds))}`;
+};
+
+/** 打刻の長さの `H:MM`（秒は切り捨て）。 */
+export const formatClockDuration = (seconds: number): string => {
+  const total = Math.max(0, Math.floor(seconds / 60));
+  return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`;
+};
+
+/** 打刻の正確な長さ・走っている経過の `H:MM:SS`（端数の秒は切り捨て、負は 0）。 */
+export const formatExactDuration = (seconds: number): string => {
+  const total = Math.max(0, Math.floor(seconds));
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = total % 60;
+  return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
 };
 
 export type PriorityBand = 'high' | 'mid' | 'low';

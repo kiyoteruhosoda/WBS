@@ -8,11 +8,11 @@ import {
 } from '@mui/material';
 import { ACTUALS_KEY, getTaskActuals } from '../../api/actuals';
 import { patchTask } from '../../api/tasks';
-import { formatHours } from '../../calendar/taskScheduling';
 import { useI18n } from '../../i18n';
 import { ds } from '../../theme';
 import type { TaskActualsRow } from '../../types/actuals';
 import { WarningTriangleIcon } from '../icons';
+import { dateRangeParts, formatHours } from '../../utils/format';
 
 interface Props {
   reviewOnly: boolean;
@@ -79,7 +79,7 @@ const TaskActualsPanel: React.FC<Props> = ({ reviewOnly, onReviewOnlyChange }) =
           label={t('actuals.reviewOnly')}
         />
         <Box sx={{ fontSize: 13, color: ds.textSub }}>
-          {latest ? t('actuals.latestClosed', { from: latest.first_day, to: latest.last_day }) : t('actuals.noClosed')}
+          {latest ? t('actuals.latestClosed', dateRangeParts(latest.first_day, latest.last_day)) : t('actuals.noClosed')}
         </Box>
       </Box>
       {reviewOnly && <Alert severity="info" sx={{ mb: '12px' }}>{t('actuals.reviewIntro')}</Alert>}
@@ -129,7 +129,7 @@ const TaskActualsPanel: React.FC<Props> = ({ reviewOnly, onReviewOnlyChange }) =
                     <TableCell align="right">{task.progress_percent === null ? '—' : `${task.progress_percent}%`}</TableCell>
                     <TableCell align="right">{row.latest_closed_hours > 0 ? formatHours(row.latest_closed_hours) : '—'}</TableCell>
                     <TableCell sx={{ whiteSpace: 'nowrap', color: ds.textSub }}>
-                      {row.actual_first_date ? `${row.actual_first_date}〜${row.actual_last_date}` : '—'}
+                      {row.actual_first_date ? t('common.dateRange', dateRangeParts(row.actual_first_date, row.actual_last_date)) : '—'}
                     </TableCell>
                     <TableCell>
                       {row.review_reasons.length > 0 && (

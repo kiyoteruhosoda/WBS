@@ -5,9 +5,8 @@ import {
   Alert, Box, CircularProgress, Table, TableBody, TableCell, TableContainer, TableHead, TableRow,
 } from '@mui/material';
 import { ACTUALS_KEY, getPeriodReport } from '../../api/actuals';
-import {
-  formatRatio, formatSeconds, formatSignedSeconds, rangeParams,
-} from '../../actuals/actualsView';
+import { formatRatio, rangeParams } from '../../actuals/actualsView';
+import { dateRangeParts, formatSecondsAsHours, formatSignedSecondsAsHours } from '../../utils/format';
 import type { RangeValue } from '../../actuals/actualsView';
 import { useI18n } from '../../i18n';
 import { ds } from '../../theme';
@@ -44,7 +43,7 @@ const PeriodsPanel: React.FC = () => {
     const total = which === 'planned' ? p.planned_seconds : p.tracked_seconds;
     const off = which === 'planned' ? p.planned_off_task_seconds : p.tracked_off_task_seconds;
     const name = which === 'planned' ? t('actuals.legendPlanned') : t('actuals.legendTracked');
-    return `${name} ${formatSeconds(total)}（${t('actuals.groupUnassigned')} ${formatSeconds(off)}）`;
+    return `${name} ${formatSecondsAsHours(total)}（${t('actuals.groupUnassigned')} ${formatSecondsAsHours(off)}）`;
   };
 
   return (
@@ -86,7 +85,7 @@ const PeriodsPanel: React.FC = () => {
               {data.periods.map((p) => (
                 <TableRow key={p.first_day} hover>
                   <TableCell sx={{ whiteSpace: 'nowrap' }}>
-                    {p.first_day}〜{p.last_day}
+                    {t('common.dateRange', dateRangeParts(p.first_day, p.last_day))}
                     {p.closed !== null && (
                       <Box component="span" sx={{ ml: '8px', fontSize: 11, color: p.closed ? ds.success : ds.textMuted }}>
                         {p.closed ? t('actuals.closed') : t('actuals.open')}
@@ -99,12 +98,12 @@ const PeriodsPanel: React.FC = () => {
                       <PairBar task={p.tracked_task_seconds} offTask={p.tracked_off_task_seconds} max={max} color={TRACKED_COLOR} label={barLabel(p, 'tracked')} />
                     </Box>
                   </TableCell>
-                  <TableCell align="right">{formatSeconds(p.planned_seconds)}</TableCell>
-                  <TableCell align="right">{formatSeconds(p.tracked_seconds)}</TableCell>
-                  <TableCell align="right" sx={{ fontWeight: 700 }}>{formatSignedSeconds(p.difference_seconds)}</TableCell>
+                  <TableCell align="right">{formatSecondsAsHours(p.planned_seconds)}</TableCell>
+                  <TableCell align="right">{formatSecondsAsHours(p.tracked_seconds)}</TableCell>
+                  <TableCell align="right" sx={{ fontWeight: 700 }}>{formatSignedSecondsAsHours(p.difference_seconds)}</TableCell>
                   <TableCell align="right">{formatRatio(p.planned_off_task_ratio)}</TableCell>
                   <TableCell align="right">{formatRatio(p.tracked_off_task_ratio)}</TableCell>
-                  <TableCell align="right">{formatSeconds(p.confirmed_seconds)}</TableCell>
+                  <TableCell align="right">{formatSecondsAsHours(p.confirmed_seconds)}</TableCell>
                 </TableRow>
               ))}
             </TableBody>

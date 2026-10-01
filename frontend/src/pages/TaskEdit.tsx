@@ -12,13 +12,13 @@ import { getWorklogs, createWorklog, deleteWorklog } from '../api/worklogs';
 import { getCategories } from '../api/categories';
 import { getMilestones } from '../api/milestones';
 import type { Task, TaskStatus, DependencyType } from '../types';
-import { formatDate, priorityBand, priorityBandValue, todayDate } from '../utils/format';
+import { formatDate, formatHours, priorityBand, priorityBandValue, todayDate } from '../utils/format';
 import type { PriorityBand } from '../utils/format';
 import { useI18n } from '../i18n';
 import { ds } from '../theme';
 import { PlusIcon, TrashIcon } from '../components/icons';
 import MoreTimeIcon from '@mui/icons-material/MoreTime';
-import { formatHours, scheduleTaskPath } from '../calendar/taskScheduling';
+import { scheduleTaskPath } from '../calendar/taskScheduling';
 
 const STATUSES: TaskStatus[] = ['TODO', 'DOING', 'WAITING', 'DONE', 'CANCELLED'];
 const DEP_TYPES: DependencyType[] = ['FS', 'SS', 'FF', 'SF'];

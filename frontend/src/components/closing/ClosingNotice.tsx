@@ -4,7 +4,8 @@ import { Alert, Button } from '@mui/material';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useI18n } from '../../i18n';
 import { PENDING_CLOSINGS_KEY, getPendingClosings } from '../../api/closing';
-import { PERIOD_PARAM, periodLabelParts } from '../../closing/closingPeriods';
+import { PERIOD_PARAM } from '../../closing/closingPeriods';
+import { dateRangeParts } from '../../utils/format';
 
 /**
  * 全画面の上部の「未確定の期間があります」（#163: 外への通知はしない。ADR-0012）。
@@ -17,7 +18,7 @@ const ClosingNotice: React.FC = () => {
   const { data } = useQuery({ queryKey: PENDING_CLOSINGS_KEY, queryFn: getPendingClosings, staleTime: 5 * 60_000 });
   if (!data?.has_pending || location.pathname.startsWith('/closing')) return null;
   const oldest = data.pending[0];
-  const label = periodLabelParts(oldest);
+  const label = dateRangeParts(oldest.first_day, oldest.last_day);
   const open = () => navigate(`/closing?${PERIOD_PARAM}=${oldest.first_day}`);
   return (
     <Alert

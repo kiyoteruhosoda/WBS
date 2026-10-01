@@ -1,15 +1,6 @@
 // 実績の見える化の画面で使う純関数（task #162、ADR-0017）。
 import type { BreakdownGroup, GanttActualSpan, ReportUnit } from '../types/actuals';
 
-/** 秒を「1.5h」の形に（小数 2 桁まで、末尾の 0 は落とす）。 */
-export const formatSeconds = (seconds: number): string => `${Number((seconds / 3600).toFixed(2))}h`;
-
-/** 差（打刻 − 予定）。正なら「+」を付ける。 */
-export const formatSignedSeconds = (seconds: number): string => {
-  if (seconds === 0) return '±0h';
-  return `${seconds > 0 ? '+' : '−'}${formatSeconds(Math.abs(seconds))}`;
-};
-
 /** 0〜1 の割合を百分率に。分母 0（null）は「—」。 */
 export const formatRatio = (ratio: number | null): string =>
   ratio === null ? '—' : `${Math.round(ratio * 100)}%`;

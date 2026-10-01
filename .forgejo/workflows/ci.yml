@@ -76,7 +76,7 @@ jobs:
       #   自前の鏡（git.nolumia.com）には setup-node は無い（setup-uv とは事情が違う）。
       # ⚠ **node-version は書かない**。書くと setup-node は鏡を指しても先に api.github.com の
       #   一覧を引く（GitHub に依存する）。台の像（node:24-bookworm）の Node 24 をそのまま使う。
-      #   本番の像（frontend/Dockerfile の node:22-alpine）とは版がずれる（2026-10-01、task #171）。
+      #   本番の像（frontend/Dockerfile）も node:24-alpine に揃えてある（2026-10-01、task #151）。
       - uses: actions/setup-node@v6
         with:
           cache: npm

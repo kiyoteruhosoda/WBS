@@ -23,15 +23,16 @@ import type { DaySegment } from '../calendar/daySegments';
 import type { DayBand } from '../calendar/weekLayout';
 import { buildDeadlines } from '../calendar/taskDeadlines';
 import type { LinkedTask } from '../calendar/taskScheduling';
-import { buildLinkedTasks, formatHours, scheduleTaskPath } from '../calendar/taskScheduling';
+import { buildLinkedTasks, scheduleTaskPath } from '../calendar/taskScheduling';
 import { formatMinute, resolveTimeZone, toZonedPoint } from '../calendar/zonedTime';
-import { elapsedOf, formatElapsed } from '../timer/timerState';
+import { elapsedOf } from '../timer/timerState';
 import type { CurrentSnapshot } from '../timer/timerState';
 import { useCurrentTimeEntry, useTimerWrites } from '../timer/useTimer';
 import type { TaskUrgency } from '../today/todayView';
 import {
-  TASKS_SHOWN_FIRST, currentAndNext, entryBands, formatDuration, liveActuals, occurrenceStartOf, taskUrgencyOf,
+  TASKS_SHOWN_FIRST, currentAndNext, entryBands, liveActuals, occurrenceStartOf, taskUrgencyOf,
 } from '../today/todayView';
+import { formatClockDuration, formatExactDuration, formatHours } from '../utils/format';
 
 // 「今日」の画面（task #160、ADR-0015）。朝に開いて 1 画面で済むように 3 層で並べる:
 //   1. いま（走っている打刻・いまの予定から Start）と、今日の予定のグリッド（打刻の帯を重ねる）
@@ -88,7 +89,7 @@ const RunningElapsed: React.FC<{ snapshot: CurrentSnapshot; entry: TimeEntry }> 
     const id = window.setInterval(() => setNowMs(Date.now()), 1000);
     return () => window.clearInterval(id);
   }, []);
-  return <>{formatElapsed(elapsedOf(snapshot, entry, nowMs))}</>;
+  return <>{formatExactDuration(elapsedOf(snapshot, entry, nowMs) / 1000)}</>;
 };
 
 const NowPanel: React.FC<{
@@ -138,7 +139,7 @@ const NowPanel: React.FC<{
         <Box sx={{ textAlign: 'right', flexShrink: 0 }}>
           <Box sx={{ fontSize: 11, color: ds.textMuted }}>{t('today.totalToday')}</Box>
           <Box sx={{ fontSize: 16, fontWeight: 700, color: ds.text, fontVariantNumeric: 'tabular-nums' }}>
-            {formatDuration(totalSeconds)}
+            {formatClockDuration(totalSeconds)}
           </Box>
         </Box>
         {entry && (
@@ -330,7 +331,7 @@ const ActualsCard: React.FC<{
       <Box sx={cardHeader}>
         <Box sx={sectionTitle}>{t('today.actuals')}</Box>
         <Box sx={{ fontSize: 14, fontWeight: 700, color: ds.text, fontVariantNumeric: 'tabular-nums' }}>
-          {formatDuration(totalSeconds)}
+          {formatClockDuration(totalSeconds)}
         </Box>
       </Box>
       {actuals.length === 0 && (
@@ -342,7 +343,7 @@ const ActualsCard: React.FC<{
             <Box sx={{ flex: 1, minWidth: 0, color: a.task_id == null ? ds.textSub : ds.text, ...ellipsis }}>
               {a.task_title ?? t('timer.unassigned')}
             </Box>
-            <Box sx={{ fontVariantNumeric: 'tabular-nums', color: ds.text, flexShrink: 0 }}>{formatDuration(a.seconds)}</Box>
+            <Box sx={{ fontVariantNumeric: 'tabular-nums', color: ds.text, flexShrink: 0 }}>{formatClockDuration(a.seconds)}</Box>
           </Box>
           <Box sx={{ mt: '3px', height: 4, borderRadius: '2px', bgcolor: ds.track, overflow: 'hidden' }}>
             <Box sx={{

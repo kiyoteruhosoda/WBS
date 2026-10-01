@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Category, Task } from '../types';
 import {
-  buildLinkedTasks, draftFromDrop, draftFromSlot, dropStartMinute, formatHours, linkedTaskLabel, occurrenceColor,
+  buildLinkedTasks, draftFromDrop, draftFromSlot, dropStartMinute, linkedTaskLabel, occurrenceColor,
   parseScheduleTaskParam, schedulableTasks, scheduleTaskPath, taskBlockMinutes, taskEventRequest,
 } from './taskScheduling';
 import { eventColor } from './calendarColors';
@@ -149,12 +149,5 @@ describe('クエリと表示', () => {
     expect(parseScheduleTaskParam('abc')).toBeNull();
     expect(parseScheduleTaskParam('0')).toBeNull();
     expect(parseScheduleTaskParam('-3')).toBeNull();
-  });
-
-  it('時間の表示', () => {
-    expect(formatHours(1.5)).toBe('1.5h');
-    expect(formatHours(2)).toBe('2h');
-    expect(formatHours(0.333333)).toBe('0.33h');
-    expect(formatHours(null)).toBe('—');
   });
 });

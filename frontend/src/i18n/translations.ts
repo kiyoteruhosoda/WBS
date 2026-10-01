@@ -35,6 +35,7 @@ const ja = {
   'common.loadError': 'データの読み込みに失敗しました',
   'common.dueNone': '期限なし',
   'common.today': '今日',
+  'common.dateRange': '{from}〜{to}',
   'common.overdueDays': '{days}日超過',
 
   'dashboard.overall': '全体の進捗',
@@ -285,7 +286,7 @@ const ja = {
   'gantt.empty': '表示できるタスクがありません（開始日または期日が設定されたタスクが必要です）',
 
   'gantt.legendActual': '実績（確定）',
-  'gantt.actualTip': '実績 {first}〜{last}',
+  'gantt.actualTip': '実績 {from}〜{to}',
   'gantt.actualDayTip': '{date} の実績 {hours}',
 
   'nav.actuals': '実績',
@@ -545,6 +546,7 @@ const en: Record<TranslationKey, string> = {
   'common.loadError': 'Failed to load data',
   'common.dueNone': 'No due date',
   'common.today': 'Today',
+  'common.dateRange': '{from} – {to}',
   'common.overdueDays': '{days}d overdue',
 
   'dashboard.overall': 'Overall Progress',
@@ -795,7 +797,7 @@ const en: Record<TranslationKey, string> = {
   'gantt.empty': 'No tasks to display (tasks need a start or due date)',
 
   'gantt.legendActual': 'Actual (closed)',
-  'gantt.actualTip': 'Actual {first} – {last}',
+  'gantt.actualTip': 'Actual {from} – {to}',
   'gantt.actualDayTip': 'Actual on {date}: {hours}',
 
   'nav.actuals': 'Actuals',

@@ -5,7 +5,8 @@ import { ds } from '../theme';
 import { useI18n } from '../i18n';
 import { getTasks } from '../api/tasks';
 import { ChevronDownIcon, PlayIcon, StopIcon, WarningTriangleIcon } from './icons';
-import { LONG_RUNNING_MS, elapsedOf, formatElapsed } from '../timer/timerState';
+import { LONG_RUNNING_MS, elapsedOf } from '../timer/timerState';
+import { formatExactDuration } from '../utils/format';
 import { useCurrentTimeEntry, useTimerWrites } from '../timer/useTimer';
 import TimerFailureNotice from './TimerFailureNotice';
 
@@ -88,10 +89,10 @@ const TimerButton: React.FC = () => {
                 ...segment, px: { xs: '6px', sm: '8px' }, color: longRunning ? ds.warnText : ds.primary,
                 fontVariantNumeric: 'tabular-nums', letterSpacing: '0.02em',
               }}
-              aria-label={`${t('timer.elapsed')} ${formatElapsed(elapsedMs)}`}
+              aria-label={`${t('timer.elapsed')} ${formatExactDuration(elapsedMs / 1000)}`}
             >
               {longRunning && <WarningTriangleIcon size={16} />}
-              {formatElapsed(elapsedMs)}
+              {formatExactDuration(elapsedMs / 1000)}
             </Box>
           </Tooltip>
           <ButtonBase
