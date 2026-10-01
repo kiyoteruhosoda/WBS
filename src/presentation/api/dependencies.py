@@ -179,7 +179,8 @@ def get_app_or_web_user(
     """アプリ（Android の打刻アプリ）からも叩いてよい口の利用者（ADR-0018）。
 
     ⚠ **これを付けた口だけが assay のアクセストークンを受け取る**（打刻の Start / Stop /
-    現在）。ほかの口は :func:`get_current_user`（Web のセッション Cookie だけ）のまま。
+    現在、ADR-0018。この先の通知の読み取り ``GET /calendar/alarms``、ADR-0021）。ほかの口は
+    :func:`get_current_user`（Web のセッション Cookie だけ）のまま。
 
     - ``Authorization`` ヘッダーが**無ければ** :func:`get_current_user` と同じ
     - **あれば Bearer だけで決め、Cookie へ落とさない。** 壊れたトークンを持ってきたアプリが、

@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import type { EventForm } from './eventForm';
 import {
-  buildAdjustment, buildRecurrence, endOf, endTimeOptions, formFromEvent, newEventForm, parseTime,
-  planEventSave, planOccurrenceDelete, startTimeOptions, withEndMinute, withRepeat, withStartMinute,
+  DEFAULT_ALARM, buildAdjustment, buildRecurrence, endOf, endTimeOptions, formFromEvent, isAlarmOn, newEventForm,
+  parseTime, planEventSave, planOccurrenceDelete, startTimeOptions, withAlarmOffset, withAlarmOn, withEndMinute,
+  withRepeat, withStartMinute,
 } from './eventForm';
 import { apiOccurrence, recurringEvent, recurringOccurrence, singleEvent } from './calendarFixtures';
 
@@ -171,7 +172,7 @@ describe('保存 → API の呼び出し', () => {
         url: '/calendar/events',
         body: {
           title: '打ち合わせ', location: null, description: null, color_key: 'DEFAULT', task_id: null,
-          time_zone: TOKYO, start: '2026-05-04T00:00:00.000Z', duration_minutes: 30, recurrence: null,
+          alarm: DEFAULT_ALARM, time_zone: TOKYO, start: '2026-05-04T00:00:00.000Z', duration_minutes: 30, recurrence: null,
         },
       }],
     });
@@ -198,7 +199,7 @@ describe('保存 → API の呼び出し', () => {
         url: '/calendar/events/5',
         body: {
           title: '設計レビュー', location: '会議室A', description: '資料は前日まで', color_key: 'TOMATO', task_id: 12,
-          start: '2026-05-04T01:00:00.000Z', duration_minutes: 60, expected_version: 3,
+          alarm: singleEvent().alarm, start: '2026-05-04T01:00:00.000Z', duration_minutes: 60, expected_version: 3,
         },
       }],
     });
@@ -218,7 +219,7 @@ describe('保存 → API の呼び出し', () => {
         url: '/calendar/events/7/occurrences/split',
         body: {
           title: '定例（臨時）', location: null, description: null, color_key: 'BLUEBERRY', task_id: null,
-          occurrence: { date: '2026-07-14', start_time: '10:00' }, start: '2026-07-14T01:00:00.000Z',
+          alarm: recurringEvent().alarm, occurrence: { date: '2026-07-14', start_time: '10:00' }, start: '2026-07-14T01:00:00.000Z',
           duration_minutes: 30, expected_version: 4,
         },
       }],
@@ -297,5 +298,41 @@ describe('削除 → API の呼び出し', () => {
     });
     expect(planOccurrenceDelete(o, 'following')).toMatchObject({ url: '/calendar/events/7/occurrences/delete-following' });
     expect(planOccurrenceDelete(o, 'all')).toEqual({ method: 'DELETE', url: '/calendar/events/7', params: { expected_version: 4 } });
+  });
+});
+
+describe('通知（ADR-0021）', () => {
+  it('新しい予定は 4 つとも入り（移植元の既定）', () => {
+    const form = fresh();
+    expect(form.alarm).toEqual({
+      enabled: true, notify_15_min: true, notify_5_min: true, notify_1_min: true, notify_at_start: true,
+    });
+    expect(isAlarmOn(form)).toBe(true);
+  });
+
+  it('既存の予定の通知をそのまま読み、保存でそのまま送る（通知を持たない予定は null のまま）', () => {
+    const { form, context } = formFromEvent(singleEvent({ alarm: null }), apiOccurrence(), TODAY);
+    expect(form.alarm).toBeNull();
+    expect(isAlarmOn(form)).toBe(false);
+    expect(planEventSave(form, context, null)).toMatchObject({ requests: [{ body: { alarm: null } }] });
+  });
+
+  it('通知を持たない予定で入れると既定、止めても選んだ時刻は残る', () => {
+    const { form } = formFromEvent(singleEvent({ alarm: null }), apiOccurrence(), TODAY);
+    const on = withAlarmOn(form, true);
+    expect(on.alarm).toEqual(DEFAULT_ALARM);
+    const picked = withAlarmOffset(on, 'notify_5_min', false);
+    const off = withAlarmOn(picked, false);
+    expect(off.alarm).toEqual({ ...DEFAULT_ALARM, enabled: false, notify_5_min: false });
+    expect(isAlarmOn(off)).toBe(false);
+    expect(withAlarmOn(form, false).alarm).toBeNull();
+  });
+
+  it('この回以降・すべてにも通知を載せる', () => {
+    const { form, context } = formFromEvent(recurringEvent(), recurringOccurrence(), TODAY);
+    const changed = withAlarmOffset(form, 'notify_1_min', true);
+    const expected = { ...recurringEvent().alarm, notify_1_min: true };
+    expect(planEventSave(changed, context, 'following')).toMatchObject({ requests: [{ body: { alarm: expected } }] });
+    expect(planEventSave(changed, context, 'all')).toMatchObject({ requests: [{ body: { alarm: expected } }] });
   });
 });

@@ -318,3 +318,44 @@ def test_0005_marks_existing_work_logs_as_manual_and_downgrades_cleanly(tmp_path
             assert connection.exec_driver_sql("SELECT COUNT(*) FROM work_logs").scalar() == 1
     finally:
         engine.dispose()
+
+
+def test_0006_leaves_existing_events_without_an_alarm_and_downgrades_cleanly(tmp_path):
+    # task #183 / ADR-0021: 既存の予定は通知なし（alarm_enabled が NULL）
+    url = _url(tmp_path, "alarms.db")
+    engine = sa.create_engine(url)
+    try:
+        with engine.begin() as connection:
+            command.upgrade(alembic_config(connection), "0005")
+        with engine.begin() as connection:
+            connection.exec_driver_sql(
+                "INSERT INTO users (id, email, display_name, timezone, language, is_active, "
+                "created_at, updated_at) VALUES "
+                "(1, 'taro@example.com', '太郎', 'Asia/Tokyo', 'ja', 1, '2026-01-01', '2026-01-01')"
+            )
+            connection.exec_driver_sql(
+                "INSERT INTO calendar_events (id, user_id, kind, title, time_zone, start_utc, "
+                "duration_minutes, color_key, span_start_day, span_end_day, version, "
+                "created_at, updated_at) VALUES (1, 1, 'SINGLE', '定例', 'Asia/Tokyo', "
+                "'2026-10-05 00:00:00', 60, 'DEFAULT', 1, 2, 1, '2026-01-01', '2026-01-01')"
+            )
+        with engine.begin() as connection:
+            command.upgrade(alembic_config(connection), "0006")
+        with engine.connect() as connection:
+            row = connection.exec_driver_sql(
+                "SELECT alarm_enabled, alarm_15_min, alarm_5_min, alarm_1_min, alarm_at_start "
+                "FROM calendar_events"
+            ).one()
+        assert row[0] is None
+        assert [bool(v) for v in row[1:]] == [False, False, False, False]
+
+        with engine.begin() as connection:
+            command.downgrade(alembic_config(connection), "0005")
+        columns = {c["name"] for c in sa.inspect(engine).get_columns("calendar_events")}
+        assert {
+            "alarm_enabled", "alarm_15_min", "alarm_5_min", "alarm_1_min", "alarm_at_start"
+        }.isdisjoint(columns)
+        with engine.connect() as connection:
+            assert connection.exec_driver_sql("SELECT COUNT(*) FROM calendar_events").scalar() == 1
+    finally:
+        engine.dispose()

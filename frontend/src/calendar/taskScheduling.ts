@@ -89,7 +89,10 @@ export const draftFromSlot = (
     : taskBlockMinutes(task),
 });
 
-/** 予定の中身 → 作る呼び出し（単発。色は既定のまま = タスクのカテゴリの色で描く）。 */
+/**
+ * 予定の中身 → 作る呼び出し（単発。色は既定のまま = タスクのカテゴリの色で描く）。
+ * 通知は送らない（作る API の既定 = 4 つとも入り。ADR-0021）。
+ */
 export const taskEventRequest = (draft: TaskEventDraft, timeZone: string): CalendarRequest => ({
   method: 'POST',
   url: '/calendar/events',

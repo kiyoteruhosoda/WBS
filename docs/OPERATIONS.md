@@ -66,8 +66,9 @@ MACHINE_PRIVATE_KEY_KID=                 # 鍵を複数登録しているとき�
 
 ## 打刻アプリ（Android）から Start / Stop を叩けるようにしたいとき
 
-ADR-0018。アプリは assay に直接ログインし、打刻の 3 つの口（現在・Start・Stop）だけを assay の
-アクセストークンで叩く。⚠ **`APP_CLIENT_IDS` が空なら Bearer は 1 本も通らない**（既定）。
+ADR-0018・ADR-0021。アプリは assay に直接ログインし、打刻の 3 つの口（現在・Start・Stop）と
+予定の通知の読み取り（`GET /api/calendar/alarms`）だけを assay のアクセストークンで叩く。
+⚠ **`APP_CLIENT_IDS` が空なら Bearer は 1 本も通らない**（既定）。
 
 1. assay にアプリ用の **public client** を登録する（PKCE、scope は `openid profile email offline_access`、戻り先は `https://<ホスト>/app/oauth2redirect`）。
    WBS の Web と同じ assay のアプリに結び付けて名簿を 1 つにする。⚠ `resource` は送らない
@@ -86,6 +87,7 @@ ADR-0018。アプリは assay に直接ログインし、打刻の 3 つの口�
 
    ```bash
    curl -s -o /dev/null -w '%{http_code}\n' -H 'Authorization: Bearer x' https://<ホスト>/api/time-entries/current   # 401
+   curl -s -o /dev/null -w '%{http_code}\n' -H 'Authorization: Bearer x' 'https://<ホスト>/api/calendar/alarms?from=2026-10-05T00:00:00Z&to=2026-10-06T00:00:00Z'   # 401
    curl -s -o /dev/null -w '%{http_code}\n' -H 'Authorization: Bearer x' https://<ホスト>/api/tasks                  # 401（アプリの口ではない）
    curl -s https://<ホスト>/.well-known/assetlinks.json                                                              # 200 と JSON（text/html なら nginx が裏へ渡していない）
    ```

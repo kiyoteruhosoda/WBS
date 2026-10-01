@@ -179,6 +179,18 @@ export interface OccurrenceSeriesKey {
  * - 時刻付きの回は `start`（UTC の瞬間）＋ `duration_minutes` で置く（終了は持たない。time-model §1）。
  * - 終日（ローカル 0:00 ＋ 1440 分）は「浮いた日」で、`date` の日にそのまま置く（ゾーンでずらさない）。
  */
+/**
+ * 予定の通知（ADR-0021。移植元 `EventAlarm`）。基準は回の開始時刻。
+ * `enabled` が false なら、どれを選んでいても知らせない。予定の `alarm` が null は通知を持たない。
+ */
+export interface EventAlarmData {
+  enabled: boolean;
+  notify_15_min: boolean;
+  notify_5_min: boolean;
+  notify_1_min: boolean;
+  notify_at_start: boolean;
+}
+
 export interface CalendarOccurrence {
   /** 回の識別子（React の key・選択に使う）。`event_id` と系列の鍵から作る */
   id: string;
@@ -206,6 +218,8 @@ export interface CalendarOccurrence {
   /** この回だけ中身を変えた（古いデータの上書き例外） */
   is_overridden: boolean;
   series_key: OccurrenceSeriesKey | null;
+  /** 予定の通知（繰り返しは系列のもの。移した回も同じ） */
+  alarm: EventAlarmData | null;
 }
 
 /** 祝日・休日（有効な営業日カレンダーから集めたもの）。 */
@@ -269,6 +283,8 @@ export interface CalendarEvent {
   description: string | null;
   color_key: EventColorKey;
   task_id: number | null;
+  /** 通知。null は通知を持たない */
+  alarm: EventAlarmData | null;
   exceptions: { occurrence: OccurrenceSeriesKey; type: string }[];
   moves: {
     occurrence: OccurrenceSeriesKey;
