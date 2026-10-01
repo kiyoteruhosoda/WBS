@@ -13,6 +13,7 @@ export const singleEvent = (patch: Partial<CalendarEvent> = {}): CalendarEvent =
   description: '資料は前日まで',
   color_key: 'TOMATO',
   task_id: 12,
+  alarm: { enabled: true, notify_15_min: true, notify_5_min: false, notify_1_min: false, notify_at_start: true },
   exceptions: [],
   moves: [],
   version: 3,
@@ -64,6 +65,7 @@ export const apiOccurrence = (patch: Partial<CalendarOccurrence> = {}): Calendar
   is_moved: false,
   is_overridden: false,
   series_key: null,
+  alarm: null,
   ...patch,
 });
 

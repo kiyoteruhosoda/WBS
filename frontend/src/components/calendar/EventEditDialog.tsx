@@ -5,15 +5,17 @@ import {
 } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import NotificationsNoneIcon from '@mui/icons-material/NotificationsNone';
 import { useI18n } from '../../i18n';
 import type { TranslationKey } from '../../i18n/translations';
 import type { BusinessCalendar, CalendarOccurrence, Task, WeekdayCode } from '../../types';
 import type {
-  AdjustmentDateType, AdjustmentDirection, EventForm, EventFormContext, FormError, RecurringScope, RepeatType,
+  AdjustmentDateType, AdjustmentDirection, AlarmOffsetField, EventForm, EventFormContext, FormError, RecurringScope,
+  RepeatType,
 } from '../../calendar/eventForm';
 import {
-  EVENT_COLOR_KEYS, WEEK_INDEXES, WEEKDAY_CODES, endOf, endTimeOptions, planEventSave, startTimeOptions,
-  withEndMinute, withRepeat, withStartMinute,
+  ALARM_OFFSETS, EVENT_COLOR_KEYS, WEEK_INDEXES, WEEKDAY_CODES, endOf, endTimeOptions, isAlarmOn, planEventSave,
+  startTimeOptions, withAlarmOffset, withAlarmOn, withEndMinute, withRepeat, withStartMinute,
 } from '../../calendar/eventForm';
 import { errorDetailOf, isConflictError } from '../../calendar/calendarRequests';
 import { eventColor } from '../../calendar/calendarColors';
@@ -51,6 +53,13 @@ const repeatKeys: Record<RepeatType, TranslationKey> = {
   WEEKLY: 'calendar.repeatWeekly',
   MONTHLY: 'calendar.repeatMonthly',
   YEARLY: 'calendar.repeatYearly',
+};
+
+const alarmOffsetKeys: Record<AlarmOffsetField, TranslationKey> = {
+  notify_15_min: 'calendar.alarm15',
+  notify_5_min: 'calendar.alarm5',
+  notify_1_min: 'calendar.alarm1',
+  notify_at_start: 'calendar.alarm0',
 };
 
 const intervalUnitKeys: Record<Exclude<RepeatType, 'NONE'>, TranslationKey> = {
@@ -106,6 +115,7 @@ const EventEditDialog: React.FC<Props> = ({
   const [askScope, setAskScope] = useState(false);
   const [repeatOpen, setRepeatOpen] = useState(target.form.repeat !== 'NONE');
   const [colorOpen, setColorOpen] = useState(target.form.colorKey !== 'DEFAULT');
+  const [alarmOpen, setAlarmOpen] = useState(false);
 
   const isEditing = context.mode === 'edit';
   const deletable = context.mode === 'edit' ? context.occurrence : null;
@@ -136,6 +146,10 @@ const EventEditDialog: React.FC<Props> = ({
   const weekdayLabel = (code: WeekdayCode) => weekdays[WEEKDAY_CODES.indexOf(code)];
   const selectedTask = tasks.find((task) => task.id === form.taskId) ?? null;
   const taskOptions = tasks.filter((task) => !task.deleted_at);
+  const alarmOn = isAlarmOn(form);
+  const alarmSummary = alarmOn && form.alarm
+    ? ALARM_OFFSETS.filter((o) => form.alarm?.[o.field]).map((o) => t(alarmOffsetKeys[o.field])).join('・') || t('calendar.alarmNone')
+    : t('calendar.alarmNone');
   const endLabel = end.dayOffset === 1 ? ` (${t('calendar.nextDay')})` : end.dayOffset > 1 ? ` (${t('calendar.laterDay', { days: end.dayOffset })})` : '';
 
   return (
@@ -408,6 +422,41 @@ const EventEditDialog: React.FC<Props> = ({
                 )}
               </>
             )}
+          </Section>
+
+          {/* 通知（ADR-0021。打刻アプリが端末で出す） */}
+          <Section
+            title={(
+              <>
+                <NotificationsNoneIcon sx={{ fontSize: 18 }} />
+                {`${t('calendar.alarm')}: ${alarmSummary}`}
+              </>
+            )}
+            open={alarmOpen}
+            onToggle={() => setAlarmOpen((o) => !o)}
+          >
+            <FormControlLabel
+              control={<Switch checked={alarmOn} onChange={(e) => setForm((f) => withAlarmOn(f, e.target.checked))} />}
+              label={t('calendar.alarmOn')}
+            />
+            <Box role="group" aria-label={t('calendar.alarm')} sx={{ display: 'flex', flexWrap: 'wrap', columnGap: '8px' }}>
+              {ALARM_OFFSETS.map((o) => (
+                <FormControlLabel
+                  key={o.field}
+                  disabled={!alarmOn}
+                  control={(
+                    <Checkbox
+                      checked={form.alarm?.[o.field] ?? true}
+                      onChange={(e) => setForm((f) => withAlarmOffset(f, o.field, e.target.checked))}
+                    />
+                  )}
+                  label={t(alarmOffsetKeys[o.field])}
+                />
+              ))}
+            </Box>
+            <Box sx={{ fontSize: 12, color: 'text.secondary' }}>
+              {t(form.allDay ? 'calendar.alarmAllDayHint' : 'calendar.alarmHint')}
+            </Box>
           </Section>
 
           {/* 色 */}

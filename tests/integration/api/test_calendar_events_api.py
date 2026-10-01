@@ -115,6 +115,14 @@ def test_single_event_is_listed_in_the_viewers_time_zone(client) -> None:
         "is_moved": False,
         "is_overridden": False,
         "series_key": None,
+        # 作るときに通知を省くと既定（4 つとも入り。ADR-0021）
+        "alarm": {
+            "enabled": True,
+            "notify_15_min": True,
+            "notify_5_min": True,
+            "notify_1_min": True,
+            "notify_at_start": True,
+        },
     }
 
 

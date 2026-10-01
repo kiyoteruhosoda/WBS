@@ -4,8 +4,8 @@
 // 直す（time-model §4）。新しい予定は閲覧者のタイムゾーン（利用者設定）で作る。
 
 import type {
-  AdjustmentRuleData, CalendarEvent, CalendarOccurrence, EventColorKey, MonthlyRuleData, RecurrenceRuleData,
-  WeekdayCode, YearlyRuleData,
+  AdjustmentRuleData, CalendarEvent, CalendarOccurrence, EventAlarmData, EventColorKey, MonthlyRuleData,
+  RecurrenceRuleData, WeekdayCode, YearlyRuleData,
 } from '../types';
 import type { CalendarRequest } from './calendarRequests';
 import { deleteEventRequest, occurrenceActionRequest, occurrenceKeyOf } from './calendarRequests';
@@ -27,6 +27,20 @@ export const WEEK_INDEXES: readonly number[] = [1, 2, 3, 4, 5, -1];
 export const EVENT_COLOR_KEYS: readonly EventColorKey[] = [
   'DEFAULT', 'TOMATO', 'TANGERINE', 'BANANA', 'BASIL', 'SAGE', 'PEACOCK', 'BLUEBERRY', 'LAVENDER', 'GRAPE', 'GRAPHITE',
 ];
+
+/** 新しい予定の通知の既定（移植元 `EventAlarm.Default`: 4 つとも入り。ADR-0021）。 */
+export const DEFAULT_ALARM: EventAlarmData = {
+  enabled: true, notify_15_min: true, notify_5_min: true, notify_1_min: true, notify_at_start: true,
+};
+
+/** 通知の時刻の選び方（開始の何分前か。0 は開始時刻）。並びは移植元 `AlarmScheduleCalculator.Offsets`。 */
+export const ALARM_OFFSETS = [
+  { minutes: 15, field: 'notify_15_min' },
+  { minutes: 5, field: 'notify_5_min' },
+  { minutes: 1, field: 'notify_1_min' },
+  { minutes: 0, field: 'notify_at_start' },
+] as const;
+export type AlarmOffsetField = (typeof ALARM_OFFSETS)[number]['field'];
 
 /** 新しい予定の既定の長さと最短（移植元 `EventEditDefaults`）。 */
 export const DEFAULT_DURATION_MINUTES = 30;
@@ -70,6 +84,8 @@ export interface EventForm {
   adjustmentCalendarId: number | null;
   colorKey: EventColorKey;
   taskId: number | null;
+  /** 通知。null は通知を持たない（既存の予定で一度も入れていないもの）。保存ではそのまま送る */
+  alarm: EventAlarmData | null;
 }
 
 /** 何を開いているか。保存の呼び出しの選び方が変わる。 */
@@ -208,8 +224,27 @@ export const newEventForm = (
     adjustmentCalendarId: calendarIds.length === 1 ? calendarIds[0] : null,
     colorKey: 'DEFAULT',
     taskId: null,
+    alarm: DEFAULT_ALARM,
   });
 };
+
+// ── 通知 ──────────────────────────────────────────────────────────────────
+
+/** 通知するか（null・止めてあるなら false）。 */
+export const isAlarmOn = (form: Pick<EventForm, 'alarm'>): boolean => form.alarm?.enabled ?? false;
+
+/**
+ * 通知を入れる・止める。通知を持たない予定で入れたら既定（4 つとも入り）。止めても選んだ時刻は残す
+ * （移植元 `EventAlarm.IsEnabled`）。
+ */
+export const withAlarmOn = (form: EventForm, on: boolean): EventForm => {
+  if (form.alarm == null) return on ? { ...form, alarm: DEFAULT_ALARM } : form;
+  return { ...form, alarm: { ...form.alarm, enabled: on } };
+};
+
+/** 知らせる時刻（15 分前・5 分前・1 分前・開始時刻）を 1 つ選ぶ・外す。 */
+export const withAlarmOffset = (form: EventForm, field: AlarmOffsetField, on: boolean): EventForm =>
+  ({ ...form, alarm: { ...(form.alarm ?? DEFAULT_ALARM), [field]: on } });
 
 /** 保存してある規則を入力へ（移植元 `LoadRecurrenceRuleCore`）。 */
 const withRecurrenceRule = (form: EventForm, rule: RecurrenceRuleData): EventForm => {
@@ -284,6 +319,7 @@ export const formFromEvent = (
     durationMinutes: allDay ? DEFAULT_DURATION_MINUTES : Math.max(MIN_DURATION_MINUTES, duration),
     colorKey: event.color_key,
     taskId: event.task_id,
+    alarm: event.alarm,
   };
   if (event.recurrence && !isMovedOccurrence) form = withRecurrenceRule(form, event.recurrence);
   return { form, context: { mode: 'edit', event, occurrence, isMovedOccurrence } };
@@ -349,6 +385,7 @@ const details = (form: EventForm) => ({
   description: textOrNull(form.memo),
   color_key: form.colorKey,
   task_id: form.taskId,
+  alarm: form.alarm,
 });
 
 // ── 保存・削除の段取り ────────────────────────────────────────────────────

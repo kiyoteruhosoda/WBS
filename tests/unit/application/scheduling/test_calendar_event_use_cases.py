@@ -24,6 +24,7 @@ from src.application.dto.calendar_event_dto import (
 from src.application.use_cases.calendar_event_use_cases import CalendarEventUseCases
 from src.domain.entities.calendar_event import CalendarEvent, ExceptionType
 from src.domain.exceptions import ConflictError, NotFoundError, ValidationError
+from src.domain.value_objects.event_alarm import EventAlarm
 from src.domain.value_objects.event_color import EventColorKey
 from src.domain.value_objects.event_schedule import OccurrenceKey
 from src.domain.value_objects.local_schedule_point import local_date_of, local_time_of
@@ -36,6 +37,7 @@ from src.domain.value_objects.recurrence import (
     Weekday,
     WeeklyRule,
 )
+from src.domain.value_objects.time_zone import TimeZoneId
 from tests.unit.application.scheduling.fakes import (
     FakeClock,
     FakeTasks,
@@ -532,3 +534,69 @@ def test_list_occurrences_in_the_viewer_time_zone(w: World) -> None:
 def test_period_must_not_be_reversed(w: World) -> None:
     with pytest.raises(ValidationError):
         w.uc.list_occurrences(USER, date(2026, 6, 2), date(2026, 6, 1))
+
+
+# ── 通知（ADR-0021） ────────────────────────────────────────────────────────
+
+
+def test_a_new_event_gets_the_default_alarm_and_none_means_no_alarm() -> None:
+    world = World()
+    assert world.single().alarm == EventAlarm.default()
+    assert world.single(alarm=None).alarm is None
+
+
+def test_splitting_an_occurrence_inherits_the_series_alarm() -> None:
+    at_start = EventAlarm(True, False, False, False, True)
+    world = World()
+    series = world.weekly_wednesday(alarm=at_start)
+    single = world.uc.split_this_occurrence(
+        SplitThisOccurrenceCommand(
+            event_id=series.id, user_id=USER,
+            occurrence_key=OccurrenceKey(date(2026, 5, 6), time(9, 30)),
+            title="once", start_utc=utc(2026, 5, 6, 11, 0), duration_minutes=30,
+        )
+    )
+    assert single.alarm == at_start
+
+
+def test_planned_alarms_follow_the_events_own_time_zone() -> None:
+    new_york = TimeZoneId("America/New_York")
+    world = World()
+    world.uc.create_single_event(
+        CreateSingleEventCommand(
+            user_id=USER, title="NY", time_zone="America/New_York",
+            start_utc=utc(2026, 5, 20, 23, 30, tz=new_york), duration_minutes=30, task_id=10,
+        )
+    )
+    start = utc(2026, 5, 20, 23, 30, tz=new_york)  # 5/21 03:30Z
+    planned = world.uc.list_planned_alarms(USER, start - timedelta(hours=1), start + timedelta(minutes=1))
+    assert [(p.minutes_before, p.notify_at_utc) for p in planned] == [
+        (15, start - timedelta(minutes=15)),
+        (5, start - timedelta(minutes=5)),
+        (1, start - timedelta(minutes=1)),
+        (0, start),
+    ]
+    assert {(p.task_id, p.task_title) for p in planned} == {(10, "task 10")}
+
+
+def test_planned_alarms_drop_a_task_that_is_not_the_users() -> None:
+    world = World()
+    # 他人のタスクは作る段で断られるので、保存してある予定を直接書き換えて「消えた」形にする
+    event = world.single()
+    stored = world.events.find_by_id(event.id)
+    stored.task_id = 20
+    world.events.save(stored)
+    planned = world.uc.list_planned_alarms(
+        USER, utc(2026, 5, 20, 8, 0), utc(2026, 5, 20, 10, 0)
+    )
+    assert planned and all(p.task_id is None and p.task_title is None for p in planned)
+
+
+@pytest.mark.parametrize(
+    "hours", [0, -1, 7 * 24 + 1], ids=["empty", "reversed", "longer-than-7-days"]
+)
+def test_planned_alarms_reject_a_bad_window(hours) -> None:
+    world = World()
+    start = datetime(2026, 5, 20, 0, 0)
+    with pytest.raises(ValidationError):
+        world.uc.list_planned_alarms(USER, start, start + timedelta(hours=hours))

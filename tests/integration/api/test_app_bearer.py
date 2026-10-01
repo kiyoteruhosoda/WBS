@@ -126,7 +126,8 @@ def test_a_bad_bearer_does_not_fall_back_to_the_cookie(app_client) -> None:
 
 
 def test_only_the_timer_routes_take_the_app_token(app_client) -> None:
-    # 打刻の Start / Stop / 現在の 3 つだけ。ほかの口はこれまでどおり Cookie だけ
+    # 打刻の Start / Stop / 現在の 3 つ（と、ADR-0021 の通知の読み取り。test_calendar_alarms_api）だけ。
+    # ほかの口はこれまでどおり Cookie だけ
     assert app_client.get("/api/tasks", headers=bearer("taro-app")).status_code == 401
     assert app_client.get("/api/auth/me", headers=bearer("taro-app")).status_code == 401
     listed = app_client.get(

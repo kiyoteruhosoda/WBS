@@ -15,6 +15,7 @@ from dataclasses import dataclass, field
 from datetime import date, datetime, time, timedelta
 
 from src.domain.exceptions import ConflictError, NotFoundError, ValidationError
+from src.domain.value_objects.event_alarm import EventAlarm
 from src.domain.value_objects.event_color import EventColorKey
 from src.domain.value_objects.event_schedule import (
     OccurrenceKey,
@@ -112,6 +113,9 @@ class CalendarEvent:
     color_key: EventColorKey = EventColorKey.DEFAULT
     task_id: int | None = None
     """WBS のタスク（任意）。予定から作業の記録へつなぐため。"""
+    alarm: EventAlarm | None = None
+    """通知の設定（ADR-0021）。``None`` は通知を持たない。繰り返しは系列で 1 つで、移した回も
+    同じ設定で知らせる（移植元と同じ。回ごとの上書きは持たない）。"""
     exceptions: list[EventException] = field(default_factory=list)
     moves: list[EventMove] = field(default_factory=list)
     version: int = 1
@@ -145,12 +149,13 @@ class CalendarEvent:
         description: str | None = None,
         color_key: EventColorKey = EventColorKey.DEFAULT,
         task_id: int | None = None,
+        alarm: EventAlarm | None = None,
     ) -> CalendarEvent:
         return cls(
             id=None, user_id=user_id, kind=EventKind.SINGLE, title=title,
             time_zone=time_zone, single_schedule=schedule,
             location=location, description=description, color_key=color_key,
-            task_id=task_id, created_at=created_at, updated_at=created_at,
+            task_id=task_id, alarm=alarm, created_at=created_at, updated_at=created_at,
         )
 
     @classmethod
@@ -166,12 +171,13 @@ class CalendarEvent:
         description: str | None = None,
         color_key: EventColorKey = EventColorKey.DEFAULT,
         task_id: int | None = None,
+        alarm: EventAlarm | None = None,
     ) -> CalendarEvent:
         return cls(
             id=None, user_id=user_id, kind=EventKind.RECURRING, title=title,
             time_zone=time_zone, recurring_schedule=schedule,
             location=location, description=description, color_key=color_key,
-            task_id=task_id, created_at=created_at, updated_at=created_at,
+            task_id=task_id, alarm=alarm, created_at=created_at, updated_at=created_at,
         )
 
     # ── 問い合わせ ──────────────────────────────────────────────────────
@@ -263,6 +269,13 @@ class CalendarEvent:
         if self.color_key == color_key:
             return
         self.color_key = color_key
+        self._touch(updated_at)
+
+    def set_alarm(self, alarm: EventAlarm | None, updated_at: datetime) -> None:
+        """通知の設定を置き換える（``None`` で外す）。同じなら版を進めない。"""
+        if self.alarm == alarm:
+            return
+        self.alarm = alarm
         self._touch(updated_at)
 
     def reschedule_single(self, schedule: SingleEventSchedule, updated_at: datetime) -> None:

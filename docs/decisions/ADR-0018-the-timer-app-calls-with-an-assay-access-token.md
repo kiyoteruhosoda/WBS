@@ -31,6 +31,7 @@
    結び付きが無ければ 403（「Web で 1 度ログインして」）。無効にした利用者も 403。
    ⚠ 雛形（ADR-0045 決定 4）は初めて来た人を userinfo で作る・寄せるが、WBS は採らない（理由の 3）。
 3. **受け取るのは打刻の 3 つの口だけ** —— `GET /api/time-entries/current`・`POST /start`・`POST /stop`。
+   （⚠ ADR-0021 で読み取りの `GET /api/calendar/alarms` を 1 つ足した。）
    印は依存関数 `get_app_or_web_user`（`AppOrWebUserDep`）。ほかの口（一覧・修正・締め・タスク・設定）は
    これまでどおり Cookie だけ（`get_current_user`）。
 4. **`Authorization` ヘッダーがあれば Bearer だけで決め、Cookie へ落とさない。** Bearer でない・壊れている・

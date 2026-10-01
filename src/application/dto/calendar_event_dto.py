@@ -7,6 +7,10 @@ UTC へ直す）。「終日」は入力側の糖衣で、予定のタイムゾ�
 
 ``expected_version`` は楽観ロック。読んだときの ``version`` を渡すと、間に別の更新が
 入っていたら ``ConflictError`` になる。``None`` なら確かめない。
+
+``alarm``（通知、ADR-0021）は ``UNSET`` と ``None`` を分ける。作るときの ``UNSET`` は既定
+（``EventAlarm.default()``: 4 つとも入り）、直すときの ``UNSET`` は今のまま（この回だけ・以降は
+元の系列のもの）。``None`` は通知なし。
 """
 
 from __future__ import annotations
@@ -15,6 +19,7 @@ from dataclasses import dataclass
 from datetime import date, datetime, time
 
 from src.application.dto.unset import UNSET, UnsetType
+from src.domain.value_objects.event_alarm import EventAlarm
 from src.domain.value_objects.event_color import EventColorKey
 from src.domain.value_objects.event_schedule import OccurrenceKey
 from src.domain.value_objects.recurrence import RecurrenceRule
@@ -31,6 +36,8 @@ class CreateSingleEventCommand:
     description: str | None = None
     color_key: EventColorKey = EventColorKey.DEFAULT
     task_id: int | None = None
+    alarm: EventAlarm | None | UnsetType = UNSET
+    """``UNSET`` は既定（4 つとも入り）。``None`` は通知なし。"""
 
 
 @dataclass
@@ -46,6 +53,8 @@ class CreateRecurringEventCommand:
     description: str | None = None
     color_key: EventColorKey = EventColorKey.DEFAULT
     task_id: int | None = None
+    alarm: EventAlarm | None | UnsetType = UNSET
+    """``UNSET`` は既定（4 つとも入り）。``None`` は通知なし。"""
 
 
 @dataclass
@@ -62,6 +71,8 @@ class UpdateEventCommand:
     duration_minutes: int | None = None
     color_key: EventColorKey | None = None
     """``None`` は今の色のまま（ドラッグなどの部分的な更新で色を消さない）。"""
+    alarm: EventAlarm | None | UnsetType = UNSET
+    """``UNSET`` は今のまま。``None`` は通知を外す。"""
     expected_version: int | None = None
 
 
@@ -89,6 +100,8 @@ class UpdateRecurringSeriesCommand:
     description: str | None = None
     task_id: int | None = None
     color_key: EventColorKey = EventColorKey.DEFAULT
+    alarm: EventAlarm | None | UnsetType = UNSET
+    """``UNSET`` は今のまま。``None`` は通知を外す。"""
     anchor_utc: datetime | None = None
     """新しい先頭の回の瞬間。``None`` は今のアンカーのまま（既存の鍵がずれない）。"""
     expected_version: int | None = None
@@ -133,6 +146,8 @@ class SplitThisOccurrenceCommand:
     color_key: EventColorKey = EventColorKey.DEFAULT
     task_id: int | None | UnsetType = UNSET
     """``UNSET`` は系列のタスクを引き継ぐ。"""
+    alarm: EventAlarm | None | UnsetType = UNSET
+    """``UNSET`` は元の系列の通知を引き継ぐ。``None`` は通知なし。"""
     expected_version: int | None = None
 
 
@@ -153,6 +168,8 @@ class ChangeFollowingOccurrencesCommand:
     color_key: EventColorKey = EventColorKey.DEFAULT
     task_id: int | None | UnsetType = UNSET
     """``UNSET`` は元の系列のタスクを引き継ぐ。"""
+    alarm: EventAlarm | None | UnsetType = UNSET
+    """``UNSET`` は元の系列の通知を引き継ぐ。``None`` は通知なし。"""
     expected_version: int | None = None
 
 
@@ -180,3 +197,26 @@ class OccurrenceView:
     is_moved: bool
     is_overridden: bool
     series_key: OccurrenceKey | None
+    alarm: EventAlarm | None = None
+    """予定の通知の設定（繰り返しは系列のもの。移した回も同じ）。"""
+
+
+@dataclass(frozen=True)
+class PlannedAlarm:
+    """この先の通知 1 件（ADR-0021）。開始の ``minutes_before`` 分前の ``notify_at`` に知らせる。
+
+    瞬間はどれも naive な UTC。``task_id`` / ``task_title`` は結んだタスクがその利用者のもので
+    今もあるときだけ（消えた・他人のものなら両方 ``None``）。
+    """
+
+    event_id: int
+    occurrence_start_utc: datetime
+    """この回の開始。予定の id と合わせて回を一意に指す。"""
+    minutes_before: int
+    notify_at_utc: datetime
+    title: str
+    duration_minutes: int
+    location: str | None
+    task_id: int | None
+    task_title: str | None
+    is_recurring: bool
