@@ -12,9 +12,17 @@ export interface Task {
   start_date: string | null;
   due_date: string | null;
   estimated_hours: number | null;
+  // 自分の残（手の値、空なら 見積 − 実績。DONE は 0）と、手で入れた値そのもの
   remaining_hours: number | null;
+  remaining_hours_entered: number | null;
+  // 自分の実績（作業ログの合計）
   actual_hours: number;
-  progress_percent: number;
+  has_subtasks: boolean;
+  // 進捗率の式に入れた実績と残（子を持つなら自分と全子孫の積み上げ）
+  rollup_actual_hours: number;
+  rollup_remaining_hours: number | null;
+  // 実績 ÷（実績 ＋ 残）× 100。分母 0・残が決まらないときは null（「—」と出す）
+  progress_percent: number | null;
   priority_score: number;
   memo: string | null;
   parent_task_id: number | null;
@@ -80,7 +88,7 @@ export interface GanttTask {
   due_date: string | null;
   status: TaskStatus;
   parent_task_id: number | null;
-  progress_percent: number;
+  progress_percent: number | null;
   dependencies: number[];
 }
 

@@ -3,14 +3,14 @@ import { Box } from '@mui/material';
 import { ds } from '../theme';
 
 interface Props {
-  value: number; // 0-100
+  value: number | null; // 0-100。null は判断材料が無い（分母 0）ので「—」
   color?: string;
   height?: number;
   showLabel?: boolean;
 }
 
 const ProgressBar: React.FC<Props> = ({ value, color = ds.primary, height = 10, showLabel = false }) => {
-  const pct = Math.max(0, Math.min(100, value));
+  const pct = value === null ? 0 : Math.max(0, Math.min(100, value));
   return (
     <Box sx={{ display: 'flex', alignItems: 'center', gap: '10px', width: '100%' }}>
       <Box sx={{ flex: 1, height, borderRadius: height / 2, bgcolor: ds.track, overflow: 'hidden' }}>
@@ -18,7 +18,7 @@ const ProgressBar: React.FC<Props> = ({ value, color = ds.primary, height = 10, 
       </Box>
       {showLabel && (
         <Box sx={{ fontSize: 14, fontWeight: 700, color: ds.text, minWidth: 38, textAlign: 'right' }}>
-          {pct}%
+          {value === null ? '—' : `${pct}%`}
         </Box>
       )}
     </Box>

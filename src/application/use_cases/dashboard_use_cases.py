@@ -36,8 +36,9 @@ class DashboardUseCases:
         tasks = list(self._session.scalars(stmt))
         buckets: dict[str, list] = {"OVERDUE": [], "TODAY": [], "TOMORROW": [], "DOING": []}
         seen_ids: set[int] = set()
+        board = self._task_uc.progress_board(user_id)
         for t in tasks:
-            enriched = self._task_uc._enrich(self._task_repo._to_entity(t))
+            enriched = self._task_uc._enrich(self._task_repo._to_entity(t), board)
             tid = t.id
             bucket = None
             if t.due_date and t.due_date < today:

@@ -215,3 +215,64 @@ def test_app_engine_refuses_a_db_that_is_not_at_head(tmp_path):
             ensure_schema_is_current(engine)
     finally:
         engine.dispose()
+
+
+def test_0004_fills_remaining_from_estimate_minus_actual(tmp_path):
+    # task #165 / ADR-0010: 既存の行の残は、それまで画面に出ていた max(見積 − 実績, 0)。DONE は 0
+    url = _url(tmp_path, "remaining.db")
+    engine = sa.create_engine(url)
+    try:
+        with engine.begin() as connection:
+            command.upgrade(alembic_config(connection), "0003")
+        with engine.begin() as connection:
+            connection.exec_driver_sql(
+                "INSERT INTO users (id, email, display_name, timezone, language, is_active, "
+                "created_at, updated_at) VALUES "
+                "(1, 'taro@example.com', '太郎', 'Asia/Tokyo', 'ja', 1, '2026-01-01', '2026-01-01')"
+            )
+            for task_id, status, estimate in [
+                (1, "TODO", "10"),  # 実績 4（削除した 3 は数えない）→ 6
+                (2, "DOING", "5"),  # 実績 8 → 負にしない 0
+                (3, "DONE", "10"),  # 実績 2 でも DONE は 0
+                (4, "TODO", None),  # 見積が空 → 空のまま
+                (5, "TODO", "7.5"),  # 実績なし → 7.5
+            ]:
+                connection.exec_driver_sql(
+                    "INSERT INTO tasks (id, user_id, title, priority, urgency, status, "
+                    "estimated_hours, created_at, updated_at) "
+                    "VALUES (?, 1, 't', 3, 3, ?, ?, '2026-01-01', '2026-01-01')",
+                    (task_id, status, estimate),
+                )
+            for log_id, task_id, hours, deleted_at in [
+                (1, 1, "1.5", None),
+                (2, 1, "2.5", None),
+                (3, 1, "3", "2026-01-02"),
+                (4, 2, "8", None),
+                (5, 3, "2", None),
+            ]:
+                connection.exec_driver_sql(
+                    "INSERT INTO work_logs (id, user_id, task_id, work_date, hours, deleted_at, "
+                    "created_at, updated_at) "
+                    "VALUES (?, 1, ?, '2026-01-01', ?, ?, '2026-01-01', '2026-01-01')",
+                    (log_id, task_id, hours, deleted_at),
+                )
+        with engine.begin() as connection:
+            command.upgrade(alembic_config(connection), "0004")
+        with engine.connect() as connection:
+            rows = dict(
+                connection.exec_driver_sql("SELECT id, remaining_hours FROM tasks").fetchall()
+            )
+        assert {k: (None if v is None else float(v)) for k, v in rows.items()} == {
+            1: 6.0,
+            2: 0.0,
+            3: 0.0,
+            4: None,
+            5: 7.5,
+        }
+
+        with engine.begin() as connection:
+            command.downgrade(alembic_config(connection), "0003")
+        columns = {c["name"] for c in sa.inspect(engine).get_columns("tasks")}
+        assert "remaining_hours" not in columns
+    finally:
+        engine.dispose()

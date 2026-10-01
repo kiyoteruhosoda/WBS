@@ -24,10 +24,8 @@ def _create_with_legacy_path(engine: sa.Engine) -> None:
     if "idp_session_id" not in auth_session_columns:
         with engine.begin() as conn:
             conn.execute(text("ALTER TABLE auth_sessions ADD COLUMN idp_session_id VARCHAR(255)"))
-    task_columns = {c["name"] for c in inspector.get_columns("tasks")}
-    if "remaining_hours" in task_columns:
-        with engine.begin() as conn:
-            conn.execute(text("ALTER TABLE tasks DROP COLUMN remaining_hours"))
+    # 手書きの列補完は tasks.remaining_hours を落としていたが、0004 で列として戻した（ADR-0010）。
+    # create_all はいまのモデルから作るので、ここでは落とさない。
 
 
 def test_upgrade_head_matches_create_all(tmp_path):

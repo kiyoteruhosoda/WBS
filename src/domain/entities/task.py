@@ -6,6 +6,7 @@ from decimal import Decimal
 
 from src.domain.exceptions import InvalidStatusTransitionError
 from src.domain.value_objects.task_status import TaskStatus
+from src.domain.value_objects.work_figures import WorkFigures
 from src.shared.clock import utcnow
 
 
@@ -21,6 +22,8 @@ class Task:
     start_date: date | None = None
     due_date: date | None = None
     estimated_hours: Decimal | None = None
+    # 手で入れた残。空なら「見積 − 実績」を既定に使う（ADR-0010）
+    remaining_hours: Decimal | None = None
     memo: str | None = None
     parent_task_id: int | None = None
     milestone_id: int | None = None
@@ -44,19 +47,19 @@ class Task:
 
         self.status = new_status
 
-    def progress_percent(self, actual_hours: float) -> float:
-        # 進捗は「実績時間 ÷ 見積時間」で算出する（見積が未入力なら判断材料がないため 0%）
-        if self.status == TaskStatus.DONE:
-            return 100.0
-        if self.estimated_hours is None or float(self.estimated_hours) <= 0:
-            return 0.0
-        ratio = min(actual_hours / float(self.estimated_hours), 1.0)
-        return round(ratio * 100, 1)
+    def progress_percent(self, actual_hours: float) -> float | None:
+        # 進捗率 = 実績 ÷（実績 ＋ 残）。子を持つタスクの積み上げは TaskProgressBoard が出す
+        return self.work_figures(actual_hours).progress_percent(done=self.status == TaskStatus.DONE)
+
+    def work_figures(self, actual_hours: float) -> WorkFigures:
+        return WorkFigures(actual_hours=actual_hours, remaining_hours=self.remaining_hours_from(actual_hours))
 
     def remaining_hours_from(self, actual_hours: float) -> float | None:
-        # 残り時間は直接入力せず「見積時間 − 実績時間」から常に導出する
+        # 残は手で入れた値が優先。空なら「見積 − 実績」（負にしない）を既定にする。DONE は 0
         if self.status == TaskStatus.DONE:
             return 0.0
+        if self.remaining_hours is not None:
+            return round(float(self.remaining_hours), 2)
         if self.estimated_hours is None:
             return None
         return round(max(float(self.estimated_hours) - actual_hours, 0.0), 2)

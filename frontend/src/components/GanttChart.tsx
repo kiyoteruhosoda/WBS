@@ -168,7 +168,7 @@ const GanttChart: React.FC<Props> = ({ tasks, categories, showMeta = true, onTog
                   const left = startIdx * DAY_WIDTH + 3;
                   const width = (endIdx - startIdx + 1) * DAY_WIDTH - 6;
                   const colors = barColors[st];
-                  const fillPct = st === 'DONE' ? 100 : Math.max(0, Math.min(100, t.progress_percent));
+                  const fillPct = st === 'DONE' ? 100 : Math.max(0, Math.min(100, t.progress_percent ?? 0));
                   bar = (
                     <Box
                       onClick={() => navigate(`/tasks/${t.id}`)}
@@ -178,7 +178,7 @@ const GanttChart: React.FC<Props> = ({ tasks, categories, showMeta = true, onTog
                         bgcolor: colors.track,
                         border: st === 'TODO' ? `1.5px dashed ${ds.todoGray}` : 'none',
                       }}
-                      title={`${t.title}（${t.progress_percent}%）`}
+                      title={`${t.title}（${t.progress_percent === null ? '—' : `${t.progress_percent}%`}）`}
                     >
                       {st !== 'TODO' && (
                         <Box sx={{ width: `${fillPct}%`, height: '100%', borderRadius: '6px', bgcolor: colors.fill }} />

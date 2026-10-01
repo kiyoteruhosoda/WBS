@@ -7,6 +7,8 @@ from src.application.user_clock import UserClock
 from src.domain.entities.task import Task
 from src.domain.exceptions import NotFoundError
 from src.domain.repositories.task_repository import TaskRepository
+from src.domain.services.task_progress_board import TaskProgressBoard
+from src.domain.value_objects.task_status import TaskStatus
 from src.infrastructure.repositories.task_repository import SqlAlchemyTaskRepository
 
 
@@ -18,7 +20,15 @@ class TaskUseCases:
 
     def list_tasks(self, user_id: int, filters: dict) -> list[dict]:
         tasks = self._repo.find_all(user_id, filters)
-        return [self._enrich(t) for t in tasks]
+        board = self.progress_board(user_id)
+        return [self._enrich(t, board) for t in tasks]
+
+    def progress_board(self, user_id: int) -> TaskProgressBoard:
+        # 親の進捗は子孫の積み上げなので、絞り込みに関わらず利用者のタスク全部から作る
+        return TaskProgressBoard(
+            self._repo.find_all(user_id, {}),
+            self._repo.get_actual_hours_by_task(user_id),
+        )
 
     def get_task(self, task_id: int, user_id: int) -> dict:
         task = self._repo.find_by_id_for_user(task_id, user_id)
@@ -38,6 +48,7 @@ class TaskUseCases:
             start_date=dto.start_date,
             due_date=dto.due_date,
             estimated_hours=dto.estimated_hours,
+            remaining_hours=dto.remaining_hours,
             memo=dto.memo,
             parent_task_id=dto.parent_task_id,
             milestone_id=dto.milestone_id,
@@ -66,6 +77,8 @@ class TaskUseCases:
             task.due_date = dto.due_date
         if dto.estimated_hours is not None:
             task.estimated_hours = dto.estimated_hours
+        if dto.remaining_hours_given:
+            task.remaining_hours = dto.remaining_hours
         if dto.memo is not None:
             task.memo = dto.memo
         if dto.parent_task_id is not None:
@@ -83,13 +96,16 @@ class TaskUseCases:
         self._repo.soft_delete(task_id, user_id)
         self._session.commit()
 
-    def _enrich(self, task: Task) -> dict:
-        actual = self._repo.get_actual_hours(task.id)
+    def _enrich(self, task: Task, board: TaskProgressBoard | None = None) -> dict:
+        if board is None:
+            board = self.progress_board(task.user_id)
+        actual = board.actual_hours(task.id)
+        # 進捗率の式に入れる実績と残（子を持つなら子孫の積み上げ。ADR-0010）
+        figures = board.figures(task)
         # 期限の近さは利用者の日付で決まる。サーバ（UTC）の today を使うと
         # JST の利用者にとって 0:00〜9:00 のあいだ「今日」が前日にずれる。
         today = self._clock.today(task.user_id)
         priority_score = task.priority_score(today)
-        progress = task.progress_percent(actual)
         return {
             "id": task.id,
             "user_id": task.user_id,
@@ -102,8 +118,14 @@ class TaskUseCases:
             "due_date": task.due_date,
             "estimated_hours": float(task.estimated_hours) if task.estimated_hours is not None else None,
             "remaining_hours": task.remaining_hours_from(actual),
+            "remaining_hours_entered": (
+                float(task.remaining_hours) if task.remaining_hours is not None else None
+            ),
             "actual_hours": actual,
-            "progress_percent": progress,
+            "has_subtasks": board.has_subtasks(task.id),
+            "rollup_actual_hours": figures.actual_hours,
+            "rollup_remaining_hours": figures.remaining_hours,
+            "progress_percent": figures.progress_percent(done=task.status == TaskStatus.DONE),
             "priority_score": priority_score,
             "memo": task.memo,
             "parent_task_id": task.parent_task_id,
