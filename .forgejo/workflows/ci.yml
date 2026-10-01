@@ -32,6 +32,9 @@ jobs:
           # ⚠ **版を固定する**。省くと最新版を GitHub の API へ匿名で聞きに行き、
           #   レート制限（60 回/時・IP ごと）に当たると 3 秒で落ちる（2026-10-01、PR #15）。
           version: "0.12.5"
+          # ⚠ **本体は forge から取る**（GitHub に依存しない）。置き場は astral-sh/uv の
+          #   リリース、その一覧が version-manifest.json。版を上げるときは両方に足す。
+          manifest-file: "https://git.nolumia.com/astral-sh/uv/raw/branch/main/version-manifest.json"
           python-version: ${{ matrix.python-version }}
 
       - name: Install dependencies
