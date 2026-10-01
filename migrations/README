@@ -4,7 +4,7 @@ Alembic のリビジョン置き場。起点は `versions/0001_baseline.py`（Al
 `create_all` + 手書きの列補完が作っていた形。⚠ stamp された本番の DB と一致させてあるので
 **書き換えない**）。DB を上げるのは `scripts/run_db_migrations.py`（コンテナの entrypoint が
 uvicorn の前に流す）で、`alembic_version` の無い古い DB はそこで baseline に揃えてから
-stamp される（ADR-0005）。
+stamp される（ADR-0006）。
 
 ## 表・列の足し方
 

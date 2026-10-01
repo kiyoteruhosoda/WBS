@@ -127,7 +127,7 @@ presentation/web/
 - マイグレーションファイルは `migrations/versions/<revision_id>_<description>.py`。
 - 各ファイルの先頭に `from __future__ import annotations` を必ず記述。
 - `upgrade()` / `downgrade()` の両方を実装する。
-- ベースラインは `migrations/versions/0001_baseline.py`（Alembic 導入前の `create_all` + 列補完の形を写したもの。**書き換えない**）。表・列の足し方は `migrations/README`（ADR-0005）。
+- ベースラインは `migrations/versions/0001_baseline.py`（Alembic 導入前の `create_all` + 列補完の形を写したもの。**書き換えない**）。表・列の足し方は `migrations/README`（ADR-0006）。
 - 形を変えるのは `scripts/run_db_migrations.py`（entrypoint が uvicorn の前に流す）だけ。アプリ本体は表を作らず、DB が head でなければ起動しない。
 - マスタデータ（ロール・権限・初期管理者）は `shared/domain/auth/master_data.py` を唯一の出所とし、`versions/*_seed_master_data.py` と `scripts/seed_master_data.py` の双方が参照する。値をどちらかに直書きしない。
 

@@ -1,7 +1,7 @@
 """DB の形を Alembic の head へ揃える。
 
 本番の入口は ``scripts/run_db_migrations.py``（コンテナの entrypoint が uvicorn の前に流す）。
-アプリ本体（lifespan）は形を変えず、head に揃っているかを確かめるだけ（ADR-0005）。
+アプリ本体（lifespan）は形を変えず、head に揃っているかを確かめるだけ（ADR-0006）。
 
 Alembic 導入前の DB（表はあるが ``alembic_version`` が無い）は、かつての
 ``create_all`` + 手書きの列補完を 1 回だけなぞって baseline と同じ形にし、

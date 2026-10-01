@@ -16,7 +16,7 @@ def resolve_database_url(database_url: str | None = None) -> str:
 
 
 def init_engine(database_url: str | None = None) -> None:
-    """接続を用意する。⚠ 表は作らない（形を変えるのは Alembic だけ。ADR-0005）。
+    """接続を用意する。⚠ 表は作らない（形を変えるのは Alembic だけ。ADR-0006）。
 
     head まで上がっていない DB では起動させない（先に scripts/run_db_migrations.py）。
     """
