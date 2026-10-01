@@ -17,8 +17,15 @@ export const ALL_DAY_ROW_HEIGHT = 24;
 export const ALL_DAY_CHIP_HEIGHT = 20;
 export const ALL_DAY_LANE_MIN_HEIGHT = 28;
 
-export interface WeekEventBlock {
-  segment: DaySegment;
+/** 時間グリッドに並べられる区間（回の区間・締めの画面の打刻の区間）。 */
+export interface TimedSpan {
+  startMinute: number;
+  endMinute: number;
+  isAllDay: boolean;
+}
+
+export interface WeekEventBlock<S extends TimedSpan = DaySegment> {
+  segment: S;
   /** px（= 分） */
   top: number;
   height: number;
@@ -30,8 +37,8 @@ export interface WeekEventBlock {
   columnSpan: number;
 }
 
-interface LayoutSlot {
-  segment: DaySegment;
+interface LayoutSlot<S extends TimedSpan> {
+  segment: S;
   start: number;
   end: number;
   column: number;
@@ -39,17 +46,17 @@ interface LayoutSlot {
   columnSpan: number;
 }
 
-const overlaps = (a: LayoutSlot, b: LayoutSlot): boolean => a.start < b.end && b.start < a.end;
+const overlaps = <S extends TimedSpan>(a: LayoutSlot<S>, b: LayoutSlot<S>): boolean => a.start < b.end && b.start < a.end;
 
-const bySpan = (a: LayoutSlot, b: LayoutSlot): number => a.start - b.start || a.end - b.end;
+const bySpan = <S extends TimedSpan>(a: LayoutSlot<S>, b: LayoutSlot<S>): number => a.start - b.start || a.end - b.end;
 
 /** 移植元の `EndMinuteOfDay`: 長さ 0 の回は 60 分の枠で描く。 */
-const effectiveEnd = (segment: DaySegment): number =>
+const effectiveEnd = (segment: TimedSpan): number =>
   segment.endMinute <= segment.startMinute ? segment.startMinute + 60 : segment.endMinute;
 
-const groupOverlaps = (ordered: LayoutSlot[]): LayoutSlot[][] => {
-  const groups: LayoutSlot[][] = [];
-  let current: LayoutSlot[] = [];
+const groupOverlaps = <S extends TimedSpan>(ordered: LayoutSlot<S>[]): LayoutSlot<S>[][] => {
+  const groups: LayoutSlot<S>[][] = [];
+  let current: LayoutSlot<S>[] = [];
   let currentMaxEnd = -1;
   for (const slot of ordered) {
     if (current.length === 0 || slot.start < currentMaxEnd) {
@@ -65,7 +72,7 @@ const groupOverlaps = (ordered: LayoutSlot[]): LayoutSlot[][] => {
   return groups;
 };
 
-const resolveExpandableSpan = (pivot: LayoutSlot, columns: LayoutSlot[][]): number => {
+const resolveExpandableSpan = <S extends TimedSpan>(pivot: LayoutSlot<S>, columns: LayoutSlot<S>[][]): number => {
   let span = 1;
   for (let next = pivot.column + 1; next < columns.length; next++) {
     if (columns[next].some((other) => overlaps(pivot, other))) break;
@@ -74,8 +81,8 @@ const resolveExpandableSpan = (pivot: LayoutSlot, columns: LayoutSlot[][]): numb
   return Math.max(1, span);
 };
 
-const assignColumns = (group: LayoutSlot[]): void => {
-  const columns: LayoutSlot[][] = [];
+const assignColumns = <S extends TimedSpan>(group: LayoutSlot<S>[]): void => {
+  const columns: LayoutSlot<S>[][] = [];
   for (const slot of [...group].sort(bySpan)) {
     let column = 0;
     while (column < columns.length && columns[column].some((existing) => overlaps(existing, slot))) column++;
@@ -90,7 +97,7 @@ const assignColumns = (group: LayoutSlot[]): void => {
   }
 };
 
-const toBlock = (slot: LayoutSlot): WeekEventBlock => {
+const toBlock = <S extends TimedSpan>(slot: LayoutSlot<S>): WeekEventBlock<S> => {
   const height = Math.max(MINIMUM_EVENT_HEIGHT, slot.end - slot.start);
   let leftRatio = 0;
   let widthRatio = 1;
@@ -112,9 +119,12 @@ const toBlock = (slot: LayoutSlot): WeekEventBlock => {
   };
 };
 
-/** 1 日分の時刻付きの区間を並べる（終日は除く）。返す順は開始・終了の順。 */
-export const layoutTimedSegments = (segments: readonly DaySegment[]): WeekEventBlock[] => {
-  const slots: LayoutSlot[] = segments
+/**
+ * 1 日分の時刻付きの区間を並べる（終日は除く）。返す順は開始・終了の順。
+ * 区間は回（`DaySegment`）でも、締めの画面の打刻（`closing/closingBoard.ts`）でもよい。
+ */
+export const layoutTimedSegments = <S extends TimedSpan = DaySegment>(segments: readonly S[]): WeekEventBlock<S>[] => {
+  const slots: LayoutSlot<S>[] = segments
     .filter((s) => !s.isAllDay)
     .map((segment) => {
       const start = segment.startMinute;
@@ -122,7 +132,7 @@ export const layoutTimedSegments = (segments: readonly DaySegment[]): WeekEventB
     })
     .sort(bySpan);
   for (const group of groupOverlaps(slots)) assignColumns(group);
-  return slots.map(toBlock);
+  return slots.map((slot) => toBlock(slot));
 };
 
 export interface AllDayBlock {
