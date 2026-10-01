@@ -75,7 +75,7 @@ const CalendarHeader: React.FC<Props> = ({
         >
           {title}
         </Box>
-        {/* 元に戻す・やり直し（週のドラッグ操作 #158 の取り消し）。いまは置き場だけ。 */}
+        {/* 元に戻す・やり直し（週のドラッグ操作の履歴。履歴は呼び手が持つ） */}
         <Tooltip title={t('calendar.undo')}>
           <span>
             <IconButton aria-label={t('calendar.undo')} onClick={onUndo} disabled={!onUndo || !canUndo} sx={{ ...round, mx: '2px' }}>

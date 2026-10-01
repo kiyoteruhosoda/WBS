@@ -210,9 +210,3 @@ export const pastShadeHeight = (date: string, today: string, nowMinute: number, 
   if (date === today) return Math.min(Math.max(nowMinute, 0), dayHeight);
   return 0;
 };
-
-/** グリッドの中の縦位置（px = 分）から、刻みに丸めた分を出す（ドラッグ #158 で使う口）。 */
-export const minuteAtOffset = (offsetY: number, snapMinutes = 15): number => {
-  const clamped = Math.min(Math.max(offsetY, 0), 24 * 60 - 1);
-  return Math.floor(clamped / snapMinutes) * snapMinutes;
-};

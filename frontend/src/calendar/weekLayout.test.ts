@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { splitIntoDaySegments } from './daySegments';
 import {
-  COLUMN_GAP_RATIO, defaultScrollTop, layoutAllDayLane, layoutTimedSegments, minuteAtOffset, pastShadeHeight,
+  COLUMN_GAP_RATIO, defaultScrollTop, layoutAllDayLane, layoutTimedSegments, pastShadeHeight,
 } from './weekLayout';
 import { TOKYO, hm, occurrence } from './testOccurrences';
 
@@ -153,12 +153,5 @@ describe('週の表示の細かいところ', () => {
     expect(pastShadeHeight('2026-05-03', '2026-05-04', hm(10), 1440)).toBe(1440);
     expect(pastShadeHeight('2026-05-04', '2026-05-04', hm(10), 1440)).toBe(600);
     expect(pastShadeHeight('2026-05-05', '2026-05-04', hm(10), 1440)).toBe(0);
-  });
-
-  it('縦の位置を 15 分刻みの分へ丸める', () => {
-    expect(minuteAtOffset(0)).toBe(0);
-    expect(minuteAtOffset(554)).toBe(540);
-    expect(minuteAtOffset(5000)).toBe(1425);
-    expect(minuteAtOffset(-3)).toBe(0);
   });
 });
