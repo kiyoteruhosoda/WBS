@@ -18,6 +18,10 @@ jobs:
     name: Lint & Test (Python ${{ matrix.python-version }})
     # ⚠ **自前の台で回す**（forge へ移したとき変えた）。
     runs-on: [self-hosted, nolumialab]
+    env:
+      # uv が入れる Python も forge から（既定は GitHub の python-build-standalone）。
+      # 版を上げて落ちたら、その tag のファイルを astral-sh/python-build-standalone のリリースに足す。
+      UV_PYTHON_INSTALL_MIRROR: "https://git.nolumia.com/astral-sh/python-build-standalone/releases/download"
     strategy:
       matrix:
         python-version: ["3.12"]
