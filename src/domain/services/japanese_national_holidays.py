@@ -59,7 +59,7 @@ def _statutory_holidays(year: int) -> dict[date, str]:
     special = _SPECIAL_YEARS.get(year, {})
 
     def moved(name: str, usual: date | None) -> date | None:
-        return special[name] if name in special else usual
+        return special.get(name, usual)
 
     sports_day_name = "スポーツの日" if year >= 2020 else "体育の日"
     candidates: list[tuple[str, date | None]] = [

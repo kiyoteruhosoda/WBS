@@ -53,7 +53,6 @@ from src.domain.value_objects.recurrence import RecurrenceRule
 from src.domain.value_objects.time_zone import TimeZoneId
 from src.shared.clock import utcnow
 
-
 SCHEDULED_TASK_LOOKBACK_DAYS = 7
 """打刻の既定のタスクを探すとき、何日前に始まった回まで見るか（それより長い予定は見ない）。"""
 
