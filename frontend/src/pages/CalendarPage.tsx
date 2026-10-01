@@ -46,7 +46,7 @@ const HOLIDAYS = 'calendar-holidays';
 /**
  * カレンダー（task #157）。予定 API（ADR-0009）の回と祝日を表示している期間ごとに取り、
  * タスク・マイルストーンの期限も終日の帯に出す。ドラッグで動かした回は API へ書き、
- * 元に戻す・やり直しも API 越しに行う（ADR-0010）。
+ * 元に戻す・やり直しも API 越しに行う（ADR-0013）。
  */
 const CalendarPage: React.FC = () => {
   const { t, timezone } = useI18n();

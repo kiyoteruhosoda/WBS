@@ -18,6 +18,8 @@ class TaskCreateRequest(BaseModel):
     start_date: date | None = None
     due_date: date | None = None
     estimated_hours: Decimal | None = None
+    # 手で持つ残（時間）。空なら「見積 − 実績」を既定に使う（ADR-0010）。更新で null を送ると空へ戻す
+    remaining_hours: Decimal | None = Field(default=None, ge=0, le=Decimal("9999.99"))
     memo: str | None = None
     parent_task_id: int | None = None
     milestone_id: int | None = None
@@ -32,6 +34,8 @@ class TaskUpdateRequest(BaseModel):
     start_date: date | None = None
     due_date: date | None = None
     estimated_hours: Decimal | None = None
+    # 手で持つ残（時間）。空なら「見積 − 実績」を既定に使う（ADR-0010）。更新で null を送ると空へ戻す
+    remaining_hours: Decimal | None = Field(default=None, ge=0, le=Decimal("9999.99"))
     memo: str | None = None
     parent_task_id: int | None = None
     milestone_id: int | None = None
@@ -48,9 +52,17 @@ class TaskResponse(BaseModel):
     start_date: date | None = None
     due_date: date | None = None
     estimated_hours: float | None = None
+    # 自分の残（手の値、空なら見積 − 実績。DONE は 0）と、手で入れた値そのもの
     remaining_hours: float | None = None
+    remaining_hours_entered: float | None = None
+    # 自分の実績（work_logs の合計）
     actual_hours: float = 0.0
-    progress_percent: float = 0.0
+    has_subtasks: bool = False
+    # 進捗率の式に入れた実績と残（子を持つなら自分と全子孫の積み上げ）
+    rollup_actual_hours: float = 0.0
+    rollup_remaining_hours: float | None = None
+    # 実績 ÷（実績 ＋ 残）× 100。DONE は 100。分母 0・残が決まらないときは null
+    progress_percent: float | None = None
     priority_score: int = 0
     memo: str | None = None
     parent_task_id: int | None = None

@@ -60,6 +60,8 @@ class TaskModel(Base):
     start_date: Mapped[date | None] = mapped_column(sa.Date, nullable=True)
     due_date: Mapped[date | None] = mapped_column(sa.Date, nullable=True)
     estimated_hours: Mapped[Decimal | None] = mapped_column(sa.Numeric(6, 2), nullable=True)
+    # 手で入れた残（空なら「見積 − 実績」を既定に使う。ADR-0010）
+    remaining_hours: Mapped[Decimal | None] = mapped_column(sa.Numeric(6, 2), nullable=True)
     memo: Mapped[str | None] = mapped_column(sa.Text, nullable=True)
     parent_task_id: Mapped[int | None] = mapped_column(sa.BigInteger().with_variant(sa.Integer(), "sqlite"), sa.ForeignKey("tasks.id"), nullable=True)
     milestone_id: Mapped[int | None] = mapped_column(sa.BigInteger().with_variant(sa.Integer(), "sqlite"), sa.ForeignKey("milestones.id"), nullable=True)

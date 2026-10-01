@@ -32,6 +32,8 @@ interface FormData {
   due_date: string;
   estimated_hours: string;
   actual_hours: string;
+  // 手で持つ残。空なら「見積 − 実績」を既定に使う
+  remaining_hours: string;
   parent_task_id: string;
   milestone_id: string;
   memo: string;
@@ -39,7 +41,7 @@ interface FormData {
 
 const defaultForm: FormData = {
   title: '', category_id: '', priority: 3, urgency: 3, status: 'TODO',
-  start_date: '', due_date: '', estimated_hours: '', actual_hours: '',
+  start_date: '', due_date: '', estimated_hours: '', actual_hours: '', remaining_hours: '',
   parent_task_id: '', milestone_id: '', memo: '',
 };
 
@@ -47,7 +49,9 @@ const toForm = (t: Task): FormData => ({
   title: t.title, category_id: String(t.category_id ?? ''), priority: t.priority,
   urgency: t.urgency, status: t.status, start_date: t.start_date ?? '',
   due_date: t.due_date ?? '', estimated_hours: String(t.estimated_hours ?? ''),
-  actual_hours: String(t.actual_hours ?? 0), parent_task_id: String(t.parent_task_id ?? ''),
+  actual_hours: String(t.actual_hours ?? 0),
+  remaining_hours: t.remaining_hours_entered === null ? '' : String(t.remaining_hours_entered),
+  parent_task_id: String(t.parent_task_id ?? ''),
   milestone_id: String(t.milestone_id ?? ''), memo: t.memo ?? '',
 });
 
@@ -142,7 +146,7 @@ const TaskEdit: React.FC = () => {
   const save = useMutation({
     mutationFn: async (data: Partial<Task>) => {
       const saved = isNew ? await createTask(data) : await updateTask(Number(id), data);
-      // 実績時間の変更分を作業ログとして記録する（残り時間は見積−実績で自動計算される）
+      // 実績時間の変更分を作業ログとして記録する（実績は作業ログの合計）
       if (!isNew && task) {
         const newActual = form.actual_hours === '' ? task.actual_hours : Number(form.actual_hours);
         const delta = Math.round((newActual - task.actual_hours) * 100) / 100;
@@ -191,6 +195,8 @@ const TaskEdit: React.FC = () => {
       priority: form.priority, urgency: form.urgency, status: form.status,
       start_date: form.start_date || null, due_date: form.due_date || null,
       estimated_hours: form.estimated_hours ? Number(form.estimated_hours) : null,
+      // 空で送ると手の値を消し、見積 − 実績 を既定に戻す
+      remaining_hours: form.remaining_hours === '' ? null : Number(form.remaining_hours),
       parent_task_id: form.parent_task_id ? Number(form.parent_task_id) : null,
       milestone_id: form.milestone_id ? Number(form.milestone_id) : null,
       memo: form.memo || null,
@@ -203,13 +209,15 @@ const TaskEdit: React.FC = () => {
 
   const titleError = showTitleError && !form.title.trim();
 
-  // 残り時間は入力せず「見積 − 実績」で表示する
+  // 残が空のときの既定（見積 − 実績、負にしない）。見積も空なら決まらない
   const estNum = Number(form.estimated_hours);
   const actNum = form.actual_hours === '' ? 0 : Number(form.actual_hours);
-  const remainingDisplay =
+  const defaultRemaining =
     form.estimated_hours === '' || isNaN(estNum)
-      ? '—'
-      : String(Math.max(Math.round((estNum - (isNaN(actNum) ? 0 : actNum)) * 100) / 100, 0));
+      ? null
+      : Math.max(Math.round((estNum - (isNaN(actNum) ? 0 : actNum)) * 100) / 100, 0);
+  // 子を持つタスクの進捗は子の積み上げなので、自分の残は入れさせない
+  const isParent = !isNew && (task?.has_subtasks ?? false);
 
   return (
     <Box sx={{ maxWidth: 640, mx: 'auto' }}>
@@ -327,27 +335,40 @@ const TaskEdit: React.FC = () => {
               />
             </Box>
             {!isNew && (
-              <>
-                <Box sx={{ flex: '1 1 160px' }}>
-                  <FieldLabel>{t('taskEdit.actualHours')}</FieldLabel>
-                  <TextField
-                    fullWidth size="small" type="number"
-                    slotProps={{ htmlInput: { min: 0, step: 0.5 } }}
-                    value={form.actual_hours}
-                    helperText={t('taskEdit.actualHoursHelp')}
-                    onChange={e => setForm({ ...form, actual_hours: e.target.value })}
-                  />
-                </Box>
-                <Box sx={{ flex: '1 1 160px' }}>
-                  <FieldLabel>{t('taskEdit.remainingHours')}</FieldLabel>
-                  <TextField
-                    fullWidth size="small" disabled
-                    value={remainingDisplay}
-                    helperText={t('taskEdit.remainingAuto')}
-                  />
-                </Box>
-              </>
+              <Box sx={{ flex: '1 1 160px' }}>
+                <FieldLabel>{t('taskEdit.actualHours')}</FieldLabel>
+                <TextField
+                  fullWidth size="small" type="number"
+                  slotProps={{ htmlInput: { min: 0, step: 0.5 } }}
+                  value={form.actual_hours}
+                  helperText={t('taskEdit.actualHoursHelp')}
+                  onChange={e => setForm({ ...form, actual_hours: e.target.value })}
+                />
+              </Box>
             )}
+            <Box sx={{ flex: '1 1 160px' }}>
+              <FieldLabel>{t('taskEdit.remainingHours')}</FieldLabel>
+              {isParent ? (
+                <TextField
+                  fullWidth size="small" disabled
+                  value={task?.rollup_remaining_hours ?? '—'}
+                  helperText={t('taskEdit.remainingRollup')}
+                />
+              ) : (
+                <TextField
+                  fullWidth size="small" type="number"
+                  slotProps={{ htmlInput: { min: 0, step: 0.5 } }}
+                  value={form.remaining_hours}
+                  placeholder={defaultRemaining === null ? '' : String(defaultRemaining)}
+                  helperText={
+                    defaultRemaining === null
+                      ? t('taskEdit.remainingHelpNoEstimate')
+                      : t('taskEdit.remainingHelp', { hours: defaultRemaining })
+                  }
+                  onChange={e => setForm({ ...form, remaining_hours: e.target.value })}
+                />
+              )}
+            </Box>
           </Box>
 
           <Box>

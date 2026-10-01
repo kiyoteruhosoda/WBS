@@ -1,4 +1,4 @@
-// 画面の意図 → 予定 API の呼び出し（task #157 第 2 段、ADR-0010）。
+// 画面の意図 → 予定 API の呼び出し（task #157 第 2 段、ADR-0013）。
 //
 // 呼び出しを「何を・どこへ・何を載せて」のデータ（`CalendarRequest`）で作り、送るのは
 // `api/calendar.ts` の `sendCalendarRequest` だけにする。ここは純関数なので、意図 → 呼び出しの
