@@ -8,14 +8,19 @@ from src.domain.value_objects.dependency_type import DependencyType
 
 
 def _has_cycle(all_deps: list[TaskDependency], new_pred: int, new_succ: int) -> bool:
+    """``new_pred → new_succ`` を足すと循環するか。
+
+    循環するのは、``new_succ`` が既に ``new_pred`` の祖先（``new_pred`` から先行を
+    辿って届く）であるとき。自分自身への依存も循環として扱う。
+    """
     graph: dict[int, list[int]] = {}
     for dep in all_deps:
         graph.setdefault(dep.successor_task_id, []).append(dep.predecessor_task_id)
     visited = set()
-    stack = [new_succ]
+    stack = [new_pred]
     while stack:
         node = stack.pop()
-        if node == new_pred:
+        if node == new_succ:
             return True
         if node in visited:
             continue

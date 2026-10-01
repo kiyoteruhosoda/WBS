@@ -161,6 +161,13 @@ def test_cycle_check_still_works_within_my_tasks(client, world) -> None:
     assert _depend(client, world["a"], world["b"]).status_code == 409
 
 
+def test_cycle_check_follows_a_longer_chain(client, world) -> None:
+    c = _task(client, "自分の C")
+    assert _depend(client, c, world["b"]).status_code == 201  # A→B→C
+    assert _depend(client, world["a"], c).status_code == 409  # C→A で循環
+    assert _depend(client, world["a"], world["a"]).status_code == 409  # 自分自身
+
+
 def test_i_can_still_remove_my_own_dependency(client, world) -> None:
     res = client.delete(f"/api/tasks/{world['b']}/dependencies/{world['a']}")
     assert res.status_code == 204
