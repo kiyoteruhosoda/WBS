@@ -1,25 +1,26 @@
 from __future__ import annotations
 
-from sqlalchemy.orm import Session
-
 from src.domain.entities.task_dependency import TaskDependency
 from src.domain.exceptions import CyclicDependencyError, NotFoundError
+from src.domain.repositories.task_dependency_repository import TaskDependencyRepository
+from src.domain.repositories.task_repository import TaskRepository
 from src.domain.value_objects.dependency_type import DependencyType
-from src.infrastructure.repositories.task_dependency_repository import (
-    SqlAlchemyTaskDependencyRepository,
-)
-from src.infrastructure.repositories.task_repository import SqlAlchemyTaskRepository
 
 
 def _has_cycle(all_deps: list[TaskDependency], new_pred: int, new_succ: int) -> bool:
+    """``new_pred → new_succ`` を足すと循環するか。
+
+    循環するのは、``new_succ`` が既に ``new_pred`` の祖先（``new_pred`` から先行を
+    辿って届く）であるとき。自分自身への依存も循環として扱う。
+    """
     graph: dict[int, list[int]] = {}
     for dep in all_deps:
         graph.setdefault(dep.successor_task_id, []).append(dep.predecessor_task_id)
     visited = set()
-    stack = [new_succ]
+    stack = [new_pred]
     while stack:
         node = stack.pop()
-        if node == new_pred:
+        if node == new_succ:
             return True
         if node in visited:
             continue
@@ -30,14 +31,13 @@ def _has_cycle(all_deps: list[TaskDependency], new_pred: int, new_succ: int) -> 
 
 
 class DependencyUseCases:
-    def __init__(self, session: Session) -> None:
-        self._repo = SqlAlchemyTaskDependencyRepository(session)
-        self._task_repo = SqlAlchemyTaskRepository(session)
-        self._session = session
+    def __init__(self, *, dependencies: TaskDependencyRepository, tasks: TaskRepository) -> None:
+        self._repo = dependencies
+        self._task_repo = tasks
 
     def get_dependencies(self, task_id: int, user_id: int) -> dict:
         self._owned_task(task_id, user_id)
-        all_for_task = self._repo.find_by_task(task_id)
+        all_for_task = self._repo.find_by_task_for_user(task_id, user_id)
         predecessors = [d for d in all_for_task if d.successor_task_id == task_id]
         successors = [d for d in all_for_task if d.predecessor_task_id == task_id]
         return {
@@ -51,7 +51,8 @@ class DependencyUseCases:
         # 存在しないはずのタスクの ID を依存として書き込めてしまう。
         self._owned_task(successor_task_id, user_id)
         self._owned_task(predecessor_task_id, user_id)
-        all_deps = self._repo.get_all_dependencies()
+        # 循環は自分の依存の中でしか起きない（両端とも自分のタスクであることを上で見ている）。
+        all_deps = self._repo.find_all_for_user(user_id)
         if _has_cycle(all_deps, predecessor_task_id, successor_task_id):
             raise CyclicDependencyError()
         dep = TaskDependency(
@@ -60,14 +61,13 @@ class DependencyUseCases:
             dependency_type=DependencyType(dependency_type),
             lag_days=lag_days,
         )
-        saved = self._repo.save(dep)
-        self._session.commit()
-        return saved
+        return self._repo.save(dep)
 
     def remove_dependency(self, successor_task_id: int, predecessor_task_id: int, user_id: int) -> None:
+        # 後続（URL の task_id）が自分のものであることを見る。先行は他人のタスクを
+        # 指していても、足す口で両端を見ているのでその組の行は存在せず、何も消えない。
         self._owned_task(successor_task_id, user_id)
         self._repo.delete(predecessor_task_id, successor_task_id)
-        self._session.commit()
 
     def _owned_task(self, task_id: int, user_id: int) -> None:
         if self._task_repo.find_by_id_for_user(task_id, user_id) is None:
