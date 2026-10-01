@@ -37,4 +37,12 @@ def isoformat_utc(value: datetime) -> str:
     return aware.isoformat().replace("+00:00", "Z")
 
 
-__all__ = ["isoformat_utc", "utcnow"]
+def to_naive_utc(value: datetime) -> datetime:
+    """境界から入ってきた時刻を保存値の形（naive な UTC）へ直す。
+
+    aware なら UTC へ変換してから外す。naive はすでに UTC とみなす。
+    """
+    return value if value.tzinfo is None else value.astimezone(UTC).replace(tzinfo=None)
+
+
+__all__ = ["isoformat_utc", "to_naive_utc", "utcnow"]

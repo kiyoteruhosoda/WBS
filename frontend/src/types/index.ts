@@ -145,3 +145,38 @@ export interface CurrentUser {
 export interface LogoutResult {
   end_session_url: string | null;
 }
+
+// 打刻（task #154）。時刻は Z 付きの UTC
+export type TimeEntrySource = 'timer' | 'manual' | 'split';
+
+export interface TimeEntry {
+  id: number;
+  user_id: number;
+  task_id: number | null;
+  task_title: string | null;
+  started_at: string;
+  ended_at: string | null;
+  memo: string | null;
+  source: TimeEntrySource;
+  is_running: boolean;
+  duration_seconds: number;
+  is_long_running: boolean;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+export interface CurrentTimeEntry {
+  entry: TimeEntry | null;
+  server_now: string;
+}
+
+export interface StartTimeEntryResult {
+  started: TimeEntry;
+  stopped: TimeEntry | null;
+  server_now: string;
+}
+
+export interface StopTimeEntryResult {
+  stopped: TimeEntry | null;
+  server_now: string;
+}

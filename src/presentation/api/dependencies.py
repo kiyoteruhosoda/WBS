@@ -14,6 +14,7 @@ from src.application.use_cases.authentication_use_cases import (
     SsoLoginUseCases,
 )
 from src.application.use_cases.backchannel_logout_use_cases import ReceiveBackchannelLogout
+from src.application.use_cases.time_entry_use_cases import TimeEntryUseCases
 from src.domain.exceptions import AuthenticationError
 from src.infrastructure.auth.auth_settings import SINGLE_USER_ID, AuthSettings
 from src.infrastructure.database.session import get_db_session
@@ -26,6 +27,8 @@ from src.infrastructure.repositories.login_transaction_repository import (
 from src.infrastructure.repositories.logout_delivery_repository import (
     SqlAlchemyLogoutDeliveryRepository,
 )
+from src.infrastructure.repositories.task_repository import SqlAlchemyTaskRepository
+from src.infrastructure.repositories.time_entry_repository import SqlAlchemyTimeEntryRepository
 from src.infrastructure.repositories.user_account_repository import (
     SqlAlchemyUserAccountRepository,
 )
@@ -105,6 +108,18 @@ def get_receive_backchannel_logout(
 BackchannelLogoutDep = Annotated[
     ReceiveBackchannelLogout, Depends(get_receive_backchannel_logout)
 ]
+
+
+def get_time_entry_use_cases(db: DbDep) -> TimeEntryUseCases:
+    # 予定のタスクを既定にする口（scheduled_tasks）は、予定の表ができたら繋ぐ（ADR-0008）。
+    # それまでは NoScheduledTask（直前の打刻のタスク → 未割当）。
+    return TimeEntryUseCases(
+        entries=SqlAlchemyTimeEntryRepository(db),
+        tasks=SqlAlchemyTaskRepository(db),
+        unit_of_work=db,
+    )
+
+TimeEntryUseCasesDep = Annotated[TimeEntryUseCases, Depends(get_time_entry_use_cases)]
 
 
 def get_current_user(

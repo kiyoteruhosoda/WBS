@@ -4,6 +4,13 @@
 
 ## 2026-10-01
 
+- **打刻（Start / Stop のタイムトラッカー）を入れた**（task #154、ADR-0008）。表 `time_entries`
+  （移行 `0002`）・API `/api/time-entries`（Start・Stop・現在・期間の一覧・1 件の修正と削除）・
+  全画面の上部の打刻ボタン。走っている間に Start すると同じ時刻で前を止めて切り替え、Stop は冪等。
+  ⚠ **走っている打刻は 1 人 1 本を部分一意索引でも守る**。Start のタスクは省くと
+  「いまの予定のタスク（予定の表ができたら繋ぐ）→ 直前の打刻のタスク → 未割当」。12 時間を超えた
+  打刻には印を付ける（その場では直させない）。確定済みの期間の保護は締め（#161）で足す。
+
 - **スキーマを Alembic で管理するようにした**（ADR-0006、task #153）。起動のたびの `create_all` と
   手書きの列補完をやめ、今の形を baseline（`migrations/versions/0001_baseline.py`）にした。
   DB を上げるのは entrypoint（`scripts/run_db_migrations.py`）だけで、アプリは DB が head で
