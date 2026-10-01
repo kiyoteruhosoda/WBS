@@ -8,7 +8,7 @@ import { useAuth } from '../auth/AuthProvider';
 import TimerButton from './TimerButton';
 import type { TranslationKey } from '../i18n/translations';
 import {
-  GridIcon, CheckListIcon, BarsIcon, CalendarIcon, InboxIcon,
+  CheckListIcon, BarsIcon, CalendarIcon, InboxIcon,
   CheckIcon, PlusIcon, TodayIcon, SlidersIcon, FolderIcon, FlagIcon,
 } from './icons';
 
@@ -16,8 +16,7 @@ const SIDEBAR_WIDTH = 224;
 const TOPBAR_HEIGHT = 58;
 
 const navItems: { labelKey: TranslationKey; path: string; icon: React.FC<{ size?: number; strokeWidth?: number }> }[] = [
-  { labelKey: 'nav.dashboard', path: '/', icon: GridIcon },
-  { labelKey: 'nav.today', path: '/today', icon: TodayIcon },
+  { labelKey: 'nav.today', path: '/', icon: TodayIcon },
   { labelKey: 'nav.tasks', path: '/tasks', icon: CheckListIcon },
   { labelKey: 'nav.gantt', path: '/gantt', icon: BarsIcon },
   { labelKey: 'nav.calendar', path: '/calendar', icon: CalendarIcon },
@@ -28,8 +27,7 @@ const navItems: { labelKey: TranslationKey; path: string; icon: React.FC<{ size?
 ];
 
 const pageTitles: { pattern: RegExp; titleKey: TranslationKey }[] = [
-  { pattern: /^\/$/, titleKey: 'nav.dashboard' },
-  { pattern: /^\/today$/, titleKey: 'nav.today' },
+  { pattern: /^\/$/, titleKey: 'nav.today' },
   { pattern: /^\/tasks\/new$/, titleKey: 'title.taskNew' },
   { pattern: /^\/tasks\/\d+$/, titleKey: 'title.taskEdit' },
   { pattern: /^\/tasks$/, titleKey: 'nav.tasks' },

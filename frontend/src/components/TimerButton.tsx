@@ -1,59 +1,26 @@
 import React, { useEffect, useState } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Alert, Box, ButtonBase, CircularProgress, Divider, Menu, MenuItem, Snackbar, Tooltip } from '@mui/material';
+import { useQuery } from '@tanstack/react-query';
+import { Box, ButtonBase, CircularProgress, Divider, Menu, MenuItem, Tooltip } from '@mui/material';
 import { ds } from '../theme';
 import { useI18n } from '../i18n';
-import { getCurrentTimeEntry, startTimeEntry, stopTimeEntry, updateTimeEntry } from '../api/timeEntries';
 import { getTasks } from '../api/tasks';
-import type { CurrentTimeEntry, TimeEntry } from '../types';
 import { ChevronDownIcon, PlayIcon, StopIcon, WarningTriangleIcon } from './icons';
+import { LONG_RUNNING_MS, elapsedOf, formatElapsed } from '../timer/timerState';
+import { useCurrentTimeEntry, useTimerWrites } from '../timer/useTimer';
+import TimerFailureNotice from './TimerFailureNotice';
 
 // 打刻ボタン（task #154）。全画面の上部に常に出す。
 // 普段は ▶ 開始 / ■ 停止 を押すだけ。タスクはその場で変えられるが、変えなくてよい
 // （省くとサーバが「いまの予定のタスク → 直前の打刻のタスク → タスクなし」の順で決める）。
 
-const CURRENT_KEY = ['time-entries', 'current'] as const;
-// サーバの印（is_long_running）と同じしきい値。走っている間は画面の側で数え続ける
-const LONG_RUNNING_MS = 12 * 60 * 60 * 1000;
 const BUTTON_HEIGHT = 44;
-
-interface CurrentSnapshot {
-  current: CurrentTimeEntry;
-  // 応答を受け取った端末の時刻。経過は server_now を起点に、ここからの差を足して数える
-  // （端末の時計がずれていても経過時間が合う）
-  receivedAt: number;
-}
-
-const fetchCurrent = async (): Promise<CurrentSnapshot> => ({
-  current: await getCurrentTimeEntry(),
-  receivedAt: Date.now(),
-});
-
-const formatElapsed = (ms: number): string => {
-  const total = Math.max(0, Math.floor(ms / 1000));
-  const h = Math.floor(total / 3600);
-  const m = Math.floor((total % 3600) / 60);
-  const s = total % 60;
-  return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
-};
-
-const elapsedOf = (snapshot: CurrentSnapshot, entry: TimeEntry, nowMs: number): number =>
-  Date.parse(snapshot.current.server_now) - Date.parse(entry.started_at) + (nowMs - snapshot.receivedAt);
 
 const TimerButton: React.FC = () => {
   const { t } = useI18n();
-  const qc = useQueryClient();
   const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
-  const [failed, setFailed] = useState(false);
   const [nowMs, setNowMs] = useState(() => Date.now());
 
-  const { data: snapshot } = useQuery({
-    queryKey: CURRENT_KEY,
-    queryFn: fetchCurrent,
-    // 別の端末（スマホのアプリなど）で押した分も拾う
-    refetchInterval: 60_000,
-    staleTime: 0,
-  });
+  const { data: snapshot } = useCurrentTimeEntry();
   const entry = snapshot?.current.entry ?? null;
 
   useEffect(() => {
@@ -70,34 +37,7 @@ const TimerButton: React.FC = () => {
   });
   const openTasks = (tasks ?? []).filter((task) => task.status !== 'DONE' && task.status !== 'CANCELLED');
 
-  const remember = (next: TimeEntry | null, serverNow: string) => {
-    qc.setQueryData<CurrentSnapshot>(CURRENT_KEY, {
-      current: { entry: next, server_now: serverNow },
-      receivedAt: Date.now(),
-    });
-    setNowMs(Date.now());
-    // 期間の一覧（締めの画面）を持っていれば読み直させる
-    void qc.invalidateQueries({ queryKey: ['time-entries', 'list'] });
-  };
-
-  const start = useMutation({
-    mutationFn: (taskId?: number | null) => startTimeEntry(taskId),
-    onSuccess: (res) => remember(res.started, res.server_now),
-    onError: () => setFailed(true),
-  });
-  const stop = useMutation({
-    mutationFn: stopTimeEntry,
-    onSuccess: (res) => remember(null, res.server_now),
-    onError: () => setFailed(true),
-  });
-  const changeTask = useMutation({
-    mutationFn: ({ id, taskId }: { id: number; taskId: number | null }) => updateTimeEntry(id, { task_id: taskId }),
-    onSuccess: (updated) => {
-      if (snapshot) remember(updated, snapshot.current.server_now);
-    },
-    onError: () => setFailed(true),
-  });
-  const busy = start.isPending || stop.isPending || changeTask.isPending;
+  const { start, stop, changeTask, busy, failure, clearFailure } = useTimerWrites();
 
   const chooseTask = (taskId: number | null) => {
     setMenuAnchor(null);
@@ -232,16 +172,7 @@ const TimerButton: React.FC = () => {
         ))}
       </Menu>
 
-      <Snackbar
-        open={failed}
-        autoHideDuration={5000}
-        onClose={() => setFailed(false)}
-        anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
-      >
-        <Alert severity="error" onClose={() => setFailed(false)} sx={{ width: '100%' }}>
-          {t('timer.error')}
-        </Alert>
-      </Snackbar>
+      <TimerFailureNotice failure={failure} onClose={clearFailure} />
     </>
   );
 };

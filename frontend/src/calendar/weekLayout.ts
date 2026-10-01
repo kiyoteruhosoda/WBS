@@ -203,11 +203,11 @@ export const layoutAllDayLane = (
 
 /**
  * 開いたときに送る位置（移植元 `WeekCalendarView.ComputeDefaultAnchor`）。
- * 今週なら今の時刻の 4 時間前、それ以外は 9:00。
+ * 今週なら今の時刻の 4 時間前（`leadMinutes`）、それ以外は 9:00。
  */
-export const defaultScrollTop = (isCurrentWeek: boolean, nowMinute: number): number => {
+export const defaultScrollTop = (isCurrentWeek: boolean, nowMinute: number, leadMinutes = 240): number => {
   const nineAm = 9 * 60;
-  const anchor = isCurrentWeek && nowMinute > 0 ? nowMinute - 240 : nineAm;
+  const anchor = isCurrentWeek && nowMinute > 0 ? nowMinute - leadMinutes : nineAm;
   return Math.max(0, anchor);
 };
 
@@ -217,3 +217,21 @@ export const pastShadeHeight = (date: string, today: string, nowMinute: number, 
   if (date === today) return Math.min(Math.max(nowMinute, 0), dayHeight);
   return 0;
 };
+
+/**
+ * 時間グリッドの日の列に、予定と並べて重ねる帯（打刻など。task #160）。
+ * 日の 0:00 からの分（終わりは排他）。予定のブロックは列の 8 割までなので、帯は右の余白に置く。
+ */
+export interface DayBand {
+  key: string;
+  startMinute: number;
+  endMinute: number;
+  color: string;
+  /** 帯に添える文言（ツールチップ） */
+  label: string;
+  /** 走っている（終わりが「今」） */
+  running: boolean;
+}
+
+/** 短い帯でも見えるための最小の高さ（px = 分）。 */
+export const MINIMUM_BAND_HEIGHT = 4;
