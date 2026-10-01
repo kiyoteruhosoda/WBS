@@ -81,6 +81,16 @@ class WorkLogModel(Base):
     deleted_at: Mapped[datetime | None] = mapped_column(sa.DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(sa.DateTime, default=utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(sa.DateTime, default=utcnow, onupdate=utcnow, nullable=False)
+    # WorkLogSource の値（manual / closing）。締めで作った行は開け直しで消える（ADR-0011）
+    source: Mapped[str] = mapped_column(sa.String(16), default="manual", server_default=sa.text("'manual'"), nullable=False)
+    closing_period_id: Mapped[int | None] = mapped_column(
+        sa.BigInteger().with_variant(sa.Integer(), "sqlite"),
+        sa.ForeignKey("closing_periods.id", name="fk_work_logs_closing_period_id"),
+        nullable=True,
+        index=True,
+    )
+    # 締めで作った行の正確な長さ（秒）。hours は小数 2 桁に収めた値
+    duration_seconds: Mapped[int | None] = mapped_column(sa.Integer, nullable=True)
 
 class TaskDependencyModel(Base):
     __tablename__ = "task_dependencies"
@@ -187,6 +197,30 @@ class TimeEntryModel(Base):
     source: Mapped[str] = mapped_column(sa.String(16), default="timer", nullable=False)
     created_at: Mapped[datetime] = mapped_column(sa.DateTime, default=utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(sa.DateTime, default=utcnow, onupdate=utcnow, nullable=False)
+
+
+class ClosingPeriodModel(Base):
+    """確定した締めの期間（行がある = 確定済み。task #161 / ADR-0011）。
+
+    ``first_day`` / ``last_day`` は利用者のタイムゾーンの日付（1〜15 日 / 16 日〜末日）、
+    ``starts_at`` / ``ends_at`` は確定したときのタイムゾーン（``time_zone``）で出した区切りの瞬間
+    （naive な UTC の半開区間）。打刻を書き換えさせない判定はこの瞬間で行う。
+    """
+
+    __tablename__ = "closing_periods"
+    __table_args__ = (
+        sa.UniqueConstraint("user_id", "first_day", name="uq_closing_periods_user_first_day"),
+        # 開け直すと行を消す。消した id を使い回さない
+        {"sqlite_autoincrement": True},
+    )
+    id: Mapped[int] = mapped_column(BigIntPK, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(sa.BigInteger().with_variant(sa.Integer(), "sqlite"), sa.ForeignKey("users.id"), nullable=False)
+    first_day: Mapped[date] = mapped_column(sa.Date, nullable=False)
+    last_day: Mapped[date] = mapped_column(sa.Date, nullable=False)
+    time_zone: Mapped[str] = mapped_column(sa.String(64), nullable=False)
+    starts_at: Mapped[datetime] = mapped_column(sa.DateTime, nullable=False)
+    ends_at: Mapped[datetime] = mapped_column(sa.DateTime, nullable=False)
+    closed_at: Mapped[datetime] = mapped_column(sa.DateTime, nullable=False)
 
 
 # ── 予定（task #156、ADR-0009）──────────────────────────────────────────────

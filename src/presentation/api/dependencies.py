@@ -16,6 +16,7 @@ from src.application.use_cases.authentication_use_cases import (
 from src.application.use_cases.backchannel_logout_use_cases import ReceiveBackchannelLogout
 from src.application.use_cases.business_calendar_use_cases import BusinessCalendarUseCases
 from src.application.use_cases.calendar_event_use_cases import CalendarEventUseCases
+from src.application.use_cases.closing_use_cases import ClosingUseCases
 from src.application.use_cases.time_entry_use_cases import TimeEntryUseCases
 from src.domain.exceptions import AuthenticationError
 from src.infrastructure.auth.auth_settings import SINGLE_USER_ID, AuthSettings
@@ -29,6 +30,9 @@ from src.infrastructure.repositories.business_calendar_repository import (
 from src.infrastructure.repositories.calendar_event_repository import (
     SqlAlchemyCalendarEventRepository,
 )
+from src.infrastructure.repositories.closing_period_repository import (
+    SqlAlchemyClosingPeriodRepository,
+)
 from src.infrastructure.repositories.login_transaction_repository import (
     SqlAlchemyLoginTransactionRepository,
 )
@@ -40,6 +44,7 @@ from src.infrastructure.repositories.time_entry_repository import SqlAlchemyTime
 from src.infrastructure.repositories.user_account_repository import (
     SqlAlchemyUserAccountRepository,
 )
+from src.infrastructure.repositories.work_log_repository import SqlAlchemyWorkLogRepository
 from src.shared.clock import utcnow
 
 
@@ -120,11 +125,15 @@ BackchannelLogoutDep = Annotated[
 
 def get_time_entry_use_cases(db: DbDep) -> TimeEntryUseCases:
     # Start の既定のタスクは「いまの予定の回のタスク」から（ADR-0008・ADR-0009）。
+    # 確定済みの締めの期間に掛かる打刻は書き換えさせない（ADR-0011）。
+    calendar = get_calendar_event_use_cases(db)
     return TimeEntryUseCases(
         entries=SqlAlchemyTimeEntryRepository(db),
         tasks=SqlAlchemyTaskRepository(db),
         unit_of_work=db,
-        scheduled_tasks=get_calendar_event_use_cases(db),
+        scheduled_tasks=calendar,
+        closing_periods=SqlAlchemyClosingPeriodRepository(db),
+        occurrences=calendar,
     )
 
 TimeEntryUseCasesDep = Annotated[TimeEntryUseCases, Depends(get_time_entry_use_cases)]
@@ -175,3 +184,17 @@ def get_business_calendar_use_cases(db: DbDep) -> BusinessCalendarUseCases:
 BusinessCalendarUseCasesDep = Annotated[
     BusinessCalendarUseCases, Depends(get_business_calendar_use_cases)
 ]
+
+
+def get_closing_use_cases(db: DbDep) -> ClosingUseCases:
+    """締め（ADR-0011）。確定は期間の行と work_logs をこのリクエストの ``Session`` で 1 度に書く。"""
+    return ClosingUseCases(
+        periods=SqlAlchemyClosingPeriodRepository(db),
+        entries=SqlAlchemyTimeEntryRepository(db),
+        work_logs=SqlAlchemyWorkLogRepository(db),
+        tasks=SqlAlchemyTaskRepository(db),
+        unit_of_work=db,
+        occurrences=get_calendar_event_use_cases(db),
+    )
+
+ClosingUseCasesDep = Annotated[ClosingUseCases, Depends(get_closing_use_cases)]

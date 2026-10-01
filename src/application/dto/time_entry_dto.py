@@ -42,3 +42,47 @@ class StartTimerResult:
     started: TimeEntryView
     # 走っていた打刻を止めて切り替えたときの、止めた方
     stopped: TimeEntryView | None
+
+
+@dataclass
+class CreateTimeEntryCommand:
+    """締めの画面で空き時間に打刻を足す（``source=manual``）。時刻は naive な UTC。"""
+
+    user_id: int
+    started_at: datetime
+    ended_at: datetime
+    task_id: int | None = None
+    memo: str | None = None
+
+
+@dataclass
+class MergeTimeEntriesCommand:
+    """打刻をつなぐ。いちばん早い打刻が残り、始まりから最後の終わりまでの 1 本になる。
+
+    ``task_id`` が UNSET なら、残る打刻のタスク（未割当なら、ほかの打刻で最初に見つかったタスク）。
+    """
+
+    user_id: int
+    entry_ids: list[int]
+    task_id: int | None | UnsetType = UNSET
+
+
+@dataclass
+class EntryFromOccurrenceCommand:
+    """予定の回をそのまま打刻にする。回は（予定の id, 始まりの瞬間）で指す。
+
+    ``task_id`` が UNSET なら回に結ばれたタスク（消えていれば未割当）。
+    """
+
+    user_id: int
+    event_id: int
+    start: datetime
+    task_id: int | None | UnsetType = UNSET
+
+
+@dataclass(frozen=True)
+class SplitTimeEntryResult:
+    first: TimeEntryView
+    """元の打刻（分けた時刻で終わる）。"""
+    second: TimeEntryView
+    """分けた時刻から始まる新しい打刻（``source=split``）。"""

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -42,6 +42,10 @@ class SqlAlchemyTimeEntryRepository(TimeEntryRepository):
             .order_by(TimeEntryModel.started_at.desc(), TimeEntryModel.id.desc())
             .limit(1)
         )
+        return self._session.scalar(stmt)
+
+    def find_earliest_started_at(self, user_id: int) -> datetime | None:
+        stmt = select(func.min(TimeEntryModel.started_at)).where(TimeEntryModel.user_id == user_id)
         return self._session.scalar(stmt)
 
     def find_overlapping(self, user_id: int, start: datetime, end: datetime) -> list[TimeEntry]:

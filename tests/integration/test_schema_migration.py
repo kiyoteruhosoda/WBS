@@ -276,3 +276,45 @@ def test_0004_fills_remaining_from_estimate_minus_actual(tmp_path):
         assert "remaining_hours" not in columns
     finally:
         engine.dispose()
+
+
+def test_0005_marks_existing_work_logs_as_manual_and_downgrades_cleanly(tmp_path):
+    # task #161 / ADR-0011: 締めより前の実績は手で書いたもの（開け直しで消えない）
+    url = _url(tmp_path, "closing.db")
+    engine = sa.create_engine(url)
+    try:
+        with engine.begin() as connection:
+            command.upgrade(alembic_config(connection), "0004")
+        with engine.begin() as connection:
+            connection.exec_driver_sql(
+                "INSERT INTO users (id, email, display_name, timezone, language, is_active, "
+                "created_at, updated_at) VALUES "
+                "(1, 'taro@example.com', '太郎', 'Asia/Tokyo', 'ja', 1, '2026-01-01', '2026-01-01')"
+            )
+            connection.exec_driver_sql(
+                "INSERT INTO tasks (id, user_id, title, priority, urgency, status, "
+                "created_at, updated_at) VALUES (1, 1, 't', 3, 3, 'TODO', '2026-01-01', '2026-01-01')"
+            )
+            connection.exec_driver_sql(
+                "INSERT INTO work_logs (id, user_id, task_id, work_date, hours, "
+                "created_at, updated_at) "
+                "VALUES (1, 1, 1, '2026-01-01', 1.5, '2026-01-01', '2026-01-01')"
+            )
+        with engine.begin() as connection:
+            command.upgrade(alembic_config(connection), "0005")
+        with engine.connect() as connection:
+            row = connection.exec_driver_sql(
+                "SELECT source, closing_period_id, duration_seconds, hours FROM work_logs"
+            ).one()
+        assert (row[0], row[1], row[2], float(row[3])) == ("manual", None, None, 1.5)
+        assert "closing_periods" in _tables(url)
+
+        with engine.begin() as connection:
+            command.downgrade(alembic_config(connection), "0004")
+        columns = {c["name"] for c in sa.inspect(engine).get_columns("work_logs")}
+        assert {"source", "closing_period_id", "duration_seconds"}.isdisjoint(columns)
+        assert "closing_periods" not in _tables(url)
+        with engine.connect() as connection:
+            assert connection.exec_driver_sql("SELECT COUNT(*) FROM work_logs").scalar() == 1
+    finally:
+        engine.dispose()

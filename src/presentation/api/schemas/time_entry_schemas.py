@@ -88,3 +88,47 @@ class StopTimeEntryResponse(BaseModel):
     # 走っていなかったときは null（Stop は何度押しても同じ結果）
     stopped: TimeEntryResponse | None
     server_now: UtcDatetime
+
+
+class TimeEntryCreateRequest(BaseModel):
+    """空き時間に打刻を足す（締めの画面から。``source=manual``）。時刻はオフセット付き。"""
+
+    started_at: AwareDatetime
+    ended_at: AwareDatetime
+    task_id: int | None = None
+    memo: str | None = Field(default=None, max_length=2000)
+
+
+class TimeEntrySplitRequest(BaseModel):
+    """``at`` で 2 本に分ける。``at`` は打刻の始まりと終わり（走っていれば今）の間。"""
+
+    at: AwareDatetime
+
+
+class TimeEntrySplitResponse(BaseModel):
+    first: TimeEntryResponse
+    second: TimeEntryResponse
+
+
+class TimeEntryMergeRequest(BaseModel):
+    """打刻をつなぐ（2 本以上）。``task_id`` を送らなければ、早い方から最初に見つかったタスク。"""
+
+    entry_ids: list[int] = Field(min_length=2, max_length=500)
+    task_id: int | None = None
+
+
+class TimeEntryAssignRequest(BaseModel):
+    """まとめてタスクを振る。``task_id`` に ``null`` を送ると未割当へ戻す。"""
+
+    entry_ids: list[int] = Field(min_length=1, max_length=500)
+    task_id: int | None
+
+
+class TimeEntryFromOccurrenceRequest(BaseModel):
+    """予定の回をそのまま打刻にする。回は ``event_id`` と ``start``（回の始まり。
+    ``/api/calendar/occurrences`` の ``start``）で指す。``task_id`` を送らなければ回のタスク。
+    """
+
+    event_id: int
+    start: AwareDatetime
+    task_id: int | None = None

@@ -16,3 +16,6 @@ class TimeEntrySource(StrEnum):
 
     SPLIT = "split"
     """締めの画面で 1 本を分けてできた（#161）。"""
+
+    SCHEDULE = "schedule"
+    """締めの画面で予定の回をそのまま打刻にした（#161）。"""
