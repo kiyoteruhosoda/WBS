@@ -6,6 +6,7 @@ import {
 import { getAppInfo, getSettings, updateSettings } from '../api/settings';
 import { useI18n } from '../i18n';
 import { ds } from '../theme';
+import BusinessCalendarSettings from '../components/calendar/BusinessCalendarSettings';
 
 const card = {
   bgcolor: ds.paper,
@@ -109,6 +110,8 @@ const Settings: React.FC = () => {
           </Box>
         </Box>
       </Box>
+
+      <BusinessCalendarSettings />
 
       <Box sx={card}>
         <Box sx={sectionHeader}>{t('settings.appInfo')}</Box>

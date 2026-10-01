@@ -173,7 +173,7 @@ export type EventColorKey =
 /** 繰り返しの元の鍵（予定のタイムゾーンでの候補日・系列の開始時刻）。この回だけの移動・飛ばしで回を指す。 */
 export interface OccurrenceSeriesKey {
   date: string; // YYYY-MM-DD
-  start_time: string; // HH:MM
+  start_time: string | null; // HH:MM
 }
 
 /**
@@ -188,12 +188,16 @@ export interface CalendarOccurrence {
   /** 回の識別子（React の key・選択に使う）。`event_id` と系列の鍵から作る */
   id: string;
   event_id: number;
+  /** 回の操作（移動・取り消しなど）で `expected_version` に渡す版 */
+  event_version: number;
   title: string;
   /** 開始の UTC 瞬間（Z 付き ISO 8601） */
   start: string;
   duration_minutes: number;
   /** 閲覧者のローカル日（YYYY-MM-DD）。終日の回はこの日に置く */
   date: string;
+  /** 閲覧者のローカル時刻（HH:MM） */
+  start_time: string;
   /** 終日（0:00 開始 ＋ 1440 分）。ドメインの `is_all_day` */
   is_all_day: boolean;
   color_key: EventColorKey;
@@ -213,6 +217,88 @@ export interface CalendarOccurrence {
 export interface CalendarHoliday {
   date: string; // YYYY-MM-DD
   name: string | null;
+}
+
+/** 曜日（ドメインの `Weekday`。iCalendar の 2 文字）。 */
+export type WeekdayCode = 'MO' | 'TU' | 'WE' | 'TH' | 'FR' | 'SA' | 'SU';
+
+export interface MonthlyRuleData {
+  kind: 'DAY_OF_MONTH' | 'NTH_WEEKDAY' | 'LAST_DAY';
+  day?: number | null;
+  /** 1〜5、-1 は最終 */
+  week_index?: number | null;
+  weekday?: WeekdayCode | null;
+}
+
+export interface YearlyRuleData {
+  kind: 'DAY_OF_MONTH' | 'NTH_WEEKDAY';
+  month: number;
+  day?: number | null;
+  week_index?: number | null;
+  weekday?: WeekdayCode | null;
+}
+
+/** 営業日シフト（`shift_amount` が負なら前倒し）。 */
+export interface AdjustmentRuleData {
+  condition: 'HOLIDAY' | 'ALWAYS';
+  shift_unit: 'BUSINESS_DAY' | 'CALENDAR_DAY';
+  shift_amount: number;
+  calendar_id: number | null;
+  action: 'SHIFT' | 'CANCEL';
+}
+
+/** 繰り返しの規則（API の入出力と表の JSON で同じ形。`src/application/recurrence_rule_mapping.py`）。 */
+export interface RecurrenceRuleData {
+  type: 'WEEKLY' | 'MONTHLY' | 'YEARLY';
+  interval: number;
+  /** null は終了日なし */
+  end_date: string | null;
+  weekly: { weekdays: WeekdayCode[] } | null;
+  monthly: MonthlyRuleData | null;
+  yearly: YearlyRuleData | null;
+  adjustment: AdjustmentRuleData | null;
+}
+
+/** 予定 1 件（`GET /api/calendar/events/{id}` の応答）。 */
+export interface CalendarEvent {
+  id: number;
+  kind: 'SINGLE' | 'RECURRING';
+  title: string;
+  /** 予定のタイムゾーン（IANA 名）。繰り返しの鍵はこのゾーンの壁時計 */
+  time_zone: string;
+  /** 単発の開始・繰り返しの先頭の回の UTC 瞬間 */
+  start: string;
+  duration_minutes: number;
+  recurrence: RecurrenceRuleData | null;
+  location: string | null;
+  description: string | null;
+  color_key: EventColorKey;
+  task_id: number | null;
+  exceptions: { occurrence: OccurrenceSeriesKey; type: string }[];
+  moves: {
+    occurrence: OccurrenceSeriesKey;
+    new_date: string;
+    new_start_time: string | null;
+    new_duration_minutes: number | null;
+    title: string | null;
+    location: string | null;
+  }[];
+  version: number;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+/** 営業日カレンダー（`/api/business-calendars`）。 */
+export interface BusinessCalendar {
+  id: number;
+  name: string;
+  time_zone: string;
+  workdays: WeekdayCode[];
+  shift_on_holidays_only: boolean;
+  is_enabled: boolean;
+  holidays: CalendarHoliday[];
+  created_at: string | null;
+  updated_at: string | null;
 }
 
 // 打刻（task #154）。時刻は Z 付きの UTC

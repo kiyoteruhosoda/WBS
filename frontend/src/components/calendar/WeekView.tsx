@@ -18,6 +18,8 @@ import { dayOfWeek, formatMinute, MINUTES_PER_DAY } from '../../calendar/zonedTi
 import { formatTimingRange, ghostPieces, resizeEdgeAt, tapCreateMinute } from '../../calendar/weekGestures';
 import type { CalendarInteractions } from './calendarInteractions';
 import { useWeekDrag } from './useWeekDrag';
+import DeadlineChip from './DeadlineChip';
+import type { CalendarDeadline } from '../../calendar/taskDeadlines';
 
 // 時刻の列の幅（移植元 WeekCalendarView.xaml の ColumnDefinition 56）。
 export const TIME_COLUMN_WIDTH = 56;
@@ -30,6 +32,7 @@ interface Props extends Pick<CalendarInteractions, 'onCreateRange' | 'onReschedu
   timeZone: string;
   segmentsByDate: ReadonlyMap<string, DaySegment[]>;
   holidays: readonly CalendarHoliday[];
+  deadlines: readonly CalendarDeadline[];
   today: string;
   nowMinute: number;
   selectedDate: string | null;
@@ -42,7 +45,7 @@ interface Props extends Pick<CalendarInteractions, 'onCreateRange' | 'onReschedu
  * 週表示・平日表示（移植元 WeekCalendarView）。左に時刻の列、上に終日の帯、下に 1px = 1 分の時間グリッド。
  */
 const WeekView: React.FC<Props> = ({
-  dates, timeZone, segmentsByDate, holidays, today, nowMinute, selectedDate, selectedSegmentKey,
+  dates, timeZone, segmentsByDate, holidays, deadlines, today, nowMinute, selectedDate, selectedSegmentKey,
   onSelectDate, onSelectSegment, onCreateRange, onRescheduleOccurrence, onEditOccurrence, onCreateEvent,
 }) => {
   const { t, weekdays } = useI18n();
@@ -61,8 +64,8 @@ const WeekView: React.FC<Props> = ({
 
   const allDay = useMemo(() => {
     const segments = dates.flatMap((d) => segmentsByDate.get(d) ?? []);
-    return layoutAllDayLane(segments, dates[0], dates.length, holidays);
-  }, [dates, segmentsByDate, holidays]);
+    return layoutAllDayLane(segments, dates[0], dates.length, holidays, deadlines);
+  }, [dates, segmentsByDate, holidays, deadlines]);
 
   const blocksByDate = useMemo(() => {
     const map = new Map<string, WeekEventBlock[]>();
@@ -172,6 +175,21 @@ const WeekView: React.FC<Props> = ({
               sx={{ position: 'relative', minWidth: 0, bgcolor: hasEvents ? c.allDayTint : 'transparent', ...divider(date, 'middle') }}
             >
               {blocks.map((b) => {
+                if (b.deadline) {
+                  return (
+                    <Box
+                      key={b.deadline.key}
+                      sx={{ position: 'absolute', top: b.row * ALL_DAY_ROW_HEIGHT + 1, left: 0, right: '4px' }}
+                    >
+                      <DeadlineChip
+                        deadline={b.deadline}
+                        height={ALL_DAY_CHIP_HEIGHT}
+                        fontSize={10}
+                        onClick={(e) => { e.stopPropagation(); onSelectDate(date); }}
+                      />
+                    </Box>
+                  );
+                }
                 const segment = b.segment;
                 const bg = segment ? eventColor(segment.occurrence.color_key) : c.red;
                 const title = segment ? segment.occurrence.title : b.holiday?.name ?? '';

@@ -15,10 +15,12 @@ export const occurrence = (
 ): CalendarOccurrence => ({
   id,
   event_id: 1,
+  event_version: 1,
   title: id,
   start: new Date(fromZonedPoint(date, startMinute, timeZone)).toISOString(),
   duration_minutes: durationMinutes,
   date,
+  start_time: `${String(Math.floor(startMinute / 60)).padStart(2, '0')}:${String(startMinute % 60).padStart(2, '0')}`,
   is_all_day: startMinute === 0 && durationMinutes === 1440,
   color_key: color,
   location: null,

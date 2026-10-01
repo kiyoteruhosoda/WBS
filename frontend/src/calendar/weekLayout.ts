@@ -5,6 +5,7 @@
 
 import type { CalendarHoliday } from '../types';
 import type { DaySegment } from './daySegments';
+import type { CalendarDeadline } from './taskDeadlines';
 import { diffDays } from './zonedTime';
 
 /** 長さ 0 以下でも潰れないための最小の高さ（15 分の回は 15px のまま）。 */
@@ -125,9 +126,11 @@ export const layoutTimedSegments = (segments: readonly DaySegment[]): WeekEventB
 };
 
 export interface AllDayBlock {
-  /** 予定の区間。祝日のときは null */
+  /** 予定の区間。祝日・期限のときは null */
   segment: DaySegment | null;
   holiday: CalendarHoliday | null;
+  /** タスク・マイルストーンの期限（予定とは違う見た目で出す） */
+  deadline: CalendarDeadline | null;
   /** 表示している最初の日からの列 */
   column: number;
   widthColumns: number;
@@ -144,17 +147,21 @@ export interface AllDayLaneLayout {
 /**
  * 終日の帯。終日の回は 1 日ずつ（複数日の終日は持たない。time-model §6）なので、日の列に
  * 置き、同じ日に重なれば段を下げる。表示している日に祝日があれば、祝日を 0 段目に置き、
- * 予定は 1 段ずつ下げる。
+ * 予定は 1 段ずつ下げる。タスクの期限は、その日の終日の予定の下に続けて積む。
  */
 export const layoutAllDayLane = (
   segments: readonly DaySegment[],
   firstDate: string,
   dayCount: number,
   holidays: readonly CalendarHoliday[],
+  deadlines: readonly CalendarDeadline[] = [],
 ): AllDayLaneLayout => {
-  const spans = segments
+  const eventSpans = segments
     .filter((s) => s.isAllDay)
-    .map((segment) => ({ segment, column: diffDays(firstDate, segment.date) }))
+    .map((segment) => ({ segment, deadline: null, column: diffDays(firstDate, segment.date) }));
+  const deadlineSpans = deadlines.map((deadline) => ({ segment: null, deadline, column: diffDays(firstDate, deadline.date) }));
+  // 安定な並べ替えなので、同じ日の中では予定が先・期限が後に積まれる。
+  const spans = [...eventSpans, ...deadlineSpans]
     .filter((s) => s.column >= 0 && s.column < dayCount)
     .sort((a, b) => a.column - b.column);
 
@@ -169,7 +176,7 @@ export const layoutAllDayLane = (
     ) row++;
     if (row === rows.length) rows.push([]);
     rows[row].push(block);
-    placed.push({ segment: span.segment, holiday: null, column: span.column, widthColumns: 1, row });
+    placed.push({ segment: span.segment, holiday: null, deadline: span.deadline, column: span.column, widthColumns: 1, row });
   }
 
   const visibleHolidays = holidays
@@ -181,7 +188,7 @@ export const layoutAllDayLane = (
   for (const h of visibleHolidays) {
     if (seen.has(h.column)) continue;
     seen.add(h.column);
-    holidayBlocks.push({ segment: null, holiday: h.holiday, column: h.column, widthColumns: 1, row: 0 });
+    holidayBlocks.push({ segment: null, holiday: h.holiday, deadline: null, column: h.column, widthColumns: 1, row: 0 });
   }
 
   const shift = holidayBlocks.length > 0 ? 1 : 0;

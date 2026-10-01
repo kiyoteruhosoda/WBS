@@ -1,5 +1,6 @@
 import type { CalendarOccurrence } from '../../types';
 import type { OccurrenceTiming } from '../../calendar/weekGestures';
+import type { CalendarDeadline } from '../../calendar/taskDeadlines';
 
 /** 空き枠のドラッグで選んだ範囲（閲覧者のローカル日と、その日の 0:00 からの分。終わりは排他）。 */
 export interface CreateRange {
@@ -39,6 +40,8 @@ export interface CalendarInteractions {
   onCreateEvent?: (date: string, startMinute?: number) => void;
   onEditOccurrence?: (occurrence: CalendarOccurrence) => void;
   onDeleteOccurrence?: (occurrence: CalendarOccurrence) => void;
+  /** 選んだ日の一覧で、タスク・マイルストーンの期限を押した */
+  onOpenDeadline?: (deadline: CalendarDeadline) => void;
   /** 週のグリッドの空き枠をドラッグして範囲を選んだ（30 分単位） */
   onCreateRange?: (range: CreateRange) => void;
   /** 週のグリッドで回を動かした・伸ばし縮めた（15 分単位・最短 15 分） */
