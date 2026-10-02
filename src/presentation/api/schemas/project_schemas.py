@@ -14,6 +14,8 @@ class ProjectCreateRequest(BaseModel):
     name: str = Field(min_length=1, max_length=200)
     parent_project_id: int | None = None
     color: str | None = Field(default=None, pattern=COLOR_PATTERN)
+    # 任意。前後の空白を落とし、空は null（長さの上限はドメインで見る）
+    code: str | None = None
     description: str | None = None
 
 
@@ -22,6 +24,8 @@ class ProjectUpdateRequest(BaseModel):
 
     name: str | None = Field(default=None, min_length=1, max_length=200)
     color: str | None = Field(default=None, pattern=COLOR_PATTERN)
+    # 任意。前後の空白を落とし、空は null（長さの上限はドメインで見る）
+    code: str | None = None
     description: str | None = None
     status: ProjectStatus | None = None
 
@@ -39,6 +43,7 @@ class ProjectResponse(BaseModel):
     name: str
     parent_project_id: int | None = None
     color: str | None = None
+    code: str | None = None
     description: str | None = None
     # active（進行中）/ archived（保管）
     status: str
@@ -57,6 +62,7 @@ class ProjectResponse(BaseModel):
             name=p.name,
             parent_project_id=p.parent_project_id,
             color=p.color,
+            code=p.code,
             description=p.description,
             status=p.status.value,
             sort_order=p.sort_order,

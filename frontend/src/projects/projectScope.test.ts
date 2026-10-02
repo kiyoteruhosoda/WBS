@@ -6,7 +6,7 @@ import {
 } from './projectScope';
 
 const p = (id: number, name: string, parent: number | null = null, extra: Partial<Project> = {}): Project => ({
-  id, name, parent_project_id: parent, color: null, description: null, status: 'active',
+  id, name, parent_project_id: parent, color: null, code: null, description: null, status: 'active',
   sort_order: 0, path: name, ...extra,
 });
 

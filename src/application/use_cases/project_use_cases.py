@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from src.application.dto.project_dto import CreateProjectDTO, MoveProjectDTO, UpdateProjectDTO
 from src.application.dto.unset import UNSET
 from src.application.use_cases.project_membership import ProjectMembership
-from src.domain.entities.project import Project, project_name
+from src.domain.entities.project import Project, project_code, project_name
 from src.domain.exceptions import ProjectCycleError, ProjectNotEmptyError
 from src.domain.services.project_tree import ProjectTree
 from src.infrastructure.repositories.milestone_repository import SqlAlchemyMilestoneRepository
@@ -62,6 +62,7 @@ class ProjectUseCases:
             name=project_name(dto.name),
             parent_project_id=dto.parent_project_id,
             color=dto.color,
+            code=project_code(dto.code),
             description=dto.description,
             # 兄弟の末尾へ
             sort_order=len(tree.children_of(dto.parent_project_id)),
@@ -76,6 +77,8 @@ class ProjectUseCases:
             project.name = project_name(dto.name)
         if dto.color is not UNSET:
             project.color = dto.color
+        if dto.code is not UNSET:
+            project.code = project_code(dto.code)
         if dto.description is not UNSET:
             project.description = dto.description
         if dto.status is not UNSET:

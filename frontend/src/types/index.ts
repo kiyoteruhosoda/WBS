@@ -64,6 +64,8 @@ export interface Project {
   name: string;
   parent_project_id: number | null;
   color: string | null;
+  // 任意の短いコード（一覧で名前の横に出すだけ。一意ではない）
+  code: string | null;
   description: string | null;
   status: ProjectStatus;
   sort_order: number;

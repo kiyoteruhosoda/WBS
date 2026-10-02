@@ -118,6 +118,44 @@ def test_rename_archive_and_restore(client) -> None:
     assert client.put(f"/api/projects/{project['id']}", json={"color": "red"}).status_code == 422
 
 
+def test_project_code_is_optional_trimmed_and_empty_means_none(client) -> None:
+    # 任意のコード（名前の横に出す札）。前後の空白を落とし、空・空白だけは null。一意ではない
+    plain = _project(client, "無印")
+    assert plain["code"] is None
+
+    project = _project(client, "仕事", code="  PRJ-01 ")
+    assert project["code"] == "PRJ-01"
+    assert _project(client, "同じコード", code="PRJ-01")["code"] == "PRJ-01"
+    assert _project(client, "空白だけ", code="   ")["code"] is None
+
+    url = f"/api/projects/{project['id']}"
+    # 送らなければ変わらない
+    res = client.put(url, json={"name": "本業"})
+    assert res.status_code == 200, res.text
+    assert res.json()["code"] == "PRJ-01"
+    res = client.put(url, json={"code": " X9 "})
+    assert res.json()["code"] == "X9"
+    assert client.get(url).json()["code"] == "X9"
+    res = client.put(url, json={"code": ""})
+    assert res.json()["code"] is None
+    client.put(url, json={"code": "X9"})
+    res = client.put(url, json={"code": None})
+    assert res.json()["code"] is None
+
+
+def test_project_code_is_at_most_32_characters(client) -> None:
+    # 上限は空白を落とした後で数える
+    assert _project(client, "ちょうど", code="A" * 32)["code"] == "A" * 32
+    assert _project(client, "空白込み", code=" " + "B" * 32 + " ")["code"] == "B" * 32
+    res = client.post("/api/projects", json={"name": "長すぎ", "code": "C" * 33})
+    assert res.status_code == 422, res.text
+
+    project = _project(client, "直す")
+    res = client.put(f"/api/projects/{project['id']}", json={"code": "D" * 33})
+    assert res.status_code == 422, res.text
+    assert client.get(f"/api/projects/{project['id']}").json()["code"] is None
+
+
 def test_only_an_empty_project_can_be_deleted(client) -> None:
     root = _project(client, "仕事")
     child = _project(client, "案件 A", root)

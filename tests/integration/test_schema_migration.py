@@ -575,3 +575,41 @@ def test_0010_makes_four_day_off_layers_and_copies_business_calendar_holidays(tm
             ).scalar() == 3
     finally:
         engine.dispose()
+
+
+def test_project_code_migration_leaves_existing_projects_without_a_code(tmp_path):
+    # task #187: projects.code は任意。既存のプロジェクトは NULL。下げると列が消える
+    # （番号はマージ順で付け直すことがあるので、ファイル名で引く）
+    url = _url(tmp_path, "project_code.db")
+    engine = sa.create_engine(url)
+    try:
+        with engine.begin() as connection:
+            config = alembic_config(connection)
+            script = ScriptDirectory.from_config(config)
+            target = next(
+                r for r in script.walk_revisions() if r.path.endswith("_project_code.py")
+            )
+            previous = target.down_revision
+            command.upgrade(config, previous)
+        with engine.begin() as connection:
+            connection.exec_driver_sql(
+                "INSERT INTO users (id, email, display_name, timezone, language, is_active, "
+                "created_at, updated_at) VALUES "
+                "(1, 'taro@example.com', '太郎', 'Asia/Tokyo', 'ja', 1, '2026-01-01', '2026-01-01')"
+            )
+            connection.exec_driver_sql(
+                "INSERT INTO projects (id, user_id, name, status, sort_order, created_at, updated_at) "
+                "VALUES (1, 1, '仕事', 'active', 0, '2026-01-01', '2026-01-01')"
+            )
+        with engine.begin() as connection:
+            command.upgrade(alembic_config(connection), target.revision)
+        with engine.connect() as connection:
+            assert connection.exec_driver_sql("SELECT code FROM projects").scalar() is None
+
+        with engine.begin() as connection:
+            command.downgrade(alembic_config(connection), previous)
+        assert "code" not in {c["name"] for c in sa.inspect(engine).get_columns("projects")}
+        with engine.connect() as connection:
+            assert connection.exec_driver_sql("SELECT COUNT(*) FROM projects").scalar() == 1
+    finally:
+        engine.dispose()
