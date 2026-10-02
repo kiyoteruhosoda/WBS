@@ -19,6 +19,9 @@ from src.infrastructure.auth.oidc_identity_provider import OidcIdentityProvider
 from src.infrastructure.build_info import load_build_info
 from src.infrastructure.database.session import init_engine
 from src.infrastructure.logging.structured_logger import setup_logging
+from src.infrastructure.push.push_settings import load_push_settings
+from src.infrastructure.push.web_push_sender import WebPushSender
+from src.presentation.api.push_dispatch import start_push_dispatch_worker
 from src.presentation.api.reconciliation import start_reconciliation_worker
 from src.presentation.api.routers import (
     actuals,
@@ -37,6 +40,7 @@ from src.presentation.api.routers import (
     milestones,
     ops,
     projects,
+    push,
     reviews,
     settings,
     tasks,
@@ -53,6 +57,8 @@ def create_app(database_url: str | None = None, db_path: str | None = None) -> F
     setup_logging()
     build_info = load_build_info()
     auth_settings = load_auth_settings()
+    # 端末への通知（ADR-0031）。⚠ 鍵が無ければ送らない（購読も受け取らない）。既定は閉じる
+    push_sender = WebPushSender(load_push_settings())
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
@@ -63,11 +69,15 @@ def create_app(database_url: str | None = None, db_path: str | None = None) -> F
         # IdP で止まった人を拾い直す定期照合。⚠ **停止の受け口が取りこぼしたぶん**を
         #   埋めるための 2 段目で、`MACHINE_CLIENT_ID` が無ければ何も起こさない。
         worker = start_reconciliation_worker(auth_settings)
+        # 時刻の来た通知を 60 秒ごとに送る係。鍵が無ければ何も起こさない
+        push_worker = start_push_dispatch_worker(push_sender)
         try:
             yield
         finally:
             if worker is not None:
                 worker.stop()
+            if push_worker is not None:
+                push_worker.stop()
 
     app = FastAPI(
         title="Task Scheduler",
@@ -78,6 +88,7 @@ def create_app(database_url: str | None = None, db_path: str | None = None) -> F
     app.state.build_info = build_info
     app.state.startup_time = utcnow()  # ops.py が now との差を取るので形を揃える
     app.state.auth_settings = auth_settings
+    app.state.push_sender = push_sender
     # IdP アダプタはディスカバリ文書と JWKS を手元に貯めるので、リクエストごとに
     # 作らず 1 つだけ持つ。SSO 無効時は None（依存が 404 を返す目印になる）。
     app.state.identity_provider = (
@@ -132,6 +143,7 @@ def create_app(database_url: str | None = None, db_path: str | None = None) -> F
     app.include_router(actuals.router, prefix="/api")
     app.include_router(reviews.router, prefix="/api")
     app.include_router(settings.router, prefix="/api")
+    app.include_router(push.router, prefix="/api")
     app.include_router(calendar.router, prefix="/api")
     app.include_router(calendars.router, prefix="/api")
     app.include_router(calendars.presets_router, prefix="/api")

@@ -5,9 +5,10 @@
 // - 画面の遷移には殻の index.html を返す。オフラインでも画面が開く
 // - `/api/*`・`/app/*`・`/.well-known/*` には手を出さない（requestRoutes.ts）
 // - 新しい版は**待たせておく**。画面の「読み込み直す」で SKIP_WAITING が来たら有効にする（雛形の ADR-0035 と同じ）
+// - 端末への通知（Web Push、task #193・ADR-0031）を出し、押されたら該当の画面を開く（pushNotice.ts）
 //
 // ⚠ このファイルは画面の tsconfig から外し、tsconfig.sw.json（WebWorker の型）で検査する。
-// ⚠ 読んでよいのは requestRoutes.ts だけ（画面の束と共有にしない）。
+// ⚠ 読んでよいのは requestRoutes.ts と pushNotice.ts だけ（画面の束と共有にしない）。
 
 import {
   SKIP_WAITING_MESSAGE,
@@ -16,6 +17,7 @@ import {
   shellCacheName,
   staleShellCaches,
 } from './requestRoutes';
+import { parsePushPayload, safeAppPath } from './pushNotice';
 
 declare const self: ServiceWorkerGlobalScope;
 
@@ -73,4 +75,43 @@ self.addEventListener('fetch', (event) => {
     return;
   }
   event.respondWith((async () => (await fromShell(request)) ?? fetch(request))());
+});
+
+// ── 端末への通知（task #193・ADR-0031） ─────────────────────────────
+
+const NOTICE_ICON = '/pwa-192x192.png';
+
+self.addEventListener('push', (event) => {
+  let text: string | null = null;
+  try {
+    text = event.data?.text() ?? null;
+  } catch {
+    text = null;
+  }
+  const notice = parsePushPayload(text);
+  event.waitUntil(self.registration.showNotification(notice.title, {
+    body: notice.body,
+    tag: notice.tag,
+    icon: NOTICE_ICON,
+    badge: NOTICE_ICON,
+    data: { url: notice.url },
+  }));
+});
+
+/** 押された通知の画面を開く。開いている画面があればそれを手前へ出して移し、無ければ新しく開く */
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const data: unknown = event.notification.data;
+  const path = safeAppPath(data != null && typeof data === 'object' ? (data as { url?: unknown }).url : undefined);
+  const target = new URL(path, self.location.origin).href;
+  event.waitUntil((async () => {
+    const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    const open = windows.find((client) => new URL(client.url).origin === self.location.origin);
+    if (open) {
+      const focused = await open.focus();
+      await focused.navigate(target).catch(() => undefined);
+      return;
+    }
+    await self.clients.openWindow(target);
+  })());
 });
