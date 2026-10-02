@@ -4,8 +4,12 @@
 // 持つので、区間の分は小数のまま（9:07:30 は 547.5）。ここは DOM を見ない純関数だけを置く。
 
 import type {
-  CalendarOccurrence, ClosingBoard, DailyTaskTotal, Task, TimeEntry,
+  CalendarOccurrence, ClosingBoard, DailyTaskTotal, Project, TimeEntry,
 } from '../types';
+import type { PickerHead } from '../projects/taskPicker';
+import type { ProjectScope } from '../projects/projectScope';
+import { ancestorsOrSelf, flattenTree, toTree } from '../projects/projectScope';
+import { pickerHead, recentTaskIds, scheduledTaskIds } from '../projects/taskPicker';
 import type { TimedSpan } from '../calendar/weekLayout';
 import { MINUTES_PER_DAY, addDays, diffDays, formatMinute, toZonedPoint } from '../calendar/zonedTime';
 
@@ -203,10 +207,22 @@ export const missedOccurrenceIds = (board: ClosingBoard): Set<string> =>
 
 // ── 合計の表 ────────────────────────────────────────────────────────────
 
+/**
+ * 行の種類。`task` はタスク、`project` はプロジェクト（子孫の分まで積む）、`direct` は範囲に選んだ
+ * プロジェクトに直に付いた分、`unclassified` は未分類のタスク、`outside` は範囲の外、`unassigned` は未割当。
+ */
+export type TotalsRowKind = 'task' | 'project' | 'direct' | 'unclassified' | 'outside' | 'unassigned';
+
 export interface TotalsRow {
-  /** null は未割当 */
+  key: string;
+  kind: TotalsRowKind;
+  /** タスクの行のタスク（ほかは null） */
   taskId: number | null;
+  /** プロジェクトの行のプロジェクト（ほかは null） */
+  projectId: number | null;
+  /** タスク名・プロジェクト名（未割当・未分類・範囲の外は null。画面が言葉を当てる） */
   title: string | null;
+  color: string | null;
   /** 日 → 秒 */
   byDate: Record<string, number>;
   total: number;
@@ -220,28 +236,101 @@ export interface TotalsTable {
   grandTotal: number;
 }
 
-/** 日ごと・タスクごとの合計 → 行がタスク、列が日の表。行は合計の多い順、未割当は最後。 */
-export const buildTotalsTable = (totals: readonly DailyTaskTotal[], dates: readonly string[]): TotalsTable => {
+type RowHead = Omit<TotalsRow, 'byDate' | 'total'>;
+
+/** 日ごとの合計を、`classify` が決めた行へ足す。 */
+const accumulate = (
+  totals: readonly DailyTaskTotal[],
+  dates: readonly string[],
+  classify: (total: DailyTaskTotal) => RowHead,
+): { rows: TotalsRow[]; dayTotals: Record<string, number>; grandTotal: number } => {
   const rows = new Map<string, TotalsRow>();
   const dayTotals: Record<string, number> = Object.fromEntries(dates.map((d) => [d, 0]));
   let grandTotal = 0;
   for (const t of totals) {
-    const key = t.task_id == null ? 'none' : String(t.task_id);
-    let row = rows.get(key);
+    const head = classify(t);
+    let row = rows.get(head.key);
     if (!row) {
-      row = { taskId: t.task_id, title: t.task_title, byDate: {}, total: 0 };
-      rows.set(key, row);
+      row = { ...head, byDate: {}, total: 0 };
+      rows.set(head.key, row);
     }
     row.byDate[t.work_date] = (row.byDate[t.work_date] ?? 0) + t.seconds;
     row.total += t.seconds;
     dayTotals[t.work_date] = (dayTotals[t.work_date] ?? 0) + t.seconds;
     grandTotal += t.seconds;
   }
-  const ordered = [...rows.values()].sort((a, b) => {
+  return { rows: [...rows.values()], dayTotals, grandTotal };
+};
+
+const UNASSIGNED: RowHead = { key: 'unassigned', kind: 'unassigned', taskId: null, projectId: null, title: null, color: null };
+
+/** 消えたタスクの分は、タスクの表と同じく未割当に入れる（確定の前に振り直すもの）。 */
+const isUnassigned = (t: DailyTaskTotal): boolean => t.task_id == null || t.task_title == null;
+
+/** 日ごと・タスクごとの合計 → 行がタスク、列が日の表。行は合計の多い順、未割当は最後。 */
+export const buildTotalsTable = (totals: readonly DailyTaskTotal[], dates: readonly string[]): TotalsTable => {
+  const { rows, dayTotals, grandTotal } = accumulate(totals, dates, (t) => (
+    t.task_id == null
+      ? UNASSIGNED
+      : { key: `task:${t.task_id}`, kind: 'task', taskId: t.task_id, projectId: null, title: t.task_title, color: null }
+  ));
+  const ordered = rows.sort((a, b) => {
     if ((a.taskId == null) !== (b.taskId == null)) return a.taskId == null ? 1 : -1;
     return b.total - a.total || (a.title ?? '').localeCompare(b.title ?? '', 'ja');
   });
   return { dates: [...dates], rows: ordered, dayTotals, grandTotal };
+};
+
+/**
+ * 日ごと・プロジェクトごとの合計（task #189、ADR-0026。実績のプロジェクト別と同じ積み方。ADR-0024 の 7）。
+ *
+ * - 範囲が全部: 最上位のプロジェクトごとに子孫の分まで積む。続けて未分類・未割当。
+ * - 範囲がプロジェクト: そのプロジェクトに直に付いた分と、直下の子ごと（孫より下も積む）。範囲の外は
+ *   1 行にまとめる（確定は範囲に依らず全部なので、日の合計は崩さない）。未割当は別の行のまま。
+ * - 範囲が未分類: 未分類・範囲の外・未割当。
+ *
+ * 並びはプロジェクトの木の順（期間をまたいで同じ場所に出る）。直の分が先、未分類・範囲の外・未割当は後。
+ */
+export const buildProjectTotalsTable = (
+  totals: readonly DailyTaskTotal[],
+  dates: readonly string[],
+  projects: readonly Project[],
+  scope: ProjectScope,
+): TotalsTable => {
+  const byId = new Map(projects.map((p) => [p.id, p]));
+  const treeOrder = new Map(flattenTree(toTree(projects)).map((n, i) => [n.project.id, i]));
+  const projectRow = (id: number): RowHead => ({
+    key: `project:${id}`, kind: 'project', taskId: null, projectId: id,
+    title: byId.get(id)?.name ?? `#${id}`, color: byId.get(id)?.color ?? null,
+  });
+  const unclassified: RowHead = { key: 'unclassified', kind: 'unclassified', taskId: null, projectId: null, title: null, color: null };
+  const outside: RowHead = { key: 'outside', kind: 'outside', taskId: null, projectId: null, title: null, color: null };
+
+  const classify = (t: DailyTaskTotal): RowHead => {
+    if (isUnassigned(t)) return UNASSIGNED;
+    const projectId = t.project_id ?? null;
+    if (scope === 'none') return projectId === null ? unclassified : outside;
+    if (projectId === null) return scope === 'all' ? unclassified : outside;
+    // 自分から根まで（一覧に無いプロジェクトなら自分だけ）
+    const chain = byId.has(projectId) ? ancestorsOrSelf(projects, projectId) : [projectId];
+    if (scope === 'all') return projectRow(chain[chain.length - 1]);
+    const at = chain.indexOf(scope);
+    if (at < 0) return outside;
+    if (at === 0) return { ...projectRow(scope), key: `direct:${scope}`, kind: 'direct' };
+    return projectRow(chain[at - 1]);
+  };
+
+  const rank = (row: TotalsRow): number => {
+    switch (row.kind) {
+      case 'direct': return -1;
+      case 'project': return treeOrder.get(row.projectId as number) ?? 1_000_000 + (row.projectId as number);
+      case 'unclassified': return 2_000_000;
+      case 'outside': return 3_000_000;
+      default: return 4_000_000;
+    }
+  };
+  const { rows, dayTotals, grandTotal } = accumulate(totals, dates, classify);
+  return { dates: [...dates], rows: rows.sort((a, b) => rank(a) - rank(b)), dayTotals, grandTotal };
 };
 
 const pad2 = (n: number): string => String(n).padStart(2, '0');
@@ -259,49 +348,24 @@ export const formatQuarterHours = (seconds: number): string => {
 
 // ── タスクを振る ────────────────────────────────────────────────────────
 
-export interface TaskCandidate {
-  taskId: number;
-  title: string;
-  /** 選んだ打刻と同じ時間の予定に結ばれたタスク */
-  fromSchedule: boolean;
-}
-
-const isOpenTask = (task: Task): boolean =>
-  task.deleted_at == null && task.status !== 'DONE' && task.status !== 'CANCELLED';
-
 /**
- * 振る先の候補。選んだ打刻と時間が重なる予定の回のタスクを、重なりの長い順に先頭へ。
- * そのあとに未完了のタスクを題名の順で（予定のタスクは重ねて出さない）。
+ * 振る先の先頭の候補（task #189、ADR-0026）。選んだ打刻と時間が重なる予定の回のタスクを重なりの長い順に、
+ * そのあとに、選んだ打刻のうち最も早いものより前の打刻で使ったタスクを新しい順に。残りのタスクは
+ * `projects/taskPicker` がプロジェクトの木で束ねる。
  */
-export const assignCandidates = (
+export const assignHead = (
   selected: readonly TimeEntry[],
   occurrences: readonly CalendarOccurrence[],
-  tasks: readonly Task[],
+  entries: readonly TimeEntry[],
   nowMs: number,
-): TaskCandidate[] => {
-  const tasksById = new Map(tasks.filter((t) => t.deleted_at == null).map((t) => [t.id, t]));
-  const scheduled = new Map<number, { title: string; overlap: number }>();
-  for (const o of occurrences) {
-    if (o.task_id == null || o.is_all_day) continue;
-    const range = occurrenceRange(o);
-    const overlap = selected.reduce(
-      (sum, e) => sum + overlapMs(range, { startMs: entryStartMs(e), endMs: entryEndMs(e, nowMs) }), 0,
-    );
-    if (overlap <= 0) continue;
-    const task = tasksById.get(o.task_id);
-    // 消えた・他人のタスクは振れないので候補にしない
-    if (!task) continue;
-    const prev = scheduled.get(o.task_id);
-    scheduled.set(o.task_id, { title: task.title, overlap: (prev?.overlap ?? 0) + overlap });
-  }
-  const head: TaskCandidate[] = [...scheduled.entries()]
-    .sort((a, b) => b[1].overlap - a[1].overlap || a[1].title.localeCompare(b[1].title, 'ja'))
-    .map(([taskId, s]) => ({ taskId, title: s.title, fromSchedule: true }));
-  const rest: TaskCandidate[] = [...tasksById.values()]
-    .filter((t) => isOpenTask(t) && !scheduled.has(t.id))
-    .sort((a, b) => a.title.localeCompare(b.title, 'ja'))
-    .map((t) => ({ taskId: t.id, title: t.title, fromSchedule: false }));
-  return [...head, ...rest];
+): PickerHead[] => {
+  if (selected.length === 0) return [];
+  const ranges = selected.map((e) => ({ startMs: entryStartMs(e), endMs: entryEndMs(e, nowMs) }));
+  const earliest = Math.min(...ranges.map((r) => r.startMs));
+  return pickerHead(
+    scheduledTaskIds(ranges, occurrences),
+    recentTaskIds(entries, earliest, { exclude: new Set(selected.map((e) => e.id)) }),
+  );
 };
 
 /** 打刻の範囲の表示（`09:07 – 10:30`。秒は切り捨て。日をまたげば終わりに `+1` などの日数を添える）。 */

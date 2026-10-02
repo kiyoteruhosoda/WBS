@@ -277,7 +277,13 @@ def test_an_occurrence_becomes_a_time_entry_and_missed_ones_are_flagged(client) 
     board = client.get(f"/api/closing-periods/{PERIOD}").json()
     assert [o["title"] for o in board["findings"]["missed_occurrences"]] == ["1on1"]
     assert board["daily_totals"] == [
-        {"work_date": "2026-09-09", "task_id": task_id, "task_title": "定例", "seconds": 3600}
+        {
+            "work_date": "2026-09-09",
+            "task_id": task_id,
+            "task_title": "定例",
+            "seconds": 3600,
+            "project_id": None,
+        }
     ]
 
     wrong = client.post(
@@ -285,6 +291,24 @@ def test_an_occurrence_becomes_a_time_entry_and_missed_ones_are_flagged(client) 
         json={"event_id": done["id"], "start": "2026-09-09T11:00:00+09:00"},
     )
     assert wrong.status_code == 404
+
+
+def test_daily_totals_carry_the_task_project(client) -> None:
+    """合計の行にタスクのいまのプロジェクト（task #189）。未割当・未分類は null。"""
+    parent = client.post("/api/projects", json={"name": "仕事", "parent_project_id": None}).json()
+    child = client.post(
+        "/api/projects", json={"name": "案件 A", "parent_project_id": parent["id"]}
+    ).json()
+    in_child = client.post("/api/tasks", json={"title": "設計", "project_id": child["id"]})
+    assert in_child.status_code == 201, in_child.text
+    loose = _task(client, "雑務")
+    _entry(client, "2026-09-02T09:00:00+09:00", "2026-09-02T10:00:00+09:00", in_child.json()["id"])
+    _entry(client, "2026-09-02T10:00:00+09:00", "2026-09-02T10:30:00+09:00", loose)
+    _entry(client, "2026-09-02T11:00:00+09:00", "2026-09-02T11:15:00+09:00")
+
+    board = client.get(f"/api/closing-periods/{PERIOD}").json()
+    rows = {(t["task_title"], t["project_id"], t["seconds"]) for t in board["daily_totals"]}
+    assert rows == {("設計", child["id"], 3600), ("雑務", None, 1800), (None, None, 900)}
 
 
 def test_pending_periods(client) -> None:

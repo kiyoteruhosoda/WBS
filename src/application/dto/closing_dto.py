@@ -20,6 +20,8 @@ class DailyTaskTotal:
     task_id: int | None
     task_title: str | None
     seconds: int
+    project_id: int | None = None
+    """タスクのいまのプロジェクト（未割当・消えたタスク・未分類は None。task #189）。"""
 
 
 @dataclass(frozen=True)

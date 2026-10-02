@@ -55,6 +55,11 @@ class DailyTaskTotalResponse(BaseModel):
     task_id: int | None
     task_title: str | None
     seconds: int = Field(description="丸めない長さ（秒）。日をまたぐ打刻は 0:00 で割ってある")
+    project_id: int | None = Field(
+        default=None,
+        description="タスクのいまのプロジェクト（未割当・消えたタスク・未分類は null）。"
+        "画面がプロジェクト別に積み上げる",
+    )
 
     @classmethod
     def from_total(cls, total: DailyTaskTotal) -> DailyTaskTotalResponse:
@@ -63,6 +68,7 @@ class DailyTaskTotalResponse(BaseModel):
             task_id=total.task_id,
             task_title=total.task_title,
             seconds=total.seconds,
+            project_id=total.project_id,
         )
 
 
