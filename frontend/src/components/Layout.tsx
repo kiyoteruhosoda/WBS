@@ -7,6 +7,7 @@ import { useI18n } from '../i18n';
 import { useAuth } from '../auth/AuthProvider';
 import TimerButton from './TimerButton';
 import ClosingNotice from './closing/ClosingNotice';
+import OfflineNotice from './OfflineNotice';
 import ProjectScopeSelect from './ProjectScopeSelect';
 import { useProjectScope } from '../projects/useProjectScope';
 import type { TranslationKey } from '../i18n/translations';
@@ -255,6 +256,8 @@ const Layout: React.FC = () => {
         </Box>
 
         <Box component="main" sx={{ flex: 1, p: { xs: '16px', md: '24px' } }}>
+          {/* つながっていない（task #192 / ADR-0028）。殻は出ているがデータは読めない */}
+          <OfflineNotice />
           {/* 未確定の締めの期間の知らせ（task #161 / ADR-0012） */}
           <ClosingNotice />
           <Outlet />

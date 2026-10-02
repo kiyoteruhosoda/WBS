@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Box, ButtonBase, CircularProgress, Divider, ListItemButton, ListItemText, Popover, Tooltip } from '@mui/material';
+import { Box, ButtonBase, Divider, ListItemButton, ListItemText, Popover, Tooltip } from '@mui/material';
 import { ds } from '../theme';
 import { useI18n } from '../i18n';
 import { getTasks } from '../api/tasks';
@@ -14,8 +14,10 @@ import TaskPicker from './TaskPicker';
 import { ChevronDownIcon, PlayIcon, StopIcon, WarningTriangleIcon } from './icons';
 import { LONG_RUNNING_MS, elapsedOf } from '../timer/timerState';
 import { formatExactDuration } from '../utils/format';
-import { useCurrentTimeEntry, useTimerWrites } from '../timer/useTimer';
+import { useProjectedTimeEntry, usePressNotice, useTimerWrites } from '../timer/useTimer';
+import { isPendingEntry } from '../timer/pendingPresses';
 import TimerFailureNotice from './TimerFailureNotice';
+import PressNoticeView from './PressNotice';
 
 // 打刻ボタン（task #154）。全画面の上部に常に出す。
 // 普段は ▶ 開始 / ■ 停止 を押すだけ。タスクはその場で変えられるが、変えなくてよい
@@ -25,6 +27,11 @@ import TimerFailureNotice from './TimerFailureNotice';
 
 /** 「直前に使った」を探す長さ（打刻ボタンを開いたときだけ引く）。 */
 const RECENT_DAYS = 7;
+// 押下は端末に溜めてから送る（task #192・ADR-0028）。送れていない分は「未送信 n 件」と出し、
+// つながったとき・画面に戻ったとき・しばらくおきに送り直す。溜まった押下を送るのはこの部品（常に出ている）。
+
+/** 溜まった押下を送り直す間隔（つながっていて、溜まっているときだけ） */
+const RESEND_INTERVAL_MS = 30_000;
 
 const BUTTON_HEIGHT = 44;
 
@@ -39,8 +46,9 @@ const TimerButton: React.FC = () => {
   };
   const [nowMs, setNowMs] = useState(() => Date.now());
 
-  const { data: snapshot } = useCurrentTimeEntry();
+  const { snapshot, pendingCount, pendingStart, stateUnknown } = useProjectedTimeEntry();
   const entry = snapshot?.current.entry ?? null;
+  const pendingEntry = entry !== null && isPendingEntry(entry);
 
   useEffect(() => {
     if (!entry) return undefined;
@@ -77,14 +85,39 @@ const TimerButton: React.FC = () => {
     recentTaskIds(recentEntries ?? [], openedAt),
   ), [occurrences, recentEntries, openedAt]);
 
-  const { start, stop, changeTask, busy, failure, clearFailure } = useTimerWrites();
+  const { start, stop, changeTask, sendPending, busy, failure, clearFailure } = useTimerWrites();
+  const { notice, clear: clearNotice } = usePressNotice();
+
+  // 溜まった押下を送る: 開いたとき・つながったとき・画面に戻ったとき・溜まっている間はしばらくおきに
+  useEffect(() => {
+    const resend = () => {
+      if (navigator.onLine) void sendPending();
+    };
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') resend();
+    };
+    resend();
+    window.addEventListener('online', resend);
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      window.removeEventListener('online', resend);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, [sendPending]);
+  useEffect(() => {
+    if (pendingCount === 0) return undefined;
+    const timer = window.setInterval(() => {
+      if (navigator.onLine) void sendPending();
+    }, RESEND_INTERVAL_MS);
+    return () => window.clearInterval(timer);
+  }, [pendingCount, sendPending]);
 
   const chooseTask = (taskId: number | null) => {
     setMenuAnchor(null);
     if (entry) {
       changeTask.mutate({ id: entry.id, taskId });
     } else {
-      start.mutate(taskId);
+      start(taskId, taskId === null ? null : (tasks ?? []).find((task) => task.id === taskId)?.title);
     }
   };
 
@@ -109,7 +142,8 @@ const TimerButton: React.FC = () => {
         >
           <ButtonBase
             onClick={(e) => openMenu(e.currentTarget)}
-            disabled={busy}
+            // 溜まった Start はまだサーバに無いので、タスクを付け替えられない（送れたら付け替えられる）
+            disabled={busy || pendingEntry}
             aria-label={t('timer.changeTask')}
             aria-haspopup="menu"
             sx={{
@@ -118,9 +152,9 @@ const TimerButton: React.FC = () => {
             }}
           >
             <Box component="span" sx={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
-              {entry.task_title ?? t('timer.unassigned')}
+              {entry.task_title ?? t(pendingStart?.taskId === undefined && pendingEntry ? 'timer.taskOnSend' : 'timer.unassigned')}
             </Box>
-            <ChevronDownIcon size={14} />
+            {!pendingEntry && <ChevronDownIcon size={14} />}
           </ButtonBase>
           <Tooltip title={longRunning ? t('timer.longRunning') : ''} enterTouchDelay={0}>
             <Box
@@ -135,7 +169,7 @@ const TimerButton: React.FC = () => {
             </Box>
           </Tooltip>
           <ButtonBase
-            onClick={() => stop.mutate()}
+            onClick={stop}
             disabled={busy}
             aria-label={t('timer.stop')}
             sx={{
@@ -143,27 +177,28 @@ const TimerButton: React.FC = () => {
               '&:hover': { bgcolor: '#A32116' },
             }}
           >
-            {stop.isPending ? <CircularProgress size={16} sx={{ color: '#fff' }} /> : <StopIcon size={16} />}
+            <StopIcon size={16} />
             <Box component="span" sx={{ display: { xs: 'none', sm: 'inline' } }}>{t('timer.stop')}</Box>
           </ButtonBase>
         </Box>
       ) : (
         <Box sx={{ display: 'flex', alignItems: 'stretch', borderRadius: '8px', overflow: 'hidden', flexShrink: 0 }}>
           <ButtonBase
-            onClick={() => start.mutate(undefined)}
-            disabled={busy || !snapshot}
+            onClick={() => start()}
+            // 控えを読めなかった（オフラインで開いた）ときも押せる。走っていればサーバが止めて切り替える
+            disabled={busy || (!snapshot && !stateUnknown)}
             aria-label={t('timer.start')}
             sx={{
               ...segment, pl: '14px', pr: '14px', color: '#fff', bgcolor: ds.success,
               '&:hover': { bgcolor: ds.successDark },
             }}
           >
-            {start.isPending ? <CircularProgress size={16} sx={{ color: '#fff' }} /> : <PlayIcon size={16} />}
+            <PlayIcon size={16} />
             {t('timer.start')}
           </ButtonBase>
           <ButtonBase
             onClick={(e) => openMenu(e.currentTarget)}
-            disabled={busy || !snapshot}
+            disabled={busy || (!snapshot && !stateUnknown)}
             aria-label={t('timer.startWithTask')}
             aria-haspopup="menu"
             sx={{
@@ -212,7 +247,22 @@ const TimerButton: React.FC = () => {
         />
       </Popover>
 
+      {pendingCount > 0 && (
+        <Tooltip title={t('timer.pendingHint')} enterTouchDelay={0}>
+          <Box
+            role="status"
+            sx={{
+              display: 'flex', alignItems: 'center', height: 28, px: '8px', borderRadius: '14px', flexShrink: 0,
+              fontSize: 12, fontWeight: 700, whiteSpace: 'nowrap', color: ds.warnText, bgcolor: ds.warnPale,
+            }}
+          >
+            {t('timer.pending', { count: pendingCount })}
+          </Box>
+        </Tooltip>
+      )}
+
       <TimerFailureNotice failure={failure} onClose={clearFailure} />
+      <PressNoticeView notice={notice} onClose={clearNotice} />
     </>
   );
 };

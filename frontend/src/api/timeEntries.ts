@@ -9,16 +9,19 @@ export const getCurrentTimeEntry = async (): Promise<CurrentTimeEntry> => {
 /**
  * Start。taskId を省くと、サーバが既定の順（いまの予定のタスク → 直前の打刻のタスク → 未割当）で決める。
  * null を渡すと未割当で始める。走っている打刻があれば止めて切り替える。
+ * at は押した時刻（端末に溜めた押下を送るとき。ADR-0018・ADR-0028）。省くとサーバの「今」。
  */
-export const startTimeEntry = async (taskId?: number | null): Promise<StartTimeEntryResult> => {
-  const body = taskId === undefined ? undefined : { task_id: taskId };
-  const { data } = await client.post<StartTimeEntryResult>('/time-entries/start', body);
+export const startTimeEntry = async (taskId?: number | null, at?: string): Promise<StartTimeEntryResult> => {
+  const body: { task_id?: number | null; at?: string } = {};
+  if (taskId !== undefined) body.task_id = taskId;
+  if (at !== undefined) body.at = at;
+  const { data } = await client.post<StartTimeEntryResult>('/time-entries/start', Object.keys(body).length ? body : undefined);
   return data;
 };
 
-/** Stop。走っていなければ stopped は null（何度押しても同じ）。 */
-export const stopTimeEntry = async (): Promise<StopTimeEntryResult> => {
-  const { data } = await client.post<StopTimeEntryResult>('/time-entries/stop');
+/** Stop。走っていなければ stopped は null（何度押しても同じ）。at は Start と同じ。 */
+export const stopTimeEntry = async (at?: string): Promise<StopTimeEntryResult> => {
+  const { data } = await client.post<StopTimeEntryResult>('/time-entries/stop', at !== undefined ? { at } : undefined);
   return data;
 };
 

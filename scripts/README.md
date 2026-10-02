@@ -5,6 +5,7 @@
 - `entrypoint.sh reset`: SQLite DB を削除して初期ユーザーを再投入します（破壊的）。
 - `build.sh`: API / Web / Docker イメージのビルドをまとめて実行する薄いラッパーです。
 - `build.py`: `BuildStep` のポリモーフィズムで lint・test・frontend build・Docker build を合成するビルドオーケストレーターです。
+- `generate_pwa_icons.py`: PWA のアイコン（`frontend/public/` の pwa-*.png・apple-touch-icon.png・favicon.svg）を標準ライブラリだけで生成します。配色と図柄の正本はこのスクリプトで、出力物はコミットします（ADR-0028）。
 - `build-remote.sh`: デプロイ先ホストに単体で置き、開発コンテナ内ビルド→bundle 取り出し→デプロイをワンコマンドで行うスクリプトです（下記「Remote build & deploy」参照）。
 
 `run_db_migrations.py` は `init_db()` を呼び、Alembic で `upgrade head` してから初期ユーザー（id=1）を入れます（冪等）。`alembic_version` の無い既存の DB は、Alembic 導入前の列補完を 1 回なぞって baseline（`0001`）と同じ形になったと確かめてから `stamp` します。形が揃わなければ何も確定せずに失敗します（ADR-0006）。アプリ本体（uvicorn）は表を作らず、DB が head でなければ起動しません。
