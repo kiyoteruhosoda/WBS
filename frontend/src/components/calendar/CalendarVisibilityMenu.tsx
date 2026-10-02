@@ -1,9 +1,8 @@
 import React, { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Box, Button, ButtonBase, Checkbox, Chip, Collapse, IconButton, Tooltip, useMediaQuery } from '@mui/material';
+import { Box, Button, ButtonBase, Checkbox, Chip, Drawer, Popover, Tooltip, useMediaQuery } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
-import ExpandLessIcon from '@mui/icons-material/ExpandLess';
-import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import FilterListIcon from '@mui/icons-material/FilterList';
 import SettingsOutlinedIcon from '@mui/icons-material/SettingsOutlined';
 import { Link as RouterLink } from 'react-router-dom';
 import { useI18n } from '../../i18n';
@@ -17,10 +16,11 @@ import {
 import { eventColor } from '../../calendar/calendarColors';
 import { errorDetailOf } from '../../calendar/calendarRequests';
 
-// カレンダーの画面の「表示の切り替え」だけ（ADR-0034）。チェック・表示の組み合わせ・すべて/休みだけ/仕事だけ。
-// カレンダーの追加・名前と色・仕事/プライベート・休みの層の日付・組み合わせの保存は「カレンダーの設定」
-// （/calendar/settings）へ分けた。選んだ状態はサーバーに覚える（ADR-0027。端末をまたいで同じ）。
-// 広い画面は横の列、狭い画面はカレンダーの上で折りたたむ。
+// カレンダーの画面の「表示の切り替え」（ADR-0034・ADR-0035）。チェック・表示の組み合わせ・すべて/休みだけ/仕事だけ。
+// 触る頻度が低い（組み合わせを一度決めたらほぼ触らない）ので常時は出さず、カレンダーの見出しの端の小さなボタンから
+// 開く（広い画面はポップオーバー、狭い画面は下から出るシート）。ボタンは全部を表示しているときは印だけ、
+// 絞っているときだけ組み合わせの名前か「3/5」を出す。管理（/calendar/settings）への入口はこの中のいちばん下。
+// 選んだ状態はサーバーに覚える（ADR-0027。端末をまたいで同じ）。
 
 export const CALENDAR_SETTINGS_PATH = '/calendar/settings';
 
@@ -30,13 +30,16 @@ interface Props {
   onError: (detail: string) => void;
 }
 
-const CalendarVisibilityPanel: React.FC<Props> = ({ calendars, onError }) => {
+const CalendarVisibilityMenu: React.FC<Props> = ({ calendars, onError }) => {
   const { t } = useI18n();
   const theme = useTheme();
   const c = theme.palette.calendar;
   const narrow = useMediaQuery(theme.breakpoints.down('md'));
   const qc = useQueryClient();
-  const [open, setOpen] = useState(false);
+  // 開いているときのボタン（ポップオーバーの付け先。狭い画面のシートでも開いている印に使う）
+  const [anchor, setAnchor] = useState<HTMLElement | null>(null);
+  const open = anchor != null;
+  const close = () => setAnchor(null);
 
   const { data: presets } = useQuery({ queryKey: [CALENDAR_VIEW_PRESETS_QUERY], queryFn: getCalendarViewPresets });
 
@@ -72,22 +75,28 @@ const CalendarVisibilityPanel: React.FC<Props> = ({ calendars, onError }) => {
   const hasPrivate = calendars.some(isPrivateCalendar);
   const visibleCount = calendars.filter((cal) => cal.is_visible).length;
   const activePreset = (presets ?? []).find((preset) => presetIsActive(preset, calendars));
-  const title = activePreset
+  // 絞っているときだけボタンに出す（全部を表示しているときは何も出さない）
+  const filtered = calendars.length > 0 && !allVisible(calendars);
+  const summary = filtered
+    ? (activePreset && !narrow ? activePreset.name : t('calendar.visibilityCount', { visible: visibleCount, total: calendars.length }))
+    : null;
+  const buttonLabel = activePreset
     ? t('calendar.calendarsTitlePreset', { name: activePreset.name, visible: visibleCount, total: calendars.length })
     : t('calendar.calendarsTitle', { visible: visibleCount, total: calendars.length });
 
   const settingsLink = (
-    <Tooltip title={t('calendar.settingsOpen')}>
-      <IconButton
+    <Box sx={{ borderTop: `1px solid ${c.border}`, p: '4px 8px' }}>
+      <Button
         component={RouterLink}
         to={CALENDAR_SETTINGS_PATH}
-        aria-label={t('calendar.settingsOpen')}
+        size="small"
+        startIcon={<SettingsOutlinedIcon sx={{ fontSize: 18 }} />}
         data-testid="calendar-settings-link"
-        sx={{ width: 40, height: 40, color: c.textSecondary, flexShrink: 0 }}
+        sx={{ color: c.textSecondary, px: '8px', py: '6px', fontSize: 13, fontWeight: 400 }}
       >
-        <SettingsOutlinedIcon sx={{ fontSize: 20 }} />
-      </IconButton>
-    </Tooltip>
+        {t('calendar.settingsOpen')}
+      </Button>
+    </Box>
   );
 
   const list = (
@@ -188,48 +197,65 @@ const CalendarVisibilityPanel: React.FC<Props> = ({ calendars, onError }) => {
     </Box>
   );
 
-  return (
-    <Box
-      data-testid="calendar-visibility-panel"
-      sx={{
-        display: 'flex', flexDirection: 'column', minHeight: 0, height: narrow ? 'auto' : '100%',
-        bgcolor: c.surface, border: `1px solid ${c.border}`, borderRadius: '10px', overflow: 'hidden',
-      }}
-    >
-      {narrow ? (
-        <>
-          <Box sx={{ display: 'flex', alignItems: 'center', pr: '4px' }}>
-            <ButtonBase
-              onClick={() => setOpen((v) => !v)}
-              aria-expanded={open}
-              sx={{
-                flex: 1, minWidth: 0, minHeight: 44, px: '12px', justifyContent: 'space-between', gap: '8px',
-                fontSize: 14, fontWeight: 600, color: c.textPrimary, textAlign: 'left',
-              }}
-            >
-              <Box component="span" sx={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{title}</Box>
-              {open ? <ExpandLessIcon /> : <ExpandMoreIcon />}
-            </ButtonBase>
-            {settingsLink}
-          </Box>
-          <Collapse in={open}>
-            <Box sx={{ maxHeight: 320, overflowY: 'auto', borderTop: `1px solid ${c.border}` }}>{list}</Box>
-          </Collapse>
-        </>
-      ) : (
-        <>
-          <Box sx={{
-            display: 'flex', alignItems: 'center', gap: '4px', pl: '12px', pr: '4px', minHeight: 40,
-            borderBottom: `1px solid ${c.border}`,
-          }}>
-            <Box sx={{ flex: 1, minWidth: 0, fontSize: 13, fontWeight: 600, color: c.textPrimary }}>{title}</Box>
-            {settingsLink}
-          </Box>
-          <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>{list}</Box>
-        </>
-      )}
+  const content = (
+    <Box data-testid="calendar-visibility-panel" sx={{ display: 'flex', flexDirection: 'column', minHeight: 0, bgcolor: c.surface }}>
+      <Box sx={{ px: '12px', pt: '10px', fontSize: 13, fontWeight: 600, color: c.textPrimary }}>{buttonLabel}</Box>
+      <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>{list}</Box>
+      {settingsLink}
     </Box>
+  );
+
+  return (
+    <>
+      <Tooltip title={buttonLabel}>
+        <ButtonBase
+          onClick={(e) => setAnchor(e.currentTarget)}
+          aria-label={buttonLabel}
+          aria-haspopup="dialog"
+          aria-expanded={open}
+          data-testid="calendar-visibility-button"
+          data-filtered={filtered || undefined}
+          sx={{
+            height: 30, minWidth: 32, px: summary ? '8px' : '6px', gap: '4px', borderRadius: '6px', flexShrink: 0,
+            fontSize: 12, fontWeight: 700, whiteSpace: 'nowrap',
+            // 絞っているときだけ色を持つ（全部なら周りの印と同じ灰色）
+            color: filtered ? c.blue : c.textSecondary,
+            bgcolor: filtered ? c.surfaceVariant : 'transparent',
+            border: `1px solid ${filtered ? c.blue : 'transparent'}`,
+            '&:hover': { bgcolor: c.surfaceVariant },
+            '&.Mui-focusVisible': { outline: `2px solid ${c.blue}`, outlineOffset: 1 },
+          }}
+        >
+          <FilterListIcon sx={{ fontSize: 18 }} />
+          {summary && (
+            <Box component="span" sx={{ maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis' }}>{summary}</Box>
+          )}
+        </ButtonBase>
+      </Tooltip>
+      {narrow ? (
+        <Drawer
+          anchor="bottom"
+          open={open}
+          onClose={close}
+          slotProps={{ paper: { sx: { borderTopLeftRadius: '12px', borderTopRightRadius: '12px', maxHeight: '75svh' } } }}
+        >
+          <Box sx={{ width: 36, height: 4, borderRadius: '2px', bgcolor: c.border, mx: 'auto', mt: '8px', flexShrink: 0 }} />
+          {content}
+        </Drawer>
+      ) : (
+        <Popover
+          open={open}
+          anchorEl={anchor}
+          onClose={close}
+          anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+          transformOrigin={{ vertical: 'top', horizontal: 'right' }}
+          slotProps={{ paper: { sx: { width: 280, maxHeight: 'min(560px, 80vh)', display: 'flex', flexDirection: 'column', mt: '4px' } } }}
+        >
+          {content}
+        </Popover>
+      )}
+    </>
   );
 };
 
-export default CalendarVisibilityPanel;
+export default CalendarVisibilityMenu;

@@ -19,6 +19,10 @@ interface Props {
   onRedo?: () => void;
   canUndo?: boolean;
   canRedo?: boolean;
+  /** 表示の切り替えの行の左（「時間を取る」のタスクの一覧を出す・しまう。ADR-0035） */
+  toolbarStart?: React.ReactNode;
+  /** 表示の切り替えの行の右端（表示するカレンダー。触る頻度がいちばん低いので端に。ADR-0035） */
+  toolbarEnd?: React.ReactNode;
 }
 
 const modes: { mode: CalendarMode; testId: string; labelKey: 'calendar.modeMonth' | 'calendar.modeWeek' | 'calendar.modeWeekdays' }[] = [
@@ -28,11 +32,12 @@ const modes: { mode: CalendarMode; testId: string; labelKey: 'calendar.modeMonth
 ];
 
 /**
- * 見出し（移植元 CalendarPage.xaml の Row 0）: 前へ・年月・元に戻す・やり直し・今日・次へ。
- * 表示の切り替え（移植元ではナビゲーションの項目）はその上の行に置く。
+ * 見出し（移植元 CalendarPage.xaml の Row 0）: 前へ・年月・元に戻す・やり直し・今日・次へ。いちばん触るので上。
+ * その下の行に、左にタスクの一覧の出し入れ、右に月・週・平日の切り替えと、右端に表示するカレンダー
+ * （ADR-0035。触る頻度の順に上・大きく。表示するカレンダーは常時の列をやめて、ここから開く）。
  */
 const CalendarHeader: React.FC<Props> = ({
-  mode, title, onModeChange, onPrev, onNext, onToday, onUndo, onRedo, canUndo, canRedo,
+  mode, title, onModeChange, onPrev, onNext, onToday, onUndo, onRedo, canUndo, canRedo, toolbarStart, toolbarEnd,
 }) => {
   const { t } = useI18n();
   const c = useTheme().palette.calendar;
@@ -40,27 +45,7 @@ const CalendarHeader: React.FC<Props> = ({
 
   return (
     <Box sx={{ bgcolor: c.surface }}>
-      <Box sx={{ display: 'flex', justifyContent: 'flex-end', px: '12px', pt: '8px' }}>
-        <ToggleButtonGroup
-          size="small"
-          exclusive
-          value={mode}
-          onChange={(_, value: CalendarMode | null) => { if (value) onModeChange(value); }}
-          aria-label={t('nav.calendar')}
-        >
-          {modes.map((m) => (
-            <ToggleButton
-              key={m.mode}
-              value={m.mode}
-              data-testid={m.testId}
-              sx={{ px: '12px', py: '3px', fontSize: 12, fontWeight: 700, textTransform: 'none' }}
-            >
-              {t(m.labelKey)}
-            </ToggleButton>
-          ))}
-        </ToggleButtonGroup>
-      </Box>
-      <Box sx={{ display: 'grid', gridTemplateColumns: '48px minmax(0, 1fr) auto auto auto 48px', alignItems: 'center', height: 48 }}>
+      <Box sx={{ display: 'grid', gridTemplateColumns: '48px minmax(0, 1fr) auto auto auto 48px', alignItems: 'center', height: 48, mt: '4px' }}>
         <Box sx={{ display: 'flex', justifyContent: 'center' }}>
           <IconButton aria-label={t('calendar.prev')} onClick={onPrev} sx={round}>
             <ChevronLeft fontSize="small" />
@@ -109,6 +94,29 @@ const CalendarHeader: React.FC<Props> = ({
             <ChevronRight fontSize="small" />
           </IconButton>
         </Box>
+      </Box>
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: '6px', px: '12px', pb: '8px' }}>
+        {toolbarStart}
+        <Box sx={{ flex: 1 }} />
+        <ToggleButtonGroup
+          size="small"
+          exclusive
+          value={mode}
+          onChange={(_, value: CalendarMode | null) => { if (value) onModeChange(value); }}
+          aria-label={t('nav.calendar')}
+        >
+          {modes.map((m) => (
+            <ToggleButton
+              key={m.mode}
+              value={m.mode}
+              data-testid={m.testId}
+              sx={{ px: { xs: '8px', sm: '12px' }, py: '3px', fontSize: 12, fontWeight: 700, textTransform: 'none' }}
+            >
+              {t(m.labelKey)}
+            </ToggleButton>
+          ))}
+        </ToggleButtonGroup>
+        {toolbarEnd}
       </Box>
     </Box>
   );
