@@ -46,6 +46,20 @@ class TaskUpdateRequest(BaseModel):
     project_id: int | None = None
 
 
+class TaskMoveToProjectRequest(BaseModel):
+    """選んだタスクをまとめて別のプロジェクトへ。``project_id`` に ``null`` を送ると未分類へ（ADR-0030）。"""
+
+    task_ids: list[int] = Field(min_length=1, max_length=500)
+    project_id: int | None
+
+
+class TaskMoveToProjectResponse(BaseModel):
+    # プロジェクトが替わったタスク（選んだ根と、一緒に移った子孫）。もともとそこに居たものは含まない
+    moved_task_ids: list[int]
+    # 届かなくなったマイルストーンを外したタスク
+    detached_milestone_task_ids: list[int]
+
+
 class TaskResponse(BaseModel):
     id: int
     user_id: int

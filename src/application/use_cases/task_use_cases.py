@@ -14,6 +14,7 @@ from src.domain.exceptions import ConflictError, NotFoundError, ValidationError
 from src.domain.repositories.milestone_repository import MilestoneRepository
 from src.domain.repositories.task_repository import TaskRepository
 from src.domain.services.project_tree import ProjectTree
+from src.domain.services.task_branch_selection import TaskBranchSelection
 from src.domain.services.task_progress_board import TaskProgressBoard
 from src.domain.value_objects.task_status import TaskStatus
 from src.infrastructure.repositories.milestone_repository import SqlAlchemyMilestoneRepository
@@ -173,6 +174,42 @@ class TaskUseCases:
         self._session.commit()
         refreshed = self._repo.find_by_id_for_user(task_id, user_id)
         return self._enrich(refreshed if refreshed is not None else saved)
+
+    def move_to_project(self, user_id: int, task_ids: list[int], project_id: int | None) -> dict:
+        """選んだタスクをまとめて別のプロジェクトへ（``None`` で未分類へ）。ADR-0030。
+
+        子タスクは親に従う（ADR-0024 の 4）ので、書くのは枝の根だけで、子孫は根と一緒に移る。
+        祖先が一緒に選ばれていない子タスクを含めば、何も変えずに 422（子だけ別のプロジェクトにはしない）。
+        自分のタスクでない id・他人のプロジェクトは 404。届かなくなったマイルストーンは外す。
+        """
+        if project_id is not None:
+            self._membership.owned_project(user_id, project_id)
+        live = {t.id: t for t in self._repo.find_all(user_id, {}) if t.id is not None}
+        for task_id in task_ids:
+            if task_id not in live:
+                raise NotFoundError("Task", task_id)
+        selection = TaskBranchSelection.of(
+            task_ids, {tid: t.parent_task_id for tid, t in live.items()}
+        )
+        if selection.stranded:
+            raise ValidationError(
+                "a subtask follows its parent task; move the parent instead "
+                f"(task ids: {', '.join(str(i) for i in selection.stranded)})"
+            )
+        moved: list[int] = []
+        for root in selection.roots:
+            if live[root].project_id == project_id:
+                continue
+            branch = self._repo.subtree_ids(user_id, root)
+            self._repo.set_project(branch, project_id)
+            moved.extend(i for i in branch if i in live)
+        detached = self._membership.detach_unreachable_milestones(user_id) if moved else []
+        self._session.commit()
+        self._session.expire_all()
+        return {
+            "moved_task_ids": sorted(set(moved)),
+            "detached_milestone_task_ids": sorted(set(detached)),
+        }
 
     def _project_for_update(self, task: Task, user_id: int, dto: UpdateTaskDTO) -> int | None:
         """更新の後に属するプロジェクト。親があれば親のもの（違う値を送られたら 422）。"""

@@ -8,6 +8,8 @@ from src.application.dto.task_dto import CreateTaskDTO, UpdateTaskDTO
 from src.presentation.api.dependencies import CurrentUserDep, TaskUseCasesDep
 from src.presentation.api.schemas.task_schemas import (
     TaskCreateRequest,
+    TaskMoveToProjectRequest,
+    TaskMoveToProjectResponse,
     TaskResponse,
     TaskUpdateRequest,
 )
@@ -65,6 +67,18 @@ def create_task(body: TaskCreateRequest, uc: TaskUseCasesDep, current_user: Curr
         project_id=body.project_id,
     )
     return TaskResponse(**uc.create_task(dto))
+
+
+@router.post("/move-to-project", response_model=TaskMoveToProjectResponse)
+def move_tasks_to_project(
+    body: TaskMoveToProjectRequest, uc: TaskUseCasesDep, current_user: CurrentUserDep
+) -> TaskMoveToProjectResponse:
+    """選んだタスクをまとめて別のプロジェクトへ（``null`` で未分類へ）。
+
+    子孫は根と一緒に移る。祖先を一緒に選んでいない子タスクを含めば何も変えずに 422（ADR-0024・ADR-0030）。
+    """
+    result = uc.move_to_project(current_user.user_id, body.task_ids, body.project_id)
+    return TaskMoveToProjectResponse(**result)
 
 
 @router.get("/{task_id}", response_model=TaskResponse)
