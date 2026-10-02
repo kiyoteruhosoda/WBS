@@ -15,7 +15,7 @@ import { getDayOffMarks } from '../api/calendars';
 import { buildDayOffView } from '../calendar/daysOff';
 import SchedulerCalendar from '../components/calendar/SchedulerCalendar';
 import TaskSchedulePanel from '../components/calendar/TaskSchedulePanel';
-import CalendarListPanel from '../components/calendar/CalendarListPanel';
+import CalendarVisibilityPanel from '../components/calendar/CalendarVisibilityPanel';
 import { calendarForNewEvent, filterVisibleOccurrences } from '../calendar/calendarSelection';
 import { useCalendarEditing } from '../components/calendar/useCalendarEditing';
 import { useHeightToViewportBottom } from '../components/useHeightToViewportBottom';
@@ -191,9 +191,9 @@ const CalendarPage: React.FC = () => {
           height: { md: fill.height != null ? `${fill.height}px` : 'calc(100vh - 160px)' }, minHeight: { md: 640 },
         }}
       >
-        {/* カレンダーの一覧と表示の選択（広い画面は左、狭い画面はいちばん上で折りたたむ） */}
+        {/* 表示の切り替え（広い画面は左、狭い画面はいちばん上で折りたたむ）。管理は /calendar/settings（ADR-0034） */}
         <Box sx={{ order: { xs: 0, md: 0 }, width: { xs: '100%', md: 220 }, flexShrink: 0, height: { md: '100%' } }}>
-          <CalendarListPanel
+          <CalendarVisibilityPanel
             calendars={editing.calendars ?? []}
             onError={(detail) => editing.notify('calendar.saveFailed', 'error', { detail })}
           />

@@ -42,9 +42,12 @@ const BAND_MARGIN_RIGHT = 3;
 // 幅を取る環境（Windows の Chrome・Edge など）で、見出しと終日の列だけがスクロールバーの幅だけ広くなり、
 // 右へ行くほど日の列が本体とずれる。スクロールバーが重なって出る環境（スマホ・macOS）では溝は 0。
 const SCROLLBAR_GUTTER = { overflowY: 'hidden', scrollbarGutter: 'stable' } as const;
+// 終日の帯と時間グリッドの境の線の太さ。正時の線（1px）より太くして、帯の終わりを見分けられるようにする。
+const ALL_DAY_DIVIDER = 2;
 
 interface Props extends Pick<
-  CalendarInteractions, 'onCreateRange' | 'onRescheduleOccurrence' | 'onEditOccurrence' | 'onCreateEvent' | 'onToggleDone'
+  CalendarInteractions,
+  'onCreateRange' | 'onRescheduleOccurrence' | 'onEditOccurrence' | 'onCreateEvent' | 'onToggleDone' | 'onOpenDeadline'
 > {
   dates: string[];
   timeZone: string;
@@ -55,7 +58,9 @@ interface Props extends Pick<
   nowMinute: number;
   selectedDate: string | null;
   selectedSegmentKey: string | null;
+  /** 見出しの日付を押した（日の一覧を開く・閉じる。ほかの場所を押しても呼ばない。ADR-0034） */
   onSelectDate: (date: string) => void;
+  /** 予定・タスクのブロックを押した（カレンダーと「今日」は編集を開く） */
   onSelectSegment: (segment: DaySegment) => void;
   /** 予定に結んだタスクの印（色・題名） */
   linkedTasks?: ReadonlyMap<number, LinkedTask>;
@@ -77,7 +82,7 @@ interface Props extends Pick<
 const WeekView: React.FC<Props> = ({
   dates, timeZone, segmentsByDate, holidays, deadlines, today, nowMinute, selectedDate, selectedSegmentKey,
   onSelectDate, onSelectSegment, onCreateRange, onRescheduleOccurrence, onEditOccurrence, onCreateEvent, onToggleDone,
-  linkedTasks, dropPreview, bands, occurrenceAction, scrollLeadMinutes, nonWorkdays,
+  onOpenDeadline, linkedTasks, dropPreview, bands, occurrenceAction, scrollLeadMinutes, nonWorkdays,
 }) => {
   const { t, weekdays } = useI18n();
   const theme = useTheme();
@@ -158,10 +163,9 @@ const WeekView: React.FC<Props> = ({
     return edge;
   };
 
-  // 空き枠のタップは作成の意図（:00 / :30 に丸める。移植元 OnLaneTapped）。
+  // 空き枠のタップは作成の意図（:00 / :30 に丸める。移植元 OnLaneTapped）。日の一覧は開かない（ADR-0034）。
   const onGridClick = (e: React.MouseEvent<HTMLElement>, date: string) => {
     if (drag.shouldSuppressClick()) return;
-    onSelectDate(date);
     if (onCreateEvent) onCreateEvent(date, tapCreateMinute(e.clientY - e.currentTarget.getBoundingClientRect().top));
   };
 
@@ -211,6 +215,8 @@ const WeekView: React.FC<Props> = ({
             role="button"
             tabIndex={0}
             data-date={date}
+            data-day-select=""
+            aria-pressed={date === selectedDate}
             onClick={() => onSelectDate(date)}
             onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSelectDate(date); } }}
             sx={{
@@ -226,8 +232,14 @@ const WeekView: React.FC<Props> = ({
         ))}
       </Box>
 
-      {/* 終日の帯（祝日は 0 段目） */}
-      <Box sx={{ display: 'grid', gridTemplateColumns: columns, height: allDay.height, flexShrink: 0, ...SCROLLBAR_GUTTER }}>
+      {/* 終日の帯（祝日は 0 段目）。下に時間グリッドとの境の線（正時の線より太い 2px。カレンダー・「今日」で同じ部品） */}
+      <Box
+        data-testid="all-day-lane"
+        sx={{
+          display: 'grid', gridTemplateColumns: columns, height: allDay.height, flexShrink: 0, ...SCROLLBAR_GUTTER,
+          borderBottom: `${ALL_DAY_DIVIDER}px solid ${c.gridLine}`,
+        }}
+      >
         <Box sx={{ fontSize: 10, alignSelf: 'center', mx: '2px', color: c.textSecondary }}>{t('calendar.allDay')}</Box>
         {dates.map((date, i) => {
           const blocks = allDay.blocks.filter((b) => b.column === i);
@@ -235,11 +247,11 @@ const WeekView: React.FC<Props> = ({
           return (
             <Box
               key={date}
-              onClick={() => onSelectDate(date)}
               sx={{ position: 'relative', minWidth: 0, bgcolor: hasEvents ? c.allDayTint : 'transparent', ...divider(date, 'middle') }}
             >
               {blocks.map((b) => {
                 if (b.deadline) {
+                  const deadline = b.deadline;
                   return (
                     <Box
                       key={b.deadline.key}
@@ -249,7 +261,8 @@ const WeekView: React.FC<Props> = ({
                         deadline={b.deadline}
                         height={ALL_DAY_CHIP_HEIGHT}
                         fontSize={10}
-                        onClick={(e) => { e.stopPropagation(); onSelectDate(date); }}
+                        // タスク・マイルストーンを開く（日の一覧は開かない。ADR-0034）
+                        onClick={onOpenDeadline ? (e) => { e.stopPropagation(); onOpenDeadline(deadline); } : undefined}
                       />
                     </Box>
                   );

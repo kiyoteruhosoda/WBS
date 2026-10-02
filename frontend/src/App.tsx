@@ -11,6 +11,7 @@ import TaskEdit from './pages/TaskEdit';
 import GanttPage from './pages/GanttPage';
 import ActualsPage from './pages/ActualsPage';
 import CalendarPage from './pages/CalendarPage';
+import CalendarSettingsPage from './pages/CalendarSettingsPage';
 import ClosingPage from './pages/ClosingPage';
 import Inbox from './pages/Inbox';
 import CategoriesPage from './pages/CategoriesPage';
@@ -54,6 +55,7 @@ const SignedInApp: React.FC = () => (
           <Route path="actuals" element={<ActualsPage />} />
           <Route path="actuals/:view" element={<ActualsPage />} />
           <Route path="calendar" element={<CalendarPage />} />
+          <Route path="calendar/settings" element={<CalendarSettingsPage />} />
           <Route path="closing" element={<ClosingPage />} />
           <Route path="inbox" element={<Inbox />} />
           <Route path="projects" element={<ProjectsPage />} />

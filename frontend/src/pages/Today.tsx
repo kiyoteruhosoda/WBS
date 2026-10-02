@@ -494,6 +494,7 @@ const KpiCard: React.FC = () => {
 // ── 画面 ──────────────────────────────────────────────────────────────
 
 const Today: React.FC = () => {
+  const navigate = useNavigate();
   const { t } = useI18n();
   const qc = useQueryClient();
   const theme = useTheme();
@@ -675,6 +676,7 @@ const Today: React.FC = () => {
             selectedSegmentKey={null}
             onSelectDate={() => undefined}
             onSelectSegment={editSegment}
+            onOpenDeadline={(d) => navigate(d.kind === 'task' ? `/tasks/${d.id}` : '/milestones')}
             onCreateEvent={editing.openCreate}
             onCreateRange={(r) => editing.openCreate(r.date, r.startMinute, r.endMinute)}
             onRescheduleOccurrence={editing.reschedule}

@@ -86,6 +86,7 @@ const MonthView: React.FC<Props> = ({ cells, selectedDate, timeZone, onSelectDat
             <Box
               key={cell.date}
               data-date={cell.date}
+              data-day-select=""
               role="button"
               tabIndex={0}
               aria-pressed={selected}
