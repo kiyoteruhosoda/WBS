@@ -568,7 +568,8 @@ def test_0010_makes_four_day_off_layers_and_copies_business_calendar_holidays(tm
             assert connection.exec_driver_sql(
                 "SELECT COUNT(*) FROM calendars WHERE kind <> 'EVENTS'"
             ).scalar() == 0
-            assert connection.exec_driver_sql("SELECT COUNT(*) FROM calendars").scalar() == 2
+            # 予定のカレンダー（0009 の後に来た利用者なので無い）だけが残る
+            assert connection.exec_driver_sql("SELECT COUNT(*) FROM calendars").scalar() == 0
             assert connection.exec_driver_sql(
                 "SELECT COUNT(*) FROM business_calendar_holidays"
             ).scalar() == 3

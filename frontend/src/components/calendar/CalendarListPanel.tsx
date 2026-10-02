@@ -153,8 +153,8 @@ const CalendarListPanel: React.FC<Props> = ({ calendars, onError }) => {
   const defaultCalendar = calendars.find((cal) => cal.is_default);
   // 予定のカレンダーと休みの 4 層（ADR-0029）を分けて並べる
   const sections: { key: string; title: TranslationKey; calendars: Calendar[] }[] = [
-    { key: 'events', title: 'calendar.sectionEvents', calendars: calendars.filter((cal) => cal.kind === 'EVENTS') },
-    { key: 'days-off', title: 'calendar.sectionDaysOff', calendars: calendars.filter((cal) => cal.kind !== 'EVENTS') },
+    { key: 'events', title: 'calendar.sectionEvents' as TranslationKey, calendars: calendars.filter((cal) => cal.kind === 'EVENTS') },
+    { key: 'days-off', title: 'calendar.sectionDaysOff' as TranslationKey, calendars: calendars.filter((cal) => cal.kind !== 'EVENTS') },
   ].filter((section) => section.calendars.length > 0);
   const layersOnlyActive = calendars.some((cal) => cal.kind !== 'EVENTS')
     && calendars.every((cal) => cal.is_visible === (cal.kind !== 'EVENTS'));
