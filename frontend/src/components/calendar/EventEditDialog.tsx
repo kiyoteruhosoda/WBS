@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import {
-  Alert, Autocomplete, Box, Button, Checkbox, Collapse, Dialog, DialogActions, DialogContent, DialogTitle,
+  Alert, Box, Button, Checkbox, Collapse, Dialog, DialogActions, DialogContent, DialogTitle,
   FormControlLabel, MenuItem, Switch, TextField, ToggleButton, ToggleButtonGroup, useMediaQuery,
 } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
@@ -28,6 +28,7 @@ import { createTask } from '../../api/tasks';
 import { pickableProjects } from '../../projects/projectScope';
 import { useProjectScope } from '../../projects/useProjectScope';
 import RecurringScopeDialog from './RecurringScopeDialog';
+import TaskPickerField from '../TaskPickerField';
 
 export interface EventEditTarget {
   form: EventForm;
@@ -171,9 +172,7 @@ const EventEditDialog: React.FC<Props> = ({
 
   const weekIndexLabel = (n: number) => (n === -1 ? t('calendar.nthWeekLast') : t('calendar.nthWeek', { n }));
   const weekdayLabel = (code: WeekdayCode) => weekdays[WEEKDAY_CODES.indexOf(code)];
-  const selectedTask = tasks.find((task) => task.id === form.taskId) ?? null;
   const isTask = form.eventType === 'TASK';
-  const taskOptions = tasks.filter((task) => !task.deleted_at);
   const alarmOn = isAlarmOn(form);
   const alarmSummary = alarmOn && form.alarm
     ? ALARM_OFFSETS.filter((o) => form.alarm?.[o.field]).map((o) => t(alarmOffsetKeys[o.field])).join('・') || t('calendar.alarmNone')
@@ -215,13 +214,9 @@ const EventEditDialog: React.FC<Props> = ({
             {isTask && (
               <>
                 <Box sx={{ fontSize: 12, color: 'text.secondary' }}>{t('calendar.eventTypeHint')}</Box>
-                <Autocomplete
-                  options={taskOptions}
-                  value={selectedTask}
-                  onChange={(_, task) => update({ taskId: task?.id ?? null })}
-                  getOptionLabel={(task) => task.title}
-                  isOptionEqualToValue={(a, b) => a.id === b.id}
-                  renderInput={(params) => <TextField {...params} label={t('calendar.taskToLink')} />}
+                <TaskPickerField
+                  label={t('calendar.taskToLink')} tasks={tasks} projects={projects} scope={scope}
+                  value={form.taskId} onChange={(taskId) => update({ taskId })}
                 />
                 {form.taskId == null && (
                   <FormControlLabel
@@ -596,14 +591,12 @@ const EventEditDialog: React.FC<Props> = ({
           </Section>
 
           {/* タスク（WBS のタスクを結ぶ。打刻の既定のタスクになる）。分類がタスクなら上の欄で選ぶ */}
-          {!isTask && <Autocomplete
-            options={taskOptions}
-            value={selectedTask}
-            onChange={(_, task) => update({ taskId: task?.id ?? null })}
-            getOptionLabel={(task) => task.title}
-            isOptionEqualToValue={(a, b) => a.id === b.id}
-            renderInput={(params) => <TextField {...params} label={t('calendar.task')} />}
-          />}
+          {!isTask && (
+            <TaskPickerField
+              label={t('calendar.task')} tasks={tasks} projects={projects} scope={scope}
+              value={form.taskId} onChange={(taskId) => update({ taskId })}
+            />
+          )}
         </DialogContent>
         <DialogActions sx={{ px: '24px', py: '12px' }}>
           {deletable && onDelete && (

@@ -24,7 +24,7 @@ import {
 } from '../closing/closingPeriods';
 import type { FindingItem } from '../closing/closingBoard';
 import {
-  assignCandidates, buildFindingItems, buildTotalsTable, canTurnIntoEntry, entriesOverlappingOccurrence, entryEndMs,
+  assignHead, buildFindingItems, buildProjectTotalsTable, buildTotalsTable, canTurnIntoEntry, entriesOverlappingOccurrence, entryEndMs,
   entryMarksOf, entryStartMs, groupEntrySegmentsByDate, missedOccurrenceIds,
 } from '../closing/closingBoard';
 import type { ClosingRequest, EntryRange } from '../closing/closingRequests';
@@ -40,6 +40,7 @@ import AssignTaskDialog from '../components/closing/AssignTaskDialog';
 import EntryEditDialog from '../components/closing/EntryEditDialog';
 import { entryElementId, occurrenceElementId } from '../components/closing/closingElementIds';
 import { ChevronLeftIcon, ChevronRightIcon } from '../components/icons';
+import { useProjectScope } from '../projects/useProjectScope';
 
 interface Notice {
   message: string;
@@ -99,7 +100,14 @@ const ClosingPage: React.FC = () => {
   const findings = useMemo(() => (board ? buildFindingItems(board, nowMs) : []), [board, nowMs]);
   const marks = useMemo(() => (board ? entryMarksOf(board) : { unassigned: new Set<number>(), longRunning: new Set<number>(), overlapping: new Set<number>() }), [board]);
   const missed = useMemo(() => (board ? missedOccurrenceIds(board) : new Set<string>()), [board]);
+  // 合計の表はタスク別とプロジェクト別（task #189 / ADR-0026）。プロジェクト別はサイドバーの範囲から降りる。
+  // ⚠ グリッド・気付かせる物・確定は範囲に依らず全部（確定は期間の打刻を全部見る）
+  const { scope, projects } = useProjectScope();
   const totals = useMemo(() => buildTotalsTable(board?.daily_totals ?? [], dates), [board, dates]);
+  const projectTotals = useMemo(
+    () => buildProjectTotalsTable(board?.daily_totals ?? [], dates, projects, scope),
+    [board, dates, projects, scope],
+  );
 
   // ── 選択・目立たせ ─────────────────────────────────────────────────────
   const [selected, setSelected] = useState<ReadonlySet<number>>(new Set());
@@ -201,9 +209,9 @@ const ClosingPage: React.FC = () => {
   });
 
   const [assignOpen, setAssignOpen] = useState(false);
-  const candidates = useMemo(
-    () => (assignOpen ? assignCandidates(selectedEntries, board?.occurrences ?? [], tasks ?? [], nowMs) : []),
-    [assignOpen, selectedEntries, board, tasks, nowMs],
+  const head = useMemo(
+    () => (assignOpen ? assignHead(selectedEntries, board?.occurrences ?? [], board?.entries ?? [], nowMs) : []),
+    [assignOpen, selectedEntries, board, nowMs],
   );
   const assign = (taskId: number | null) => {
     setAssignOpen(false);
@@ -440,7 +448,7 @@ const ClosingPage: React.FC = () => {
         </Box>
       </Box>
 
-      {board && <TotalsTable table={totals} />}
+      {board && <TotalsTable byTask={totals} byProject={projectTotals} />}
 
       {/* 予定の回のメニュー */}
       <Popover
@@ -486,7 +494,10 @@ const ClosingPage: React.FC = () => {
         <AssignTaskDialog
           open
           entryCount={selectedEntries.length}
-          candidates={candidates}
+          tasks={tasks ?? []}
+          projects={projects}
+          head={head}
+          scope={scope}
           onCancel={() => setAssignOpen(false)}
           onChoose={assign}
         />

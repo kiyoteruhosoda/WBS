@@ -433,6 +433,8 @@ export interface DailyTaskTotal {
   task_title: string | null;
   /** 丸めない長さ（秒）。日をまたぐ打刻は 0:00 で割ってある */
   seconds: number;
+  /** タスクのいまのプロジェクト（未割当・消えたタスク・未分類は null。task #189） */
+  project_id?: number | null;
 }
 
 export interface ClosingOverlap {

@@ -83,6 +83,7 @@ class ClosingUseCases:
             user_id, state.period.first_day, state.period.last_day, zone.name
         )
         titles: dict[int, str | None] = {}
+        projects: dict[int, int | None] = {}
         views = [build_time_entry_view(e, now, self._tasks, titles) for e in entries]
         totals = allocate_by_local_day(entries, state.starts_at, state.ends_at, zone.zone, now)
         daily = [
@@ -90,6 +91,7 @@ class ClosingUseCases:
                 work_date=day,
                 task_id=task_id,
                 task_title=self._title(task_id, user_id, titles),
+                project_id=self._project_id(task_id, user_id, projects),
                 seconds=whole_seconds(length),
             )
             for (task_id, day), length in sorted(
@@ -262,6 +264,17 @@ class ClosingUseCases:
             task = self._tasks.find_by_id_for_user(task_id, user_id)
             titles[task_id] = task.title if task is not None else None
         return titles[task_id]
+
+    def _project_id(
+        self, task_id: int | None, user_id: int, projects: dict[int, int | None]
+    ) -> int | None:
+        """合計の行のプロジェクト（いまのタスクの所属。未割当・消えたタスク・未分類は None）。"""
+        if task_id is None:
+            return None
+        if task_id not in projects:
+            task = self._tasks.find_by_id_for_user(task_id, user_id)
+            projects[task_id] = task.project_id if task is not None else None
+        return projects[task_id]
 
 
 def hours_of(seconds: int) -> Decimal:

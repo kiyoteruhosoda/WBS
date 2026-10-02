@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import type { Task } from '../types';
 import {
-  assignCandidates, buildFindingItems, buildTotalsTable, canTurnIntoEntry, entriesOverlappingOccurrence, entryMarksOf,
+  assignHead, buildFindingItems, buildProjectTotalsTable, buildTotalsTable, canTurnIntoEntry, entriesOverlappingOccurrence, entryMarksOf,
   formatEntryRange, formatQuarterHours, groupEntrySegmentsByDate, splitEntryIntoDaySegments,
 } from './closingBoard';
 import type { EntrySegment } from './closingBoard';
+import type { Project } from '../types';
 import { layoutTimedSegments } from '../calendar/weekLayout';
 import { TOKYO, hm, occurrence } from '../calendar/testOccurrences';
 import { board, entry } from './testClosingBoard';
@@ -135,29 +135,78 @@ describe('日ごと・タスクごとの合計', () => {
   });
 });
 
-describe('タスクを振る候補', () => {
-  const task = (id: number, title: string, overrides: Partial<Task> = {}): Task => ({
-    id, user_id: 1, title, category_id: null, priority: 3, urgency: 3, status: 'TODO', start_date: null, due_date: null,
-    estimated_hours: null, remaining_hours: null, remaining_hours_entered: null, actual_hours: 0, has_subtasks: false,
-    rollup_actual_hours: 0, rollup_remaining_hours: null, progress_percent: null, scheduled_hours: null, unscheduled_hours: null,
-    priority_score: 0, memo: null, parent_task_id: null, milestone_id: null, project_id: null, project_path: null, completed_at: null, deleted_at: null,
-    created_at: '2026-09-01T00:00:00Z', updated_at: '2026-09-01T00:00:00Z', ...overrides,
-  });
-
-  it('同じ時間の予定のタスクを重なりの長い順に先頭へ、あとは未完了のタスクを題名の順', () => {
-    const tasks = [
-      task(1, 'B の作業'), task(2, 'A の作業'), task(3, '済み', { status: 'DONE' }), task(4, '予定のタスク'),
-      task(5, '消した', { deleted_at: '2026-09-01T00:00:00Z' }),
-    ];
+describe('タスクを振る先頭の候補', () => {
+  it('同じ時間の予定のタスクを重なりの長い順に、そのあと直前の打刻のタスクを新しい順に', () => {
     const occurrences = [
       { ...occurrence('o1', '2026-09-01', hm(9, 30), 60), task_id: 4 },
       { ...occurrence('o2', '2026-09-01', hm(9), 60), task_id: 3 },
       { ...occurrence('o3', '2026-09-01', hm(15), 60), task_id: 1 },
-      { ...occurrence('o4', '2026-09-01', hm(9), 60), task_id: 5 },
+      { ...occurrence('o4', '2026-09-01', 0, 1440), task_id: 6 },
     ];
     const selected = [entry(10, '2026-09-01T00:00:00Z', '2026-09-01T01:00:00Z', { task_id: null })];
-    expect(assignCandidates(selected, occurrences, tasks, NOW).map((c) => [c.taskId, c.fromSchedule])).toEqual([
-      [3, true], [4, true], [2, false], [1, false],
+    const entries = [
+      entry(7, '2026-08-31T22:00:00Z', '2026-08-31T23:00:00Z', { task_id: 8 }),
+      entry(8, '2026-08-31T23:00:00Z', '2026-08-31T23:30:00Z', { task_id: 3 }),
+      entry(9, '2026-08-31T23:30:00Z', '2026-09-01T00:00:00Z', { task_id: null }),
+      selected[0],
+      entry(11, '2026-09-01T02:00:00Z', '2026-09-01T03:00:00Z', { task_id: 9 }),
+    ];
+    expect(assignHead(selected, occurrences, entries, NOW)).toEqual([
+      { taskId: 3, reason: 'schedule' }, { taskId: 4, reason: 'schedule' }, { taskId: 8, reason: 'recent' },
+    ]);
+  });
+
+  it('何も選んでいなければ空', () => {
+    expect(assignHead([], [], [], NOW)).toEqual([]);
+  });
+});
+
+describe('日ごと・プロジェクトごとの合計', () => {
+  const p = (id: number, name: string, parent: number | null = null, extra: Partial<Project> = {}): Project => ({
+    id, name, parent_project_id: parent, color: null, description: null, status: 'active', sort_order: 0, path: name, ...extra,
+  });
+  // 仕事(1) ─ 案件 A(2) ─ 設計(3) / 仕事 ─ 案件 B(4) / 私用(5)
+  const projects = [
+    p(1, '仕事'), p(2, '案件 A', 1), p(3, '設計', 2), p(4, '案件 B', 1, { sort_order: 1 }), p(5, '私用', null, { sort_order: 1, color: '#123456' }),
+  ];
+  const D1 = '2026-09-01';
+  const D2 = '2026-09-02';
+  const totals = [
+    { work_date: D1, task_id: 1, task_title: '設計書', seconds: 3600, project_id: 3 },
+    { work_date: D1, task_id: 2, task_title: '打合せ', seconds: 1800, project_id: 2 },
+    { work_date: D2, task_id: 3, task_title: '見積', seconds: 900, project_id: 4 },
+    { work_date: D2, task_id: 4, task_title: '会議', seconds: 600, project_id: 1 },
+    { work_date: D1, task_id: 5, task_title: '買い物', seconds: 1200, project_id: 5 },
+    { work_date: D2, task_id: 6, task_title: '雑務', seconds: 300, project_id: null },
+    { work_date: D2, task_id: null, task_title: null, seconds: 450, project_id: null },
+    { work_date: D1, task_id: 7, task_title: null, seconds: 60, project_id: null },
+  ];
+  const rows = (scope: Parameters<typeof buildProjectTotalsTable>[3]) =>
+    buildProjectTotalsTable(totals, [D1, D2], projects, scope).rows.map((r) => [r.kind, r.projectId, r.total]);
+
+  it('全部なら最上位のプロジェクトへ子孫の分まで積み、未分類・未割当を後ろに（木の順）', () => {
+    expect(rows('all')).toEqual([
+      ['project', 1, 3600 + 1800 + 900 + 600], ['project', 5, 1200], ['unclassified', null, 300], ['unassigned', null, 510],
+    ]);
+    const table = buildProjectTotalsTable(totals, [D1, D2], projects, 'all');
+    expect(table.rows[0].byDate).toEqual({ [D1]: 5400, [D2]: 1500 });
+    expect(table.rows[1]).toMatchObject({ title: '私用', color: '#123456' });
+    // 日の合計はタスクの表と同じ（範囲で崩さない）
+    expect(table.grandTotal).toBe(buildTotalsTable(totals, [D1, D2]).grandTotal);
+  });
+
+  it('プロジェクトを選べば、直に付いた分と直下の子ごと（孫も積む）、範囲の外は 1 行', () => {
+    expect(rows(1)).toEqual([
+      ['direct', 1, 600], ['project', 2, 5400], ['project', 4, 900], ['outside', null, 1500], ['unassigned', null, 510],
+    ]);
+    expect(rows(2)).toEqual([
+      ['direct', 2, 1800], ['project', 3, 3600], ['outside', null, 1200 + 300 + 900 + 600], ['unassigned', null, 510],
+    ]);
+  });
+
+  it('未分類を選べば、未分類と範囲の外', () => {
+    expect(rows('none')).toEqual([
+      ['unclassified', null, 300], ['outside', null, 3600 + 1800 + 900 + 600 + 1200], ['unassigned', null, 510],
     ]);
   });
 });
