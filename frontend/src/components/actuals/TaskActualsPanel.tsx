@@ -14,6 +14,7 @@ import { useI18n } from '../../i18n';
 import { ds } from '../../theme';
 import type { TaskActualsRow } from '../../types/actuals';
 import { WarningTriangleIcon } from '../icons';
+import OverallProgress from './OverallProgress';
 import { dateRangeParts, formatHours } from '../../utils/format';
 
 interface Props {
@@ -84,6 +85,8 @@ const TaskActualsPanel: React.FC<Props> = ({ reviewOnly, onReviewOnlyChange }) =
         <Box sx={{ fontSize: 13, color: ds.textSub }}>
           {latest ? t('actuals.latestClosed', dateRangeParts(latest.first_day, latest.last_day)) : t('actuals.noClosed')}
         </Box>
+        {/* 全体の進捗（「今日」から寄せた。ADR-0036）。表の範囲に依らず全部のタスク */}
+        <Box sx={{ ml: { sm: 'auto' } }}><OverallProgress /></Box>
       </Box>
       {reviewOnly && <Alert severity="info" sx={{ mb: '12px' }}>{t('actuals.reviewIntro')}</Alert>}
 

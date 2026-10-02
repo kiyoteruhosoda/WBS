@@ -6,6 +6,7 @@ import type { FindingItem, FindingKind } from '../../closing/closingBoard';
 import { formatEntryRange, zonedMinuteOf } from '../../closing/closingBoard';
 import { formatDate, formatExactDuration } from '../../utils/format';
 import { ds } from '../../theme';
+import { CheckIcon } from '../icons';
 
 const KIND_LABEL: Record<FindingKind, TranslationKey> = {
   unassigned: 'closing.findingUnassigned',
@@ -32,7 +33,7 @@ const FindingsPanel: React.FC<Props> = ({ items, timeZone, onJump }) => {
   const { t } = useI18n();
   const md = (ms: number) => formatDate(zonedMinuteOf(ms, timeZone).date);
   return (
-    <Box sx={{ bgcolor: ds.paper, border: `1px solid ${ds.border}`, borderRadius: '8px', overflow: 'hidden' }}>
+    <Box sx={{ bgcolor: ds.paper, border: `1px solid ${ds.border}`, borderRadius: '8px', overflow: 'hidden' }} data-testid="closing-findings">
       <Box sx={{ display: 'flex', alignItems: 'center', gap: '12px', px: '14px', py: '10px', borderBottom: `1px solid ${ds.borderFaint}` }}>
         <Badge badgeContent={items.length} color={items.some((i) => i.kind === 'unassigned') ? 'error' : 'warning'} max={999}>
           <Box sx={{ fontSize: 14, fontWeight: 700, pr: '8px' }}>{t('closing.findingsTitle')}</Box>
@@ -63,6 +64,24 @@ const FindingsPanel: React.FC<Props> = ({ items, timeZone, onJump }) => {
           ))}
         </List>
       )}
+    </Box>
+  );
+};
+
+/**
+ * 気になる打刻が 0 件のときの 1 行（ADR-0036）。0 件のために 320px の列を取らない。
+ * 1 件でもあれば、締めの画面は列（`FindingsPanel`）を出す。
+ */
+export const NoFindings: React.FC = () => {
+  const { t } = useI18n();
+  return (
+    <Box
+      role="status"
+      sx={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: 13, color: ds.successDark, whiteSpace: 'nowrap' }}
+      data-testid="closing-no-findings"
+    >
+      <CheckIcon size={14} />
+      {t('closing.findingsNone')}
     </Box>
   );
 };
