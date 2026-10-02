@@ -34,6 +34,7 @@ def create_project(body: ProjectCreateRequest, db: DbDep, current_user: CurrentU
         name=body.name,
         parent_project_id=body.parent_project_id,
         color=body.color,
+        code=body.code,
         description=body.description,
     )
     return ProjectResponse.from_view(ProjectUseCases(db).create_project(dto))

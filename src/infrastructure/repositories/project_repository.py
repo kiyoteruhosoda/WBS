@@ -47,6 +47,7 @@ class SqlAlchemyProjectRepository(ProjectRepository):
                 parent_project_id=project.parent_project_id,
                 name=project.name,
                 color=project.color,
+                code=project.code,
                 description=project.description,
                 status=project.status.value,
                 sort_order=project.sort_order,
@@ -60,6 +61,7 @@ class SqlAlchemyProjectRepository(ProjectRepository):
         model.parent_project_id = project.parent_project_id
         model.name = project.name
         model.color = project.color
+        model.code = project.code
         model.description = project.description
         model.status = project.status.value
         model.sort_order = project.sort_order
@@ -104,6 +106,7 @@ class SqlAlchemyProjectRepository(ProjectRepository):
             name=model.name,
             parent_project_id=model.parent_project_id,
             color=model.color,
+            code=model.code,
             description=model.description,
             status=ProjectStatus(model.status),
             sort_order=model.sort_order,

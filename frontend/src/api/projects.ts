@@ -12,6 +12,7 @@ export const getProjects = async (): Promise<Project[]> => {
 export interface ProjectInput {
   name?: string;
   color?: string | null;
+  code?: string | null;
   description?: string | null;
   status?: ProjectStatus;
 }

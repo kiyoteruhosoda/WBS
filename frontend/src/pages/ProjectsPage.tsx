@@ -26,17 +26,19 @@ interface FormData {
   name: string;
   parent: string; // '' = 最上位
   color: string | null;
+  code: string;
   description: string;
 }
 
 const emptyForm = (parent: number | null): FormData => ({
-  name: '', parent: parent === null ? '' : String(parent), color: null, description: '',
+  name: '', parent: parent === null ? '' : String(parent), color: null, code: '', description: '',
 });
 
 const toForm = (p: Project): FormData => ({
   name: p.name,
   parent: p.parent_project_id === null ? '' : String(p.parent_project_id),
   color: p.color,
+  code: p.code ?? '',
   description: p.description ?? '',
 });
 
@@ -114,7 +116,10 @@ const ProjectsPage: React.FC = () => {
   const save = useMutation({
     mutationFn: async () => {
       const parent = form.parent === '' ? null : Number(form.parent);
-      const fields = { name: form.name.trim(), color: form.color, description: form.description.trim() || null };
+      const fields = {
+        name: form.name.trim(), color: form.color,
+        code: form.code.trim() || null, description: form.description.trim() || null,
+      };
       const editing = dialog?.editing ?? null;
       if (editing === null) return createProject({ ...fields, parent_project_id: parent });
       const saved = await updateProject(editing.id, fields);
@@ -212,8 +217,23 @@ const ProjectsPage: React.FC = () => {
                     font: 'inherit', p: '10px 0', color: archived ? ds.textMuted : ds.text,
                   }}
                 >
-                  <Box sx={{ fontSize: 14, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {p.name}
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
+                    <Box sx={{ fontSize: 14, fontWeight: 600, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {p.name}
+                    </Box>
+                    {/* コード（任意）: 名前の横に控えめな札で。名前を詰めても札は削らない */}
+                    {p.code && (
+                      <Box
+                        component="span"
+                        sx={{
+                          flexShrink: 0, maxWidth: '45%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                          fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace', fontSize: 11, lineHeight: '16px',
+                          color: ds.textSub, bgcolor: ds.hairline, border: `1px solid ${ds.borderPale}`, borderRadius: '4px', px: '5px',
+                        }}
+                      >
+                        {p.code}
+                      </Box>
+                    )}
                   </Box>
                   {p.description && (
                     <Box sx={{ fontSize: 12, color: ds.textMuted, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -291,6 +311,11 @@ const ProjectsPage: React.FC = () => {
             error={nameError} helperText={nameError ? t('project.nameRequired') : undefined}
             slotProps={{ htmlInput: { maxLength: 200 } }}
             onChange={(e) => setForm({ ...form, name: e.target.value })}
+          />
+          <TextField
+            fullWidth size="small" label={t('project.code')} value={form.code} helperText={t('project.codeHint')}
+            slotProps={{ htmlInput: { maxLength: 32, spellCheck: false, autoCapitalize: 'off' } }}
+            onChange={(e) => setForm({ ...form, code: e.target.value })}
           />
           <TextField
             select fullWidth size="small" label={t('project.parent')} value={form.parent}

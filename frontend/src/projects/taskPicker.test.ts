@@ -7,7 +7,7 @@ import { entry } from '../closing/testClosingBoard';
 import { hm, occurrence } from '../calendar/testOccurrences';
 
 const p = (id: number, name: string, parent: number | null = null, extra: Partial<Project> = {}): Project => ({
-  id, name, parent_project_id: parent, color: null, description: null, status: 'active', sort_order: 0, path: name, ...extra,
+  id, name, parent_project_id: parent, color: null, code: null, description: null, status: 'active', sort_order: 0, path: name, ...extra,
 });
 
 // 仕事(1) ─ 案件 A(2) ─ 設計(3) / 仕事 ─ 案件 B(4) / 私用(5)

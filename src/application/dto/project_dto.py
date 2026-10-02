@@ -12,6 +12,7 @@ class CreateProjectDTO:
     name: str
     parent_project_id: int | None = None
     color: str | None = None
+    code: str | None = None
     description: str | None = None
 
 
@@ -20,6 +21,7 @@ class UpdateProjectDTO:
     # UNSET = 変更しない / None = 明示的にクリアする。親と並びは移動の口（MoveProjectDTO）で変える
     name: str | UnsetType = UNSET
     color: str | None | UnsetType = UNSET
+    code: str | None | UnsetType = UNSET
     description: str | None | UnsetType = UNSET
     status: ProjectStatus | UnsetType = UNSET
 

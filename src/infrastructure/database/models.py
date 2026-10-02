@@ -59,6 +59,8 @@ class ProjectModel(Base):
     )
     name: Mapped[str] = mapped_column(sa.String(200), nullable=False)
     color: Mapped[str | None] = mapped_column(sa.String(7), nullable=True)
+    # 任意の短いコード（表示だけ。一意ではない。前後の空白を落とし、空は NULL）
+    code: Mapped[str | None] = mapped_column(sa.String(32), nullable=True)
     description: Mapped[str | None] = mapped_column(sa.Text, nullable=True)
     status: Mapped[str] = mapped_column(sa.String(16), default="active", nullable=False)
     sort_order: Mapped[int] = mapped_column(sa.Integer, default=0, nullable=False)
