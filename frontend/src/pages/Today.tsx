@@ -18,7 +18,6 @@ import { getOccurrences } from '../api/calendar';
 import { getTasks } from '../api/tasks';
 import { getCategories } from '../api/categories';
 import { getMilestones } from '../api/milestones';
-import { getDashboardKpi } from '../api/dashboard';
 import WeekView from '../components/calendar/WeekView';
 import { useCalendarEditing } from '../components/calendar/useCalendarEditing';
 import CategoryDot from '../components/CategoryDot';
@@ -49,11 +48,12 @@ import { formatClockDuration, formatExactDuration, formatHours } from '../utils/
 // 「今日」の画面（task #160、ADR-0015）。朝に開いて 1 画面で済むように 3 層で並べる:
 //   1. いま（走っている打刻・いまの予定から Start）と、今日の予定のグリッド（打刻の帯を重ねる）
 //   2. 今日やるべきタスクのうち、まだ時間を取っていないもの（押すと「時間を取る」）
-//   3. 今日の実績（打刻の合計、タスク別）と全体の KPI
+//   3. 今日の実績（打刻の合計、タスク別）
 // スマホ幅では上から この順。広い画面では左にグリッド、右に残りを積む。
 // グリッドではカレンダーの週表示と同じ操作で予定を作る・動かす・直す（task #185、ADR-0022）。
 // 予定の分類が「タスク」の今日の回（毎日の定常業務など）は「今日やること」に並べ、済みのチェックと ▶ を付ける
 // （task #190、ADR-0025）。無い日はこのカードを出さない。
+// 全体の進捗（KPI）は今日の作業に使わないので、実績の画面へ寄せた（ADR-0036）。
 
 const UNASSIGNED_COLOR = ds.todoGray;
 /** グリッドを開いたとき、今の何分前を上端にするか（狭い画面でも今と次の予定が見える） */
@@ -417,7 +417,7 @@ const ToScheduleList: React.FC<{
   );
 };
 
-// ── 3. 実績と KPI ──────────────────────────────────────────────────────
+// ── 3. 今日の実績 ──────────────────────────────────────────────────────
 
 const ActualsCard: React.FC<{
   totalSeconds: number;
@@ -452,41 +452,6 @@ const ActualsCard: React.FC<{
           </Box>
         </Box>
       ))}
-    </Box>
-  );
-};
-
-const KpiCard: React.FC = () => {
-  const { t } = useI18n();
-  const { data: kpi } = useQuery({ queryKey: ['kpi'], queryFn: getDashboardKpi });
-  if (!kpi) return null;
-  const total = kpi.total_tasks;
-  const done = total - kpi.incomplete_tasks;
-  const donePct = total > 0 ? Math.round((done / total) * 100) : 0;
-  return (
-    <Box sx={{ ...card, gridArea: 'kpi', p: '12px 14px', display: 'flex', alignItems: 'center', gap: '14px' }} data-testid="today-kpi">
-      <Box sx={{
-        width: 52, height: 52, borderRadius: '50%', flexShrink: 0,
-        background: `conic-gradient(${ds.success} ${donePct}%, ${ds.track} 0)`,
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-      }}>
-        <Box sx={{
-          width: 38, height: 38, borderRadius: '50%', bgcolor: ds.paper, display: 'flex', alignItems: 'center',
-          justifyContent: 'center', fontSize: 12, fontWeight: 700, color: ds.text,
-        }}>
-          {donePct}%
-        </Box>
-      </Box>
-      <Box sx={{ fontSize: 12, color: ds.textSub, lineHeight: 1.7, minWidth: 0 }}>
-        <Box sx={{ fontWeight: 700, color: ds.text }}>{t('dashboard.overall')}</Box>
-        <Box>{t('dashboard.completedOfTotal', { done, total })}</Box>
-        <Box>
-          {t('dashboard.thisWeekDone')} <Box component="span" sx={{ fontWeight: 700, color: ds.primary }}>{kpi.this_week_completed}</Box>
-          {'　'}
-          {t('dashboard.overdueCount')}{' '}
-          <Box component="span" sx={{ fontWeight: 700, color: kpi.overdue_tasks > 0 ? ds.dangerText : ds.text }}>{kpi.overdue_tasks}</Box>
-        </Box>
-      </Box>
     </Box>
   );
 };
@@ -592,15 +557,15 @@ const Today: React.FC = () => {
       gridTemplateColumns: { xs: 'minmax(0, 1fr)', md: 'minmax(0, 1fr) minmax(300px, 380px)' },
       gridTemplateAreas: hasRoutine
         ? {
-          xs: '"now" "routine" "grid" "tasks" "actuals" "kpi"',
-          md: '"grid now" "grid routine" "grid tasks" "grid actuals" "grid kpi" "grid ."',
+          xs: '"now" "routine" "grid" "tasks" "actuals"',
+          md: '"grid now" "grid routine" "grid tasks" "grid actuals" "grid ."',
         }
         : {
-          xs: '"now" "grid" "tasks" "actuals" "kpi"',
-          md: '"grid now" "grid tasks" "grid actuals" "grid kpi" "grid ."',
+          xs: '"now" "grid" "tasks" "actuals"',
+          md: '"grid now" "grid tasks" "grid actuals" "grid ."',
         },
       // 右の列の行は中身の高さ（auto だと、overflow: hidden のカードは最小が 0 とみなされ、行が詰められて重なる）
-      gridTemplateRows: { md: `${'max-content '.repeat(hasRoutine ? 5 : 4)}1fr` },
+      gridTemplateRows: { md: `${'max-content '.repeat(hasRoutine ? 4 : 3)}1fr` },
     }}>
       <NowPanel
         snapshot={current}
@@ -704,7 +669,6 @@ const Today: React.FC = () => {
         shownFirst={wide ? 8 : TASKS_SHOWN_FIRST}
       />
       <ActualsCard totalSeconds={live.totalSeconds} actuals={live.actuals} colorOf={colorOf} />
-      <KpiCard />
 
       {editing.dialogs}
     </Box>

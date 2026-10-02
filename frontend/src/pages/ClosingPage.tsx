@@ -34,7 +34,8 @@ import {
 } from '../closing/closingRequests';
 import { splitInstantAt } from '../closing/entryGestures';
 import ClosingGrid from '../components/closing/ClosingGrid';
-import FindingsPanel from '../components/closing/FindingsPanel';
+import FindingsPanel, { NoFindings } from '../components/closing/FindingsPanel';
+import ClosingHelp from '../components/closing/ClosingHelp';
 import TotalsTable from '../components/closing/TotalsTable';
 import AssignTaskDialog from '../components/closing/AssignTaskDialog';
 import EntryEditDialog from '../components/closing/EntryEditDialog';
@@ -288,6 +289,11 @@ const ClosingPage: React.FC = () => {
     const p = periodLabelParts(periodOf(first));
     return t('closing.periodLabel', { year: p.year, from: p.from, to: p.to });
   };
+  // 狭い画面の欄は年を省く（開いた一覧には年まで出る）
+  const shortLabelOf = (first: string) => {
+    const p = periodLabelParts(periodOf(first));
+    return t('closing.periodLabelShort', { from: p.from, to: p.to });
+  };
 
   const unassignedIds = board?.findings.unassigned_entry_ids ?? [];
   const canMerge = selectedEntries.length >= 2 && selectedEntries.every((e) => !e.is_running);
@@ -310,7 +316,14 @@ const ClosingPage: React.FC = () => {
           size="small"
           value={firstDay ?? ''}
           onChange={(e) => goTo(String(e.target.value))}
-          sx={{ minWidth: 220, fontWeight: 700 }}
+          // 選んだ期間の状態は横のチップが示すので、欄には期間だけ（狭い画面で 1 行に収める）
+          renderValue={(v) => (v ? (
+            <>
+              <Box component="span" sx={{ display: { xs: 'none', sm: 'inline' } }}>{labelOf(String(v))}</Box>
+              <Box component="span" sx={{ display: { xs: 'inline', sm: 'none' } }}>{shortLabelOf(String(v))}</Box>
+            </>
+          ) : '')}
+          sx={{ minWidth: { xs: 0, sm: 220 }, fontWeight: 700 }}
           data-testid="closing-period-select"
         >
           {periodOptions.map((p) => (
@@ -335,6 +348,8 @@ const ClosingPage: React.FC = () => {
             size="small"
             color={readOnly ? 'success' : 'warning'}
             label={readOnly ? t('closing.statusClosed') : t('closing.statusOpen')}
+            // 狭い画面では省く（未確定なら「確定する」、確定済みなら「開け直す」と緑の知らせが同じことを言う）
+            sx={{ display: { xs: 'none', sm: 'inline-flex' } }}
             data-testid="closing-status"
           />
         )}
@@ -360,7 +375,7 @@ const ClosingPage: React.FC = () => {
           severity="success"
           action={(
             // 確定で実績が入ったら、残を手で見直す（残は自動で減らさない。task #162 / ADR-0017）
-            <Button component={RouterLink} to="/actuals/review" color="inherit" size="small" data-testid="closing-review-remaining">
+            <Button component={RouterLink} to="/actuals/review" color="inherit" size="small" sx={{ whiteSpace: 'nowrap' }} data-testid="closing-review-remaining">
               {t('closing.reviewRemaining')}
             </Button>
           )}
@@ -369,21 +384,16 @@ const ClosingPage: React.FC = () => {
         </Alert>
       )}
 
-      {/* 打刻の操作 */}
-      {board && !readOnly && (
+      {/* 打刻の操作（ADR-0036）。左に締めの主な仕事（未割当を選ぶ → タスクを振る）、右に時々使う物（分ける・説明）。
+          気になる打刻が 0 件なら、右の 320px の列をやめてこの行の 1 行の表示にする。 */}
+      {board && (
         <Box sx={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '8px' }}>
-          <ToggleButton
-            size="small" value="split" selected={splitMode} onChange={() => setSplitMode((v) => !v)}
-            sx={{ px: '12px' }} data-testid="closing-split-mode"
-          >
-            {t('closing.splitMode')}
-          </ToggleButton>
-          {unassignedIds.length > 0 && (
+          {!readOnly && unassignedIds.length > 0 && (
             <Button size="small" variant="outlined" color="error" onClick={() => setSelected(new Set(unassignedIds))}>
               {t('closing.selectUnassigned', { count: unassignedIds.length })}
             </Button>
           )}
-          {selectedEntries.length > 0 && (
+          {!readOnly && selectedEntries.length > 0 && (
             <>
               <Box sx={{ fontSize: 13, color: ds.textSub, ml: '4px' }}>{t('closing.selectedCount', { count: selectedEntries.length })}</Box>
               <Button size="small" variant="contained" disabled={busy} onClick={() => setAssignOpen(true)} data-testid="closing-assign">
@@ -403,9 +413,22 @@ const ClosingPage: React.FC = () => {
               <Button size="small" color="inherit" onClick={() => setSelected(new Set())}>{t('closing.clearSelection')}</Button>
             </>
           )}
-          <Box sx={{ fontSize: 12, color: ds.textMuted, ml: 'auto' }}>
-            {splitMode ? t('closing.splitHint') : t('closing.dragHint')}
+          <Box sx={{ ml: 'auto', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            {findings.length === 0 && <NoFindings />}
+            {!readOnly && (
+              <ToggleButton
+                size="small" value="split" selected={splitMode} onChange={() => setSplitMode((v) => !v)}
+                sx={{ px: '12px' }} data-testid="closing-split-mode"
+              >
+                {t('closing.splitMode')}
+              </ToggleButton>
+            )}
+            {!readOnly && <ClosingHelp />}
           </Box>
+          {/* 分けるの最中だけ、次に何を押すかを出す（その間は要る説明） */}
+          {!readOnly && splitMode && (
+            <Box sx={{ flexBasis: '100%', fontSize: 12, color: ds.primary }} data-testid="closing-split-hint">{t('closing.splitHint')}</Box>
+          )}
         </Box>
       )}
 
@@ -415,7 +438,7 @@ const ClosingPage: React.FC = () => {
         <Box sx={{
           flex: { xs: '0 0 auto', lg: 1 }, minWidth: 0, border: `1px solid ${ds.border}`, borderRadius: '8px', overflow: 'hidden',
           height: { xs: 'calc(100vh - 220px)', md: 'calc(100vh - 260px)' }, minHeight: 520,
-        }}>
+        }} data-testid="closing-grid-box">
           {board ? (
             <ClosingGrid
               dates={dates}
@@ -443,9 +466,11 @@ const ClosingPage: React.FC = () => {
             <Box sx={{ p: '16px', color: ds.textMuted, fontSize: 13 }}>{t('closing.loading')}</Box>
           )}
         </Box>
-        <Box sx={{ width: { xs: '100%', lg: 320 }, flexShrink: 0 }}>
-          <FindingsPanel items={findings} timeZone={timeZone} onJump={jump} />
-        </Box>
+        {findings.length > 0 && (
+          <Box sx={{ width: { xs: '100%', lg: 320 }, flexShrink: 0 }}>
+            <FindingsPanel items={findings} timeZone={timeZone} onJump={jump} />
+          </Box>
+        )}
       </Box>
 
       {board && <TotalsTable byTask={totals} byProject={projectTotals} />}
