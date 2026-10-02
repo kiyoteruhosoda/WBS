@@ -52,13 +52,26 @@ export const ds = {
   ganttLateTrack: '#FBE0E0',
 } as const;
 
-// カテゴリ色（API の color 未設定時のフォールバック）
-export const categoryPalette = ['#0017C1', '#1E8E4E', '#B26C00', '#6B7280', '#6B46C1'] as const;
+// カテゴリ色（API の color 未設定時のフォールバック）。⚠ 並びと数を変えない
+// ——色を付けていないカテゴリは id からこの 5 色を割り当てるので、増やすと既存の色が変わる。
+const fallbackPalette = ['#0017C1', '#1E8E4E', '#B26C00', '#6B7280', '#6B46C1'] as const;
+
+// カテゴリ・プロジェクトで選べる色。オレンジ系を足した（2026-10-02 持ち主の依頼）。
+// どれも白い文字を載せて読める濃さにしてある。
+export const categoryPalette = [
+  ...fallbackPalette,
+  '#E8590C', // オレンジ
+  '#D9480F', // 濃いオレンジ
+  '#F08C00', // 山吹
+  '#C92A2A', // 赤
+  '#C2255C', // 紅
+  '#0C8599', // 青緑
+] as const;
 
 export const categoryColor = (categoryId: number | null | undefined, apiColor?: string | null): string => {
   if (apiColor) return apiColor;
-  if (categoryId == null) return categoryPalette[3];
-  return categoryPalette[(categoryId - 1 + categoryPalette.length * 100) % categoryPalette.length];
+  if (categoryId == null) return fallbackPalette[3];
+  return fallbackPalette[(categoryId - 1 + fallbackPalette.length * 100) % fallbackPalette.length];
 };
 
 export const fontFamily = "'Noto Sans JP', system-ui, sans-serif";
