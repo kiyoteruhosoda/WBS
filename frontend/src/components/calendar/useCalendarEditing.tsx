@@ -12,6 +12,7 @@ import { getCalendars, getDayOffMarks } from '../../api/calendars';
 import { dayOffReasonsOn, notifiesDayOff } from '../../calendar/daysOff';
 import { formatDate } from '../../utils/format';
 import { calendarForNewEvent } from '../../calendar/calendarSelection';
+import { formatOccurrenceTimeRange } from '../../calendar/daySegments';
 import EventEditDialog from './EventEditDialog';
 import type { EventEditTarget } from './EventEditDialog';
 import RecurringScopeDialog from './RecurringScopeDialog';
@@ -53,6 +54,9 @@ interface Options {
  * 同じものを使う。書いたら回と、タスクの予定済みの時間・「今日」の要約を読み直させる。
  *
  * 返す `dialogs` を画面のどこかに置く。
+ *
+ * 取り込んだカレンダーの回（`is_imported`、ADR-0037）は読み取り専用: 押すと中身だけを見せ、動かす・直す・
+ * 消す・済みは何もしない。
  */
 export const useCalendarEditing = ({ occurrencesKey, timeZone, tasks }: Options) => {
   const { t } = useI18n();
@@ -63,6 +67,7 @@ export const useCalendarEditing = ({ occurrencesKey, timeZone, tasks }: Options)
   const [history, setHistory] = useState<OperationHistory<RescheduleEntry>>(() => emptyHistory<RescheduleEntry>());
   const [editTarget, setEditTarget] = useState<EventEditTarget | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<CalendarOccurrence | null>(null);
+  const [importedTarget, setImportedTarget] = useState<CalendarOccurrence | null>(null);
   const [notice, setNotice] = useState<CalendarNotice | null>(null);
   const [busy, setBusy] = useState(false);
   const busyRef = useRef(false);
@@ -150,6 +155,7 @@ export const useCalendarEditing = ({ occurrencesKey, timeZone, tasks }: Options)
   // ── ドラッグ ──────────────────────────────────────────────────────────
 
   const reschedule = (change: OccurrenceReschedule) => exclusive(async () => {
+    if (change.occurrence.is_imported) return;
     const eventId = change.occurrence.event_id;
     // 応答を待たずに新しい位置で見せる（失敗したら取り直して戻る）。
     patchOccurrences((list) => applyScheduleToOccurrences(list, change.occurrence.id, change.after, change.scope === 'occurrence'));
@@ -191,6 +197,7 @@ export const useCalendarEditing = ({ occurrencesKey, timeZone, tasks }: Options)
 
   /** 済みを切り替える。応答を待たずに見せ、失敗したら取り直して戻る。予定の版は進まない（履歴はそのまま）。 */
   const toggleDone = (occurrence: CalendarOccurrence) => exclusive(async () => {
+    if (occurrence.is_imported) return;
     const done = !occurrence.is_done;
     patchOccurrences((list) => withOccurrenceDone(list, occurrence.id, done));
     await sendCalendarRequest(occurrenceDoneRequest(occurrence, done));
@@ -207,6 +214,10 @@ export const useCalendarEditing = ({ occurrencesKey, timeZone, tasks }: Options)
   });
 
   const openEdit = (occurrence: CalendarOccurrence) => exclusive(async () => {
+    if (occurrence.is_imported) {
+      setImportedTarget(occurrence);
+      return;
+    }
     const event = await getEvent(occurrence.event_id);
     setEditTarget(formFromEvent(event, occurrence, today()));
   });
@@ -263,6 +274,32 @@ export const useCalendarEditing = ({ occurrencesKey, timeZone, tasks }: Options)
         </DialogActions>
       </Dialog>
 
+      {/* 取り込んだ予定は読み取り専用（ADR-0037）。中身と、どこで直すかだけを見せる */}
+      <Dialog open={importedTarget != null} onClose={() => setImportedTarget(null)} maxWidth="xs" fullWidth>
+        <DialogTitle sx={{ wordBreak: 'break-word' }}>{importedTarget?.title}</DialogTitle>
+        <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: '6px', fontSize: 14 }}>
+          {importedTarget && (
+            <>
+              <div>
+                {formatDate(importedTarget.date)}
+                {'  '}
+                {formatOccurrenceTimeRange(importedTarget, timeZone) ?? t('calendar.allDay')}
+              </div>
+              {importedTarget.location && <div>{importedTarget.location}</div>}
+              <div>
+                {t('calendar.importedFrom', {
+                  name: (calendars ?? []).find((c) => c.id === importedTarget.calendar_id)?.name ?? '',
+                })}
+              </div>
+              <div style={{ fontSize: 12, opacity: 0.75 }}>{t('calendar.importedReadOnly')}</div>
+            </>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setImportedTarget(null)}>{t('calendar.close')}</Button>
+        </DialogActions>
+      </Dialog>
+
       <Snackbar
         open={notice != null}
         autoHideDuration={4000}
@@ -286,7 +323,7 @@ export const useCalendarEditing = ({ occurrencesKey, timeZone, tasks }: Options)
     openCreate,
     openEdit: (occurrence: CalendarOccurrence) => void openEdit(occurrence),
     toggleDone: (occurrence: CalendarOccurrence) => void toggleDone(occurrence),
-    askDelete: setDeleteTarget,
+    askDelete: (occurrence: CalendarOccurrence) => { if (!occurrence.is_imported) setDeleteTarget(occurrence); },
     exclusive,
     refresh,
     notify,

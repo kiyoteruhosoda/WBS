@@ -365,13 +365,15 @@ const WeekView: React.FC<Props> = ({
                 const range = formatSegmentTimeRange(segment);
                 const taskLabel = linkedTaskLabel(o, linkedTasks);
                 const dragging = ghost != null && ghost.occurrenceId === o.id;
+                // 取り込んだ予定（ADR-0037）は読み取り専用。動かさない（押せば中身だけを見せる）
+                const movable = onRescheduleOccurrence != null && !o.is_imported;
                 return (
                   <Box
                     key={segment.key}
                     data-occurrence-id={o.id}
                     title={`${o.title}\n${range}${taskLabel ? `\n${t('calendar.linkedTask', { title: taskLabel })}` : ''}${o.location ? `\n${o.location}` : ''}`}
-                    onPointerDown={onRescheduleOccurrence ? (e) => { e.stopPropagation(); drag.onEventPointerDown(e, block, edgeOf(e, segment)); } : undefined}
-                    onPointerMove={onRescheduleOccurrence ? (e) => {
+                    onPointerDown={movable ? (e) => { e.stopPropagation(); drag.onEventPointerDown(e, block, edgeOf(e, segment)); } : undefined}
+                    onPointerMove={movable ? (e) => {
                       // 端は上下の矢印、ほかは移動の矢印（移植元 OnChipPointerMoved）。ドラッグ中は変えない。
                       if (ghost) return;
                       e.currentTarget.style.cursor = edgeOf(e, segment) ? 'ns-resize' : 'move';

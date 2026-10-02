@@ -310,6 +310,41 @@ class CalendarDayOffModel(Base):
     name: Mapped[str | None] = mapped_column(sa.String(200), nullable=True)
 
 
+class CalendarImportModel(Base):
+    """取り込んだカレンダーの読み込みの状態（ADR-0037）。カレンダー 1 つに 1 行。
+
+    ``feed_url_sealed`` は購読している URL を封じたもの（購読していなければ NULL）。⚠ 平文の URL は置かない。
+    """
+
+    __tablename__ = "calendar_imports"
+    calendar_id: Mapped[int] = mapped_column(sa.BigInteger().with_variant(sa.Integer(), "sqlite"), sa.ForeignKey("calendars.id", ondelete="CASCADE"), primary_key=True, autoincrement=False)
+    source: Mapped[str] = mapped_column(sa.String(8), nullable=False)
+    imported_at: Mapped[datetime] = mapped_column(sa.DateTime, nullable=False)
+    event_count: Mapped[int] = mapped_column(sa.Integer, nullable=False)
+    feed_url_sealed: Mapped[str | None] = mapped_column(sa.Text, nullable=True)
+    feed_url_hint: Mapped[str | None] = mapped_column(sa.String(300), nullable=True)
+    last_attempt_at: Mapped[datetime | None] = mapped_column(sa.DateTime, nullable=True)
+    last_error: Mapped[str | None] = mapped_column(sa.String(64), nullable=True)
+
+
+class ImportedOccurrenceModel(Base):
+    """取り込んだカレンダーの回 1 つ（ADR-0037）。読み込むたびにカレンダーごと入れ替える。
+
+    時刻のある回は ``start_utc`` / ``end_utc``（UTC、naive）、終日の回は ``start_date`` / ``end_date``
+    （終わりの日は含まない）。
+    """
+
+    __tablename__ = "calendar_imported_occurrences"
+    id: Mapped[int] = mapped_column(BigIntPK, primary_key=True, autoincrement=True)
+    calendar_id: Mapped[int] = mapped_column(sa.BigInteger().with_variant(sa.Integer(), "sqlite"), sa.ForeignKey("calendars.id", ondelete="CASCADE"), nullable=False, index=True)
+    title: Mapped[str] = mapped_column(sa.String(500), nullable=False)
+    location: Mapped[str | None] = mapped_column(sa.String(500), nullable=True)
+    start_utc: Mapped[datetime | None] = mapped_column(sa.DateTime, nullable=True)
+    end_utc: Mapped[datetime | None] = mapped_column(sa.DateTime, nullable=True)
+    start_date: Mapped[date | None] = mapped_column(sa.Date, nullable=True)
+    end_date: Mapped[date | None] = mapped_column(sa.Date, nullable=True)
+
+
 class CalendarViewPresetModel(Base):
     """表示の組み合わせ。``calendar_ids`` は表示にするカレンダーの id の JSON の配列。"""
 

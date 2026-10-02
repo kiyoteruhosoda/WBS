@@ -1,6 +1,7 @@
 import client from './client';
 import type {
-  Calendar, CalendarScope, CalendarViewPreset, DayOffMark, EventColorKey, LayerDayOff, WeekdayCode,
+  Calendar, CalendarImportSettings, CalendarImportStatus, CalendarScope, CalendarViewPreset, DayOffMark, EventColorKey,
+  FeedSourceInput, ImportedOccurrence, LayerDayOff, WeekdayCode,
 } from '../types';
 
 // 予定のカレンダー・表示の選択・表示の組み合わせ（task #191、ADR-0027）。仕様の正は /api/docs。
@@ -68,6 +69,49 @@ export const deleteCalendarViewPreset = async (id: number): Promise<void> => {
 /** 組み合わせを当てる（入っているカレンダーだけが表示になる）。表示の状態の一覧を返す。 */
 export const applyCalendarViewPreset = async (id: number): Promise<Calendar[]> => {
   const { data } = await client.post(`/calendar-view-presets/${id}/apply`);
+  return data;
+};
+
+// ── 取り込んだカレンダー（ADR-0037）──────────────────────────────────────────
+
+export const getCalendarImportSettings = async (): Promise<CalendarImportSettings> => {
+  const { data } = await client.get('/calendars/import-settings');
+  return data;
+};
+
+/** ファイルか URL を読んで作る。読めなければ 422（`reason`）で、何も作られない。 */
+export const createImportedCalendar = async (
+  input: { name: string; color_key: EventColorKey; source: FeedSourceInput },
+): Promise<Calendar> => {
+  const { data } = await client.post('/calendars/imported', input);
+  return data;
+};
+
+/** 新しいファイル・URL で入れ替える（購読はこの入れ方のものに置き換わる）。 */
+export const reimportCalendar = async (id: number, source: FeedSourceInput): Promise<CalendarImportStatus> => {
+  const { data } = await client.post(`/calendars/${id}/import`, source);
+  return data;
+};
+
+/** 購読している URL を今すぐ読み込み直す。 */
+export const refreshImportedCalendar = async (id: number): Promise<CalendarImportStatus> => {
+  const { data } = await client.post(`/calendars/${id}/refresh`);
+  return data;
+};
+
+/** 購読をやめる（URL を忘れる。読み込んだ予定は残る）。 */
+export const unsubscribeImportedCalendar = async (id: number): Promise<CalendarImportStatus> => {
+  const { data } = await client.delete(`/calendars/${id}/subscription`);
+  return data;
+};
+
+/** 期間の取り込んだ回（表示の選択に関係なく全部）。 */
+export const getImportedOccurrences = async (
+  range: { from: string; to: string }, timeZone: string,
+): Promise<ImportedOccurrence[]> => {
+  const { data } = await client.get('/calendars/imported-occurrences', {
+    params: { from: range.from, to: range.to, time_zone: timeZone },
+  });
   return data;
 };
 

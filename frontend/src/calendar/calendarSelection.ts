@@ -37,6 +37,13 @@ export const withVisibleIds = (calendars: readonly Calendar[], visibleIds: reado
 /** 全部が表示か。 */
 export const allVisible = (calendars: readonly Calendar[]): boolean => calendars.every((c) => c.is_visible);
 
+/** 休みの層か（営業日・休みの日の一覧。ADR-0029）。 */
+export const isDayOffLayer = (calendar: Calendar): boolean =>
+  calendar.kind === 'WORKWEEK' || calendar.kind === 'DAYS_OFF';
+
+/** 取り込んだカレンダーか（読み取り専用。ADR-0037）。 */
+export const isImportedCalendar = (calendar: Calendar): boolean => calendar.kind === 'IMPORTED';
+
 /** プライベートのカレンダーか（ADR-0033。省かれていれば仕事）。 */
 export const isPrivateCalendar = (calendar: Calendar | undefined | null): boolean => calendar?.scope === 'PRIVATE';
 

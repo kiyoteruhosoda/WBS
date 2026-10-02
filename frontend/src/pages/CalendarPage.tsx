@@ -12,7 +12,7 @@ import { inScope } from '../projects/projectScope';
 import { useProjectScope } from '../projects/useProjectScope';
 import { getCategories } from '../api/categories';
 import { getOccurrences, sendCalendarRequest } from '../api/calendar';
-import { getDayOffMarks } from '../api/calendars';
+import { getDayOffMarks, getImportedOccurrences } from '../api/calendars';
 import { buildDayOffView } from '../calendar/daysOff';
 import SchedulerCalendar from '../components/calendar/SchedulerCalendar';
 import TaskSchedulePanel from '../components/calendar/TaskSchedulePanel';
@@ -24,7 +24,8 @@ import type { WeekSlot } from '../components/calendar/weekSlotLocator';
 import type { CreateRange, TaskDropPreview } from '../components/calendar/calendarInteractions';
 import type { CalendarDeadline } from '../calendar/taskDeadlines';
 import { buildDeadlines } from '../calendar/taskDeadlines';
-import { DAY_OFF_MARKS_QUERY, OCCURRENCES_QUERY } from '../calendar/calendarQueries';
+import { DAY_OFF_MARKS_QUERY, IMPORTED_OCCURRENCES_QUERY, OCCURRENCES_QUERY } from '../calendar/calendarQueries';
+import { withImportedOccurrences } from '../calendar/importedOccurrences';
 import { resolveTimeZone } from '../calendar/zonedTime';
 import type { TaskEventDraft } from '../calendar/taskScheduling';
 import {
@@ -86,6 +87,13 @@ const CalendarPage: React.FC = () => {
     enabled: range != null,
     placeholderData: keepPreviousData,
   });
+  // 取り込んだカレンダーの回（ADR-0037）。読み取り専用で予定に重ねる。取れなくても予定は出す
+  const importedQuery = useQuery({
+    queryKey: [IMPORTED_OCCURRENCES_QUERY, range?.from, range?.to, timeZone],
+    queryFn: () => getImportedOccurrences(range as VisibleRange, timeZone),
+    enabled: range != null,
+    placeholderData: keepPreviousData,
+  });
   const { data: tasks } = useQuery({ queryKey: ['tasks'], queryFn: () => getTasks() });
   const { data: milestones } = useQuery({ queryKey: ['milestones'], queryFn: getMilestones });
   const { data: categories } = useQuery({ queryKey: ['categories'], queryFn: getCategories });
@@ -130,8 +138,11 @@ const CalendarPage: React.FC = () => {
     [holidaysQuery.data, editing.calendars, t],
   );
   const visibleOccurrences = useMemo(
-    () => filterVisibleOccurrences(occurrencesQuery.data ?? [], editing.calendars),
-    [occurrencesQuery.data, editing.calendars],
+    () => filterVisibleOccurrences(
+      withImportedOccurrences(occurrencesQuery.data, importedQuery.data, t('calendar.importedNoTitle')),
+      editing.calendars,
+    ),
+    [occurrencesQuery.data, importedQuery.data, editing.calendars, t],
   );
 
   // ── タスクから作る（task #159） ─────────────────────────────────────

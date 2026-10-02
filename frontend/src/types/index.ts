@@ -268,6 +268,11 @@ export interface CalendarOccurrence {
   calendar_color_key: EventColorKey;
   /** プライベートのカレンダーの予定（ADR-0033）。見た目で分ける。省かれていれば仕事 */
   is_private?: boolean;
+  /**
+   * 取り込んだカレンダーの回（ADR-0037。`/calendars/imported-occurrences` を画面で回の形に直したもの）。
+   * 読み取り専用: 動かす・直す・消す・済みは無い（`event_id` は 0）
+   */
+  is_imported?: boolean;
 }
 
 /** 終日の帯に出す休み（休みの層の日・曜日の休み。`calendar/daysOff.ts` が組み立てる）。 */
@@ -357,13 +362,16 @@ export interface CalendarEvent {
 }
 
 /** 予定のカレンダー（`/api/calendars`。ADR-0027）。表示するか（`is_visible`）はサーバーに覚える。 */
-export type CalendarKind = 'EVENTS' | 'WORKWEEK' | 'DAYS_OFF';
+export type CalendarKind = 'EVENTS' | 'WORKWEEK' | 'DAYS_OFF' | 'IMPORTED';
 /** 休みの日の一覧の層の理由（ADR-0029） */
 export type DayOffReason = 'NATIONAL_HOLIDAY' | 'COMPANY' | 'PERSONAL';
 
 export interface Calendar {
   id: number;
-  /** EVENTS = 予定を入れる / WORKWEEK = 営業日の層（曜日の規則）/ DAYS_OFF = 休みの日の一覧の層 */
+  /**
+   * EVENTS = 予定を入れる / WORKWEEK = 営業日の層（曜日の規則）/ DAYS_OFF = 休みの日の一覧の層 /
+   * IMPORTED = 外の iCalendar を読み込んだカレンダー（読み取り専用。ADR-0037）
+   */
   kind: CalendarKind;
   name: string;
   /** DEFAULT は色の指定なし（予定は結んだタスクの色・標準の色） */
@@ -384,11 +392,58 @@ export interface Calendar {
    * 数えず、タスクを結べない。省かれていれば仕事とみなす
    */
   scope?: CalendarScope;
+  /** 取り込んだカレンダーの読み込みの状態（ほかは null・省略） */
+  imported?: CalendarImportStatus | null;
   created_at: string | null;
   updated_at: string | null;
 }
 
 export type CalendarScope = 'WORK' | 'PRIVATE';
+
+/** 外の iCalendar を読めなかった理由（422 の `reason`・`last_error`。ADR-0037） */
+export type FeedFailureReason =
+  | 'invalid_url' | 'blocked_address' | 'unreachable' | 'not_found' | 'forbidden' | 'http_error'
+  | 'too_large' | 'not_icalendar' | 'too_many_events' | 'subscription_unavailable';
+
+/** 取り込んだカレンダーの読み込みの状態（ADR-0037）。URL そのものは返らない */
+export interface CalendarImportStatus {
+  source: 'FILE' | 'URL';
+  /** 最後に読み込めた時刻（UTC） */
+  imported_at: string;
+  event_count: number;
+  /** URL を購読している（定期的に読み込み直す） */
+  is_subscribed: boolean;
+  /** 購読している URL の手掛かり（ホスト名と末尾だけ） */
+  url_hint: string | null;
+  last_attempt_at: string | null;
+  /** 最後の読み込みの失敗の理由（成功すれば null） */
+  last_error: string | null;
+}
+
+/** 読み込む中身: ファイルの中身か、URL（購読するか） */
+export type FeedSourceInput =
+  | { type: 'FILE'; content: string }
+  | { type: 'URL'; url: string; subscribe: boolean };
+
+export interface CalendarImportSettings {
+  /** URL を購読できる配備か（false でも 1 回だけの URL とファイルは使える） */
+  subscription_available: boolean;
+  refresh_interval_minutes: number;
+}
+
+/** 取り込んだ回（`GET /api/calendars/imported-occurrences`。閲覧者のタイムゾーンへ直したもの） */
+export interface ImportedOccurrence {
+  id: string;
+  calendar_id: number;
+  title: string;
+  location: string | null;
+  start: string;
+  duration_minutes: number;
+  date: string;
+  start_time: string;
+  is_all_day: boolean;
+  calendar_color_key: EventColorKey;
+}
 
 /** ある日が休みである理由 1 つ（`GET /api/calendars/days-off`。ADR-0029）。 */
 export interface DayOffMark {

@@ -7,6 +7,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from prometheus_fastapi_instrumentator import Instrumentator
 
+from src.application.ports.calendar_feed import CalendarFeedError
 from src.domain.exceptions import (
     AccessDeniedError,
     AuthenticationError,
@@ -17,10 +18,13 @@ from src.domain.exceptions import (
 from src.infrastructure.auth.auth_settings import AuthMode, load_auth_settings
 from src.infrastructure.auth.oidc_identity_provider import OidcIdentityProvider
 from src.infrastructure.build_info import load_build_info
+from src.infrastructure.calendar_feed.http_fetcher import HttpCalendarFeedFetcher
+from src.infrastructure.calendar_feed.url_cipher import load_feed_url_cipher
 from src.infrastructure.database.session import init_engine
 from src.infrastructure.logging.structured_logger import setup_logging
 from src.infrastructure.push.push_settings import load_push_settings
 from src.infrastructure.push.web_push_sender import WebPushSender
+from src.presentation.api.calendar_feed_refresh import start_calendar_feed_refresh_worker
 from src.presentation.api.push_dispatch import start_push_dispatch_worker
 from src.presentation.api.reconciliation import start_reconciliation_worker
 from src.presentation.api.routers import (
@@ -58,6 +62,9 @@ def create_app(database_url: str | None = None, db_path: str | None = None) -> F
     auth_settings = load_auth_settings()
     # 端末への通知（ADR-0031）。⚠ 鍵が無ければ送らない（購読も受け取らない）。既定は閉じる
     push_sender = WebPushSender(load_push_settings())
+    # カレンダーの取り込み（ADR-0037）。⚠ 購読の URL を封じる鍵が無ければ購読できない（既定は閉じる）
+    calendar_feed_fetcher = HttpCalendarFeedFetcher()
+    calendar_feed_cipher = load_feed_url_cipher()
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
@@ -70,9 +77,15 @@ def create_app(database_url: str | None = None, db_path: str | None = None) -> F
         worker = start_reconciliation_worker(auth_settings)
         # 時刻の来た通知を 60 秒ごとに送る係。鍵が無ければ何も起こさない
         push_worker = start_push_dispatch_worker(push_sender)
+        # 購読しているカレンダーを読み込み直す係。鍵が無ければ何も起こさない
+        feed_worker = start_calendar_feed_refresh_worker(
+            app.state.calendar_feed_fetcher, app.state.calendar_feed_cipher
+        )
         try:
             yield
         finally:
+            if feed_worker is not None:
+                feed_worker.stop()
             if worker is not None:
                 worker.stop()
             if push_worker is not None:
@@ -88,6 +101,8 @@ def create_app(database_url: str | None = None, db_path: str | None = None) -> F
     app.state.startup_time = utcnow()  # ops.py が now との差を取るので形を揃える
     app.state.auth_settings = auth_settings
     app.state.push_sender = push_sender
+    app.state.calendar_feed_fetcher = calendar_feed_fetcher
+    app.state.calendar_feed_cipher = calendar_feed_cipher
     # IdP アダプタはディスカバリ文書と JWKS を手元に貯めるので、リクエストごとに
     # 作らず 1 つだけ持つ。SSO 無効時は None（依存が 404 を返す目印になる）。
     app.state.identity_provider = (
@@ -109,6 +124,11 @@ def create_app(database_url: str | None = None, db_path: str | None = None) -> F
     @app.exception_handler(AccessDeniedError)
     async def access_denied_handler(request: Request, exc: AccessDeniedError) -> JSONResponse:
         return JSONResponse(status_code=403, content={"type": "about:blank", "title": "Forbidden", "status": 403, "detail": str(exc), "instance": str(request.url.path)})
+
+    @app.exception_handler(CalendarFeedError)
+    async def calendar_feed_error_handler(request: Request, exc: CalendarFeedError) -> JSONResponse:
+        # 外の iCalendar を読めなかった（ADR-0037）。画面は reason を言葉に直す
+        return JSONResponse(status_code=422, content={"type": "about:blank", "title": "Calendar Feed Error", "status": 422, "detail": exc.reason.value, "reason": exc.reason.value, "instance": str(request.url.path)})
 
     @app.exception_handler(ConflictError)
     async def conflict_handler(request: Request, exc: ConflictError) -> JSONResponse:

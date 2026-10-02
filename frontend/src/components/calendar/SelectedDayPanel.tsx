@@ -115,6 +115,7 @@ const SelectedDayPanel: React.FC<Props> = ({
               o.is_moved ? t('calendar.badgeMoved') : null,
               o.is_overridden ? t('calendar.badgeModified') : null,
               o.is_private ? t('calendar.privateMark') : null,
+              o.is_imported ? t('calendar.importedMark') : null,
             ].filter(Boolean).join('  ');
             const taskLabel = linkedTaskLabel(o, linkedTasks);
             return (
@@ -160,11 +161,15 @@ const SelectedDayPanel: React.FC<Props> = ({
                   </Box>
                 </Box>
                 {onEditOccurrence && (
-                  <IconButton aria-label={t('calendar.editEvent')} onClick={() => onEditOccurrence(o)} sx={iconButton}>
+                  <IconButton
+                    aria-label={t(o.is_imported ? 'calendar.importedDetails' : 'calendar.editEvent')}
+                    onClick={() => onEditOccurrence(o)}
+                    sx={iconButton}
+                  >
                     <EditOutlinedIcon fontSize="small" />
                   </IconButton>
                 )}
-                {onDeleteOccurrence && (
+                {onDeleteOccurrence && !o.is_imported && (
                   <IconButton aria-label={t('calendar.deleteEvent')} onClick={() => onDeleteOccurrence(o)} sx={iconButton}>
                     <TrashIcon size={18} />
                   </IconButton>

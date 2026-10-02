@@ -10,16 +10,19 @@ import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import { Link as RouterLink } from 'react-router-dom';
 import { useI18n } from '../i18n';
 import type { TranslationKey } from '../i18n/translations';
-import type { Calendar, CalendarViewPreset, EventColorKey, WeekdayCode } from '../types';
+import type { Calendar, CalendarViewPreset, EventColorKey, FeedSourceInput, WeekdayCode } from '../types';
 import DayOffLayerDays from '../components/calendar/DayOffLayerDays';
 import {
-  createCalendar, createCalendarViewPreset, deleteCalendar, deleteCalendarViewPreset, getCalendars, getCalendarViewPresets,
-  updateCalendar, updateCalendarViewPreset,
+  createCalendar, createCalendarViewPreset, createImportedCalendar, deleteCalendar, deleteCalendarViewPreset, getCalendarImportSettings,
+  getCalendars, getCalendarViewPresets, refreshImportedCalendar, reimportCalendar, unsubscribeImportedCalendar, updateCalendar,
+  updateCalendarViewPreset,
 } from '../api/calendars';
 import {
-  CALENDARS_QUERY, CALENDAR_VIEW_PRESETS_QUERY, DAY_OFF_MARKS_QUERY, OCCURRENCES_QUERY,
+  CALENDARS_QUERY, CALENDAR_IMPORT_SETTINGS_QUERY, CALENDAR_VIEW_PRESETS_QUERY, DAY_OFF_MARKS_QUERY, IMPORTED_OCCURRENCES_QUERY,
+  OCCURRENCES_QUERY,
 } from '../calendar/calendarQueries';
-import { isPrivateCalendar, visibleCalendarIds } from '../calendar/calendarSelection';
+import { isDayOffLayer, isImportedCalendar, isPrivateCalendar, visibleCalendarIds } from '../calendar/calendarSelection';
+import { feedFailureKey, feedFailureOf, formatImportedAt } from '../calendar/importedOccurrences';
 import { EVENT_COLOR_KEYS, WEEKDAY_CODES } from '../calendar/eventForm';
 import { eventColor } from '../calendar/calendarColors';
 import { errorDetailOf } from '../calendar/calendarRequests';
@@ -27,7 +30,8 @@ import { todayDate } from '../utils/format';
 
 // カレンダーの設定（ADR-0034）。カレンダーの画面から分けた「管理」: 予定のカレンダーの追加・名前と色・
 // 仕事/プライベート（ADR-0033）、休みの 4 層の色・稼働する曜日・休みとして数えるか・日付（ADR-0029・0032）、
-// 表示の組み合わせの作成・編集・削除（ADR-0027）。表示の切り替え（チェック・組み合わせを当てる）はカレンダーの画面に残す。
+// 表示の組み合わせの作成・編集・削除（ADR-0027）、取り込んだカレンダー（外の iCalendar を読む。ADR-0037）。
+// 表示の切り替え（チェック・組み合わせを当てる）はカレンダーの画面に残す。
 
 type CalendarDraft = {
   id: number | null;
@@ -42,6 +46,30 @@ type CalendarDraft = {
 };
 
 type PresetDraft = { id: number | null; name: string; calendarIds: number[] };
+
+/** 取り込む・入れ直す（ADR-0037）。入れ方はファイルか URL だけ（どのサービスのものかは聞かない）。 */
+type ImportDraft = {
+  /** 入れ直すカレンダー（null は新しく作る） */
+  calendarId: number | null;
+  name: string;
+  colorKey: EventColorKey;
+  sourceType: 'FILE' | 'URL';
+  url: string;
+  /** URL を覚えて読み込み直す（購読） */
+  subscribe: boolean;
+  fileName: string | null;
+  fileContent: string | null;
+};
+
+/** 上げられるファイルの大きさ（サーバーの上限と同じ）。 */
+const MAX_IMPORT_FILE_BYTES = 10 * 1024 * 1024;
+
+const sourceOf = (d: ImportDraft): FeedSourceInput => (d.sourceType === 'FILE'
+  ? { type: 'FILE', content: d.fileContent ?? '' }
+  : { type: 'URL', url: d.url.trim(), subscribe: d.subscribe });
+
+const importReady = (d: ImportDraft): boolean => (d.calendarId != null || d.name.trim() !== '')
+  && (d.sourceType === 'FILE' ? d.fileContent != null : d.url.trim() !== '');
 
 const WEEKDAYS_IN_ORDER: readonly WeekdayCode[] = ['MO', 'TU', 'WE', 'TH', 'FR', 'SA', 'SU'];
 
@@ -61,16 +89,67 @@ const CalendarSettingsPage: React.FC = () => {
   const [presetDraft, setPresetDraft] = useState<PresetDraft | null>(null);
   const [presetDeleting, setPresetDeleting] = useState<CalendarViewPreset | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [done, setDone] = useState<string | null>(null);
+  const [importDraft, setImportDraft] = useState<ImportDraft | null>(null);
 
   const calendarsQuery = useQuery({ queryKey: [CALENDARS_QUERY], queryFn: getCalendars });
   const calendars = calendarsQuery.data ?? [];
   const { data: presets } = useQuery({ queryKey: [CALENDAR_VIEW_PRESETS_QUERY], queryFn: getCalendarViewPresets });
+  const { data: importSettings } = useQuery({ queryKey: [CALENDAR_IMPORT_SETTINGS_QUERY], queryFn: getCalendarImportSettings });
+  const canSubscribe = importSettings?.subscription_available ?? false;
 
   const failed = (e: unknown) => {
     void qc.invalidateQueries({ queryKey: [CALENDARS_QUERY] });
     setError(t('calendar.saveFailed', { detail: errorDetailOf(e) ?? '' }));
   };
   const refreshPresets = () => void qc.invalidateQueries({ queryKey: [CALENDAR_VIEW_PRESETS_QUERY] });
+
+  // ── 取り込んだカレンダー（ADR-0037）────────────────────────────────
+
+  /** 読めなかった理由を言葉にして出す（取り込みの理由でなければ保存の失敗として）。 */
+  const importFailed = (e: unknown) => {
+    void qc.invalidateQueries({ queryKey: [CALENDARS_QUERY] });
+    const key = feedFailureKey(feedFailureOf(e));
+    setError(key ? t(key) : t('calendar.saveFailed', { detail: errorDetailOf(e) ?? '' }));
+  };
+  const afterImport = (count: number | null) => {
+    for (const queryKey of [[CALENDARS_QUERY], [IMPORTED_OCCURRENCES_QUERY]]) void qc.invalidateQueries({ queryKey });
+    if (count != null) setDone(t('calendar.importDone', { count }));
+  };
+
+  const runImport = useMutation({
+    mutationFn: async (d: ImportDraft) => (d.calendarId == null
+      ? (await createImportedCalendar({ name: d.name.trim(), color_key: d.colorKey, source: sourceOf(d) })).imported?.event_count ?? 0
+      : (await reimportCalendar(d.calendarId, sourceOf(d))).event_count),
+    onSuccess: (count) => {
+      setImportDraft(null);
+      setDraft(null);
+      afterImport(count);
+    },
+    onError: importFailed,
+  });
+
+  const refreshNow = useMutation({
+    mutationFn: (calendar: Calendar) => refreshImportedCalendar(calendar.id),
+    onSuccess: (status) => afterImport(status.event_count),
+    onError: importFailed,
+  });
+
+  const unsubscribe = useMutation({
+    mutationFn: (calendar: Calendar) => unsubscribeImportedCalendar(calendar.id),
+    onSuccess: () => afterImport(null),
+    onError: importFailed,
+  });
+
+  const chooseFile = async (file: File | undefined) => {
+    if (!file) return;
+    if (file.size > MAX_IMPORT_FILE_BYTES) {
+      setError(t('calendar.importErrorTooLarge'));
+      return;
+    }
+    const content = await file.text();
+    setImportDraft((d) => (d ? { ...d, fileName: file.name, fileContent: content } : d));
+  };
 
   const saveCalendar = useMutation({
     mutationFn: (d: CalendarDraft) => (d.id == null
@@ -96,7 +175,7 @@ const CalendarSettingsPage: React.FC = () => {
     onSuccess: () => {
       setDeleting(null);
       setDraft(null);
-      for (const queryKey of [[CALENDARS_QUERY], [CALENDAR_VIEW_PRESETS_QUERY], [OCCURRENCES_QUERY]]) {
+      for (const queryKey of [[CALENDARS_QUERY], [CALENDAR_VIEW_PRESETS_QUERY], [OCCURRENCES_QUERY], [IMPORTED_OCCURRENCES_QUERY]]) {
         void qc.invalidateQueries({ queryKey });
       }
     },
@@ -125,7 +204,8 @@ const CalendarSettingsPage: React.FC = () => {
 
   const defaultCalendar = calendars.find((cal) => cal.is_default);
   const eventCalendars = calendars.filter((cal) => cal.kind === 'EVENTS');
-  const layers = calendars.filter((cal) => cal.kind !== 'EVENTS');
+  const importedCalendars = calendars.filter(isImportedCalendar);
+  const layers = calendars.filter(isDayOffLayer);
   const nameOf = (id: number) => calendars.find((cal) => cal.id === id)?.name;
   const editing = draft?.id != null ? calendars.find((cal) => cal.id === draft.id) ?? null : null;
   const thisYear = todayDate().getFullYear();
@@ -161,6 +241,18 @@ const CalendarSettingsPage: React.FC = () => {
   );
   const listSx = { listStyle: 'none', m: 0, p: 0 } as const;
 
+  /** 取り込んだカレンダーの状態（件数・いつ・購読・失敗）。 */
+  const importMarks = (cal: Calendar): string[] => {
+    const status = cal.imported;
+    if (!status) return [];
+    const failure = feedFailureKey(status.last_error);
+    return [
+      t('calendar.importedSummary', { count: status.event_count, when: formatImportedAt(status.imported_at) }),
+      status.is_subscribed ? t('calendar.importedSubscribed') : null,
+      status.last_error ? t('calendar.importedLastError', { reason: failure ? t(failure) : status.last_error }) : null,
+    ].filter((mark): mark is string => mark != null);
+  };
+
   const calendarMarks = (cal: Calendar): string => [
     cal.is_default ? t('calendar.calendarDefaultMark') : null,
     cal.kind === 'EVENTS' ? t(isPrivateCalendar(cal) ? 'calendar.privateMark' : 'calendar.workMark') : null,
@@ -168,6 +260,7 @@ const CalendarSettingsPage: React.FC = () => {
       ? WEEKDAYS_IN_ORDER.filter((d) => cal.workdays?.includes(d)).map((d) => weekdays[WEEKDAY_CODES.indexOf(d)]).join('・')
       : null,
     cal.kind === 'DAYS_OFF' ? t(cal.counts_as_day_off ? 'calendar.layerCounted' : 'calendar.layerNotCounted') : null,
+    ...(cal.imported ? importMarks(cal) : []),
   ].filter(Boolean).join('・');
 
   const editButton = (cal: Calendar) => (
@@ -203,6 +296,31 @@ const CalendarSettingsPage: React.FC = () => {
         ))}
         <Box component="ul" sx={listSx}>
           {eventCalendars.map((cal) => row(cal.id, eventColor(cal.color_key), cal.name, calendarMarks(cal), editButton(cal)))}
+        </Box>
+      </Box>
+
+      {/* 取り込んだカレンダー（ADR-0037） */}
+      <Box sx={card} data-testid="calendar-settings-imported">
+        {sectionHead('calendar.settingsImported', 'calendar.settingsImportedHint', (
+          <Button
+            size="small"
+            startIcon={<AddIcon />}
+            onClick={() => setImportDraft({
+              calendarId: null, name: '', colorKey: 'GRAPHITE', sourceType: 'FILE', url: '', subscribe: canSubscribe,
+              fileName: null, fileContent: null,
+            })}
+            data-testid="calendar-import"
+          >
+            {t('calendar.importAdd')}
+          </Button>
+        ))}
+        <Box component="ul" sx={listSx}>
+          {importedCalendars.length === 0 && (
+            <Box component="li" sx={{ px: '16px', py: '12px', fontSize: 13, color: c.textSecondary, borderTop: `1px solid ${c.border}` }}>
+              {t('calendar.importEmpty')}
+            </Box>
+          )}
+          {importedCalendars.map((cal) => row(cal.id, eventColor(cal.color_key), cal.name, calendarMarks(cal), editButton(cal)))}
         </Box>
       </Box>
 
@@ -312,6 +430,37 @@ const CalendarSettingsPage: React.FC = () => {
               </Box>
             </Box>
           )}
+          {editing?.imported && (
+            <Box data-testid="calendar-import-status">
+              <Box sx={{ fontSize: 12, color: 'text.secondary', mb: '6px' }}>{importMarks(editing).join('・')}</Box>
+              {editing.imported.url_hint && (
+                <Box sx={{ fontSize: 12, color: 'text.secondary', mb: '6px', wordBreak: 'break-all' }}>{editing.imported.url_hint}</Box>
+              )}
+              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                {editing.imported.is_subscribed && (
+                  <Button size="small" variant="outlined" disabled={refreshNow.isPending} onClick={() => refreshNow.mutate(editing)}>
+                    {t('calendar.importRefresh')}
+                  </Button>
+                )}
+                <Button
+                  size="small"
+                  variant="outlined"
+                  onClick={() => setImportDraft({
+                    calendarId: editing.id, name: editing.name, colorKey: editing.color_key,
+                    sourceType: editing.imported?.source ?? 'FILE', url: '', subscribe: canSubscribe && (editing.imported?.is_subscribed ?? false),
+                    fileName: null, fileContent: null,
+                  })}
+                >
+                  {t('calendar.importReplace')}
+                </Button>
+                {editing.imported.is_subscribed && (
+                  <Button size="small" color="warning" disabled={unsubscribe.isPending} onClick={() => unsubscribe.mutate(editing)}>
+                    {t('calendar.importUnsubscribe')}
+                  </Button>
+                )}
+              </Box>
+            </Box>
+          )}
           {editing?.kind === 'WORKWEEK' && draft?.workdays && (
             <Box>
               <Box sx={{ fontSize: 12, color: 'text.secondary', mb: '6px' }}>{t('calendar.layerWorkdays')}</Box>
@@ -348,7 +497,7 @@ const CalendarSettingsPage: React.FC = () => {
           )}
         </DialogContent>
         <DialogActions>
-          {editing && !editing.is_default && editing.kind === 'EVENTS' && (
+          {editing && !editing.is_default && (editing.kind === 'EVENTS' || isImportedCalendar(editing)) && (
             <Button color="error" onClick={() => setDeleting(editing)} sx={{ mr: 'auto' }}>
               {t('calendar.delete')}
             </Button>
@@ -367,7 +516,9 @@ const CalendarSettingsPage: React.FC = () => {
       <Dialog open={deleting != null} onClose={() => setDeleting(null)} maxWidth="xs" fullWidth>
         <DialogTitle>{t('calendar.calendarDelete')}</DialogTitle>
         <DialogContent>
-          {t('calendar.calendarDeleteConfirm', { name: deleting?.name ?? '', target: defaultCalendar?.name ?? '' })}
+          {deleting && isImportedCalendar(deleting)
+            ? t('calendar.calendarDeleteImportedConfirm', { name: deleting.name })
+            : t('calendar.calendarDeleteConfirm', { name: deleting?.name ?? '', target: defaultCalendar?.name ?? '' })}
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setDeleting(null)}>{t('calendar.cancel')}</Button>
@@ -446,6 +597,124 @@ const CalendarSettingsPage: React.FC = () => {
         </DialogActions>
       </Dialog>
 
+      {/* 取り込む・入れ直す（ADR-0037） */}
+      <Dialog open={importDraft != null} onClose={() => setImportDraft(null)} maxWidth="xs" fullWidth>
+        <DialogTitle>
+          {importDraft?.calendarId == null
+            ? t('calendar.importAdd')
+            : t('calendar.importReplaceOf', { name: importDraft.name })}
+        </DialogTitle>
+        <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: '16px', pt: '8px !important' }}>
+          {importDraft?.calendarId == null && (
+            <>
+              <TextField
+                autoFocus
+                label={t('calendar.calendarName')}
+                value={importDraft?.name ?? ''}
+                onChange={(e) => setImportDraft((d) => (d ? { ...d, name: e.target.value } : d))}
+                slotProps={{ htmlInput: { maxLength: 200 } }}
+              />
+              <Box role="radiogroup" aria-label={t('calendar.color')} sx={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                {EVENT_COLOR_KEYS.map((key) => {
+                  const selected = key === importDraft?.colorKey;
+                  const label = t(`calendar.color${key}` as TranslationKey);
+                  return (
+                    <Box
+                      key={key}
+                      component="button"
+                      type="button"
+                      role="radio"
+                      aria-checked={selected}
+                      aria-label={label}
+                      title={label}
+                      onClick={() => setImportDraft((d) => (d ? { ...d, colorKey: key } : d))}
+                      sx={{
+                        width: 28, height: 28, borderRadius: '50%', cursor: 'pointer', bgcolor: eventColor(key),
+                        border: selected ? '3px solid' : '1px solid', borderColor: selected ? 'text.primary' : 'divider',
+                      }}
+                    />
+                  );
+                })}
+              </Box>
+            </>
+          )}
+          <ToggleButtonGroup
+            exclusive
+            size="small"
+            value={importDraft?.sourceType ?? 'FILE'}
+            onChange={(_, value: 'FILE' | 'URL' | null) => value && setImportDraft((d) => (d ? { ...d, sourceType: value } : d))}
+            aria-label={t('calendar.importSource')}
+          >
+            <ToggleButton value="FILE" data-testid="import-source-file">{t('calendar.importSourceFile')}</ToggleButton>
+            <ToggleButton value="URL" data-testid="import-source-url">{t('calendar.importSourceUrl')}</ToggleButton>
+          </ToggleButtonGroup>
+          {importDraft?.sourceType === 'FILE' && (
+            <Box>
+              <Button component="label" variant="outlined" size="small">
+                {t('calendar.importFileChoose')}
+                <input
+                  type="file"
+                  hidden
+                  accept=".ics,text/calendar"
+                  data-testid="import-file"
+                  onChange={(e) => { void chooseFile(e.target.files?.[0]); e.target.value = ''; }}
+                />
+              </Button>
+              {importDraft.fileName && (
+                <Box component="span" sx={{ ml: '8px', fontSize: 13, wordBreak: 'break-all' }}>{importDraft.fileName}</Box>
+              )}
+              <Box sx={{ fontSize: 12, color: 'text.secondary', mt: '6px' }}>{t('calendar.importFileHint')}</Box>
+            </Box>
+          )}
+          {importDraft?.sourceType === 'URL' && (
+            <>
+              <TextField
+                label={t('calendar.importUrl')}
+                value={importDraft.url}
+                onChange={(e) => setImportDraft((d) => (d ? { ...d, url: e.target.value } : d))}
+                placeholder="https://"
+                autoComplete="off"
+                slotProps={{ htmlInput: { maxLength: 4000, spellCheck: false, 'data-testid': 'import-url' } }}
+                helperText={t('calendar.importUrlHint')}
+              />
+              <Box>
+                <FormControlLabel
+                  control={(
+                    <Switch
+                      checked={canSubscribe && importDraft.subscribe}
+                      disabled={!canSubscribe}
+                      onChange={(e) => setImportDraft((d) => (d ? { ...d, subscribe: e.target.checked } : d))}
+                      data-testid="import-subscribe"
+                    />
+                  )}
+                  label={t('calendar.importSubscribe', { minutes: importSettings?.refresh_interval_minutes ?? 15 })}
+                />
+                <Box sx={{ fontSize: 12, color: 'text.secondary' }}>
+                  {t(canSubscribe ? 'calendar.importSubscribeHint' : 'calendar.importErrorSubscriptionUnavailable')}
+                </Box>
+              </Box>
+            </>
+          )}
+          {importDraft?.calendarId != null && (
+            <Box sx={{ fontSize: 12, color: 'text.secondary' }}>{t('calendar.importReplaceHint')}</Box>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setImportDraft(null)}>{t('calendar.cancel')}</Button>
+          <Button
+            variant="contained"
+            disabled={!importDraft || !importReady(importDraft) || runImport.isPending}
+            onClick={() => importDraft && runImport.mutate(importDraft)}
+            data-testid="import-run"
+          >
+            {t('calendar.importRun')}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Snackbar open={done != null} autoHideDuration={4000} onClose={() => setDone(null)}>
+        <Alert severity="success" onClose={() => setDone(null)} sx={{ width: '100%' }}>{done}</Alert>
+      </Snackbar>
       <Snackbar open={error != null} autoHideDuration={6000} onClose={() => setError(null)}>
         <Alert severity="error" onClose={() => setError(null)} sx={{ width: '100%' }}>{error}</Alert>
       </Snackbar>

@@ -3,6 +3,7 @@
 - 一覧（並び順）。既定のカレンダーが無ければここで作る
 - 作る（最初から表示）・名前と色を変える・並べ替える・消す（既定は消せない。予定は既定へ移る）
 - 仕事 / プライベート（ADR-0033）。タスクを結んだ予定のあるカレンダーはプライベートにできない（409）
+- 取り込んだカレンダー（ADR-0037）を消すと、読み込んだ回と読み込みの状態（購読の URL）も消える
 - 表示の選択（どれを出すか）はサーバーに覚える。全部をまとめて置き換える
 - 表示の組み合わせ: 名前付きで覚え、当てると入っているカレンダーだけが表示になる
 
@@ -20,6 +21,10 @@ from src.domain.entities.calendar import Calendar, CalendarScope
 from src.domain.entities.calendar_view_preset import CalendarViewPreset
 from src.domain.exceptions import ConflictError, NotFoundError
 from src.domain.repositories.calendar_event_repository import CalendarEventRepository
+from src.domain.repositories.calendar_import_repository import (
+    CalendarImportRepository,
+    ImportedOccurrenceRepository,
+)
 from src.domain.repositories.calendar_repository import (
     CalendarRepository,
     CalendarViewPresetRepository,
@@ -39,8 +44,13 @@ class CalendarUseCases:
         unit_of_work: UnitOfWork,
         *,
         now: Callable[[], datetime] = utcnow,
+        imports: CalendarImportRepository | None = None,
+        imported_occurrences: ImportedOccurrenceRepository | None = None,
     ) -> None:
         self._calendars = calendars
+        # 取り込んだカレンダー（ADR-0037）を消すときに、回と読み込みの状態も消す。
+        self._imports = imports
+        self._imported_occurrences = imported_occurrences
         self._presets = presets
         self._events = events
         self._uow = unit_of_work
@@ -126,15 +136,25 @@ class CalendarUseCases:
         return self._calendars.find_all(user_id)
 
     def delete_calendar(self, calendar_id: int, user_id: int) -> int:
-        """消す。中の予定は既定のカレンダーへ移す（移した件数を返す）。既定は消せない（409）。"""
+        """消す。中の予定は既定のカレンダーへ移す（移した件数を返す）。既定は消せない（409）。
+
+        取り込んだカレンダーは、読み込んだ回と読み込みの状態（購読の URL）も消す（移す予定は無い）。
+        """
         calendar = self._owned(calendar_id, user_id)
         if calendar.is_default:
             raise ConflictError("the default calendar cannot be deleted")
         if calendar.is_day_off_layer:
             raise ConflictError("a day-off layer cannot be deleted (hide it or stop counting it)")
-        default = ensure_default_calendar(self._calendars, user_id, self._now())
-        assert default.id is not None
-        moved = self._events.reassign_calendar(user_id, calendar_id, default.id)
+        moved = 0
+        if calendar.is_imported:
+            if self._imported_occurrences is not None:
+                self._imported_occurrences.delete_all(calendar_id)
+            if self._imports is not None:
+                self._imports.delete(calendar_id)
+        else:
+            default = ensure_default_calendar(self._calendars, user_id, self._now())
+            assert default.id is not None
+            moved = self._events.reassign_calendar(user_id, calendar_id, default.id)
         now = self._now()
         for preset in self._presets.find_all(user_id):
             if preset.forget_calendar(calendar_id, now):
