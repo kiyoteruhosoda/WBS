@@ -37,6 +37,34 @@ class CategoryModel(Base):
     created_at: Mapped[datetime] = mapped_column(sa.DateTime, default=utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(sa.DateTime, default=utcnow, onupdate=utcnow, nullable=False)
 
+class ProjectModel(Base):
+    """プロジェクト（task #187 / ADR-0024）。``parent_project_id`` で何段でも入れ子にできる（隣接リスト）。
+
+    ⚠ **環はアプリ側で断る**（DB の制約では守れない）。子孫は再帰 CTE で引く。
+    ``status`` は ``ProjectStatus`` の値（active / archived）。ネイティブ ENUM にしない。
+    消すのは空のプロジェクトだけで、行ごと消す（id は使い回さない）。
+    """
+
+    __tablename__ = "projects"
+    __table_args__ = (
+        sa.Index("ix_projects_user_id_parent_project_id", "user_id", "parent_project_id"),
+        {"sqlite_autoincrement": True},
+    )
+    id: Mapped[int] = mapped_column(BigIntPK, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(sa.BigInteger().with_variant(sa.Integer(), "sqlite"), sa.ForeignKey("users.id"), nullable=False)
+    parent_project_id: Mapped[int | None] = mapped_column(
+        sa.BigInteger().with_variant(sa.Integer(), "sqlite"),
+        sa.ForeignKey("projects.id", name="fk_projects_parent_project_id"),
+        nullable=True,
+    )
+    name: Mapped[str] = mapped_column(sa.String(200), nullable=False)
+    color: Mapped[str | None] = mapped_column(sa.String(7), nullable=True)
+    description: Mapped[str | None] = mapped_column(sa.Text, nullable=True)
+    status: Mapped[str] = mapped_column(sa.String(16), default="active", nullable=False)
+    sort_order: Mapped[int] = mapped_column(sa.Integer, default=0, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(sa.DateTime, default=utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(sa.DateTime, default=utcnow, onupdate=utcnow, nullable=False)
+
 class MilestoneModel(Base):
     __tablename__ = "milestones"
     id: Mapped[int] = mapped_column(BigIntPK, primary_key=True, autoincrement=True)
@@ -47,6 +75,13 @@ class MilestoneModel(Base):
     deleted_at: Mapped[datetime | None] = mapped_column(sa.DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(sa.DateTime, default=utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(sa.DateTime, default=utcnow, onupdate=utcnow, nullable=False)
+    # 属するプロジェクト（空 = 未分類。task #187 / ADR-0024）
+    project_id: Mapped[int | None] = mapped_column(
+        sa.BigInteger().with_variant(sa.Integer(), "sqlite"),
+        sa.ForeignKey("projects.id", name="fk_milestones_project_id"),
+        nullable=True,
+        index=True,
+    )
 
 class TaskModel(Base):
     __tablename__ = "tasks"
@@ -69,6 +104,14 @@ class TaskModel(Base):
     deleted_at: Mapped[datetime | None] = mapped_column(sa.DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(sa.DateTime, default=utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(sa.DateTime, default=utcnow, onupdate=utcnow, nullable=False)
+    # 属するプロジェクト（空 = 未分類。task #187 / ADR-0024）。⚠ 子タスクは親と同じ値を持つ
+    # （アプリ側で揃える。親を移すと子孫も移る）
+    project_id: Mapped[int | None] = mapped_column(
+        sa.BigInteger().with_variant(sa.Integer(), "sqlite"),
+        sa.ForeignKey("projects.id", name="fk_tasks_project_id"),
+        nullable=True,
+        index=True,
+    )
 
 class WorkLogModel(Base):
     __tablename__ = "work_logs"

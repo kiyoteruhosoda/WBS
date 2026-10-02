@@ -10,6 +10,8 @@ import type { TranslationKey } from '../i18n/translations';
 import GanttChart from '../components/GanttChart';
 import { ACTUAL_DAY_COLOR } from '../actuals/actualsView';
 import { ACTUALS_KEY, getGanttActuals } from '../api/actuals';
+import { scopeParams } from '../projects/projectScope';
+import { useProjectScope } from '../projects/useProjectScope';
 
 const legend: { labelKey: TranslationKey; color: string }[] = [
   { labelKey: 'status.TODO', color: ds.todoGray },
@@ -21,7 +23,12 @@ const legend: { labelKey: TranslationKey; color: string }[] = [
 const GanttPage: React.FC = () => {
   const qc = useQueryClient();
   const { t } = useI18n();
-  const { data, isLoading, error } = useQuery({ queryKey: ['tasks'], queryFn: () => getTasks() });
+  // サイドバーで選んだプロジェクト（と子孫）だけ（task #187、ADR-0024）
+  const { scope } = useProjectScope();
+  const { data, isLoading, error } = useQuery({
+    queryKey: ['tasks', 'scope', scope],
+    queryFn: () => getTasks(scopeParams(scope)),
+  });
   const { data: categories } = useQuery({ queryKey: ['categories'], queryFn: getCategories });
   // 実績の帯（確定した実績。task #162）。取れなくても計画の帯は出す
   const { data: actualSpans } = useQuery({ queryKey: [...ACTUALS_KEY, 'gantt'], queryFn: () => getGanttActuals() });

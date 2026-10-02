@@ -7,6 +7,8 @@ import {
   TableCell, TableContainer, TableHead, TableRow, TextField,
 } from '@mui/material';
 import { ACTUALS_KEY, getTaskActuals } from '../../api/actuals';
+import { scopeParams } from '../../projects/projectScope';
+import { useProjectScope } from '../../projects/useProjectScope';
 import { patchTask } from '../../api/tasks';
 import { useI18n } from '../../i18n';
 import { ds } from '../../theme';
@@ -65,9 +67,10 @@ const TaskActualsPanel: React.FC<Props> = ({ reviewOnly, onReviewOnlyChange }) =
   const { t } = useI18n();
   const navigate = useNavigate();
   const [notice, setNotice] = useState<{ ok: boolean } | null>(null);
+  const { scope } = useProjectScope();
   const { data, isLoading, error } = useQuery({
-    queryKey: [...ACTUALS_KEY, 'tasks', reviewOnly],
-    queryFn: () => getTaskActuals(reviewOnly),
+    queryKey: [...ACTUALS_KEY, 'tasks', reviewOnly, scope],
+    queryFn: () => getTaskActuals(reviewOnly, scopeParams(scope)),
   });
 
   const latest = data?.latest_closed_period;

@@ -27,6 +27,8 @@ class Task:
     memo: str | None = None
     parent_task_id: int | None = None
     milestone_id: int | None = None
+    # 属するプロジェクト（空 = 未分類）。⚠ 子タスクは親と同じ値（ADR-0024）
+    project_id: int | None = None
     completed_at: datetime | None = None
     deleted_at: datetime | None = None
     created_at: datetime | None = None

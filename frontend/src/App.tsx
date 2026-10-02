@@ -15,6 +15,7 @@ import ClosingPage from './pages/ClosingPage';
 import Inbox from './pages/Inbox';
 import CategoriesPage from './pages/CategoriesPage';
 import MilestonesPage from './pages/MilestonesPage';
+import ProjectsPage from './pages/ProjectsPage';
 import Settings from './pages/Settings';
 import AppReturnPage from './pages/AppReturnPage';
 import { I18nProvider } from './i18n';
@@ -41,6 +42,7 @@ const SignedInApp: React.FC = () => (
           <Route path="calendar" element={<CalendarPage />} />
           <Route path="closing" element={<ClosingPage />} />
           <Route path="inbox" element={<Inbox />} />
+          <Route path="projects" element={<ProjectsPage />} />
           <Route path="categories" element={<CategoriesPage />} />
           <Route path="milestones" element={<MilestonesPage />} />
           <Route path="settings" element={<Settings />} />

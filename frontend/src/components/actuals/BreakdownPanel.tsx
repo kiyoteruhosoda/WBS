@@ -15,24 +15,33 @@ import { useI18n } from '../../i18n';
 import { categoryColor, ds } from '../../theme';
 import type { BreakdownGroup, BreakdownGroupBy, TimeSource } from '../../types/actuals';
 import RangeControls from './RangeControls';
+import { scopeParams } from '../../projects/projectScope';
+import { useProjectScope } from '../../projects/useProjectScope';
 
 const BreakdownPanel: React.FC = () => {
   const { t } = useI18n();
   const [range, setRange] = useState<RangeValue>({ unit: 'closing', from: '', to: '' });
   const [groupBy, setGroupBy] = useState<BreakdownGroupBy>('category');
   const [source, setSource] = useState<TimeSource>('confirmed');
+  // サイドバーで選んだプロジェクト（と子孫）の分だけ。プロジェクト別はその直下の子ごと（task #187、ADR-0024）
+  const { scope } = useProjectScope();
   const { data, isLoading, error } = useQuery({
-    queryKey: [...ACTUALS_KEY, 'breakdown', range, groupBy, source],
-    queryFn: () => getBreakdown(range.unit, groupBy, source, rangeParams(range)),
+    queryKey: [...ACTUALS_KEY, 'breakdown', range, groupBy, source, scope],
+    queryFn: () => getBreakdown(range.unit, groupBy, source, rangeParams(range), scopeParams(scope)),
   });
 
   const groups = data?.groups ?? [];
-  // マイルストーンの色は並び順で決める（絞り込みで並びが変わっても、同じ並びの中では同じ色）
-  const milestoneOrder = new Map(groups.filter((g) => g.key.startsWith('milestone:')).map((g, i) => [g.key, i]));
+  // マイルストーン（と色の無いプロジェクト）の色は並び順で決める（同じ並びの中では同じ色）
+  const milestoneOrder = new Map(
+    groups.filter((g) => g.key.startsWith('milestone:') || g.key.startsWith('project:')).map((g, i) => [g.key, i]),
+  );
   const fill = (g: BreakdownGroup) => groupFill(g, milestoneOrder.get(g.key) ?? 0, categoryColor);
   const groupName = (g: BreakdownGroup): string => {
     if (g.key === 'unassigned') return t('actuals.groupUnassigned');
-    if (g.key === 'none') return groupBy === 'category' ? t('actuals.groupNone') : t('actuals.groupNoMilestone');
+    if (g.key === 'none') {
+      if (groupBy === 'category') return t('actuals.groupNone');
+      return groupBy === 'project' ? t('actuals.groupNoProject') : t('actuals.groupNoMilestone');
+    }
     return g.name ?? '';
   };
   const names = new Map(groups.map((g) => [g.key, groupName(g)]));
@@ -45,6 +54,7 @@ const BreakdownPanel: React.FC = () => {
         <TextField select size="small" value={groupBy} onChange={(e) => setGroupBy(e.target.value as BreakdownGroupBy)} sx={{ minWidth: 150 }}>
           <MenuItem value="category">{t('actuals.groupByCategory')}</MenuItem>
           <MenuItem value="milestone">{t('actuals.groupByMilestone')}</MenuItem>
+          <MenuItem value="project">{t('actuals.groupByProject')}</MenuItem>
         </TextField>
         <TextField select size="small" value={source} onChange={(e) => setSource(e.target.value as TimeSource)} sx={{ minWidth: 120 }}>
           <MenuItem value="confirmed">{t('actuals.sourceConfirmed')}</MenuItem>
@@ -53,6 +63,9 @@ const BreakdownPanel: React.FC = () => {
         </TextField>
       </RangeControls>
 
+      {groupBy === 'project' && (
+        <Box sx={{ fontSize: 12, color: ds.textMuted, mb: '10px' }}>{t('actuals.projectHint')}</Box>
+      )}
       {isLoading && <Box sx={{ display: 'flex', justifyContent: 'center', mt: 4 }}><CircularProgress /></Box>}
       {error && <Alert severity="error">{t('common.loadError')}</Alert>}
       {data && groups.length === 0 && (

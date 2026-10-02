@@ -23,6 +23,8 @@ class TaskCreateRequest(BaseModel):
     memo: str | None = None
     parent_task_id: int | None = None
     milestone_id: int | None = None
+    # 空 = 未分類。親を持つタスクは親のプロジェクトに入る（省くと親に揃える。違う値は 422。ADR-0024）
+    project_id: int | None = None
 
 
 class TaskUpdateRequest(BaseModel):
@@ -38,7 +40,10 @@ class TaskUpdateRequest(BaseModel):
     remaining_hours: Decimal | None = Field(default=None, ge=0, le=Decimal("9999.99"))
     memo: str | None = None
     parent_task_id: int | None = None
+    # null を送るとマイルストーンを外す。プロジェクトの外のものは 422（ADR-0024）
     milestone_id: int | None = None
+    # null を送ると未分類へ。子孫も一緒に移る。子タスクは親と違う値を送ると 422
+    project_id: int | None = None
 
 
 class TaskResponse(BaseModel):
@@ -71,6 +76,9 @@ class TaskResponse(BaseModel):
     memo: str | None = None
     parent_task_id: int | None = None
     milestone_id: int | None = None
+    # 属するプロジェクト（null = 未分類）と、表示用の道筋（「親 / 子」）
+    project_id: int | None = None
+    project_path: str | None = None
     completed_at: UtcDatetime | None = None
     deleted_at: UtcDatetime | None = None
     created_at: UtcDatetime | None = None

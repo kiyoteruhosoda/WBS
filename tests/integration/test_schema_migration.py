@@ -359,3 +359,43 @@ def test_0006_leaves_existing_events_without_an_alarm_and_downgrades_cleanly(tmp
             assert connection.exec_driver_sql("SELECT COUNT(*) FROM calendar_events").scalar() == 1
     finally:
         engine.dispose()
+
+
+def test_0007_leaves_existing_tasks_and_milestones_unclassified(tmp_path):
+    # task #187 / ADR-0024: 移行はプロジェクトを作らない。既存のタスク・マイルストーンは未分類のまま
+    url = _url(tmp_path, "projects.db")
+    engine = sa.create_engine(url)
+    try:
+        with engine.begin() as connection:
+            command.upgrade(alembic_config(connection), "0006")
+        with engine.begin() as connection:
+            connection.exec_driver_sql(
+                "INSERT INTO users (id, email, display_name, timezone, language, is_active, "
+                "created_at, updated_at) VALUES "
+                "(1, 'taro@example.com', '太郎', 'Asia/Tokyo', 'ja', 1, '2026-01-01', '2026-01-01')"
+            )
+            connection.exec_driver_sql(
+                "INSERT INTO milestones (id, user_id, name, created_at, updated_at) "
+                "VALUES (1, 1, '節目', '2026-01-01', '2026-01-01')"
+            )
+            connection.exec_driver_sql(
+                "INSERT INTO tasks (id, user_id, title, priority, urgency, status, milestone_id, "
+                "created_at, updated_at) VALUES (1, 1, 't', 3, 3, 'TODO', 1, '2026-01-01', '2026-01-01')"
+            )
+        with engine.begin() as connection:
+            command.upgrade(alembic_config(connection), "0007")
+        with engine.connect() as connection:
+            assert connection.exec_driver_sql("SELECT project_id, milestone_id FROM tasks").one() == (None, 1)
+            assert connection.exec_driver_sql("SELECT project_id FROM milestones").one() == (None,)
+            assert connection.exec_driver_sql("SELECT COUNT(*) FROM projects").scalar() == 0
+
+        with engine.begin() as connection:
+            command.downgrade(alembic_config(connection), "0006")
+        assert "projects" not in _tables(url)
+        for table in ("tasks", "milestones"):
+            columns = {c["name"] for c in sa.inspect(engine).get_columns(table)}
+            assert "project_id" not in columns
+        with engine.connect() as connection:
+            assert connection.exec_driver_sql("SELECT COUNT(*) FROM tasks").scalar() == 1
+    finally:
+        engine.dispose()

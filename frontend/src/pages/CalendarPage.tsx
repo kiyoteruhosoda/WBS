@@ -7,6 +7,8 @@ import { useI18n } from '../i18n';
 import type { Task } from '../types';
 import { getTasks } from '../api/tasks';
 import { getMilestones } from '../api/milestones';
+import { inScope } from '../projects/projectScope';
+import { useProjectScope } from '../projects/useProjectScope';
 import { getCategories } from '../api/categories';
 import { getHolidays, getOccurrences, sendCalendarRequest } from '../api/calendar';
 import SchedulerCalendar from '../components/calendar/SchedulerCalendar';
@@ -84,9 +86,17 @@ const CalendarPage: React.FC = () => {
   }, [setSearchParams]);
   const [dropPreview, setDropPreview] = useState<TaskDropPreview | null>(null);
 
+  // 期限（タスク・マイルストーン）はサイドバーで選んだプロジェクト（と子孫）のものだけ（task #187、ADR-0024）
+  const { scope, projects } = useProjectScope();
   const deadlines = useMemo(
-    () => (range ? buildDeadlines(tasks ?? [], milestones ?? [], categories ?? [], range) : []),
-    [tasks, milestones, categories, range],
+    () => (range
+      ? buildDeadlines(
+        (tasks ?? []).filter((x) => inScope(x.project_id, scope, projects)),
+        (milestones ?? []).filter((m) => inScope(m.project_id, scope, projects)),
+        categories ?? [], range,
+      )
+      : []),
+    [tasks, milestones, categories, range, scope, projects],
   );
 
   const editing = useCalendarEditing({ occurrencesKey, timeZone, tasks: tasks ?? [] });

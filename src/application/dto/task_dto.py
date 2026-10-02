@@ -22,6 +22,8 @@ class CreateTaskDTO:
     memo: str | None = None
     parent_task_id: int | None = None
     milestone_id: int | None = None
+    # 空 = 未分類。⚠ 親を持つタスクは親のプロジェクトに入る（違う値は 422。ADR-0024）
+    project_id: int | None = None
 
 @dataclass
 class UpdateTaskDTO:
@@ -39,3 +41,7 @@ class UpdateTaskDTO:
     memo: str | None = None
     parent_task_id: int | None = None
     milestone_id: int | None = None
+    # マイルストーン・プロジェクトは空へ戻せるので、「送られたか」を別に持つ
+    milestone_id_given: bool = False
+    project_id: int | None = None
+    project_id_given: bool = False

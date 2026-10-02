@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, status
+from typing import Annotated
+
+from fastapi import APIRouter, Query, status
 
 from src.application.dto.milestone_dto import CreateMilestoneDTO, UpdateMilestoneDTO
 from src.application.use_cases.milestone_use_cases import MilestoneUseCases
@@ -15,15 +17,30 @@ router = APIRouter(prefix="/milestones", tags=["milestones"])
 
 
 @router.get("", response_model=list[MilestoneResponse])
-def list_milestones(db: DbDep, current_user: CurrentUserDep) -> list[MilestoneResponse]:
+def list_milestones(
+    db: DbDep,
+    current_user: CurrentUserDep,
+    project_id: Annotated[
+        int | None, Query(description="このプロジェクトと、その子孫のプロジェクトのものだけ")
+    ] = None,
+    unclassified: Annotated[
+        bool, Query(description="true ならプロジェクトの無い（未分類の）ものだけ")
+    ] = False,
+) -> list[MilestoneResponse]:
     uc = MilestoneUseCases(db)
-    return [MilestoneResponse.model_validate(m, from_attributes=True) for m in uc.list_milestones(current_user.user_id)]
+    milestones = uc.list_milestones(
+        current_user.user_id, project_id=project_id, unclassified=unclassified
+    )
+    return [MilestoneResponse.model_validate(m, from_attributes=True) for m in milestones]
 
 
 @router.post("", response_model=MilestoneResponse, status_code=status.HTTP_201_CREATED)
 def create_milestone(body: MilestoneCreateRequest, db: DbDep, current_user: CurrentUserDep) -> MilestoneResponse:
     uc = MilestoneUseCases(db)
-    dto = CreateMilestoneDTO(user_id=current_user.user_id, name=body.name, due_date=body.due_date, description=body.description)
+    dto = CreateMilestoneDTO(
+        user_id=current_user.user_id, name=body.name, due_date=body.due_date,
+        description=body.description, project_id=body.project_id,
+    )
     return MilestoneResponse.model_validate(uc.create_milestone(dto), from_attributes=True)
 
 

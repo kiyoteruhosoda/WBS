@@ -31,6 +31,9 @@ export interface Task {
   memo: string | null;
   parent_task_id: number | null;
   milestone_id: number | null;
+  // 属するプロジェクト（null = 未分類）と、表示用の道筋（「親 / 子」）。子タスクは親と同じ（ADR-0024）
+  project_id: number | null;
+  project_path: string | null;
   completed_at: string | null;
   deleted_at: string | null;
   created_at: string;
@@ -49,6 +52,23 @@ export interface Milestone {
   name: string;
   due_date: string | null;
   description: string | null;
+  // 属するプロジェクト（null = 未分類。どのタスクにも付けられる）
+  project_id: number | null;
+}
+
+export type ProjectStatus = 'active' | 'archived';
+
+/** プロジェクト（入れ子。task #187 / ADR-0024）。一覧は木の順（親の直後に子）で届く。 */
+export interface Project {
+  id: number;
+  name: string;
+  parent_project_id: number | null;
+  color: string | null;
+  description: string | null;
+  status: ProjectStatus;
+  sort_order: number;
+  // 表示用の道筋（「親 / 子」）
+  path: string;
 }
 
 export interface WorkLog {
@@ -83,6 +103,8 @@ export interface GanttTask {
   due_date: string | null;
   status: TaskStatus;
   parent_task_id: number | null;
+  project_id: number | null;
+  project_path: string | null;
   progress_percent: number | null;
   dependencies: number[];
 }
@@ -114,6 +136,9 @@ export interface TaskListParams {
   category_id?: number;
   milestone_id?: number;
   parent_task_id?: number;
+  // このプロジェクトと子孫のもの（ADR-0024）/ 未分類のものだけ
+  project_id?: number;
+  unclassified?: boolean;
 }
 
 export interface UserSettings {
