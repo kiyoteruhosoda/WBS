@@ -168,6 +168,7 @@ def create_event(
                 task_id=body.task_id,
                 alarm=_alarm_input(body.alarm, body.model_fields_set),
                 event_type=body.event_type,
+                calendar_id=body.calendar_id,
             )
         )
     else:
@@ -185,6 +186,7 @@ def create_event(
                 task_id=body.task_id,
                 alarm=_alarm_input(body.alarm, body.model_fields_set),
                 event_type=body.event_type,
+                calendar_id=body.calendar_id,
             )
         )
     return CalendarEventResponse.from_event(created)
@@ -208,6 +210,7 @@ def update_event(
             color_key=body.color_key,
             alarm=_alarm_input(body.alarm, body.model_fields_set),
             event_type=body.event_type,
+            calendar_id=body.calendar_id,
             expected_version=body.expected_version,
         )
     )
@@ -233,6 +236,7 @@ def update_series(
             anchor_utc=body.start,
             alarm=_alarm_input(body.alarm, body.model_fields_set),
             event_type=body.event_type,
+            calendar_id=body.calendar_id,
             expected_version=body.expected_version,
         )
     )
@@ -279,6 +283,7 @@ def change_following_occurrences(
             task_id=body.task_id if "task_id" in body.model_fields_set else UNSET,
             alarm=_alarm_input(body.alarm, body.model_fields_set),
             event_type=body.event_type,
+            calendar_id=body.calendar_id,
             expected_version=body.expected_version,
         )
     )
@@ -311,6 +316,7 @@ def split_this_occurrence(
             task_id=body.task_id if "task_id" in body.model_fields_set else UNSET,
             alarm=_alarm_input(body.alarm, body.model_fields_set),
             event_type=body.event_type,
+            calendar_id=body.calendar_id,
             expected_version=body.expected_version,
         )
     )

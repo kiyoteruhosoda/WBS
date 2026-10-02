@@ -18,6 +18,7 @@ from src.application.use_cases.authentication_use_cases import (
 from src.application.use_cases.backchannel_logout_use_cases import ReceiveBackchannelLogout
 from src.application.use_cases.business_calendar_use_cases import BusinessCalendarUseCases
 from src.application.use_cases.calendar_event_use_cases import CalendarEventUseCases
+from src.application.use_cases.calendar_use_cases import CalendarUseCases
 from src.application.use_cases.closing_use_cases import ClosingUseCases
 from src.application.use_cases.task_use_cases import TaskUseCases
 from src.application.use_cases.time_entry_use_cases import TimeEntryUseCases
@@ -34,6 +35,10 @@ from src.infrastructure.repositories.business_calendar_repository import (
 )
 from src.infrastructure.repositories.calendar_event_repository import (
     SqlAlchemyCalendarEventRepository,
+)
+from src.infrastructure.repositories.calendar_repository import (
+    SqlAlchemyCalendarRepository,
+    SqlAlchemyCalendarViewPresetRepository,
 )
 from src.infrastructure.repositories.category_repository import SqlAlchemyCategoryRepository
 from src.infrastructure.repositories.closing_period_repository import (
@@ -217,6 +222,7 @@ def get_calendar_event_use_cases(db: DbDep) -> CalendarEventUseCases:
         tasks=SqlAlchemyTaskRepository(db),
         unit_of_work=db,
         completions=SqlAlchemyOccurrenceCompletionRepository(db),
+        event_calendars=SqlAlchemyCalendarRepository(db),
     )
 
 CalendarEventUseCasesDep = Annotated[CalendarEventUseCases, Depends(get_calendar_event_use_cases)]
@@ -239,6 +245,18 @@ def get_today_use_cases(db: DbDep) -> TodayUseCases:
     )
 
 TodayUseCasesDep = Annotated[TodayUseCases, Depends(get_today_use_cases)]
+
+
+def get_calendar_use_cases(db: DbDep) -> CalendarUseCases:
+    """予定のカレンダー・表示の選択・表示の組み合わせ（ADR-0027）。"""
+    return CalendarUseCases(
+        calendars=SqlAlchemyCalendarRepository(db),
+        presets=SqlAlchemyCalendarViewPresetRepository(db),
+        events=SqlAlchemyCalendarEventRepository(db),
+        unit_of_work=db,
+    )
+
+CalendarUseCasesDep = Annotated[CalendarUseCases, Depends(get_calendar_use_cases)]
 
 
 def get_business_calendar_use_cases(db: DbDep) -> BusinessCalendarUseCases:

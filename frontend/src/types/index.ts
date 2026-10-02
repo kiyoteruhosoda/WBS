@@ -252,6 +252,10 @@ export interface CalendarOccurrence {
   event_type: CalendarEventType;
   /** タスクの分類の回に済みが付いている（予定の分類は常に false） */
   is_done: boolean;
+  /** 予定が属するカレンダー（ADR-0027） */
+  calendar_id: number | null;
+  /** そのカレンダーの色。予定の `color_key` が DEFAULT ならこれで塗る */
+  calendar_color_key: EventColorKey;
 }
 
 /** 祝日・休日（有効な営業日カレンダーから集めたもの）。 */
@@ -319,6 +323,8 @@ export interface CalendarEvent {
   alarm: EventAlarmData | null;
   /** 分類（ADR-0025）。TASK は WBS のタスクに結ぶ */
   event_type: CalendarEventType;
+  /** 属するカレンダー（ADR-0027） */
+  calendar_id: number;
   exceptions: { occurrence: OccurrenceSeriesKey; type: string }[];
   moves: {
     occurrence: OccurrenceSeriesKey;
@@ -329,6 +335,32 @@ export interface CalendarEvent {
     location: string | null;
   }[];
   version: number;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+/** 予定のカレンダー（`/api/calendars`。ADR-0027）。表示するか（`is_visible`）はサーバーに覚える。 */
+export interface Calendar {
+  id: number;
+  kind: 'EVENTS';
+  name: string;
+  /** DEFAULT は色の指定なし（予定は結んだタスクの色・標準の色） */
+  color_key: EventColorKey;
+  sort_order: number;
+  /** 既定のカレンダー（消せない。消したカレンダーの予定の行き先） */
+  is_default: boolean;
+  /** カレンダーの画面に出す */
+  is_visible: boolean;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+/** 表示の組み合わせ（`/api/calendar-view-presets`）。当てると `calendar_ids` だけが表示になる。 */
+export interface CalendarViewPreset {
+  id: number;
+  name: string;
+  calendar_ids: number[];
+  sort_order: number;
   created_at: string | null;
   updated_at: string | null;
 }

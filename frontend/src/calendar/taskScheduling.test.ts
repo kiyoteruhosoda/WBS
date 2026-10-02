@@ -133,6 +133,12 @@ describe('予定に出すタスクの印', () => {
     expect(occurrenceColor({ color_key: 'DEFAULT', task_id: 99 }, linked)).toBe(eventColor('DEFAULT'));
   });
 
+  it('色が既定の予定は、カレンダーに色があればカレンダーの色（ADR-0027）', () => {
+    expect(occurrenceColor({ color_key: 'DEFAULT', task_id: 12, calendar_color_key: 'GRAPE' }, linked)).toBe(eventColor('GRAPE'));
+    expect(occurrenceColor({ color_key: 'TOMATO', task_id: 12, calendar_color_key: 'GRAPE' }, linked)).toBe(eventColor('TOMATO'));
+    expect(occurrenceColor({ color_key: 'DEFAULT', task_id: 12, calendar_color_key: 'DEFAULT' }, linked)).toBe('#0b8043');
+  });
+
   it('タスク名は題名と違うときだけ添える', () => {
     const o = { ...occurrence('a', '2026-10-06', hm(9), 60), task_id: 12 };
     expect(linkedTaskLabel({ ...o, title: '設計書' }, linked)).toBeNull();

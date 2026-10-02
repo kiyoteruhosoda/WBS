@@ -26,3 +26,10 @@ class CalendarEventRepository(ABC):
 
     @abstractmethod
     def delete(self, event_id: int) -> None: ...
+
+    @abstractmethod
+    def reassign_calendar(self, user_id: int, from_calendar_id: int, to_calendar_id: int) -> int:
+        """その利用者の ``from_calendar_id`` の予定を ``to_calendar_id`` へ移す（版を 1 つ進める）。
+
+        カレンダーを消すときに使う（ADR-0027）。移した件数を返す。
+        """

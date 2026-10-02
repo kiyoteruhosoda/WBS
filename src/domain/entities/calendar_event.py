@@ -131,6 +131,8 @@ class CalendarEvent:
     同じ設定で知らせる（移植元と同じ。回ごとの上書きは持たない）。"""
     event_type: EventType = EventType.EVENT
     """分類（ADR-0025）。``TASK`` は ``task_id`` が要る。"""
+    calendar_id: int | None = None
+    """属するカレンダー（ADR-0027）。``None`` は保存のときに利用者の既定のカレンダーへ入る。"""
     exceptions: list[EventException] = field(default_factory=list)
     moves: list[EventMove] = field(default_factory=list)
     version: int = 1
@@ -167,12 +169,13 @@ class CalendarEvent:
         task_id: int | None = None,
         alarm: EventAlarm | None = None,
         event_type: EventType = EventType.EVENT,
+        calendar_id: int | None = None,
     ) -> CalendarEvent:
         return cls(
             id=None, user_id=user_id, kind=EventKind.SINGLE, title=title,
             time_zone=time_zone, single_schedule=schedule,
             location=location, description=description, color_key=color_key,
-            task_id=task_id, alarm=alarm, event_type=event_type,
+            task_id=task_id, alarm=alarm, event_type=event_type, calendar_id=calendar_id,
             created_at=created_at, updated_at=created_at,
         )
 
@@ -191,12 +194,13 @@ class CalendarEvent:
         task_id: int | None = None,
         alarm: EventAlarm | None = None,
         event_type: EventType = EventType.EVENT,
+        calendar_id: int | None = None,
     ) -> CalendarEvent:
         return cls(
             id=None, user_id=user_id, kind=EventKind.RECURRING, title=title,
             time_zone=time_zone, recurring_schedule=schedule,
             location=location, description=description, color_key=color_key,
-            task_id=task_id, alarm=alarm, event_type=event_type,
+            task_id=task_id, alarm=alarm, event_type=event_type, calendar_id=calendar_id,
             created_at=created_at, updated_at=created_at,
         )
 
@@ -304,6 +308,13 @@ class CalendarEvent:
         if self.color_key == color_key:
             return
         self.color_key = color_key
+        self._touch(updated_at)
+
+    def move_to_calendar(self, calendar_id: int, updated_at: datetime) -> None:
+        """別のカレンダーへ移す（ADR-0027）。同じなら版を進めない。"""
+        if self.calendar_id == calendar_id:
+            return
+        self.calendar_id = calendar_id
         self._touch(updated_at)
 
     def set_alarm(self, alarm: EventAlarm | None, updated_at: datetime) -> None:

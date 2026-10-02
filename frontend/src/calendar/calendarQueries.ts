@@ -6,6 +6,10 @@ import { TODAY_SUMMARY_KEY } from '../api/today';
 export const OCCURRENCES_QUERY = 'calendar-occurrences';
 /** 表示している期間の祝日。キーは `[HOLIDAYS_QUERY, from, to]` */
 export const HOLIDAYS_QUERY = 'calendar-holidays';
+/** 予定のカレンダーの一覧（表示の選択を含む。ADR-0027） */
+export const CALENDARS_QUERY = 'calendars';
+/** 表示の組み合わせ */
+export const CALENDAR_VIEW_PRESETS_QUERY = 'calendar-view-presets';
 
 /**
  * 予定を作る・動かす・直す・消したあとに読み直させるもの（前方一致）。回と祝日のほか、

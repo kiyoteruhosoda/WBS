@@ -44,12 +44,15 @@ from src.domain.entities.occurrence_completion import OccurrenceCompletion
 from src.domain.exceptions import NotFoundError, ValidationError
 from src.domain.repositories.business_calendar_repository import BusinessCalendarRepository
 from src.domain.repositories.calendar_event_repository import CalendarEventRepository
+from src.domain.repositories.calendar_repository import CalendarRepository
 from src.domain.repositories.occurrence_completion_repository import (
     OccurrenceCompletionRepository,
 )
+from src.domain.services.default_calendar import ensure_default_calendar
 from src.domain.services.occurrence_display_projection import to_display_time_zone
 from src.domain.services.occurrence_expander import OccurrenceExpander
 from src.domain.value_objects.event_alarm import ALARM_OFFSETS_MINUTES, EventAlarm
+from src.domain.value_objects.event_color import EventColorKey
 from src.domain.value_objects.event_schedule import (
     EventOccurrence,
     OccurrenceKey,
@@ -105,8 +108,11 @@ class CalendarEventUseCases:
         expander: OccurrenceExpander | None = None,
         now: Callable[[], datetime] = utcnow,
         completions: OccurrenceCompletionRepository | None = None,
+        event_calendars: CalendarRepository | None = None,
     ) -> None:
         self._events = events
+        # 予定のカレンダー（ADR-0027）。無ければカレンダーを決めずに保存する（保存先が既定へ入れる）。
+        self._event_calendars = event_calendars
         # 回の済み（ADR-0025）。無ければ済みは出さない（どの回も済みでない）。
         self._completions = completions
         self._calendars = calendars
@@ -153,6 +159,7 @@ class CalendarEventUseCases:
         viewer = TimeZoneId(viewer_time_zone)
         pairs = self._expand(user_id, from_date, to_date, viewer_time_zone)
         done = self._done_keys(event for event, _ in pairs if event.is_task())
+        calendar_colors = self._calendar_colors(user_id)
         return [
             OccurrenceView(
                 event_id=event.id,
@@ -174,6 +181,10 @@ class CalendarEventUseCases:
                 event_type=event.event_type,
                 is_done=event.is_task()
                 and (event.id, _completion_key_of(event, occurrence)) in done,
+                calendar_id=event.calendar_id,
+                calendar_color_key=calendar_colors.get(event.calendar_id, EventColorKey.DEFAULT)
+                if event.calendar_id is not None
+                else EventColorKey.DEFAULT,
             )
             for event, occurrence in pairs
             if event.id is not None
@@ -327,6 +338,7 @@ class CalendarEventUseCases:
 
     def create_single_event(self, cmd: CreateSingleEventCommand) -> CalendarEvent:
         self._check_task(cmd.task_id, cmd.user_id)
+        calendar_id = self._calendar_for_new_event(cmd.calendar_id, cmd.user_id)
         event = CalendarEvent.create_single(
             user_id=cmd.user_id,
             title=cmd.title,
@@ -339,6 +351,7 @@ class CalendarEventUseCases:
             task_id=cmd.task_id,
             alarm=_alarm_or_default(cmd.alarm),
             event_type=cmd.event_type,
+            calendar_id=calendar_id,
         )
         saved = self._events.save(event)
         self._uow.commit()
@@ -347,6 +360,7 @@ class CalendarEventUseCases:
     def create_recurring_event(self, cmd: CreateRecurringEventCommand) -> CalendarEvent:
         self._check_task(cmd.task_id, cmd.user_id)
         self._check_rule_calendar(cmd.recurrence_rule, cmd.user_id)
+        calendar_id = self._calendar_for_new_event(cmd.calendar_id, cmd.user_id)
         event = CalendarEvent.create_recurring(
             user_id=cmd.user_id,
             title=cmd.title,
@@ -359,6 +373,7 @@ class CalendarEventUseCases:
             task_id=cmd.task_id,
             alarm=_alarm_or_default(cmd.alarm),
             event_type=cmd.event_type,
+            calendar_id=calendar_id,
         )
         saved = self._events.save(event)
         self._uow.commit()
@@ -384,6 +399,7 @@ class CalendarEventUseCases:
             event.reschedule_single(SingleEventSchedule(cmd.start_utc, cmd.duration_minutes), now)
         if cmd.color_key is not None:
             event.set_color(cmd.color_key, now)
+        self._move_to_calendar(event, cmd.calendar_id, now)
         event.set_alarm(_alarm_or(cmd.alarm, event.alarm), now)
         saved = self._events.save(event)
         self._uow.commit()
@@ -424,6 +440,7 @@ class CalendarEventUseCases:
         # 系列の開始時刻が変わったら、例外・移動と同じく済みの鍵も付け替える。
         self._rekey_completions(event, old_start_time, event.series_start_time())
         event.set_color(cmd.color_key, now)
+        self._move_to_calendar(event, cmd.calendar_id, now)
         event.set_alarm(_alarm_or(cmd.alarm, event.alarm), now)
         saved = self._events.save(event)
         self._uow.commit()
@@ -442,6 +459,7 @@ class CalendarEventUseCases:
         task_id = event.task_id if cmd.task_id is UNSET else cmd.task_id
         self._check_task(task_id, cmd.user_id)
         self._check_rule_calendar(cmd.recurrence_rule, cmd.user_id)
+        calendar_id = self._calendar_or_current(cmd.calendar_id, event)
         now = self._now()
 
         new_series = CalendarEvent.create_recurring(
@@ -456,6 +474,7 @@ class CalendarEventUseCases:
             task_id=task_id,
             alarm=_alarm_or(cmd.alarm, event.alarm),
             event_type=cmd.event_type or event.event_type,
+            calendar_id=calendar_id,
         )
         # この回以降の済みは新しい系列へ移す（鍵の時刻は新しい系列の開始時刻）。
         carried = [
@@ -486,6 +505,7 @@ class CalendarEventUseCases:
             raise ValidationError("split_this_occurrence is only valid for recurring events")
         task_id = event.task_id if cmd.task_id is UNSET else cmd.task_id
         self._check_task(task_id, cmd.user_id)
+        calendar_id = self._calendar_or_current(cmd.calendar_id, event)
         now = self._now()
 
         single = CalendarEvent.create_single(
@@ -500,6 +520,7 @@ class CalendarEventUseCases:
             task_id=task_id,
             alarm=_alarm_or(cmd.alarm, event.alarm),
             event_type=cmd.event_type or event.event_type,
+            calendar_id=calendar_id,
         )
         event.skip_occurrence(cmd.occurrence_key, now)
         self._events.save(event)
@@ -722,6 +743,44 @@ class CalendarEventUseCases:
             task = self._tasks.find_by_id_for_user(task_id, user_id)
             cache[task_id] = task.title if task is not None else None
         return cache[task_id]
+
+    # ── カレンダー（ADR-0027）────────────────────────────────────────────
+
+    def _owned_calendar_id(self, calendar_id: int, user_id: int) -> int:
+        """自分のカレンダーか確かめる（他人・無いものは 404）。"""
+        if self._event_calendars is None:
+            raise NotFoundError("Calendar", calendar_id)
+        owned_by(
+            self._event_calendars.find_by_id(calendar_id), user_id,
+            resource="Calendar", resource_id=calendar_id,
+        )
+        return calendar_id
+
+    def _calendar_for_new_event(self, calendar_id: int | None, user_id: int) -> int | None:
+        """作る予定のカレンダー。省けば既定のカレンダー。"""
+        if calendar_id is not None:
+            return self._owned_calendar_id(calendar_id, user_id)
+        if self._event_calendars is None:
+            return None
+        return ensure_default_calendar(self._event_calendars, user_id, self._now()).id
+
+    def _calendar_or_current(self, calendar_id: int | None, event: CalendarEvent) -> int | None:
+        """切り出す・分ける予定のカレンダー。省けば元の系列のもの。"""
+        if calendar_id is not None:
+            return self._owned_calendar_id(calendar_id, event.user_id)
+        return event.calendar_id
+
+    def _move_to_calendar(self, event: CalendarEvent, calendar_id: int | None, now: datetime) -> None:
+        if calendar_id is None:
+            return
+        event.move_to_calendar(self._owned_calendar_id(calendar_id, event.user_id), now)
+
+    def _calendar_colors(self, user_id: int) -> dict[int, EventColorKey]:
+        if self._event_calendars is None:
+            return {}
+        return {
+            c.id: c.color_key for c in self._event_calendars.find_all(user_id) if c.id is not None
+        }
 
     def _check_rule_calendar(self, rule: RecurrenceRule, user_id: int) -> None:
         calendar_id = rule.adjustment.calendar_id if rule.adjustment else None

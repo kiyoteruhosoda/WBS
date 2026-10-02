@@ -15,6 +15,7 @@ export const singleEvent = (patch: Partial<CalendarEvent> = {}): CalendarEvent =
   task_id: 12,
   alarm: { enabled: true, notify_15_min: true, notify_5_min: false, notify_1_min: false, notify_at_start: true },
   event_type: 'EVENT',
+  calendar_id: 1,
   exceptions: [],
   moves: [],
   version: 3,
@@ -69,6 +70,8 @@ export const apiOccurrence = (patch: Partial<CalendarOccurrence> = {}): Calendar
   alarm: null,
   event_type: 'EVENT',
   is_done: false,
+  calendar_id: 1,
+  calendar_color_key: 'DEFAULT',
   ...patch,
 });
 
