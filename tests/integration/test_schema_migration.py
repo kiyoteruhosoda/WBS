@@ -439,3 +439,68 @@ def test_0008_makes_existing_events_plain_events_and_downgrades_cleanly(tmp_path
             assert connection.exec_driver_sql("SELECT COUNT(*) FROM calendar_events").scalar() == 1
     finally:
         engine.dispose()
+
+
+def test_0009_puts_existing_events_into_a_default_calendar_per_user(tmp_path):
+    # task #191 / ADR-0027: 利用者ごとに既定のカレンダー「予定」を作り、既存の予定はそこへ入れる
+    url = _url(tmp_path, "calendars.db")
+    engine = sa.create_engine(url)
+    try:
+        with engine.begin() as connection:
+            command.upgrade(alembic_config(connection), "0008")
+        with engine.begin() as connection:
+            for user_id, email in ((1, "taro@example.com"), (2, "hanako@example.com"), (3, "none@example.com")):
+                connection.exec_driver_sql(
+                    "INSERT INTO users (id, email, display_name, timezone, language, is_active, "
+                    f"created_at, updated_at) VALUES ({user_id}, '{email}', 'u', 'Asia/Tokyo', 'ja', 1, "
+                    "'2026-01-01', '2026-01-01')"
+                )
+            for event_id, user_id in ((1, 1), (2, 2), (5, 1)):
+                connection.exec_driver_sql(
+                    "INSERT INTO calendar_events (id, user_id, kind, title, time_zone, start_utc, "
+                    "duration_minutes, color_key, span_start_day, span_end_day, version, "
+                    f"created_at, updated_at) VALUES ({event_id}, {user_id}, 'SINGLE', '定例', "
+                    "'Asia/Tokyo', '2026-10-05 00:00:00', 60, 'DEFAULT', 1, 2, 1, "
+                    "'2026-01-01', '2026-01-01')"
+                )
+            # 消した予定の id（6〜9）を使い回さないこと（採番の最大を覚えている）
+            connection.exec_driver_sql(
+                "UPDATE sqlite_sequence SET seq = 9 WHERE name = 'calendar_events'"
+            )
+        with engine.begin() as connection:
+            command.upgrade(alembic_config(connection), "0009")
+        with engine.connect() as connection:
+            calendars = connection.exec_driver_sql(
+                "SELECT id, user_id, kind, name, color_key, is_default, is_visible FROM calendars "
+                "ORDER BY user_id"
+            ).all()
+            assert [(c[1], c[2], c[3], c[4], bool(c[5]), bool(c[6])) for c in calendars] == [
+                (1, "EVENTS", "予定", "DEFAULT", True, True),
+                (2, "EVENTS", "予定", "DEFAULT", True, True),
+                (3, "EVENTS", "予定", "DEFAULT", True, True),
+            ]
+            default_of = {c[1]: c[0] for c in calendars}
+            events = connection.exec_driver_sql(
+                "SELECT id, user_id, calendar_id FROM calendar_events ORDER BY id"
+            ).all()
+            assert [(e[0], e[2]) for e in events] == [
+                (1, default_of[1]), (2, default_of[2]), (5, default_of[1]),
+            ]
+            assert connection.exec_driver_sql(
+                "SELECT seq FROM sqlite_sequence WHERE name = 'calendar_events'"
+            ).scalar() == 9
+        columns = {c["name"]: c for c in sa.inspect(engine).get_columns("calendar_events")}
+        assert columns["calendar_id"]["nullable"] is False
+
+        with engine.begin() as connection:
+            command.downgrade(alembic_config(connection), "0008")
+        inspector = sa.inspect(engine)
+        assert {"calendars", "calendar_view_presets"}.isdisjoint(inspector.get_table_names())
+        assert "calendar_id" not in {c["name"] for c in inspector.get_columns("calendar_events")}
+        with engine.connect() as connection:
+            assert connection.exec_driver_sql("SELECT COUNT(*) FROM calendar_events").scalar() == 3
+            assert connection.exec_driver_sql(
+                "SELECT seq FROM sqlite_sequence WHERE name = 'calendar_events'"
+            ).scalar() == 9
+    finally:
+        engine.dispose()

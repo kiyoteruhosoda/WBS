@@ -13,6 +13,8 @@ import { getCategories } from '../api/categories';
 import { getHolidays, getOccurrences, sendCalendarRequest } from '../api/calendar';
 import SchedulerCalendar from '../components/calendar/SchedulerCalendar';
 import TaskSchedulePanel from '../components/calendar/TaskSchedulePanel';
+import CalendarListPanel from '../components/calendar/CalendarListPanel';
+import { calendarForNewEvent, filterVisibleOccurrences } from '../calendar/calendarSelection';
 import { useCalendarEditing } from '../components/calendar/useCalendarEditing';
 import { useHeightToViewportBottom } from '../components/useHeightToViewportBottom';
 import type { WeekSlot } from '../components/calendar/weekSlotLocator';
@@ -100,11 +102,16 @@ const CalendarPage: React.FC = () => {
   );
 
   const editing = useCalendarEditing({ occurrencesKey, timeZone, tasks: tasks ?? [] });
+  // 表示にしているカレンダーの回だけ（ADR-0027。選んだ状態はサーバーが覚えている）
+  const visibleOccurrences = useMemo(
+    () => filterVisibleOccurrences(occurrencesQuery.data ?? [], editing.calendars),
+    [occurrencesQuery.data, editing.calendars],
+  );
 
   // ── タスクから作る（task #159） ─────────────────────────────────────
 
   const createTaskEvent = (draft: TaskEventDraft) => editing.exclusive(async () => {
-    await sendCalendarRequest(taskEventRequest(draft, timeZone));
+    await sendCalendarRequest(taskEventRequest(draft, timeZone, calendarForNewEvent(editing.calendars)));
     setSchedulingTask(null);
     // 「予定済みの時間」も変わる（読み直させるものに入っている）
     editing.refresh();
@@ -176,6 +183,13 @@ const CalendarPage: React.FC = () => {
           height: { md: fill.height != null ? `${fill.height}px` : 'calc(100vh - 160px)' }, minHeight: { md: 640 },
         }}
       >
+        {/* カレンダーの一覧と表示の選択（広い画面は左、狭い画面はいちばん上で折りたたむ） */}
+        <Box sx={{ order: { xs: 0, md: 0 }, width: { xs: '100%', md: 220 }, flexShrink: 0, height: { md: '100%' } }}>
+          <CalendarListPanel
+            calendars={editing.calendars ?? []}
+            onError={(detail) => editing.notify('calendar.saveFailed', 'error', { detail })}
+          />
+        </Box>
         {/* タスクの一覧（広い画面は右、狭い画面は上で折りたたむ） */}
         <Box sx={{ order: { xs: 1, md: 2 }, width: { xs: '100%', md: 260 }, flexShrink: 0, height: { md: '100%' } }}>
           <TaskSchedulePanel
@@ -195,7 +209,7 @@ const CalendarPage: React.FC = () => {
           height: { xs: fillNarrow.height != null ? `${fillNarrow.height}px` : 'calc(100svh - 140px)', md: '100%' }, minHeight: { xs: 480 },
         }}>
           <SchedulerCalendar
-            occurrences={occurrencesQuery.data ?? []}
+            occurrences={visibleOccurrences}
             holidays={holidaysQuery.data ?? []}
             deadlines={deadlines}
             timeZone={timeZone}

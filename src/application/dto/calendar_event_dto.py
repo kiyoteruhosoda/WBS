@@ -43,6 +43,8 @@ class CreateSingleEventCommand:
     alarm: EventAlarm | None | UnsetType = UNSET
     """``UNSET`` は既定（4 つとも入り）。``None`` は通知なし。"""
     event_type: EventType = EventType.EVENT
+    calendar_id: int | None = None
+    """属するカレンダー（ADR-0027）。``None`` は既定のカレンダー。"""
 
 
 @dataclass
@@ -61,6 +63,8 @@ class CreateRecurringEventCommand:
     alarm: EventAlarm | None | UnsetType = UNSET
     """``UNSET`` は既定（4 つとも入り）。``None`` は通知なし。"""
     event_type: EventType = EventType.EVENT
+    calendar_id: int | None = None
+    """属するカレンダー（ADR-0027）。``None`` は既定のカレンダー。"""
 
 
 @dataclass
@@ -81,6 +85,8 @@ class UpdateEventCommand:
     """``UNSET`` は今のまま。``None`` は通知を外す。"""
     event_type: EventType | None = None
     """``None`` は今の分類のまま。"""
+    calendar_id: int | None = None
+    """移す先のカレンダー（ADR-0027）。``None`` は今のまま。"""
     expected_version: int | None = None
 
 
@@ -112,6 +118,8 @@ class UpdateRecurringSeriesCommand:
     """``UNSET`` は今のまま。``None`` は通知を外す。"""
     event_type: EventType | None = None
     """``None`` は今の分類のまま。"""
+    calendar_id: int | None = None
+    """移す先のカレンダー（ADR-0027）。``None`` は今のまま。"""
     anchor_utc: datetime | None = None
     """新しい先頭の回の瞬間。``None`` は今のアンカーのまま（既存の鍵がずれない）。"""
     expected_version: int | None = None
@@ -160,6 +168,8 @@ class SplitThisOccurrenceCommand:
     """``UNSET`` は元の系列の通知を引き継ぐ。``None`` は通知なし。"""
     event_type: EventType | None = None
     """``None`` は元の系列の分類を引き継ぐ。"""
+    calendar_id: int | None = None
+    """``None`` は元の系列のカレンダーを引き継ぐ（ADR-0027）。"""
     expected_version: int | None = None
 
 
@@ -184,6 +194,8 @@ class ChangeFollowingOccurrencesCommand:
     """``UNSET`` は元の系列の通知を引き継ぐ。``None`` は通知なし。"""
     event_type: EventType | None = None
     """``None`` は元の系列の分類を引き継ぐ。"""
+    calendar_id: int | None = None
+    """``None`` は元の系列のカレンダーを引き継ぐ（ADR-0027）。"""
     expected_version: int | None = None
 
 
@@ -230,6 +242,10 @@ class OccurrenceView:
     """予定の分類（ADR-0025）。"""
     is_done: bool = False
     """タスクの分類の回に済みが付いているか（予定の分類では常に ``False``）。"""
+    calendar_id: int | None = None
+    """予定が属するカレンダー（ADR-0027）。"""
+    calendar_color_key: EventColorKey = EventColorKey.DEFAULT
+    """そのカレンダーの色（予定の色が既定のときに使う）。"""
 
 
 @dataclass(frozen=True)

@@ -368,3 +368,27 @@ describe('分類（予定 / タスク、ADR-0025）', () => {
     expect(newTaskPayload(fresh({ title: '日報', newTaskProjectId: 4 }))).toEqual({ title: '日報', project_id: 4 });
   });
 });
+
+describe('カレンダー（ADR-0027）', () => {
+  it('作るときは選んだカレンダーを送る（選んでいなければ送らず、サーバーの既定）', () => {
+    expect(planEventSave(fresh({ calendarId: 4 }), { mode: 'create' }, null))
+      .toMatchObject({ requests: [{ body: { calendar_id: 4 } }] });
+    const plan = planEventSave(fresh(), { mode: 'create' }, null);
+    expect(plan.kind === 'requests' && 'calendar_id' in (plan.requests[0].body as object)).toBe(false);
+  });
+
+  it('直すときは変えたときだけ送る', () => {
+    const { form, context } = formFromEvent(singleEvent({ calendar_id: 2 }), apiOccurrence(), TODAY);
+    expect(form.calendarId).toBe(2);
+    const same = planEventSave(form, context, null);
+    expect(same.kind === 'requests' && 'calendar_id' in (same.requests[0].body as object)).toBe(false);
+    expect(planEventSave({ ...form, calendarId: 3 }, context, null))
+      .toMatchObject({ requests: [{ method: 'PUT', body: { calendar_id: 3 } }] });
+  });
+
+  it('この回だけを別のカレンダーへ切り出せる', () => {
+    const { form, context } = formFromEvent(recurringEvent(), recurringOccurrence(), TODAY);
+    expect(planEventSave({ ...form, calendarId: 5 }, context, 'this'))
+      .toMatchObject({ requests: [{ url: '/calendar/events/7/occurrences/split', body: { calendar_id: 5 } }] });
+  });
+});

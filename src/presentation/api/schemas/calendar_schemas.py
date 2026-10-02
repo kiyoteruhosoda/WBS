@@ -161,6 +161,10 @@ EVENT_TYPE_ON_CREATE = "分類。EVENT = 予定（既定）/ TASK = タスク（
 EVENT_TYPE_ON_UPDATE = "分類。省く・null は今のまま。TASK は task_id が要る"
 EVENT_TYPE_ON_SPLIT = "分類。省く・null は元の系列のもの。TASK は task_id が要る"
 
+CALENDAR_ON_CREATE = "属するカレンダー（自分のもの）。省く・null は既定のカレンダー"
+CALENDAR_ON_UPDATE = "移す先のカレンダー（自分のもの）。省く・null は今のまま"
+CALENDAR_ON_SPLIT = "属するカレンダー（自分のもの）。省く・null は元の系列のもの"
+
 
 # ── 回の鍵 ──────────────────────────────────────────────────────────────────
 
@@ -207,6 +211,7 @@ class CalendarEventCreateRequest(_StartsAt):
     recurrence: RecurrenceRuleSchema | None = None
     alarm: EventAlarmSchema | None = Field(default=None, description=ALARM_FIELD_ON_CREATE)
     event_type: EventType = Field(default=EventType.EVENT, description=EVENT_TYPE_ON_CREATE)
+    calendar_id: int | None = Field(default=None, description=CALENDAR_ON_CREATE)
 
 
 class CalendarEventUpdateRequest(BaseModel):
@@ -221,6 +226,7 @@ class CalendarEventUpdateRequest(BaseModel):
     color_key: EventColorKey | None = Field(default=None, description="null は今の色のまま")
     alarm: EventAlarmSchema | None = Field(default=None, description=ALARM_FIELD_ON_UPDATE)
     event_type: EventType | None = Field(default=None, description=EVENT_TYPE_ON_UPDATE)
+    calendar_id: int | None = Field(default=None, description=CALENDAR_ON_UPDATE)
     expected_version: int | None = None
 
 
@@ -237,6 +243,7 @@ class SeriesUpdateRequest(BaseModel):
     color_key: EventColorKey = EventColorKey.DEFAULT
     alarm: EventAlarmSchema | None = Field(default=None, description=ALARM_FIELD_ON_UPDATE)
     event_type: EventType | None = Field(default=None, description=EVENT_TYPE_ON_UPDATE)
+    calendar_id: int | None = Field(default=None, description=CALENDAR_ON_UPDATE)
     expected_version: int | None = None
 
 
@@ -255,6 +262,7 @@ class FollowingOccurrencesChangeRequest(_StartsAt):
     task_id: int | None = None
     alarm: EventAlarmSchema | None = Field(default=None, description=ALARM_FIELD_ON_SPLIT)
     event_type: EventType | None = Field(default=None, description=EVENT_TYPE_ON_SPLIT)
+    calendar_id: int | None = Field(default=None, description=CALENDAR_ON_SPLIT)
     expected_version: int | None = None
 
 
@@ -272,6 +280,7 @@ class ThisOccurrenceChangeRequest(_StartsAt):
     task_id: int | None = None
     alarm: EventAlarmSchema | None = Field(default=None, description=ALARM_FIELD_ON_SPLIT)
     event_type: EventType | None = Field(default=None, description=EVENT_TYPE_ON_SPLIT)
+    calendar_id: int | None = Field(default=None, description=CALENDAR_ON_SPLIT)
     expected_version: int | None = None
 
 
@@ -337,6 +346,7 @@ class CalendarEventResponse(BaseModel):
     task_id: int | None
     alarm: EventAlarmSchema | None = Field(description="通知。null は通知を持たない")
     event_type: EventType = Field(description="分類。EVENT = 予定 / TASK = タスク")
+    calendar_id: int = Field(description="属するカレンダー")
     exceptions: list[EventExceptionResponse]
     moves: list[EventMoveResponse]
     version: int
@@ -369,6 +379,7 @@ class CalendarEventResponse(BaseModel):
             task_id=event.task_id,
             alarm=EventAlarmSchema.from_alarm(event.alarm),
             event_type=event.event_type,
+            calendar_id=event.calendar_id,
             exceptions=[
                 EventExceptionResponse(
                     occurrence=OccurrenceKeyResponse.from_key(e.occurrence_key), type=e.type.value
@@ -424,6 +435,10 @@ class CalendarOccurrenceResponse(BaseModel):
     )
     event_type: EventType = Field(description="予定の分類。EVENT = 予定 / TASK = タスク")
     is_done: bool = Field(description="タスクの分類の回に済みが付いている（予定の分類は常に false）")
+    calendar_id: int | None = Field(description="予定が属するカレンダー")
+    calendar_color_key: EventColorKey = Field(
+        description="カレンダーの色。予定の color_key が DEFAULT ならこれで塗る（これも DEFAULT なら結んだタスクの色）"
+    )
 
     @classmethod
     def from_view(cls, view: OccurrenceView) -> CalendarOccurrenceResponse:
@@ -455,6 +470,8 @@ class CalendarOccurrenceResponse(BaseModel):
             alarm=EventAlarmSchema.from_alarm(view.alarm),
             event_type=view.event_type,
             is_done=view.is_done,
+            calendar_id=view.calendar_id,
+            calendar_color_key=view.calendar_color_key,
         )
 
 

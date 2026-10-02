@@ -8,6 +8,8 @@ import { useI18n } from '../../i18n';
 import type { TranslationKey } from '../../i18n/translations';
 import type { CalendarEvent, CalendarOccurrence, Task } from '../../types';
 import { getBusinessCalendars, getEvent, sendCalendarRequest } from '../../api/calendar';
+import { getCalendars } from '../../api/calendars';
+import { calendarForNewEvent } from '../../calendar/calendarSelection';
 import EventEditDialog from './EventEditDialog';
 import type { EventEditTarget } from './EventEditDialog';
 import RecurringScopeDialog from './RecurringScopeDialog';
@@ -23,7 +25,7 @@ import type { OperationHistory } from '../../calendar/operationHistory';
 import {
   canRedo, canUndo, emptyHistory, recordOperation, redoOperation, undoOperation,
 } from '../../calendar/operationHistory';
-import { OCCURRENCES_QUERY, queriesAfterEventWrite } from '../../calendar/calendarQueries';
+import { CALENDARS_QUERY, OCCURRENCES_QUERY, queriesAfterEventWrite } from '../../calendar/calendarQueries';
 import { toZonedPoint } from '../../calendar/zonedTime';
 
 export interface CalendarNotice {
@@ -51,6 +53,8 @@ export const useCalendarEditing = ({ occurrencesKey, timeZone, tasks }: Options)
   const { t } = useI18n();
   const qc = useQueryClient();
   const { data: businessCalendars } = useQuery({ queryKey: ['business-calendars'], queryFn: getBusinessCalendars });
+  // 予定のカレンダー（ADR-0027）。編集画面で選ぶ・新しい予定の入れ先を決める
+  const { data: calendars } = useQuery({ queryKey: [CALENDARS_QUERY], queryFn: getCalendars });
 
   const [history, setHistory] = useState<OperationHistory<RescheduleEntry>>(() => emptyHistory<RescheduleEntry>());
   const [editTarget, setEditTarget] = useState<EventEditTarget | null>(null);
@@ -155,7 +159,9 @@ export const useCalendarEditing = ({ occurrencesKey, timeZone, tasks }: Options)
   const calendarIds = (businessCalendars ?? []).map((c) => c.id);
 
   const openCreate = (date: string, startMinute?: number, endMinute?: number) => setEditTarget({
-    form: newEventForm({ date, startMinute, endMinute, timeZone, today: today(), calendarIds }),
+    form: newEventForm({
+      date, startMinute, endMinute, timeZone, today: today(), calendarIds, calendarId: calendarForNewEvent(calendars),
+    }),
     context: { mode: 'create' },
   });
 
@@ -192,6 +198,7 @@ export const useCalendarEditing = ({ occurrencesKey, timeZone, tasks }: Options)
           viewerTimeZone={timeZone}
           tasks={tasks}
           businessCalendars={businessCalendars ?? []}
+          calendars={calendars ?? []}
           onClose={() => setEditTarget(null)}
           onSaved={() => afterDialogWrite('calendar.saved')}
           onConflict={() => { setEditTarget(null); onConflict(); }}
@@ -244,5 +251,7 @@ export const useCalendarEditing = ({ occurrencesKey, timeZone, tasks }: Options)
     refresh,
     notify,
     dialogs,
+    /** 予定のカレンダー（読み込み前は undefined） */
+    calendars,
   };
 };

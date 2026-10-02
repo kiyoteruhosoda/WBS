@@ -27,6 +27,7 @@ from src.presentation.api.routers import (
     auth,
     business_calendars,
     calendar,
+    calendars,
     categories,
     closing_periods,
     dashboard,
@@ -132,6 +133,8 @@ def create_app(database_url: str | None = None, db_path: str | None = None) -> F
     app.include_router(reviews.router, prefix="/api")
     app.include_router(settings.router, prefix="/api")
     app.include_router(calendar.router, prefix="/api")
+    app.include_router(calendars.router, prefix="/api")
+    app.include_router(calendars.presets_router, prefix="/api")
     app.include_router(business_calendars.router, prefix="/api")
     return app
 

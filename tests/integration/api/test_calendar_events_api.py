@@ -126,6 +126,9 @@ def test_single_event_is_listed_in_the_viewers_time_zone(client) -> None:
         # 作るときに分類を省くと予定（ADR-0025）
         "event_type": "EVENT",
         "is_done": False,
+        # カレンダーを省くと既定のカレンダー（色の指定なし。ADR-0027）
+        "calendar_id": created["calendar_id"],
+        "calendar_color_key": "DEFAULT",
     }
 
 

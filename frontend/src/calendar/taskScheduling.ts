@@ -93,7 +93,7 @@ export const draftFromSlot = (
  * 予定の中身 → 作る呼び出し（単発。色は既定のまま = タスクのカテゴリの色で描く）。
  * 通知は送らない（作る API の既定 = 4 つとも入り。ADR-0021）。
  */
-export const taskEventRequest = (draft: TaskEventDraft, timeZone: string): CalendarRequest => ({
+export const taskEventRequest = (draft: TaskEventDraft, timeZone: string, calendarId: number | null = null): CalendarRequest => ({
   method: 'POST',
   url: '/calendar/events',
   body: {
@@ -106,6 +106,8 @@ export const taskEventRequest = (draft: TaskEventDraft, timeZone: string): Calen
     color_key: 'DEFAULT',
     task_id: draft.taskId,
     recurrence: null,
+    // 入れるカレンダー（ADR-0027）。省くとサーバーが既定のカレンダーへ入れる
+    ...(calendarId != null ? { calendar_id: calendarId } : {}),
   },
 });
 
@@ -148,12 +150,17 @@ export const buildLinkedTasks = (
   }]));
 };
 
-/** 予定の色。予定に色があればそれ、無ければ（既定なら）結んだタスクのカテゴリの色。 */
+/**
+ * 予定の色。予定に色があればそれ、無ければ（既定なら）カレンダーの色（ADR-0027）、それも既定なら
+ * 結んだタスクのカテゴリの色、どれも無ければ標準の予定色。
+ */
 export const occurrenceColor = (
-  occurrence: Pick<CalendarOccurrence, 'color_key' | 'task_id'>,
+  occurrence: Pick<CalendarOccurrence, 'color_key' | 'task_id'> & Partial<Pick<CalendarOccurrence, 'calendar_color_key'>>,
   linkedTasks?: ReadonlyMap<number, LinkedTask>,
 ): string => {
-  if (occurrence.color_key !== 'DEFAULT' || occurrence.task_id == null) return eventColor(occurrence.color_key);
+  if (occurrence.color_key !== 'DEFAULT') return eventColor(occurrence.color_key);
+  if (occurrence.calendar_color_key && occurrence.calendar_color_key !== 'DEFAULT') return eventColor(occurrence.calendar_color_key);
+  if (occurrence.task_id == null) return eventColor(occurrence.color_key);
   return linkedTasks?.get(occurrence.task_id)?.color ?? eventColor(occurrence.color_key);
 };
 
