@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Box, Button, TextField, Select, MenuItem, FormControl,
@@ -19,7 +19,7 @@ import { ds } from '../theme';
 import { PlusIcon, TrashIcon } from '../components/icons';
 import MoreTimeIcon from '@mui/icons-material/MoreTime';
 import { scheduleTaskPath } from '../calendar/taskScheduling';
-import { milestoneReachable, pickableProjects } from '../projects/projectScope';
+import { milestoneReachable, parseScope, pickableProjects } from '../projects/projectScope';
 import { useProjectScope } from '../projects/useProjectScope';
 
 const STATUSES: TaskStatus[] = ['TODO', 'DOING', 'WAITING', 'DONE', 'CANCELLED'];
@@ -162,10 +162,16 @@ const TaskEdit: React.FC = () => {
     setForm({ ...form, project_id: value, milestone_id: keep ? form.milestone_id : '' });
   };
   useEffect(() => { if (task) setForm(toForm(task)); }, [task]);
-  // 新しいタスクは、いま絞っているプロジェクトに入れておく
+  // 新しいタスクは、指定のプロジェクト（`?project=<id>`。タスク一覧の束の見出しから来る。`none` は未分類）、
+  // 無ければいま絞っているプロジェクトに入れておく
+  const [searchParams] = useSearchParams();
+  const projectParam = searchParams.get('project');
   useEffect(() => {
-    if (isNew && typeof scope === 'number') setForm((f) => (f.project_id === '' ? { ...f, project_id: String(scope) } : f));
-  }, [isNew, scope]);
+    if (!isNew) return;
+    const asked = projectParam === null ? null : parseScope(projectParam);
+    const preset = asked === null ? scope : asked;
+    if (typeof preset === 'number') setForm((f) => (f.project_id === '' ? { ...f, project_id: String(preset) } : f));
+  }, [isNew, scope, projectParam]);
 
   const save = useMutation({
     mutationFn: async (data: Partial<Task>) => {

@@ -1,5 +1,6 @@
 import client from './client';
-import type { Task, TaskListParams, TaskDependency, TaskDependenciesResponse, DependencyType, TaskStatus } from '../types';
+import type { MoveToProjectRequest } from '../projects/taskListView';
+import type { Task, TaskMoveToProjectResult, TaskListParams, TaskDependency, TaskDependenciesResponse, DependencyType, TaskStatus } from '../types';
 
 export const getTasks = async (params: TaskListParams = {}): Promise<Task[]> => {
   const { data } = await client.get('/tasks', { params });
@@ -23,6 +24,12 @@ export const updateTask = async (id: number, payload: Partial<Task>): Promise<Ta
 
 export const patchTask = async (id: number, payload: Partial<Task>): Promise<Task> => {
   const { data } = await client.patch(`/tasks/${id}`, payload);
+  return data;
+};
+
+/** まとめて別のプロジェクトへ（`moveToProjectRequest` で作った呼び出しを送る。ADR-0030）。 */
+export const moveTasksToProject = async (request: MoveToProjectRequest): Promise<TaskMoveToProjectResult> => {
+  const { data } = await client.post(request.url, request.body);
   return data;
 };
 

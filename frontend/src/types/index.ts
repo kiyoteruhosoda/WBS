@@ -132,6 +132,14 @@ export interface TaskDependenciesResponse {
   successors: TaskDependency[];
 }
 
+// POST /api/tasks/move-to-project の応答（ADR-0030）
+export interface TaskMoveToProjectResult {
+  // プロジェクトが替わったタスク（選んだ根と、一緒に移った子孫）
+  moved_task_ids: number[];
+  // 届かなくなったマイルストーンを外したタスク
+  detached_milestone_task_ids: number[];
+}
+
 // GET /api/tasks のクエリパラメータ（バックエンドは配列を返す。並び替え・ページングはクライアント側で行う）
 export interface TaskListParams {
   status_filter?: string;
