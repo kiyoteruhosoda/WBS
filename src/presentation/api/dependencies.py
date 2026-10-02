@@ -7,6 +7,7 @@ from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
 from src.application.dto.auth_dto import AuthenticatedUserDTO
+from src.application.ports.calendar_feed import CalendarFeedFetcher, FeedUrlCipher
 from src.application.ports.identity_provider import IdentityProvider
 from src.application.ports.secret_generator import UrlSafeSecretGenerator
 from src.application.use_cases.actuals_use_cases import ActualsUseCases
@@ -17,6 +18,7 @@ from src.application.use_cases.authentication_use_cases import (
 )
 from src.application.use_cases.backchannel_logout_use_cases import ReceiveBackchannelLogout
 from src.application.use_cases.calendar_event_use_cases import CalendarEventUseCases
+from src.application.use_cases.calendar_import_use_cases import CalendarImportUseCases
 from src.application.use_cases.calendar_use_cases import CalendarUseCases
 from src.application.use_cases.closing_use_cases import ClosingUseCases
 from src.application.use_cases.day_off_use_cases import DayOffUseCases
@@ -26,12 +28,17 @@ from src.application.use_cases.today_use_cases import TodayUseCases
 from src.application.user_clock import UserClock
 from src.domain.exceptions import AuthenticationError
 from src.infrastructure.auth.auth_settings import SINGLE_USER_ID, AuthSettings
+from src.infrastructure.calendar_feed.ics_parser import IcsCalendarParser
 from src.infrastructure.database.session import get_db_session
 from src.infrastructure.repositories.auth_session_repository import (
     SqlAlchemyAuthSessionRepository,
 )
 from src.infrastructure.repositories.calendar_event_repository import (
     SqlAlchemyCalendarEventRepository,
+)
+from src.infrastructure.repositories.calendar_import_repository import (
+    SqlAlchemyCalendarImportRepository,
+    SqlAlchemyImportedOccurrenceRepository,
 )
 from src.infrastructure.repositories.calendar_repository import (
     SqlAlchemyCalendarRepository,
@@ -259,6 +266,8 @@ def get_calendar_use_cases(db: DbDep) -> CalendarUseCases:
         presets=SqlAlchemyCalendarViewPresetRepository(db),
         events=SqlAlchemyCalendarEventRepository(db),
         unit_of_work=db,
+        imports=SqlAlchemyCalendarImportRepository(db),
+        imported_occurrences=SqlAlchemyImportedOccurrenceRepository(db),
     )
 
 CalendarUseCasesDep = Annotated[CalendarUseCases, Depends(get_calendar_use_cases)]
@@ -296,3 +305,31 @@ def get_actuals_use_cases(db: DbDep) -> ActualsUseCases:
     )
 
 ActualsUseCasesDep = Annotated[ActualsUseCases, Depends(get_actuals_use_cases)]
+
+
+def build_calendar_import_use_cases(
+    db: Session, fetcher: CalendarFeedFetcher, cipher: FeedUrlCipher
+) -> CalendarImportUseCases:
+    """カレンダーの取り込み（ADR-0037）。定期の読み込み（``calendar_feed_refresh``）も同じ形で作る。"""
+    return CalendarImportUseCases(
+        calendars=SqlAlchemyCalendarRepository(db),
+        imports=SqlAlchemyCalendarImportRepository(db),
+        occurrences=SqlAlchemyImportedOccurrenceRepository(db),
+        users=SqlAlchemyUserAccountRepository(db),
+        fetcher=fetcher,
+        parser=IcsCalendarParser(),
+        cipher=cipher,
+        unit_of_work=db,
+    )
+
+
+def get_calendar_import_use_cases(request: Request, db: DbDep) -> CalendarImportUseCases:
+    """URL を読む口と封じる鍵はアプリに 1 つ（``create_app`` が置く。試験は差し替える）。"""
+    return build_calendar_import_use_cases(
+        db, request.app.state.calendar_feed_fetcher, request.app.state.calendar_feed_cipher
+    )
+
+
+CalendarImportUseCasesDep = Annotated[
+    CalendarImportUseCases, Depends(get_calendar_import_use_cases)
+]

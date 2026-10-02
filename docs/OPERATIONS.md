@@ -125,6 +125,29 @@ curl -sI -A "Mozilla/5.0" https://wbs.nolumia.com/sw.js | grep -i cache-control 
 先に Service Worker を更新して読み直す（`(await navigator.serviceWorker.getRegistrations()).forEach(r => r.update())`、
 1〜2 秒待って再読み込み）。
 
+## 取り込んだカレンダーの URL を購読できるようにしたいとき
+
+ADR-0037。⚠ **鍵が無ければ購読はできない**（既定。ファイルと 1 回だけの URL は使える）。
+
+1. 32 バイトの鍵を**ホストの上で**作り、api のコンテナから読める場所に置く（値を環境変数・画面に入れない）:
+
+   ```bash
+   openssl rand -base64 32 > calendar-feed.key
+   ```
+
+   ⚠ 作り直すと、保存してある購読の URL は開けなくなる（各カレンダーで「ファイル・URL で入れ直す」が要る）。
+2. 環境変数を足して配り直す:
+
+   ```bash
+   CALENDAR_FEED_KEY_FILE=/run/calendar-feed/key   # 1 の置き場（コンテナの中のパス）
+   ```
+
+3. 確かめる:
+   - 起動のログに `calendar.import.subscription_disabled` が**出ない**こと。`calendar.import.key_unreadable` が出たら
+     置き場・権限・形（base64 か 16 進の 32 バイト）を見直す
+   - ログイン中に `GET /api/calendars/import-settings` が `subscription_available: true`
+   - 読み込み直したときはログに `calendar.import.refreshed`、失敗は `calendar.import.refresh_failed`（理由だけ。URL は出ない）
+
 ## 端末への通知（Web Push）を使えるようにしたいとき
 
 ADR-0031。⚠ **鍵が無ければ通知は送らない**（既定。画面は「このサーバーでは使えません」）。

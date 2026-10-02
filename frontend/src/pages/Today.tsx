@@ -28,8 +28,9 @@ import { groupSegmentsByDate } from '../calendar/daySegments';
 import type { DaySegment } from '../calendar/daySegments';
 import type { DayBand } from '../calendar/weekLayout';
 import { buildDeadlines } from '../calendar/taskDeadlines';
-import { DAY_OFF_MARKS_QUERY, OCCURRENCES_QUERY } from '../calendar/calendarQueries';
-import { getDayOffMarks } from '../api/calendars';
+import { DAY_OFF_MARKS_QUERY, IMPORTED_OCCURRENCES_QUERY, OCCURRENCES_QUERY } from '../calendar/calendarQueries';
+import { getDayOffMarks, getImportedOccurrences } from '../api/calendars';
+import { withImportedOccurrences } from '../calendar/importedOccurrences';
 import { buildDayOffView } from '../calendar/daysOff';
 import { DEFAULT_DURATION_MINUTES } from '../calendar/eventForm';
 import type { LinkedTask } from '../calendar/taskScheduling';
@@ -488,6 +489,11 @@ const Today: React.FC = () => {
     queryFn: () => getOccurrences(range as { from: string; to: string }, timeZone),
     enabled: range != null,
   });
+  const importedQuery = useQuery({
+    queryKey: [IMPORTED_OCCURRENCES_QUERY, date, date, timeZone],
+    queryFn: () => getImportedOccurrences(range as { from: string; to: string }, timeZone),
+    enabled: range != null,
+  });
   // 休みの 4 層（ADR-0029）。「今日」は全部のカレンダーを出すので、層も全部重ねる
   const holidaysQuery = useQuery({
     queryKey: [DAY_OFF_MARKS_QUERY, date, date],
@@ -515,9 +521,13 @@ const Today: React.FC = () => {
     () => (taskId: number | null) => (taskId == null ? UNASSIGNED_COLOR : linkedTasks.get(taskId)?.color ?? UNASSIGNED_COLOR),
     [linkedTasks],
   );
+  // 取り込んだカレンダーの回（ADR-0037）も重ねる（読み取り専用。済み・打刻の対象にはならない）
   const segmentsByDate = useMemo(
-    () => groupSegmentsByDate(occurrencesQuery.data ?? [], timeZone),
-    [occurrencesQuery.data, timeZone],
+    () => groupSegmentsByDate(
+      withImportedOccurrences(occurrencesQuery.data, importedQuery.data, t('calendar.importedNoTitle')),
+      timeZone,
+    ),
+    [occurrencesQuery.data, importedQuery.data, timeZone, t],
   );
   const deadlines = useMemo(
     () => (date ? buildDeadlines(tasks ?? [], milestones ?? [], categories ?? [], { from: date, to: date }) : []),

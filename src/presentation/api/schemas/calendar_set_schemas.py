@@ -1,11 +1,21 @@
-"""予定のカレンダー・表示の選択・表示の組み合わせの API スキーマ（task #191、ADR-0027）。"""
+"""予定のカレンダー・表示の選択・表示の組み合わせの API スキーマ（task #191、ADR-0027）。
+
+取り込んだカレンダー（task #196、ADR-0037）の作る・読み込み直す・回もここ。
+"""
 
 from __future__ import annotations
 
 import datetime as dt
+from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
+from src.application.dto.calendar_import_dto import (
+    FeedSource,
+    FileFeedSource,
+    ImportedOccurrenceView,
+    UrlFeedSource,
+)
 from src.domain.entities.calendar import (
     NAME_MAX_LENGTH,
     Calendar,
@@ -13,11 +23,13 @@ from src.domain.entities.calendar import (
     CalendarScope,
     DayOffReason,
 )
+from src.domain.entities.calendar_import import CalendarImport, ImportSource
 from src.domain.entities.calendar_view_preset import CalendarViewPreset
 from src.domain.entities.day_off import DayOff
 from src.domain.services.day_off_layers import DayOffMark
 from src.domain.value_objects.event_color import EventColorKey
 from src.domain.value_objects.recurrence import Weekday
+from src.presentation.api.schemas.calendar_schemas import format_wall_time
 from src.presentation.api.schemas.types import UtcDatetime
 
 MAX_IDS = 500
@@ -65,10 +77,38 @@ class CalendarVisibilityRequest(BaseModel):
     visible_calendar_ids: list[int] = Field(max_length=MAX_IDS)
 
 
+class CalendarImportStatusResponse(BaseModel):
+    """取り込んだカレンダーの読み込みの状態（ADR-0037）。⚠ URL そのものは返さない。"""
+
+    source: ImportSource = Field(description="最後に読み込んだ入れ方（FILE / URL）")
+    imported_at: UtcDatetime = Field(description="最後に読み込めた時刻")
+    event_count: int = Field(description="持っている回の数（今日の前後の期間で展開したもの）")
+    is_subscribed: bool = Field(description="URL を購読している（定期的に読み込み直す）")
+    url_hint: str | None = Field(description="購読している URL の手掛かり（ホスト名と末尾だけ）")
+    last_attempt_at: UtcDatetime | None = Field(description="最後に読み込みを試みた時刻")
+    last_error: str | None = Field(
+        description="最後の読み込みの失敗の理由（成功すれば null）。値は 422 の reason と同じ"
+    )
+
+    @classmethod
+    def from_import(cls, calendar_import: CalendarImport) -> CalendarImportStatusResponse:
+        subscription = calendar_import.subscription
+        return cls(
+            source=calendar_import.source,
+            imported_at=calendar_import.imported_at,
+            event_count=calendar_import.event_count,
+            is_subscribed=subscription is not None,
+            url_hint=subscription.url_hint if subscription else None,
+            last_attempt_at=calendar_import.last_attempt_at,
+            last_error=calendar_import.last_error,
+        )
+
+
 class CalendarResponse(BaseModel):
     id: int
     kind: CalendarKind = Field(
         description="種類。EVENTS = 予定を入れるカレンダー / WORKWEEK = 営業日の層 / DAYS_OFF = 休みの日の一覧の層"
+        " / IMPORTED = 外の iCalendar を読み込んだカレンダー（読み取り専用）"
     )
     name: str
     color_key: EventColorKey
@@ -79,11 +119,16 @@ class CalendarResponse(BaseModel):
     day_off_reason: DayOffReason | None = Field(description="休みの日の一覧の層の理由（ほかは null）")
     counts_as_day_off: bool = Field(description="営業日の判定で休みとして数える（休みの日の一覧の層）")
     scope: CalendarScope = Field(description=SCOPE_DESCRIPTION)
+    imported: CalendarImportStatusResponse | None = Field(
+        default=None, description="取り込んだカレンダーの読み込みの状態（ほかは null）"
+    )
     created_at: UtcDatetime | None
     updated_at: UtcDatetime | None
 
     @classmethod
-    def from_calendar(cls, calendar: Calendar) -> CalendarResponse:
+    def from_calendar(
+        cls, calendar: Calendar, calendar_import: CalendarImport | None = None
+    ) -> CalendarResponse:
         assert calendar.id is not None
         return cls(
             id=calendar.id,
@@ -101,6 +146,11 @@ class CalendarResponse(BaseModel):
             day_off_reason=calendar.day_off_reason,
             counts_as_day_off=calendar.counts_as_day_off,
             scope=calendar.scope,
+            imported=(
+                CalendarImportStatusResponse.from_import(calendar_import)
+                if calendar_import is not None
+                else None
+            ),
             created_at=calendar.created_at,
             updated_at=calendar.updated_at,
         )
@@ -184,3 +234,88 @@ class DayOffMarkResponse(BaseModel):
             counts_as_day_off=mark.counts_as_day_off,
         )
 
+
+# ── 取り込んだカレンダー（ADR-0037）──────────────────────────────────────────
+
+MAX_FEED_TEXT_LENGTH = 10 * 1024 * 1024
+MAX_FEED_URL_LENGTH = 4000
+
+
+class FeedSourceRequest(BaseModel):
+    """読み込む中身。FILE はファイルの中身（テキスト）、URL は https（webcal）の URL。"""
+
+    type: Literal["FILE", "URL"]
+    content: str | None = Field(
+        default=None, max_length=MAX_FEED_TEXT_LENGTH, description="FILE: .ics の中身"
+    )
+    url: str | None = Field(
+        default=None, max_length=MAX_FEED_URL_LENGTH,
+        description="URL: Google の「iCal 形式の非公開アドレス」・Outlook の公開 ICS など",
+    )
+    subscribe: bool = Field(
+        default=False,
+        description="URL: URL を覚えて 15 分ごとに読み込み直す。false なら 1 回読んで URL は保存しない",
+    )
+
+    @model_validator(mode="after")
+    def _matches_type(self) -> FeedSourceRequest:
+        if self.type == "FILE" and not self.content:
+            raise ValueError("a FILE source needs content")
+        if self.type == "URL" and not (self.url and self.url.strip()):
+            raise ValueError("a URL source needs url")
+        return self
+
+    def to_source(self) -> FeedSource:
+        if self.type == "FILE":
+            assert self.content is not None
+            return FileFeedSource(content=self.content.encode("utf-8"))
+        assert self.url is not None
+        return UrlFeedSource(url=self.url.strip(), subscribe=self.subscribe)
+
+
+class ImportedCalendarCreateRequest(BaseModel):
+    """取り込んだカレンダーを作る（読み込めなければ作らない）。末尾に足し、最初から表示。"""
+
+    name: str = Field(min_length=1, max_length=NAME_MAX_LENGTH)
+    color_key: EventColorKey = Field(default=EventColorKey.DEFAULT)
+    source: FeedSourceRequest
+
+
+class CalendarImportSettingsResponse(BaseModel):
+    subscription_available: bool = Field(
+        description="URL を購読できる配備か（封じる鍵がある）。false でも 1 回だけの URL とファイルは使える"
+    )
+    refresh_interval_minutes: int = Field(description="購読を読み込み直す間隔（分）")
+
+
+class ImportedOccurrenceResponse(BaseModel):
+    """取り込んだ回（閲覧者のタイムゾーンへ直したもの。読み取り専用）。
+
+    終日の回は日ごとに 1 つ。``id`` はこの応答の中だけで一意（読み込み直すと変わる）。
+    """
+
+    id: str
+    calendar_id: int
+    title: str
+    location: str | None
+    start: UtcDatetime
+    duration_minutes: int
+    date: dt.date = Field(description="閲覧者のローカル日")
+    start_time: str = Field(description="閲覧者のローカル時刻（HH:MM）")
+    is_all_day: bool
+    calendar_color_key: EventColorKey
+
+    @classmethod
+    def from_view(cls, index: int, view: ImportedOccurrenceView) -> ImportedOccurrenceResponse:
+        return cls(
+            id=f"imported:{view.calendar_id}:{index}",
+            calendar_id=view.calendar_id,
+            title=view.title,
+            location=view.location,
+            start=view.start_utc,
+            duration_minutes=view.duration_minutes,
+            date=view.date,
+            start_time=format_wall_time(view.start_time),
+            is_all_day=view.is_all_day,
+            calendar_color_key=view.calendar_color_key,
+        )

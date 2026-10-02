@@ -12,6 +12,10 @@ export const CALENDARS_QUERY = 'calendars';
 export const DAY_OFF_MARKS_QUERY = 'calendar-day-off-marks';
 /** 表示の組み合わせ */
 export const CALENDAR_VIEW_PRESETS_QUERY = 'calendar-view-presets';
+/** 期間の取り込んだ回（ADR-0037）。キーは `[IMPORTED_OCCURRENCES_QUERY, from, to, timeZone]` */
+export const IMPORTED_OCCURRENCES_QUERY = 'calendar-imported-occurrences';
+/** 購読できる配備か（ADR-0037） */
+export const CALENDAR_IMPORT_SETTINGS_QUERY = 'calendar-import-settings';
 
 /**
  * 予定を作る・動かす・直す・消したあとに読み直させるもの（前方一致）。回と祝日のほか、

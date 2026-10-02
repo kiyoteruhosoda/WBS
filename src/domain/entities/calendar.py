@@ -21,6 +21,10 @@
 予定のカレンダーは **仕事 / プライベート**（``scope``、ADR-0033）を持つ。仕事を土台の予定とし、
 プライベートの予定は計画（実績の「予定した時間」・締めの予定の列）と打刻の既定のタスクに数えない。
 プライベートのカレンダーにはタスクを結んだ予定を入れられない。既定のカレンダーは仕事のまま。
+
+**取り込んだカレンダー**（``IMPORTED``、ADR-0037）は、外の iCalendar（.ics）を読み込んだ回を持つ
+読み取り専用のカレンダー。WBS の予定は入れられず、計画・締め・打刻には数えない。表示の選択と
+組み合わせは予定のカレンダーと同じ一覧で扱う。
 """
 
 from __future__ import annotations
@@ -49,6 +53,8 @@ class CalendarKind(enum.StrEnum):
     """休みの層 1: 営業日（稼働する曜日の規則）。"""
     DAYS_OFF = "DAYS_OFF"
     """休みの層 2〜4: 休みの日の一覧（理由は ``DayOffReason``）。"""
+    IMPORTED = "IMPORTED"
+    """外の iCalendar を読み込んだ回を持つ、読み取り専用のカレンダー（ADR-0037）。"""
 
 
 class CalendarScope(enum.StrEnum):
@@ -144,7 +150,12 @@ class Calendar:
 
     @property
     def is_day_off_layer(self) -> bool:
-        return self.kind != CalendarKind.EVENTS
+        return self.kind in (CalendarKind.WORKWEEK, CalendarKind.DAYS_OFF)
+
+    @property
+    def is_imported(self) -> bool:
+        """外の iCalendar を読み込んだカレンダーか（読み取り専用。ADR-0037）。"""
+        return self.kind == CalendarKind.IMPORTED
 
     @property
     def is_private(self) -> bool:
@@ -204,6 +215,16 @@ class Calendar:
             id=None, user_id=user_id, name=name, color_key=color_key, sort_order=sort_order,
             is_default=is_default, is_visible=True, scope=scope,
             created_at=created_at, updated_at=created_at,
+        )
+
+    @classmethod
+    def create_imported(
+        cls, *, user_id: int, name: str, color_key: EventColorKey, sort_order: int, created_at: datetime
+    ) -> Calendar:
+        """取り込んだカレンダー（ADR-0037）。最初から表示する。"""
+        return cls(
+            id=None, user_id=user_id, name=name, color_key=color_key, sort_order=sort_order,
+            is_visible=True, kind=CalendarKind.IMPORTED, created_at=created_at, updated_at=created_at,
         )
 
     @classmethod

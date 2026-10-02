@@ -8,8 +8,10 @@ dependencies = [
     "anyio>=4.13.0",
     "fastapi>=0.136.1",
     "httpx>=0.28.1",
+    "icalendar>=6.3.1",
     "prometheus-fastapi-instrumentator>=7.1.0",
     "pyjwt[crypto]>=2.10.1",
+    "recurring-ical-events>=3.8.0",
     "sqlalchemy>=2.0.51",
     "uvicorn[standard]>=0.47.0",
 ]

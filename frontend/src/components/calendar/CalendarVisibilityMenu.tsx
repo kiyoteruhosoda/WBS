@@ -11,7 +11,8 @@ import type { Calendar, CalendarViewPreset } from '../../types';
 import { applyCalendarViewPreset, getCalendarViewPresets, setVisibleCalendars } from '../../api/calendars';
 import { CALENDARS_QUERY, CALENDAR_VIEW_PRESETS_QUERY } from '../../calendar/calendarQueries';
 import {
-  allVisible, isPrivateCalendar, isWorkOnly, presetIsActive, toggledVisibleIds, withVisibleIds, workOnlyCalendarIds,
+  allVisible, isDayOffLayer, isImportedCalendar, isPrivateCalendar, isWorkOnly, presetIsActive, toggledVisibleIds,
+  withVisibleIds, workOnlyCalendarIds,
 } from '../../calendar/calendarSelection';
 import { eventColor } from '../../calendar/calendarColors';
 import { errorDetailOf } from '../../calendar/calendarRequests';
@@ -65,13 +66,14 @@ const CalendarVisibilityMenu: React.FC<Props> = ({ calendars, onError }) => {
     onError: failed,
   });
 
-  // 予定のカレンダーと休みの 4 層（ADR-0029）を分けて並べる
+  // 予定のカレンダー・取り込んだカレンダー（ADR-0037）・休みの 4 層（ADR-0029）を分けて並べる
   const sections: { key: string; title: TranslationKey; calendars: Calendar[] }[] = [
     { key: 'events', title: 'calendar.sectionEvents' as TranslationKey, calendars: calendars.filter((cal) => cal.kind === 'EVENTS') },
-    { key: 'days-off', title: 'calendar.sectionDaysOff' as TranslationKey, calendars: calendars.filter((cal) => cal.kind !== 'EVENTS') },
+    { key: 'imported', title: 'calendar.sectionImported' as TranslationKey, calendars: calendars.filter(isImportedCalendar) },
+    { key: 'days-off', title: 'calendar.sectionDaysOff' as TranslationKey, calendars: calendars.filter(isDayOffLayer) },
   ].filter((section) => section.calendars.length > 0);
-  const layersOnlyActive = calendars.some((cal) => cal.kind !== 'EVENTS')
-    && calendars.every((cal) => cal.is_visible === (cal.kind !== 'EVENTS'));
+  const layersOnlyActive = calendars.some(isDayOffLayer)
+    && calendars.every((cal) => cal.is_visible === isDayOffLayer(cal));
   const hasPrivate = calendars.some(isPrivateCalendar);
   const visibleCount = calendars.filter((cal) => cal.is_visible).length;
   const activePreset = (presets ?? []).find((preset) => presetIsActive(preset, calendars));
@@ -136,7 +138,7 @@ const CalendarVisibilityMenu: React.FC<Props> = ({ calendars, onError }) => {
           size="small"
           variant="outlined"
           disabled={layersOnlyActive}
-          onClick={() => show(calendars.filter((cal) => cal.kind !== 'EVENTS').map((cal) => cal.id))}
+          onClick={() => show(calendars.filter(isDayOffLayer).map((cal) => cal.id))}
           data-testid="calendar-show-days-off"
         >
           {t('calendar.calendarShowDaysOff')}
