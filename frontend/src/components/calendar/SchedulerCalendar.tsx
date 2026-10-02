@@ -38,6 +38,8 @@ export interface SchedulerCalendarProps extends CalendarInteractions {
   linkedTasks?: ReadonlyMap<number, LinkedTask>;
   /** タスクの一覧から週表示へ引いている途中の行き先 */
   dropPreview?: TaskDropPreview | null;
+  /** 曜日の休み（営業日の層が表示のとき。ADR-0029） */
+  nonWorkdays?: ReadonlySet<string> | null;
 }
 
 const useClock = (fixed: Date | undefined): number => {
@@ -59,7 +61,7 @@ const EMPTY_DEADLINES: readonly CalendarDeadline[] = [];
  */
 const SchedulerCalendar: React.FC<SchedulerCalendarProps> = ({
   occurrences, holidays = EMPTY_HOLIDAYS, deadlines = EMPTY_DEADLINES, timeZone: requestedTimeZone, initialMode = 'week', now: fixedNow,
-  onVisibleRangeChange, linkedTasks, dropPreview, ...interactions
+  onVisibleRangeChange, linkedTasks, dropPreview, nonWorkdays, ...interactions
 }) => {
   const { t, weekdays, lang } = useI18n();
   const c = useTheme().palette.calendar;
@@ -136,6 +138,7 @@ const SchedulerCalendar: React.FC<SchedulerCalendarProps> = ({
             timeZone={timeZone}
             onSelectDate={selectDate}
             linkedTasks={linkedTasks}
+            nonWorkdays={nonWorkdays}
           />
         ) : (
           <WeekView
@@ -157,6 +160,7 @@ const SchedulerCalendar: React.FC<SchedulerCalendarProps> = ({
             onToggleDone={interactions.onToggleDone}
             linkedTasks={linkedTasks}
             dropPreview={dropPreview}
+            nonWorkdays={nonWorkdays}
           />
         )}
       </Box>

@@ -92,6 +92,8 @@ export interface EventForm {
   newTaskProjectId: number | null;
   /** 通知。null は通知を持たない（既存の予定で一度も入れていないもの）。保存ではそのまま送る */
   alarm: EventAlarmData | null;
+  /** 入れるカレンダー（ADR-0027）。null はサーバーに任せる（既定のカレンダー） */
+  calendarId: number | null;
 }
 
 /** 何を開いているか。保存の呼び出しの選び方が変わる。 */
@@ -184,7 +186,7 @@ const snapToStep = (minute: number): number =>
  * 終了は開始より 15 分以上後、その日の 24:00 まで。
  */
 export const newEventForm = (
-  { date, startMinute, endMinute, timeZone, today, calendarIds = [] }: {
+  { date, startMinute, endMinute, timeZone, today, calendarIds = [], calendarId = null }: {
     date: string;
     startMinute?: number;
     endMinute?: number;
@@ -192,6 +194,8 @@ export const newEventForm = (
     today: string;
     /** 営業日カレンダーが 1 つだけなら、それを最初から選んでおく */
     calendarIds?: readonly number[];
+    /** 入れる予定のカレンダー（`calendarForNewEvent`）。省くとサーバーの既定 */
+    calendarId?: number | null;
   },
 ): EventForm => {
   const start = snapToStep(startMinute ?? DEFAULT_START_MINUTE);
@@ -234,6 +238,7 @@ export const newEventForm = (
     linkNewTask: true,
     newTaskProjectId: null,
     alarm: DEFAULT_ALARM,
+    calendarId,
   });
 };
 
@@ -330,6 +335,7 @@ export const formFromEvent = (
     taskId: event.task_id,
     eventType: event.event_type ?? 'EVENT',
     alarm: event.alarm,
+    calendarId: event.calendar_id ?? null,
   };
   if (event.recurrence && !isMovedOccurrence) form = withRecurrenceRule(form, event.recurrence);
   return { form, context: { mode: 'edit', event, occurrence, isMovedOccurrence } };
@@ -399,6 +405,13 @@ const details = (form: EventForm) => ({
   event_type: form.eventType,
 });
 
+/**
+ * カレンダー（ADR-0027）。作るときは選んでいれば送る。直すときは変えたときだけ送る（省けばサーバーは今のまま。
+ * 「この回だけ」「これ以降」は元の系列のカレンダーを引き継ぐ）。
+ */
+const calendarOf = (form: Pick<EventForm, 'calendarId'>, event: CalendarEvent | null): { calendar_id?: number } =>
+  form.calendarId != null && form.calendarId !== event?.calendar_id ? { calendar_id: form.calendarId } : {};
+
 // ── 分類（ADR-0025）────────────────────────────────────────────────────────
 
 /** 保存の前に「同じ名前のタスク」を作って結ぶか（分類がタスクで、タスクを選んでいない）。 */
@@ -446,6 +459,7 @@ const createRequest = (form: EventForm): CalendarRequest => ({
   url: '/calendar/events',
   body: {
     ...details(form),
+    ...calendarOf(form, null),
     time_zone: form.timeZone,
     start: startInstantOf(form),
     duration_minutes: durationOf(form),
@@ -480,7 +494,7 @@ export const planEventSave = (form: EventForm, context: EventFormContext, scope:
         method: 'POST',
         url: `/calendar/events/${event.id}/occurrences/split`,
         body: {
-          ...details(form), occurrence: occurrenceKeyOf(occurrence), start: startInstantOf(form),
+          ...details(form), ...calendarOf(form, event), occurrence: occurrenceKeyOf(occurrence), start: startInstantOf(form),
           duration_minutes: durationOf(form), expected_version: version,
         },
       }],
@@ -505,7 +519,7 @@ export const planEventSave = (form: EventForm, context: EventFormContext, scope:
           method: 'POST',
           url: `/calendar/events/${event.id}/occurrences/split`,
           body: {
-            ...details(form), occurrence: occurrenceKeyOf(occurrence), start: startInstantOf(form),
+            ...details(form), ...calendarOf(form, event), occurrence: occurrenceKeyOf(occurrence), start: startInstantOf(form),
             duration_minutes: durationOf(form), expected_version: version,
           },
         }],
@@ -520,7 +534,7 @@ export const planEventSave = (form: EventForm, context: EventFormContext, scope:
           method: 'POST',
           url: `/calendar/events/${event.id}/occurrences/following`,
           body: {
-            ...details(form), occurrence: occurrenceKeyOf(occurrence), start: startInstantOf(form),
+            ...details(form), ...calendarOf(form, event), occurrence: occurrenceKeyOf(occurrence), start: startInstantOf(form),
             duration_minutes: durationOf(form), recurrence: buildRecurrence(form), expected_version: version,
           },
         }],
@@ -536,7 +550,7 @@ export const planEventSave = (form: EventForm, context: EventFormContext, scope:
         method: 'PUT',
         url: `/calendar/events/${event.id}/series`,
         body: {
-          ...details(form), start: startInstantOf(form, anchorDate), duration_minutes: durationOf(form),
+          ...details(form), ...calendarOf(form, event), start: startInstantOf(form, anchorDate), duration_minutes: durationOf(form),
           recurrence: buildRecurrence(form), expected_version: version,
         },
       }],
@@ -550,7 +564,10 @@ export const planEventSave = (form: EventForm, context: EventFormContext, scope:
     requests: [{
       method: 'PUT',
       url: `/calendar/events/${event.id}`,
-      body: { ...details(form), start: startInstantOf(form), duration_minutes: durationOf(form), expected_version: version },
+      body: {
+        ...details(form), ...calendarOf(form, event), start: startInstantOf(form), duration_minutes: durationOf(form),
+        expected_version: version,
+      },
     }],
   };
 };

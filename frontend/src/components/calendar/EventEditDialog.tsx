@@ -10,7 +10,7 @@ import EventOutlinedIcon from '@mui/icons-material/EventOutlined';
 import TaskAltIcon from '@mui/icons-material/TaskAlt';
 import { useI18n } from '../../i18n';
 import type { TranslationKey } from '../../i18n/translations';
-import type { BusinessCalendar, CalendarEventType, CalendarOccurrence, Task, WeekdayCode } from '../../types';
+import type { BusinessCalendar, Calendar, CalendarEvent, CalendarEventType, CalendarOccurrence, Task, WeekdayCode } from '../../types';
 import type {
   AdjustmentDateType, AdjustmentDirection, AlarmOffsetField, EventForm, EventFormContext, FormError, RecurringScope,
   RepeatType,
@@ -41,8 +41,11 @@ interface Props {
   viewerTimeZone: string;
   tasks: readonly Task[];
   businessCalendars: readonly BusinessCalendar[];
+  /** 予定のカレンダー（ADR-0027）。2 つ以上あるときだけ選ぶ欄を出す */
+  calendars?: readonly Calendar[];
   onClose: () => void;
-  onSaved: () => void;
+  /** 保存した（最後に書いた予定。消しただけなら null）。休みの日の知らせに使う */
+  onSaved: (written: CalendarEvent | null) => void;
   /** ほかで予定が変わっていた（409）。呼び手が取り直して知らせる */
   onConflict: () => void;
   /** 削除（範囲を聞くのは呼び手） */
@@ -114,8 +117,10 @@ const Section: React.FC<{ title: React.ReactNode; open: boolean; onToggle: () =>
  * 予定の編集画面（移植元 `EventEditPage` / `EventEditViewModel`）。保存の呼び出しの選び方は
  * `calendar/eventForm.ts` の `planEventSave`。繰り返しの回から開いたら、保存のときに範囲を聞く。
  */
+const NO_CALENDARS: readonly Calendar[] = [];
+
 const EventEditDialog: React.FC<Props> = ({
-  target, viewerTimeZone, tasks, businessCalendars, onClose, onSaved, onConflict, onDelete,
+  target, viewerTimeZone, tasks, businessCalendars, calendars = NO_CALENDARS, onClose, onSaved, onConflict, onDelete,
 }) => {
   const { t, weekdays } = useI18n();
   const theme = useTheme();
@@ -157,8 +162,8 @@ const EventEditDialog: React.FC<Props> = ({
         if (again.kind !== 'requests') return;
         requests = again.requests;
       }
-      await sendCalendarRequests(requests);
-      onSaved();
+      const written = await sendCalendarRequests(requests);
+      onSaved(written);
     } catch (e) {
       if (isConflictError(e)) { onConflict(); return; }
       setError(t('calendar.saveFailed', { detail: errorDetailOf(e) ?? '' }));
@@ -553,6 +558,26 @@ const EventEditDialog: React.FC<Props> = ({
               {t(form.allDay ? 'calendar.alarmAllDayHint' : 'calendar.alarmHint')}
             </Box>
           </Section>
+
+          {/* カレンダー（ADR-0027）。1 つしか無ければ選ぶものが無いので出さない */}
+          {calendars.length > 1 && (
+            <TextField
+              select
+              label={t('calendar.calendar')}
+              value={form.calendarId == null ? '' : String(form.calendarId)}
+              onChange={(e) => update({ calendarId: e.target.value === '' ? null : Number(e.target.value) })}
+              data-testid="event-calendar"
+            >
+              {calendars.map((cal) => (
+                <MenuItem key={cal.id} value={String(cal.id)}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <Box sx={{ width: 12, height: 12, borderRadius: '3px', bgcolor: eventColor(cal.color_key), flexShrink: 0 }} />
+                    {cal.name}
+                  </Box>
+                </MenuItem>
+              ))}
+            </TextField>
+          )}
 
           {/* 色 */}
           <Section

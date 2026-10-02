@@ -32,6 +32,8 @@ export const occurrence = (
   alarm: null,
   event_type: 'EVENT',
   is_done: false,
+  calendar_id: 1,
+  calendar_color_key: 'DEFAULT',
 });
 
 /** 時:分 → 分 */

@@ -268,6 +268,60 @@ class ClosingPeriodModel(Base):
     closed_at: Mapped[datetime] = mapped_column(sa.DateTime, nullable=False)
 
 
+# ── 予定のカレンダー（task #191、ADR-0027）────────────────────────────────
+class CalendarModel(Base):
+    """予定のカレンダー。利用者ごとに複数。``is_default`` の 1 つは消せない（移行 0009 で作る）。
+
+    ``kind`` は ``CalendarKind`` の値（いまは EVENTS だけ）。``color_key`` は予定と同じ色の名前。
+    ``is_visible`` はカレンダーの画面に出すか（サーバーに覚える。端末をまたいで同じ）。
+    """
+
+    __tablename__ = "calendars"
+    __table_args__ = ({"sqlite_autoincrement": True},)
+    id: Mapped[int] = mapped_column(BigIntPK, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(sa.BigInteger().with_variant(sa.Integer(), "sqlite"), sa.ForeignKey("users.id"), nullable=False, index=True)
+    kind: Mapped[str] = mapped_column(sa.String(16), nullable=False)
+    name: Mapped[str] = mapped_column(sa.String(200), nullable=False)
+    color_key: Mapped[str] = mapped_column(sa.String(16), nullable=False)
+    sort_order: Mapped[int] = mapped_column(sa.Integer, nullable=False)
+    is_default: Mapped[bool] = mapped_column(sa.Boolean, nullable=False)
+    is_visible: Mapped[bool] = mapped_column(sa.Boolean, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(sa.DateTime, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(sa.DateTime, nullable=False)
+    # 休みの層（ADR-0029）。workdays は営業日の層の曜日（MO〜SU をカンマで）、day_off_reason は
+    # 休みの日の一覧の層の理由（NATIONAL_HOLIDAY / COMPANY / PERSONAL）。ほかの種類は NULL。
+    workdays: Mapped[str | None] = mapped_column(sa.String(32), nullable=True)
+    day_off_reason: Mapped[str | None] = mapped_column(sa.String(16), nullable=True)
+    counts_as_day_off: Mapped[bool] = mapped_column(sa.Boolean, nullable=False, server_default=sa.false())
+
+
+class CalendarDayOffModel(Base):
+    """休みの日の一覧の層の 1 日（ADR-0029）。カレンダーを消すと一緒に消える。"""
+
+    __tablename__ = "calendar_days_off"
+    __table_args__ = (
+        sa.UniqueConstraint("calendar_id", "day", name="uq_calendar_days_off_day"),
+    )
+    id: Mapped[int] = mapped_column(BigIntPK, primary_key=True, autoincrement=True)
+    calendar_id: Mapped[int] = mapped_column(sa.BigInteger().with_variant(sa.Integer(), "sqlite"), sa.ForeignKey("calendars.id", ondelete="CASCADE"), nullable=False)
+    day: Mapped[date] = mapped_column(sa.Date, nullable=False)
+    name: Mapped[str | None] = mapped_column(sa.String(200), nullable=True)
+
+
+class CalendarViewPresetModel(Base):
+    """表示の組み合わせ。``calendar_ids`` は表示にするカレンダーの id の JSON の配列。"""
+
+    __tablename__ = "calendar_view_presets"
+    __table_args__ = ({"sqlite_autoincrement": True},)
+    id: Mapped[int] = mapped_column(BigIntPK, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(sa.BigInteger().with_variant(sa.Integer(), "sqlite"), sa.ForeignKey("users.id"), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(sa.String(200), nullable=False)
+    calendar_ids: Mapped[str] = mapped_column(sa.Text, nullable=False)
+    sort_order: Mapped[int] = mapped_column(sa.Integer, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(sa.DateTime, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(sa.DateTime, nullable=False)
+
+
 # ── 予定（task #156、ADR-0009）──────────────────────────────────────────────
 class CalendarEventModel(Base):
     """予定（集約 ``CalendarEvent``）。単発も繰り返しもこの 1 表。
@@ -310,6 +364,13 @@ class CalendarEventModel(Base):
     alarm_at_start: Mapped[bool] = mapped_column(sa.Boolean, nullable=False, server_default=sa.false())
     # 分類（ADR-0025）。EVENT = 予定 / TASK = タスク（回ごとに済みを付ける）。ネイティブ ENUM にしない。
     event_type: Mapped[str] = mapped_column(sa.String(16), nullable=False, server_default="EVENT")
+    # 属するカレンダー（ADR-0027）。既存の予定は移行 0009 で利用者の既定のカレンダーへ入れた。
+    calendar_id: Mapped[int] = mapped_column(
+        sa.BigInteger().with_variant(sa.Integer(), "sqlite"),
+        sa.ForeignKey("calendars.id", name="fk_calendar_events_calendar_id"),
+        nullable=False,
+        index=True,
+    )
 
     exceptions: Mapped[list[CalendarEventExceptionModel]] = relationship(
         cascade="all, delete-orphan", order_by="CalendarEventExceptionModel.id", lazy="selectin"

@@ -6,7 +6,7 @@ import type { MonthCell } from '../../calendar/monthCells';
 import { availableChipRows, visibleChipCount } from '../../calendar/monthCells';
 import type { LinkedTask } from '../../calendar/taskScheduling';
 import { occurrenceColor } from '../../calendar/taskScheduling';
-import { pastEventColor } from '../../calendar/calendarColors';
+import { dayColumnBackground, pastEventColor } from '../../calendar/calendarColors';
 import { formatOccurrenceTimeRange } from '../../calendar/daySegments';
 import DeadlineChip from './DeadlineChip';
 import DoneMark from './DoneMark';
@@ -18,13 +18,15 @@ interface Props {
   onSelectDate: (date: string) => void;
   /** 予定に結んだタスクの印（色） */
   linkedTasks?: ReadonlyMap<number, LinkedTask>;
+  /** 曜日の休み（営業日の層が表示のとき。ADR-0029）。null・省略は土日の色だけ */
+  nonWorkdays?: ReadonlySet<string> | null;
 }
 
 // 移植元の既定のマスの高さ。これより低くはしない。
 const MIN_CELL_HEIGHT = 88;
 
 /** 月表示（移植元 CalendarPage.xaml の MonthGrid）。6×7 のマスに色チップを入るだけ並べる。 */
-const MonthView: React.FC<Props> = ({ cells, selectedDate, timeZone, onSelectDate, linkedTasks }) => {
+const MonthView: React.FC<Props> = ({ cells, selectedDate, timeZone, onSelectDate, linkedTasks, nonWorkdays }) => {
   const { t, weekdays } = useI18n();
   const c = useTheme().palette.calendar;
   const gridRef = useRef<HTMLDivElement>(null);
@@ -43,10 +45,7 @@ const MonthView: React.FC<Props> = ({ cells, selectedDate, timeZone, onSelectDat
 
   const background = (cell: MonthCell): string => {
     if (!cell.isCurrentMonth) return 'transparent';
-    if (cell.holiday) return c.holidayBg;
-    if (cell.dayOfWeek === 0) return c.sundayBg;
-    if (cell.dayOfWeek === 6) return c.saturdayBg;
-    return 'transparent';
+    return dayColumnBackground(c, cell.dayOfWeek, cell.holiday ?? undefined, nonWorkdays ? nonWorkdays.has(cell.date) : null);
   };
 
   const dayTextColor = (cell: MonthCell, selected: boolean): string => {
@@ -115,7 +114,7 @@ const MonthView: React.FC<Props> = ({ cells, selectedDate, timeZone, onSelectDat
                   title={cell.holiday.name ?? ''}
                   sx={{
                     height: 14, lineHeight: '14px', borderRadius: '3px', mx: '1px', mb: '2px', px: '3px',
-                    bgcolor: c.red, color: c.onColor, fontSize: 10,
+                    bgcolor: cell.holiday.color ?? c.red, color: c.onColor, fontSize: 10,
                     overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                   }}
                 >

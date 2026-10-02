@@ -10,16 +10,20 @@ import { getMilestones } from '../api/milestones';
 import { inScope } from '../projects/projectScope';
 import { useProjectScope } from '../projects/useProjectScope';
 import { getCategories } from '../api/categories';
-import { getHolidays, getOccurrences, sendCalendarRequest } from '../api/calendar';
+import { getOccurrences, sendCalendarRequest } from '../api/calendar';
+import { getDayOffMarks } from '../api/calendars';
+import { buildDayOffView } from '../calendar/daysOff';
 import SchedulerCalendar from '../components/calendar/SchedulerCalendar';
 import TaskSchedulePanel from '../components/calendar/TaskSchedulePanel';
+import CalendarListPanel from '../components/calendar/CalendarListPanel';
+import { calendarForNewEvent, filterVisibleOccurrences } from '../calendar/calendarSelection';
 import { useCalendarEditing } from '../components/calendar/useCalendarEditing';
 import { useHeightToViewportBottom } from '../components/useHeightToViewportBottom';
 import type { WeekSlot } from '../components/calendar/weekSlotLocator';
 import type { CreateRange, TaskDropPreview } from '../components/calendar/calendarInteractions';
 import type { CalendarDeadline } from '../calendar/taskDeadlines';
 import { buildDeadlines } from '../calendar/taskDeadlines';
-import { HOLIDAYS_QUERY, OCCURRENCES_QUERY } from '../calendar/calendarQueries';
+import { DAY_OFF_MARKS_QUERY, OCCURRENCES_QUERY } from '../calendar/calendarQueries';
 import { resolveTimeZone } from '../calendar/zonedTime';
 import type { TaskEventDraft } from '../calendar/taskScheduling';
 import {
@@ -56,9 +60,10 @@ const CalendarPage: React.FC = () => {
     enabled: range != null,
     placeholderData: keepPreviousData,
   });
+  // 休みの 4 層（ADR-0029）。表示中の層だけ塗る（営業日の判定は表示に関係しない）
   const holidaysQuery = useQuery({
-    queryKey: [HOLIDAYS_QUERY, range?.from, range?.to],
-    queryFn: () => getHolidays(range as VisibleRange),
+    queryKey: [DAY_OFF_MARKS_QUERY, range?.from, range?.to],
+    queryFn: () => getDayOffMarks(range as VisibleRange),
     enabled: range != null,
     placeholderData: keepPreviousData,
   });
@@ -100,15 +105,25 @@ const CalendarPage: React.FC = () => {
   );
 
   const editing = useCalendarEditing({ occurrencesKey, timeZone, tasks: tasks ?? [] });
+  // 表示にしているカレンダーの回だけ（ADR-0027。選んだ状態はサーバーが覚えている）
+  const dayOffView = useMemo(
+    () => buildDayOffView(holidaysQuery.data ?? [], editing.calendars),
+    [holidaysQuery.data, editing.calendars],
+  );
+  const visibleOccurrences = useMemo(
+    () => filterVisibleOccurrences(occurrencesQuery.data ?? [], editing.calendars),
+    [occurrencesQuery.data, editing.calendars],
+  );
 
   // ── タスクから作る（task #159） ─────────────────────────────────────
 
   const createTaskEvent = (draft: TaskEventDraft) => editing.exclusive(async () => {
-    await sendCalendarRequest(taskEventRequest(draft, timeZone));
+    await sendCalendarRequest(taskEventRequest(draft, timeZone, calendarForNewEvent(editing.calendars)));
     setSchedulingTask(null);
     // 「予定済みの時間」も変わる（読み直させるものに入っている）
     editing.refresh();
     editing.notify('calendar.taskScheduled', 'success', { title: draft.title, range: formatTimingRange(draft) });
+    editing.warnDaysOff([draft.date]);
   });
 
   const onCreateEvent = (date: string, minute?: number) => {
@@ -176,6 +191,13 @@ const CalendarPage: React.FC = () => {
           height: { md: fill.height != null ? `${fill.height}px` : 'calc(100vh - 160px)' }, minHeight: { md: 640 },
         }}
       >
+        {/* カレンダーの一覧と表示の選択（広い画面は左、狭い画面はいちばん上で折りたたむ） */}
+        <Box sx={{ order: { xs: 0, md: 0 }, width: { xs: '100%', md: 220 }, flexShrink: 0, height: { md: '100%' } }}>
+          <CalendarListPanel
+            calendars={editing.calendars ?? []}
+            onError={(detail) => editing.notify('calendar.saveFailed', 'error', { detail })}
+          />
+        </Box>
         {/* タスクの一覧（広い画面は右、狭い画面は上で折りたたむ） */}
         <Box sx={{ order: { xs: 1, md: 2 }, width: { xs: '100%', md: 260 }, flexShrink: 0, height: { md: '100%' } }}>
           <TaskSchedulePanel
@@ -195,8 +217,9 @@ const CalendarPage: React.FC = () => {
           height: { xs: fillNarrow.height != null ? `${fillNarrow.height}px` : 'calc(100svh - 140px)', md: '100%' }, minHeight: { xs: 480 },
         }}>
           <SchedulerCalendar
-            occurrences={occurrencesQuery.data ?? []}
-            holidays={holidaysQuery.data ?? []}
+            occurrences={visibleOccurrences}
+            holidays={dayOffView.holidays}
+            nonWorkdays={dayOffView.nonWorkdays}
             deadlines={deadlines}
             timeZone={timeZone}
             onVisibleRangeChange={onVisibleRangeChange}

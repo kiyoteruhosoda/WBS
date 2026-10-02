@@ -33,6 +33,7 @@ from src.domain.entities.calendar_event import (
 )
 from src.domain.exceptions import ConflictError
 from src.domain.repositories.calendar_event_repository import CalendarEventRepository
+from src.domain.services.default_calendar import ensure_default_calendar
 from src.domain.value_objects.event_alarm import EventAlarm
 from src.domain.value_objects.event_color import EventColorKey
 from src.domain.value_objects.event_schedule import (
@@ -46,6 +47,8 @@ from src.infrastructure.database.models import (
     CalendarEventModel,
     CalendarEventMoveModel,
 )
+from src.infrastructure.repositories.calendar_repository import SqlAlchemyCalendarRepository
+from src.shared.clock import utcnow
 
 
 class SqlAlchemyCalendarEventRepository(CalendarEventRepository):
@@ -71,6 +74,12 @@ class SqlAlchemyCalendarEventRepository(CalendarEventRepository):
         return [self._read(m) for m in self._session.scalars(stmt)]
 
     def save(self, event: CalendarEvent) -> CalendarEvent:
+        if event.calendar_id is None:
+            # カレンダーを決めずに来た予定は、利用者の既定のカレンダーへ（ADR-0027）。
+            default = ensure_default_calendar(
+                SqlAlchemyCalendarRepository(self._session), event.user_id, utcnow()
+            )
+            event.calendar_id = default.id
         if event.id is None:
             model = CalendarEventModel(user_id=event.user_id)
             self._copy_to_model(event, model)
@@ -103,6 +112,17 @@ class SqlAlchemyCalendarEventRepository(CalendarEventRepository):
         self._session.delete(model)
         self._session.flush()
         self._read_versions.pop(event_id, None)
+
+    def reassign_calendar(self, user_id: int, from_calendar_id: int, to_calendar_id: int) -> int:
+        table = CalendarEventModel.__table__
+        result = self._session.execute(
+            update(table)
+            .where(table.c.user_id == user_id, table.c.calendar_id == from_calendar_id)
+            .values(calendar_id=to_calendar_id, version=table.c.version + 1)
+        )
+        # 読んだ版を覚えていれば、移したものは古い（次の保存は ConflictError で読み直させる）。
+        self._session.expire_all()
+        return int(result.rowcount or 0)
 
     # ── 内側 ────────────────────────────────────────────────────────────
 
@@ -155,6 +175,7 @@ class SqlAlchemyCalendarEventRepository(CalendarEventRepository):
         model.color_key = event.color_key.value
         model.task_id = event.task_id
         model.event_type = event.event_type.value
+        model.calendar_id = event.calendar_id
         alarm = event.alarm
         model.alarm_enabled = alarm.is_enabled if alarm is not None else None
         model.alarm_15_min = alarm.notify_15_min if alarm is not None else False
@@ -193,6 +214,7 @@ class SqlAlchemyCalendarEventRepository(CalendarEventRepository):
             task_id=model.task_id,
             alarm=_alarm_to_entity(model),
             event_type=EventType(model.event_type),
+            calendar_id=model.calendar_id,
             exceptions=[_exception_to_entity(e) for e in model.exceptions],
             moves=[_move_to_entity(m) for m in model.moves],
             version=model.version,

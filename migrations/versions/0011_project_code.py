@@ -1,7 +1,7 @@
 """projects.code: 任意のプロジェクトコード（task #187）
 
-Revision ID: 0009
-Revises: 0008
+Revision ID: 0011
+Revises: 0010
 Create Date: 2026-10-02
 
 - ``projects.code``: 任意の短い文字列（32 字まで）。プロジェクト一覧で名前の横に出すだけ。
@@ -15,8 +15,8 @@ from collections.abc import Sequence
 import sqlalchemy as sa
 from alembic import op
 
-revision: str = "0009"
-down_revision: str | Sequence[str] | None = "0008"
+revision: str = "0011"
+down_revision: str | Sequence[str] | None = "0010"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
