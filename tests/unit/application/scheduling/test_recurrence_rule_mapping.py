@@ -73,10 +73,11 @@ def test_no_end_date_is_null() -> None:
 
 def test_adjustment_names_no_calendar() -> None:
     # 古い営業日カレンダーの名指しは畳んだ（ADR-0032）。書かず、古い入力に残っていても読み捨てる
-    mapping = recurrence_rule_to_mapping(RULES[4])
+    rule = next(r for r in RULES if r.adjustment is not None)
+    mapping = recurrence_rule_to_mapping(rule)
     assert "calendar_id" not in mapping["adjustment"]
     mapping["adjustment"]["calendar_id"] = 3
-    assert recurrence_rule_from_mapping(mapping) == RULES[4]
+    assert recurrence_rule_from_mapping(mapping) == rule
 
 
 def test_weekdays_are_written_monday_first() -> None:
