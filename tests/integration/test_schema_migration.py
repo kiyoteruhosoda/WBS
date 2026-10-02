@@ -463,10 +463,6 @@ def test_0009_puts_existing_events_into_a_default_calendar_per_user(tmp_path):
                     "'Asia/Tokyo', '2026-10-05 00:00:00', 60, 'DEFAULT', 1, 2, 1, "
                     "'2026-01-01', '2026-01-01')"
                 )
-            # 消した予定の id（6〜9）を使い回さないこと（採番の最大を覚えている）
-            connection.exec_driver_sql(
-                "UPDATE sqlite_sequence SET seq = 9 WHERE name = 'calendar_events'"
-            )
         with engine.begin() as connection:
             command.upgrade(alembic_config(connection), "0009")
         with engine.connect() as connection:
@@ -486,9 +482,10 @@ def test_0009_puts_existing_events_into_a_default_calendar_per_user(tmp_path):
             assert [(e[0], e[2]) for e in events] == [
                 (1, default_of[1]), (2, default_of[2]), (5, default_of[1]),
             ]
+            # 作り直した表は消した予定の id を使い回さない（採番の最大を覚える）
             assert connection.exec_driver_sql(
                 "SELECT seq FROM sqlite_sequence WHERE name = 'calendar_events'"
-            ).scalar() == 9
+            ).scalar() == 5
         columns = {c["name"]: c for c in sa.inspect(engine).get_columns("calendar_events")}
         assert columns["calendar_id"]["nullable"] is False
 
@@ -501,6 +498,6 @@ def test_0009_puts_existing_events_into_a_default_calendar_per_user(tmp_path):
             assert connection.exec_driver_sql("SELECT COUNT(*) FROM calendar_events").scalar() == 3
             assert connection.exec_driver_sql(
                 "SELECT seq FROM sqlite_sequence WHERE name = 'calendar_events'"
-            ).scalar() == 9
+            ).scalar() == 5
     finally:
         engine.dispose()
