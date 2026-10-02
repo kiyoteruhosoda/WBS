@@ -2,7 +2,6 @@
 
 - 回を期間で引く（閲覧者のタイムゾーンへ投影済み）: ``GET /calendar/occurrences``
 - この先の通知を引く（打刻アプリが Bearer でも叩く。ADR-0021）: ``GET /calendar/alarms``
-- 祝日を期間で引く（有効な営業日カレンダーから）: ``GET /calendar/holidays``
 - 予定の CRUD: ``/calendar/events``
 - 繰り返しの編集: すべて（``PUT .../series``）・この回以降（``POST .../occurrences/following``）・
   この回だけ（``POST .../occurrences/split``）
@@ -34,7 +33,6 @@ from src.application.dto.unset import UNSET, UnsetType
 from src.domain.value_objects.event_alarm import EventAlarm
 from src.presentation.api.dependencies import (
     AppOrWebUserDep,
-    BusinessCalendarUseCasesDep,
     CalendarEventUseCasesDep,
     CurrentUserDep,
 )
@@ -47,7 +45,6 @@ from src.presentation.api.schemas.calendar_schemas import (
     CalendarOccurrenceResponse,
     EventAlarmSchema,
     FollowingOccurrencesChangeRequest,
-    HolidaySchema,
     OccurrenceActionRequest,
     OccurrenceDoneRequest,
     OccurrenceDoneResponse,
@@ -120,16 +117,6 @@ def list_alarms(
         window_end=to_naive_utc(window_end),
         alarms=[CalendarAlarmResponse.from_planned(p) for p in planned],
     )
-
-
-@router.get("/holidays", response_model=list[HolidaySchema])
-def list_holidays(
-    from_date: FromDate, to_date: ToDate, current_user: CurrentUserDep, calendars: BusinessCalendarUseCasesDep
-) -> list[HolidaySchema]:
-    return [
-        HolidaySchema.from_holiday(h)
-        for h in calendars.list_holidays(current_user.user_id, from_date, to_date)
-    ]
 
 
 @router.get("/events", response_model=list[CalendarEventResponse])

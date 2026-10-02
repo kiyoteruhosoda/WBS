@@ -6,6 +6,7 @@
 - 消すと中の予定は既定へ移る。既定は消せない
 - 表示の選択は全部を置き換える。組み合わせを当てると入っているものだけが表示
 - 予定は既定のカレンダーへ入り、編集で移せる。回にはカレンダーの色が付く
+- 仕事 / プライベート（ADR-0033）: プライベートにはタスクを結んだ予定を入れない・計画に数えない
 """
 
 from __future__ import annotations
@@ -22,6 +23,7 @@ from src.application.dto.calendar_event_dto import (
 )
 from src.application.use_cases.calendar_event_use_cases import CalendarEventUseCases
 from src.application.use_cases.calendar_use_cases import CalendarUseCases
+from src.domain.entities.calendar import CalendarScope
 from src.domain.exceptions import ConflictError, NotFoundError, ValidationError
 from src.domain.value_objects.event_color import EventColorKey
 from src.domain.value_objects.event_schedule import OccurrenceKey
@@ -29,7 +31,6 @@ from src.domain.value_objects.recurrence import Weekday
 from tests.unit.application.scheduling.fakes import (
     FakeClock,
     FakeTasks,
-    InMemoryBusinessCalendarRepository,
     InMemoryCalendarEventRepository,
     InMemoryCalendarRepository,
     InMemoryCalendarViewPresetRepository,
@@ -57,7 +58,7 @@ class World:
             self.calendar_repo, self.presets, self.events, self.uow, now=self.clock
         )
         self.uc = CalendarEventUseCases(
-            self.events, InMemoryBusinessCalendarRepository(), FakeTasks({}), self.uow,
+            self.events, FakeTasks({10: USER}), self.uow,
             now=self.clock, event_calendars=self.calendar_repo,
         )
 
@@ -248,3 +249,71 @@ def test_occurrences_carry_the_calendar_and_its_color(w: World) -> None:
     assert sorted((v.calendar_id, v.calendar_color_key) for v in views) == sorted(
         [(work.id, EventColorKey.TOMATO), (w.default_id(), EventColorKey.DEFAULT)]
     )
+
+
+# ── 仕事 / プライベート（ADR-0033）────────────────────────────────────────
+
+
+MY_TASK = 10
+
+
+def test_calendars_are_work_unless_made_private(w: World) -> None:
+    listed = w.calendars.list_calendars(USER)
+    assert {c.scope for c in listed} == {CalendarScope.WORK}
+    home = w.calendars.create_calendar(USER, "家", EventColorKey.BASIL, CalendarScope.PRIVATE)
+    assert home.scope == CalendarScope.PRIVATE and home.is_private
+    back = w.calendars.update_calendar(home.id, USER, "家", EventColorKey.BASIL, scope=CalendarScope.WORK)
+    assert back.scope == CalendarScope.WORK
+
+
+def test_default_calendar_and_layers_cannot_be_private(w: World) -> None:
+    with pytest.raises(ValidationError):
+        w.calendars.update_calendar(
+            w.default_id(), USER, "予定", EventColorKey.DEFAULT, scope=CalendarScope.PRIVATE
+        )
+    layer = next(c for c in w.calendars.list_calendars(USER) if c.is_day_off_layer)
+    with pytest.raises(ValidationError):
+        w.calendars.update_calendar(
+            layer.id, USER, layer.name, layer.color_key, scope=CalendarScope.PRIVATE
+        )
+
+
+def test_private_calendar_holds_no_task_events(w: World) -> None:
+    home = w.calendars.create_calendar(USER, "家", EventColorKey.BASIL, CalendarScope.PRIVATE)
+    with pytest.raises(ValidationError):
+        w.single(calendar_id=home.id, task_id=MY_TASK)
+    linked = w.single(task_id=MY_TASK)
+    with pytest.raises(ValidationError):
+        w.uc.update_event(
+            UpdateEventCommand(
+                event_id=linked.id, user_id=USER, title="会議", task_id=MY_TASK, calendar_id=home.id
+            )
+        )
+    plain = w.single(calendar_id=home.id)
+    with pytest.raises(ValidationError):
+        w.uc.update_event(
+            UpdateEventCommand(event_id=plain.id, user_id=USER, title="会議", task_id=MY_TASK)
+        )
+
+
+def test_a_calendar_with_task_events_cannot_become_private(w: World) -> None:
+    work = w.calendars.create_calendar(USER, "仕事", EventColorKey.TOMATO)
+    w.single(calendar_id=work.id, task_id=MY_TASK)
+    with pytest.raises(ConflictError):
+        w.calendars.update_calendar(
+            work.id, USER, "仕事", EventColorKey.TOMATO, scope=CalendarScope.PRIVATE
+        )
+
+
+def test_private_occurrences_are_marked_and_not_planned(w: World) -> None:
+    home = w.calendars.create_calendar(USER, "家", EventColorKey.BASIL, CalendarScope.PRIVATE)
+    w.single(calendar_id=home.id)
+    w.single(task_id=MY_TASK)
+    views = w.uc.list_occurrence_views(USER, date(2026, 10, 5), date(2026, 10, 5), "Asia/Tokyo")
+    assert sorted((v.calendar_id == home.id, v.is_private) for v in views) == [
+        (False, False), (True, True)
+    ]
+    assert w.uc.scheduled_minutes_by_task(
+        USER, date(2026, 10, 5), date(2026, 10, 5), "Asia/Tokyo"
+    ) == {MY_TASK: 60}
+

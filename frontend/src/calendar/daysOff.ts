@@ -3,7 +3,7 @@
 // - 営業日かどうかは表示に関係なく「休みとして数える」で決まる（サーバーと同じ判定）
 // 層の日の理由は `GET /api/calendars/days-off` の `DayOffMark`。
 
-import type { Calendar, CalendarHoliday, DayOffMark, DayOffReason } from '../types';
+import type { Calendar, CalendarEventType, CalendarHoliday, DayOffMark, DayOffReason } from '../types';
 import { eventColor } from './calendarColors';
 import { addDays } from './zonedTime';
 
@@ -11,7 +11,11 @@ import { addDays } from './zonedTime';
 const REASON_PRIORITY: readonly DayOffReason[] = ['NATIONAL_HOLIDAY', 'COMPANY', 'PERSONAL'];
 
 export interface DayOffView {
-  /** 終日の帯に出す休み（日に 1 つ。名前は理由を「・」でつなぐ）。表示中の層だけ */
+  /**
+   * 終日の帯に出す休み（日に 1 つ。名前は理由を「・」でつなぐ）。表示中の層だけ。
+   * 曜日の休みは、`weeklyLabel` を渡したとき・営業日の層が表示のとき・その日にほかの層の理由が無いときだけ、
+   * 控えめな帯（`subtle`）で出す（同じ日にほかの理由があればそちらを優先して 1 つだけ。毎週末に目立つ帯が並ばないように）
+   */
   holidays: CalendarHoliday[];
   /** 曜日の休み（営業日の層が表示のときだけ。表示でなければ null で、画面は土日の色のまま） */
   nonWorkdays: ReadonlySet<string> | null;
@@ -29,7 +33,11 @@ export const dayOffLabel = (mark: DayOffMark, layer: string | null): string => {
   return layer ?? '';
 };
 
-export const buildDayOffView = (marks: readonly DayOffMark[], calendars: readonly Calendar[] | undefined): DayOffView => {
+export const buildDayOffView = (
+  marks: readonly DayOffMark[],
+  calendars: readonly Calendar[] | undefined,
+  options: { weeklyLabel?: string } = {},
+): DayOffView => {
   const byId = new Map((calendars ?? []).map((c) => [c.id, c]));
   // 一覧がまだ無いときは全部を表示とみなす（何も塗られない画面にしない）
   const visible = (mark: DayOffMark) => {
@@ -63,6 +71,13 @@ export const buildDayOffView = (marks: readonly DayOffMark[], calendars: readonl
       color: layer ? eventColor(layer.color_key) : undefined,
     });
   }
+  if (options.weeklyLabel && nonWorkdays) {
+    const color = workweek ? eventColor(workweek.color_key) : undefined;
+    for (const date of nonWorkdays) {
+      if (byDate.has(date)) continue;
+      holidays.push({ date, name: options.weeklyLabel, reason: 'WEEKLY', color, subtle: true });
+    }
+  }
   holidays.sort((a, b) => a.date.localeCompare(b.date));
   return { holidays, nonWorkdays, nonBusinessDays };
 };
@@ -91,3 +106,10 @@ export const dayOffReasonsOn = (
     .filter(Boolean);
   return names.length > 0 ? [...new Set(names)].join('・') : null;
 };
+
+/**
+ * 休みの日に置いたら知らせるか（2026-10-02 の決定）。知らせるのはタスクだけ: 分類がタスクの予定（定常業務の回を含む）。
+ * 予定（分類が予定）は休みの日に置いても知らせない。「時間を取る」で落としたタスク・タスクの開始と期限は呼び手が知らせる。
+ */
+export const notifiesDayOff = (eventType: CalendarEventType | null | undefined): boolean => eventType === 'TASK';
+

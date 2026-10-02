@@ -4,13 +4,15 @@ from __future__ import annotations
 
 from datetime import date, datetime, time
 
-from src.domain.entities.business_calendar import BusinessCalendar, Holiday
+from src.domain.entities.calendar import Calendar, DayOffReason
 from src.domain.entities.calendar_event import (
     CalendarEvent,
     EventException,
     EventKind,
     EventMove,
 )
+from src.domain.entities.day_off import DayOff
+from src.domain.services.day_off_layers import DayOffLayers
 from src.domain.value_objects.event_color import EventColorKey
 from src.domain.value_objects.event_schedule import RecurringEventSchedule, SingleEventSchedule
 from src.domain.value_objects.local_schedule_point import start_instant
@@ -98,16 +100,19 @@ def weekly_monday_from_0420(**kwargs) -> CalendarEvent:
     return recurring_event(utc(2026, 4, 20, 10, 0), weekly_rule(Weekday.MONDAY), 60, **kwargs)
 
 
-def weekday_calendar(
+NATIONAL_LAYER_ID = 13
+
+
+def weekday_layers(
     *holidays: date,
-    calendar_id: int | None = 1,
     user_id: int = 1,
-    shift_on_holidays_only: bool = False,
-) -> BusinessCalendar:
-    """月〜金が営業日で、``holidays`` が祝日のカレンダー。"""
-    return BusinessCalendar(
-        id=calendar_id, user_id=user_id, name="JP", time_zone=TOKYO,
-        workdays=WEEKDAYS_MON_TO_FRI,
-        holidays=[Holiday(d, "祝") for d in holidays],
-        shift_on_holidays_only=shift_on_holidays_only,
+    workdays: frozenset[Weekday] = WEEKDAYS_MON_TO_FRI,
+) -> DayOffLayers:
+    """月〜金が営業日で、``holidays`` が「日本の祝日」の層（休みとして数える）の日の休みの層。"""
+    national = Calendar.create_layer(user_id, DayOffReason.NATIONAL_HOLIDAY, NOW)
+    national.id = NATIONAL_LAYER_ID
+    return DayOffLayers(
+        workdays=workdays,
+        layers=[national],
+        days_off=[DayOff(NATIONAL_LAYER_ID, d, "祝") for d in holidays],
     )

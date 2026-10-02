@@ -43,7 +43,7 @@ export const recurringEvent = (patch: Partial<CalendarEvent> = {}): CalendarEven
     weekly: null,
     monthly: { kind: 'NTH_WEEKDAY', week_index: 2, weekday: 'TU' },
     yearly: null,
-    adjustment: { condition: 'HOLIDAY', shift_unit: 'BUSINESS_DAY', shift_amount: -1, calendar_id: 3, action: 'SHIFT' },
+    adjustment: { condition: 'HOLIDAY', shift_unit: 'BUSINESS_DAY', shift_amount: -1, action: 'SHIFT' },
   },
   version: 4,
   ...patch,

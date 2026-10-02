@@ -7,9 +7,9 @@ import {
 import { useI18n } from '../../i18n';
 import type { TranslationKey } from '../../i18n/translations';
 import type { CalendarEvent, CalendarOccurrence, Task } from '../../types';
-import { getBusinessCalendars, getEvent, getOccurrences, sendCalendarRequest } from '../../api/calendar';
+import { getEvent, getOccurrences, sendCalendarRequest } from '../../api/calendar';
 import { getCalendars, getDayOffMarks } from '../../api/calendars';
-import { dayOffReasonsOn } from '../../calendar/daysOff';
+import { dayOffReasonsOn, notifiesDayOff } from '../../calendar/daysOff';
 import { formatDate } from '../../utils/format';
 import { calendarForNewEvent } from '../../calendar/calendarSelection';
 import EventEditDialog from './EventEditDialog';
@@ -57,7 +57,6 @@ interface Options {
 export const useCalendarEditing = ({ occurrencesKey, timeZone, tasks }: Options) => {
   const { t } = useI18n();
   const qc = useQueryClient();
-  const { data: businessCalendars } = useQuery({ queryKey: ['business-calendars'], queryFn: getBusinessCalendars });
   // 予定のカレンダー（ADR-0027）。編集画面で選ぶ・新しい予定の入れ先を決める
   const { data: calendars } = useQuery({ queryKey: [CALENDARS_QUERY], queryFn: getCalendars });
 
@@ -74,6 +73,7 @@ export const useCalendarEditing = ({ occurrencesKey, timeZone, tasks }: Options)
 
   /**
    * 休みの日に置いたら知らせる（止めはしない。ADR-0029）。休みかどうかは表示に関係なく「休みとして数える」で決まる。
+   * 知らせるのはタスクだけ（分類がタスクの予定・「時間を取る」で落としたタスク。2026-10-02 の決定）。予定は知らせない。
    * 知らせは添えものなので、取れなくても黙る（書き込みは済んでいる）。
    */
   const warnDaysOff = async (dates: readonly string[]) => {
@@ -103,7 +103,7 @@ export const useCalendarEditing = ({ occurrencesKey, timeZone, tasks }: Options)
   };
 
   const warnDaysOffOf = (written: CalendarEvent | null) => {
-    if (!written) return;
+    if (!written || !notifiesDayOff(written.event_type)) return;
     void datesOfWritten(written).then(warnDaysOff, () => undefined);
   };
 
@@ -158,7 +158,9 @@ export const useCalendarEditing = ({ occurrencesKey, timeZone, tasks }: Options)
     if (!written) return;
     setHistory((h) => withEventVersion(recordOperation(h, rescheduleEntryOf(change, written.version)), eventId, written.version));
     afterWrite(eventId, written);
-    if (change.after.date !== change.occurrence.date) void warnDaysOff([change.after.date]);
+    if (change.after.date !== change.occurrence.date && notifiesDayOff(change.occurrence.event_type)) {
+      void warnDaysOff([change.after.date]);
+    }
   });
 
   const undo = () => exclusive(async () => {
@@ -197,11 +199,9 @@ export const useCalendarEditing = ({ occurrencesKey, timeZone, tasks }: Options)
 
   // ── 作る・直す・消す ──────────────────────────────────────────────────
 
-  const calendarIds = (businessCalendars ?? []).map((c) => c.id);
-
   const openCreate = (date: string, startMinute?: number, endMinute?: number) => setEditTarget({
     form: newEventForm({
-      date, startMinute, endMinute, timeZone, today: today(), calendarIds, calendarId: calendarForNewEvent(calendars),
+      date, startMinute, endMinute, timeZone, today: today(), calendarId: calendarForNewEvent(calendars),
     }),
     context: { mode: 'create' },
   });
@@ -238,7 +238,6 @@ export const useCalendarEditing = ({ occurrencesKey, timeZone, tasks }: Options)
           target={editTarget}
           viewerTimeZone={timeZone}
           tasks={tasks}
-          businessCalendars={businessCalendars ?? []}
           calendars={(calendars ?? []).filter((c) => c.kind === 'EVENTS')}
           onClose={() => setEditTarget(null)}
           onSaved={(written) => { afterDialogWrite('calendar.saved'); warnDaysOffOf(written); }}

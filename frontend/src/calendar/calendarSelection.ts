@@ -1,5 +1,6 @@
 // 予定のカレンダーの表示の選択（task #191、ADR-0027）。選んだ状態はサーバーに覚える（`is_visible`）。
-// ⚠ 出すかどうかだけ。「今日」の画面・締めの予定の列・打刻の既定のタスクは選択に関係なく全部を見る。
+// ⚠ 出すかどうかだけ。「今日」の画面・締めの予定の列・打刻の既定のタスクは選択に関係なく全部を見る
+// （仕事 / プライベートの区別は別。プライベートは締め・計画・打刻の既定のタスクに数えない。ADR-0033）。
 
 import type { Calendar, CalendarOccurrence, CalendarViewPreset } from '../types';
 
@@ -36,13 +37,20 @@ export const withVisibleIds = (calendars: readonly Calendar[], visibleIds: reado
 /** 全部が表示か。 */
 export const allVisible = (calendars: readonly Calendar[]): boolean => calendars.every((c) => c.is_visible);
 
+/** プライベートのカレンダーか（ADR-0033。省かれていれば仕事）。 */
+export const isPrivateCalendar = (calendar: Calendar | undefined | null): boolean => calendar?.scope === 'PRIVATE';
+
 /**
  * 新しい予定を入れるカレンダー。既定のカレンダーが表示ならそれ、隠していれば表示の先頭
  * （作った予定が画面から消えないように）。どれも隠していれば既定。一覧が無ければ null（サーバーが既定に入れる）。
+ * タスクの予定（「時間を取る」）はプライベートのカレンダーには入れない（`forTask`。ADR-0033）。
  */
-export const calendarForNewEvent = (all: readonly Calendar[] | undefined): number | null => {
+export const calendarForNewEvent = (
+  all: readonly Calendar[] | undefined,
+  { forTask = false }: { forTask?: boolean } = {},
+): number | null => {
   // 予定は休みの層（ADR-0029）には入れない
-  const calendars = (all ?? []).filter((c) => c.kind === 'EVENTS');
+  const calendars = (all ?? []).filter((c) => c.kind === 'EVENTS' && !(forTask && isPrivateCalendar(c)));
   if (calendars.length === 0) return null;
   const fallback = calendars.find((c) => c.is_default) ?? calendars[0];
   if (fallback.is_visible) return fallback.id;
@@ -55,3 +63,12 @@ export const presetIsActive = (preset: CalendarViewPreset, calendars: readonly C
   const inPreset = new Set(preset.calendar_ids);
   return calendars.every((c) => c.is_visible === inPreset.has(c.id));
 };
+
+/** 「仕事だけ」: プライベートのカレンダーを隠し、仕事のカレンダーと休みの層を出す（ADR-0033）。 */
+export const workOnlyCalendarIds = (calendars: readonly Calendar[]): number[] =>
+  calendars.filter((c) => !isPrivateCalendar(c)).map((c) => c.id);
+
+/** いまの表示が「仕事だけ」か。 */
+export const isWorkOnly = (calendars: readonly Calendar[]): boolean =>
+  calendars.length > 0 && calendars.every((c) => c.is_visible === !isPrivateCalendar(c));
+

@@ -17,7 +17,7 @@ from src.domain.value_objects.recurrence import AdjustmentRule, Weekday
 from tests.unit.application.scheduling.fakes import (
     FakeClock,
     FakeTasks,
-    InMemoryBusinessCalendarRepository,
+    FixedLayers,
     InMemoryCalendarEventRepository,
     RecordingUnitOfWork,
 )
@@ -25,16 +25,6 @@ from tests.unit.domain.scheduling.support import utc, weekly_rule
 
 USER = 1
 NOW = datetime(2026, 10, 1)
-
-
-class FixedLayers:
-    def __init__(self, layers: DayOffLayers) -> None:
-        self.layers = layers
-        self.asked: list[int] = []
-
-    def layers_for(self, user_id: int) -> DayOffLayers:
-        self.asked.append(user_id)
-        return self.layers
 
 
 def _layers(*, personal_counts: bool) -> DayOffLayers:
@@ -54,7 +44,7 @@ def _layers(*, personal_counts: bool) -> DayOffLayers:
 def _dates(personal_counts: bool) -> list[date]:
     source = FixedLayers(_layers(personal_counts=personal_counts))
     uc = CalendarEventUseCases(
-        InMemoryCalendarEventRepository(), InMemoryBusinessCalendarRepository(), FakeTasks({}),
+        InMemoryCalendarEventRepository(), FakeTasks({}),
         RecordingUnitOfWork(), now=FakeClock(NOW), day_off_layers=source,
     )
     uc.create_recurring_event(

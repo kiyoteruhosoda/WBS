@@ -12,8 +12,8 @@ import {
   pastShadeHeight,
 } from '../../calendar/weekLayout';
 import type { DayBand, WeekEventBlock } from '../../calendar/weekLayout';
-import { holidaysByDate } from '../../calendar/monthCells';
-import { darken, dayColumnBackground, pastEventColor } from '../../calendar/calendarColors';
+import { holidaysByDate, isNamedDayOff } from '../../calendar/monthCells';
+import { darken, dayColumnBackground, pastEventColor, occurrencePattern } from '../../calendar/calendarColors';
 import type { LinkedTask } from '../../calendar/taskScheduling';
 import { linkedTaskLabel, occurrenceColor } from '../../calendar/taskScheduling';
 import { formatWeekHeader } from '../../calendar/calendarTitles';
@@ -129,7 +129,7 @@ const WeekView: React.FC<Props> = ({
   const headerColor = (date: string): string => {
     if (date === today) return c.blue;
     const dow = dayOfWeek(date);
-    if (dow === 0 || holidayMap.has(date)) return c.holidayText;
+    if (dow === 0 || isNamedDayOff(holidayMap.get(date))) return c.holidayText;
     if (dow === 6) return c.blue;
     return c.weekHeaderText;
   };
@@ -255,6 +255,24 @@ const WeekView: React.FC<Props> = ({
                   );
                 }
                 const segment = b.segment;
+                if (!segment && b.holiday?.subtle) {
+                  // 曜日の休み: 地の色の上に、層の色の細い線と控えめな文字だけ（ほかの休みの帯より目立たせない）
+                  return (
+                    <Box
+                      key={`weekly@${b.holiday.date}`}
+                      title={b.holiday.name ?? ''}
+                      sx={{
+                        position: 'absolute', zIndex: 1, top: b.row * ALL_DAY_ROW_HEIGHT + 1, left: 0, right: '4px',
+                        height: ALL_DAY_CHIP_HEIGHT, px: '4px', boxSizing: 'border-box',
+                        display: 'flex', alignItems: 'center', pointerEvents: 'none',
+                        borderLeft: `3px solid ${b.holiday.color ?? c.textSecondary}`,
+                        color: c.textSecondary, fontSize: 10,
+                      }}
+                    >
+                      <Box sx={{ ...chipText, flex: 1, color: 'inherit' }}>{b.holiday.name}</Box>
+                    </Box>
+                  );
+                }
                 const color = segment ? occurrenceColor(segment.occurrence, linkedTasks) : b.holiday?.color ?? c.red;
                 // 過ぎた日の予定は影の上に描き、地だけ沈める（文字は白のまま読める）
                 const bg = date < today ? pastEventColor(color, c) : color;
@@ -271,6 +289,7 @@ const WeekView: React.FC<Props> = ({
                       height: ALL_DAY_CHIP_HEIGHT, px: '6px', py: '2px', borderRadius: '2px', boxSizing: 'border-box',
                       display: 'flex', alignItems: 'center', gap: '2px',
                       bgcolor: bg, opacity: segment ? (segment.occurrence.is_done ? DONE_OPACITY : 0.82) : 0.7,
+                      backgroundImage: segment ? occurrencePattern(segment.occurrence) : 'none',
                       border: selected ? `2px solid ${c.onColor}` : `1px solid ${darken(bg)}`,
                       cursor: segment ? 'pointer' : 'default', pointerEvents: segment ? 'auto' : 'none',
                     }}
@@ -352,6 +371,7 @@ const WeekView: React.FC<Props> = ({
                       left: `calc(${block.leftRatio * 100}% + ${chipLeft}px)`,
                       width: `calc(${chipWidthRatio * 100}% - ${chipRightGap}px)`,
                       px: fill ? '2px' : '4px', borderRadius: '2px', bgcolor: bg, cursor: 'pointer', touchAction: 'none',
+                      backgroundImage: occurrencePattern(o),
                       opacity: dragging ? 0.5 : o.is_done ? DONE_OPACITY : 1,
                       border: selected ? `2px solid ${c.onColor}` : `1px solid ${darken(bg)}`,
                       boxShadow: selected ? `0 0 0 1px ${c.blue}` : 'none',

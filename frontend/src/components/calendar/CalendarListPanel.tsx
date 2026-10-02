@@ -21,7 +21,8 @@ import {
   CALENDARS_QUERY, CALENDAR_VIEW_PRESETS_QUERY, DAY_OFF_MARKS_QUERY, OCCURRENCES_QUERY,
 } from '../../calendar/calendarQueries';
 import {
-  allVisible, presetIsActive, toggledVisibleIds, visibleCalendarIds, withVisibleIds,
+  allVisible, isPrivateCalendar, isWorkOnly, presetIsActive, toggledVisibleIds, visibleCalendarIds, withVisibleIds,
+  workOnlyCalendarIds,
 } from '../../calendar/calendarSelection';
 import { EVENT_COLOR_KEYS, WEEKDAY_CODES } from '../../calendar/eventForm';
 import { eventColor } from '../../calendar/calendarColors';
@@ -46,6 +47,8 @@ type CalendarDraft = {
   countsAsDayOff?: boolean;
   /** 営業日の層: 稼働する曜日 */
   workdays?: WeekdayCode[];
+  /** 予定のカレンダー: プライベート（ADR-0033） */
+  isPrivate?: boolean;
 };
 
 const WEEKDAYS_IN_ORDER: readonly WeekdayCode[] = ['MO', 'TU', 'WE', 'TH', 'FR', 'SA', 'SU'];
@@ -54,6 +57,7 @@ const draftOf = (cal: Calendar): CalendarDraft => ({
   id: cal.id, name: cal.name, colorKey: cal.color_key,
   countsAsDayOff: cal.kind === 'DAYS_OFF' ? cal.counts_as_day_off : undefined,
   workdays: cal.kind === 'WORKWEEK' ? cal.workdays ?? [] : undefined,
+  isPrivate: cal.kind === 'EVENTS' ? isPrivateCalendar(cal) : undefined,
 });
 
 const CalendarListPanel: React.FC<Props> = ({ calendars, onError }) => {
@@ -122,11 +126,12 @@ const CalendarListPanel: React.FC<Props> = ({ calendars, onError }) => {
 
   const saveCalendar = useMutation({
     mutationFn: (d: CalendarDraft) => (d.id == null
-      ? createCalendar({ name: d.name.trim(), color_key: d.colorKey })
+      ? createCalendar({ name: d.name.trim(), color_key: d.colorKey, scope: d.isPrivate ? 'PRIVATE' : 'WORK' })
       : updateCalendar(d.id, {
         name: d.name.trim(), color_key: d.colorKey,
         ...(d.countsAsDayOff != null ? { counts_as_day_off: d.countsAsDayOff } : {}),
         ...(d.workdays != null ? { workdays: d.workdays } : {}),
+        ...(d.isPrivate != null ? { scope: d.isPrivate ? 'PRIVATE' as const : 'WORK' as const } : {}),
       })),
     onSuccess: () => {
       setDraft(null);
@@ -158,6 +163,7 @@ const CalendarListPanel: React.FC<Props> = ({ calendars, onError }) => {
   ].filter((section) => section.calendars.length > 0);
   const layersOnlyActive = calendars.some((cal) => cal.kind !== 'EVENTS')
     && calendars.every((cal) => cal.is_visible === (cal.kind !== 'EVENTS'));
+  const hasPrivate = calendars.some(isPrivateCalendar);
   const visibleCount = calendars.filter((cal) => cal.is_visible).length;
   const activePreset = (presets ?? []).find((preset) => presetIsActive(preset, calendars));
   const title = activePreset
@@ -209,6 +215,17 @@ const CalendarListPanel: React.FC<Props> = ({ calendars, onError }) => {
         >
           {t('calendar.calendarShowDaysOff')}
         </Button>
+        {hasPrivate && (
+          <Button
+            size="small"
+            variant="outlined"
+            disabled={isWorkOnly(calendars)}
+            onClick={() => show(workOnlyCalendarIds(calendars))}
+            data-testid="calendar-show-work"
+          >
+            {t('calendar.calendarShowWork')}
+          </Button>
+        )}
       </Box>
       {sections.map((section) => (
       <Box key={section.key}>
@@ -243,6 +260,11 @@ const CalendarListPanel: React.FC<Props> = ({ calendars, onError }) => {
                     {t('calendar.calendarDefaultMark')}
                   </Box>
                 )}
+                {isPrivateCalendar(cal) && (
+                  <Box component="span" sx={{ ml: '6px', fontSize: 11, color: c.textSecondary }}>
+                    {t('calendar.privateMark')}
+                  </Box>
+                )}
                 {cal.kind === 'DAYS_OFF' && !cal.counts_as_day_off && (
                   <Box component="span" sx={{ ml: '6px', fontSize: 11, color: c.textSecondary }}>
                     {t('calendar.layerNotCounted')}
@@ -265,7 +287,7 @@ const CalendarListPanel: React.FC<Props> = ({ calendars, onError }) => {
       <Button
         size="small"
         startIcon={<AddIcon />}
-        onClick={() => setDraft({ id: null, name: '', colorKey: 'PEACOCK' })}
+        onClick={() => setDraft({ id: null, name: '', colorKey: 'PEACOCK', isPrivate: false })}
         sx={{ alignSelf: 'flex-start' }}
         data-testid="calendar-add"
       >
@@ -347,6 +369,24 @@ const CalendarListPanel: React.FC<Props> = ({ calendars, onError }) => {
               {t(editing && editing.kind !== 'EVENTS' ? 'calendar.layerColorHint' : 'calendar.calendarColorHint')}
             </Box>
           </Box>
+          {draft?.isPrivate != null && (
+            <Box>
+              <FormControlLabel
+                control={(
+                  <Switch
+                    checked={draft.isPrivate}
+                    disabled={editing?.is_default ?? false}
+                    onChange={(e) => setDraft((d) => (d ? { ...d, isPrivate: e.target.checked } : d))}
+                    data-testid="calendar-private"
+                  />
+                )}
+                label={t('calendar.privateCalendar')}
+              />
+              <Box sx={{ fontSize: 12, color: 'text.secondary' }}>
+                {t(editing?.is_default ? 'calendar.privateDefaultHint' : 'calendar.privateCalendarHint')}
+              </Box>
+            </Box>
+          )}
           {editing?.kind === 'WORKWEEK' && draft?.workdays && (
             <Box>
               <Box sx={{ fontSize: 12, color: 'text.secondary', mb: '6px' }}>{t('calendar.layerWorkdays')}</Box>

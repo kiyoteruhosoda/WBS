@@ -266,16 +266,20 @@ export interface CalendarOccurrence {
   calendar_id: number | null;
   /** そのカレンダーの色。予定の `color_key` が DEFAULT ならこれで塗る */
   calendar_color_key: EventColorKey;
+  /** プライベートのカレンダーの予定（ADR-0033）。見た目で分ける。省かれていれば仕事 */
+  is_private?: boolean;
 }
 
-/** 祝日・休日（有効な営業日カレンダーから集めたもの）。 */
+/** 終日の帯に出す休み（休みの層の日・曜日の休み。`calendar/daysOff.ts` が組み立てる）。 */
 export interface CalendarHoliday {
   date: string; // YYYY-MM-DD
   name: string | null;
-  /** 休みの理由（休みの層から作ったとき。塗りを分ける。ADR-0029） */
-  reason?: DayOffReason;
+  /** 休みの理由（休みの層から作ったとき。塗りを分ける。ADR-0029）。WEEKLY は曜日の休み */
+  reason?: DayOffReason | 'WEEKLY';
   /** 終日の帯の色（層の色） */
   color?: string;
+  /** 控えめに出す帯（曜日の休み）。終日の欄でほかの日の予定を押し下げない */
+  subtle?: boolean;
 }
 
 /** 曜日（ドメインの `Weekday`。iCalendar の 2 文字）。 */
@@ -302,7 +306,6 @@ export interface AdjustmentRuleData {
   condition: 'HOLIDAY' | 'ALWAYS';
   shift_unit: 'BUSINESS_DAY' | 'CALENDAR_DAY';
   shift_amount: number;
-  calendar_id: number | null;
   action: 'SHIFT' | 'CANCEL';
 }
 
@@ -376,9 +379,16 @@ export interface Calendar {
   day_off_reason: DayOffReason | null;
   /** 営業日の判定で休みとして数える（休みの日の一覧の層） */
   counts_as_day_off: boolean;
+  /**
+   * 仕事 / プライベート（ADR-0033）。プライベートの予定は計画（予定した時間・締め）と打刻の既定のタスクに
+   * 数えず、タスクを結べない。省かれていれば仕事とみなす
+   */
+  scope?: CalendarScope;
   created_at: string | null;
   updated_at: string | null;
 }
+
+export type CalendarScope = 'WORK' | 'PRIVATE';
 
 /** ある日が休みである理由 1 つ（`GET /api/calendars/days-off`。ADR-0029）。 */
 export interface DayOffMark {
@@ -403,19 +413,6 @@ export interface CalendarViewPreset {
   name: string;
   calendar_ids: number[];
   sort_order: number;
-  created_at: string | null;
-  updated_at: string | null;
-}
-
-/** 営業日カレンダー（`/api/business-calendars`）。 */
-export interface BusinessCalendar {
-  id: number;
-  name: string;
-  time_zone: string;
-  workdays: WeekdayCode[];
-  shift_on_holidays_only: boolean;
-  is_enabled: boolean;
-  holidays: CalendarHoliday[];
   created_at: string | null;
   updated_at: string | null;
 }

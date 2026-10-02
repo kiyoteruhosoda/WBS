@@ -81,7 +81,6 @@ export interface EventForm {
   adjustmentDateType: AdjustmentDateType;
   adjustmentDirection: AdjustmentDirection;
   adjustmentDays: number;
-  adjustmentCalendarId: number | null;
   colorKey: EventColorKey;
   taskId: number | null;
   /** 分類（ADR-0025）: 予定 / タスク（回ごとに済みを付ける。WBS のタスクに結ぶ） */
@@ -186,14 +185,12 @@ const snapToStep = (minute: number): number =>
  * 終了は開始より 15 分以上後、その日の 24:00 まで。
  */
 export const newEventForm = (
-  { date, startMinute, endMinute, timeZone, today, calendarIds = [], calendarId = null }: {
+  { date, startMinute, endMinute, timeZone, today, calendarId = null }: {
     date: string;
     startMinute?: number;
     endMinute?: number;
     timeZone: string;
     today: string;
-    /** 営業日カレンダーが 1 つだけなら、それを最初から選んでおく */
-    calendarIds?: readonly number[];
     /** 入れる予定のカレンダー（`calendarForNewEvent`）。省くとサーバーの既定 */
     calendarId?: number | null;
   },
@@ -231,7 +228,6 @@ export const newEventForm = (
     adjustmentDateType: 'SCHEDULED',
     adjustmentDirection: 'BEFORE',
     adjustmentDays: 1,
-    adjustmentCalendarId: calendarIds.length === 1 ? calendarIds[0] : null,
     colorKey: 'DEFAULT',
     taskId: null,
     eventType: 'EVENT',
@@ -301,7 +297,6 @@ const withRecurrenceRule = (form: EventForm, rule: RecurrenceRuleData): EventFor
     next.adjustmentDateType = a.condition === 'HOLIDAY' ? 'SCHEDULED' : 'BASE';
     next.adjustmentDirection = a.action === 'CANCEL' ? 'CANCEL' : a.shift_amount < 0 ? 'BEFORE' : 'AFTER';
     next.adjustmentDays = a.action === 'CANCEL' ? 1 : Math.abs(a.shift_amount);
-    next.adjustmentCalendarId = a.calendar_id;
   }
   return next;
 };
@@ -343,17 +338,17 @@ export const formFromEvent = (
 
 // ── 入力 → API の形 ───────────────────────────────────────────────────────
 
-/** 営業日シフト（移植元 `BuildAdjustmentRule`）。使わない・0 日なら null。 */
+/** 営業日シフト（移植元 `BuildAdjustmentRule`）。使わない・0 日なら null。営業日は休みの 4 層で決まる（ADR-0029・0032）。 */
 export const buildAdjustment = (form: EventForm): AdjustmentRuleData | null => {
   if (!form.useAdjustment) return null;
   const condition = form.adjustmentDateType === 'SCHEDULED' ? 'HOLIDAY' : 'ALWAYS';
   if (condition === 'HOLIDAY' && form.adjustmentDirection === 'CANCEL') {
-    return { condition, shift_unit: 'BUSINESS_DAY', shift_amount: 0, calendar_id: form.adjustmentCalendarId, action: 'CANCEL' };
+    return { condition, shift_unit: 'BUSINESS_DAY', shift_amount: 0, action: 'CANCEL' };
   }
   if (form.adjustmentDays <= 0) return null;
   // 基準日は「前・後」だけ（キャンセルは予定日のときだけ選べる）。
   const amount = form.adjustmentDirection === 'AFTER' ? form.adjustmentDays : -form.adjustmentDays;
-  return { condition, shift_unit: 'BUSINESS_DAY', shift_amount: amount, calendar_id: form.adjustmentCalendarId, action: 'SHIFT' };
+  return { condition, shift_unit: 'BUSINESS_DAY', shift_amount: amount, action: 'SHIFT' };
 };
 
 /** 繰り返しの規則（移植元 `BuildRecurrenceRule`）。繰り返さないなら null。 */

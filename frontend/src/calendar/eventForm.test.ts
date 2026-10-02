@@ -40,10 +40,6 @@ describe('新しい予定の中身（InitializeNewEvent）', () => {
     expect(endOf(form)).toEqual({ minute: 1440, dayOffset: 0 });
   });
 
-  it('営業日カレンダーが 1 つだけなら最初から選んでおく', () => {
-    expect(newEventForm({ date: '2026-05-04', timeZone: TOKYO, today: TODAY, calendarIds: [3] }).adjustmentCalendarId).toBe(3);
-    expect(newEventForm({ date: '2026-05-04', timeZone: TOKYO, today: TODAY, calendarIds: [3, 4] }).adjustmentCalendarId).toBeNull();
-  });
 });
 
 describe('開始・終了の時刻', () => {
@@ -106,7 +102,6 @@ describe('API の応答 → 入力（LoadEvent）', () => {
       monthlyKind: 'NTH_WEEKDAY', monthlyWeekIndex: 2, monthlyWeekday: 'TU',
       useCustomInterval: true, interval: 2, hasEndDate: true, endDate: '2026-12-31',
       useAdjustment: true, adjustmentDateType: 'SCHEDULED', adjustmentDirection: 'BEFORE', adjustmentDays: 1,
-      adjustmentCalendarId: 3,
     });
     // 入力 → 規則で元の規則に戻る（読み込みと組み立てが対になっている）
     expect(buildRecurrence(form)).toEqual(recurringEvent().recurrence);
@@ -151,13 +146,13 @@ describe('入力 → 繰り返しの規則（BuildRecurrenceRule）', () => {
     });
   });
 
-  it('営業日シフト: 予定日は祝日のときだけ（キャンセルも選べる）、基準日は常に N 営業日', () => {
+  it('営業日シフト: 予定日は休みの日のときだけ（キャンセルも選べる）、基準日は常に N 営業日。カレンダーは名指ししない', () => {
     expect(buildAdjustment(fresh({ useAdjustment: false }))).toBeNull();
-    expect(buildAdjustment(fresh({ useAdjustment: true, adjustmentDirection: 'CANCEL', adjustmentCalendarId: 3 }))).toEqual({
-      condition: 'HOLIDAY', shift_unit: 'BUSINESS_DAY', shift_amount: 0, calendar_id: 3, action: 'CANCEL',
+    expect(buildAdjustment(fresh({ useAdjustment: true, adjustmentDirection: 'CANCEL' }))).toEqual({
+      condition: 'HOLIDAY', shift_unit: 'BUSINESS_DAY', shift_amount: 0, action: 'CANCEL',
     });
     expect(buildAdjustment(fresh({ useAdjustment: true, adjustmentDateType: 'BASE', adjustmentDirection: 'AFTER', adjustmentDays: 3 }))).toEqual({
-      condition: 'ALWAYS', shift_unit: 'BUSINESS_DAY', shift_amount: 3, calendar_id: null, action: 'SHIFT',
+      condition: 'ALWAYS', shift_unit: 'BUSINESS_DAY', shift_amount: 3, action: 'SHIFT',
     });
     expect(buildAdjustment(fresh({ useAdjustment: true, adjustmentDateType: 'BASE', adjustmentDays: 0 }))).toBeNull();
   });

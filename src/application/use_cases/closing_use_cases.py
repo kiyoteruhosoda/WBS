@@ -79,9 +79,14 @@ class ClosingUseCases:
         state = self._state(user_id, HalfMonthPeriod.starting_on(first_day), TimeZoneId(time_zone))
         zone = TimeZoneId(state.time_zone)
         entries = self._entries.find_overlapping(user_id, state.starts_at, state.ends_at)
-        occurrences = self._occurrences.list_occurrence_views(
-            user_id, state.period.first_day, state.period.last_day, zone.name
-        )
+        # プライベートのカレンダーの予定は締めの予定の列・抜けの指摘に出さない（ADR-0033）
+        occurrences = [
+            o
+            for o in self._occurrences.list_occurrence_views(
+                user_id, state.period.first_day, state.period.last_day, zone.name
+            )
+            if not o.is_private
+        ]
         titles: dict[int, str | None] = {}
         projects: dict[int, int | None] = {}
         views = [build_time_entry_view(e, now, self._tasks, titles) for e in entries]

@@ -14,7 +14,6 @@ from src.domain.value_objects.event_schedule import OccurrenceKey
 from src.domain.value_objects.recurrence import Weekday
 from tests.unit.application.scheduling.fakes import (
     FakeTasks,
-    InMemoryBusinessCalendarRepository,
     InMemoryCalendarEventRepository,
     RecordingUnitOfWork,
 )
@@ -30,7 +29,6 @@ THEIR_TASK = 20
 def _use_cases(tasks: FakeTasks | None = None) -> CalendarEventUseCases:
     return CalendarEventUseCases(
         InMemoryCalendarEventRepository(),
-        InMemoryBusinessCalendarRepository(),
         tasks or FakeTasks({MY_TASK: USER, MY_OTHER_TASK: USER, THEIR_TASK: OTHER_USER}),
         RecordingUnitOfWork(),
         now=lambda: datetime(2026, 5, 1),

@@ -18,7 +18,6 @@ import calendar as gregorian
 from collections.abc import Iterator
 from datetime import date, datetime, time, timedelta
 
-from src.domain.entities.business_calendar import BusinessCalendar
 from src.domain.entities.calendar_event import (
     PERIOD_OVERLAP_MARGIN_DAYS,
     CalendarEvent,
@@ -27,6 +26,7 @@ from src.domain.entities.calendar_event import (
     ExceptionType,
 )
 from src.domain.services.business_day_shift import BusinessDayShiftService
+from src.domain.services.day_off_layers import DayOffLayers
 from src.domain.value_objects.event_schedule import EventOccurrence, OccurrenceKey
 from src.domain.value_objects.local_schedule_point import local_date_of, local_time_of
 from src.domain.value_objects.recurrence import (
@@ -59,12 +59,12 @@ class OccurrenceExpander:
         event: CalendarEvent,
         from_date: date,
         to_date: date,
-        business_calendar: BusinessCalendar | None = None,
+        day_off_layers: DayOffLayers | None = None,
     ) -> list[EventOccurrence]:
         """``[from_date, to_date]``（両端を含むローカル日）にある回を日付順に返す。"""
         if event.is_single():
             return self._expand_single(event, from_date, to_date)
-        return self._expand_recurring(event, from_date, to_date, business_calendar)
+        return self._expand_recurring(event, from_date, to_date, day_off_layers)
 
     # ── 単発 ────────────────────────────────────────────────────────────
 
@@ -96,7 +96,7 @@ class OccurrenceExpander:
         event: CalendarEvent,
         from_date: date,
         to_date: date,
-        business_calendar: BusinessCalendar | None,
+        day_off_layers: DayOffLayers | None,
     ) -> list[EventOccurrence]:
         schedule = event.recurring_schedule
         assert schedule is not None
@@ -175,10 +175,10 @@ class OccurrenceExpander:
                 continue
 
             adjusted = candidate
-            if rule.adjustment is not None and business_calendar is not None:
-                if self._shift.cancels(candidate, rule.adjustment, business_calendar):
+            if rule.adjustment is not None and day_off_layers is not None:
+                if self._shift.cancels(candidate, rule.adjustment, day_off_layers):
                     continue
-                adjusted = self._shift.shift(candidate, rule.adjustment, business_calendar)
+                adjusted = self._shift.shift(candidate, rule.adjustment, day_off_layers)
 
             if adjusted < from_date or adjusted > to_date:
                 continue

@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import type { Calendar, CalendarViewPreset } from '../types';
 import {
-  allVisible, calendarForNewEvent, filterVisibleOccurrences, presetIsActive, toggledVisibleIds, visibleCalendarIds, withVisibleIds,
+  allVisible, calendarForNewEvent, filterVisibleOccurrences, isWorkOnly, presetIsActive, toggledVisibleIds, visibleCalendarIds,
+  withVisibleIds, workOnlyCalendarIds,
 } from './calendarSelection';
+import { PRIVATE_HATCH, occurrencePattern } from './calendarColors';
 import { occurrence, hm } from './testOccurrences';
 
 const calendar = (id: number, patch: Partial<Calendar> = {}): Calendar => ({
@@ -56,3 +58,27 @@ describe('表示の選択（ADR-0027）', () => {
     expect(presetIsActive(preset([1, 2]), calendars)).toBe(false);
   });
 });
+
+describe('仕事 / プライベート（ADR-0033）', () => {
+  const home = calendar(3, { scope: 'PRIVATE' });
+  const layer = calendar(5, { kind: 'DAYS_OFF', day_off_reason: 'PERSONAL', is_default: false });
+  const all = [calendar(1), calendar(2), home, layer];
+
+  it('「時間を取る」のタスクの予定はプライベートに入れない', () => {
+    const onlyHomeVisible = [calendar(1, { is_visible: false }), calendar(2, { is_visible: false }), home];
+    expect(calendarForNewEvent(onlyHomeVisible)).toBe(3);
+    expect(calendarForNewEvent(onlyHomeVisible, { forTask: true })).toBe(1);
+  });
+
+  it('「仕事だけ」はプライベートを隠し、仕事と休みの層を出す', () => {
+    expect(workOnlyCalendarIds(all)).toEqual([1, 2, 5]);
+    expect(isWorkOnly(all)).toBe(false);
+    expect(isWorkOnly(withVisibleIds(all, workOnlyCalendarIds(all)))).toBe(true);
+  });
+
+  it('プライベートの回は斜線で見分ける', () => {
+    expect(occurrencePattern({ is_private: true })).toBe(PRIVATE_HATCH);
+    expect(occurrencePattern({})).toBe('none');
+  });
+});
+

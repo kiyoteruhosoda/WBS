@@ -52,7 +52,11 @@ export const buildMonthCells = (
 export const MONTH_CELL_HEADER_HEIGHT = 36;
 export const MONTH_CHIP_ROW_HEIGHT = 16;
 
-/** マスの高さに入るチップの段数（祝日のチップが 1 段使う）。 */
+/** 名前で示す休み（祝日・公休・私の休み）か。曜日の休みの帯（`subtle`）は地の色と見出しの色を変えない。 */
+export const isNamedDayOff = (holiday: CalendarHoliday | null | undefined): boolean =>
+  holiday != null && !holiday.subtle;
+
+/** マスの高さに入るチップの段数（休みのチップが 1 段使う）。 */
 export const availableChipRows = (cellHeight: number, hasHoliday: boolean): number =>
   Math.max(1, Math.floor((cellHeight - MONTH_CELL_HEADER_HEIGHT) / MONTH_CHIP_ROW_HEIGHT) - (hasHoliday ? 1 : 0));
 

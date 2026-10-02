@@ -1,4 +1,4 @@
-"""予定・営業日カレンダーの API スキーマ（task #156、ADR-0009）。
+"""予定の API スキーマ（task #156、ADR-0009）。
 
 時刻の入力は **UTC の瞬間（``Z`` 付き ISO 8601。オフセット付きも可）＋ 長さ（分）**。オフセットの
 無い値は UTC とみなす。分の単位まで（秒・小数秒は 422）。繰り返しの回は ``occurrence``
@@ -26,7 +26,6 @@ from src.application.recurrence_rule_mapping import (
     recurrence_rule_from_mapping,
     recurrence_rule_to_mapping,
 )
-from src.domain.entities.business_calendar import BusinessCalendar, Holiday
 from src.domain.entities.calendar_event import CalendarEvent, EventType
 from src.domain.value_objects.event_alarm import EventAlarm
 from src.domain.value_objects.event_color import EventColorKey
@@ -88,12 +87,11 @@ class YearlyRuleSchema(BaseModel):
 
 
 class AdjustmentRuleSchema(BaseModel):
-    """営業日シフト。``shift_amount`` が負なら前倒し。``calendar_id`` は自分の営業日カレンダー。"""
+    """営業日シフト。``shift_amount`` が負なら前倒し。営業日は休みの 4 層で決まる（ADR-0029・0032）。"""
 
     condition: AdjustmentCondition
     shift_unit: AdjustmentShiftUnit
     shift_amount: int
-    calendar_id: int | None = None
     action: AdjustmentAction = AdjustmentAction.SHIFT
 
 
@@ -439,6 +437,10 @@ class CalendarOccurrenceResponse(BaseModel):
     calendar_color_key: EventColorKey = Field(
         description="カレンダーの色。予定の color_key が DEFAULT ならこれで塗る（これも DEFAULT なら結んだタスクの色）"
     )
+    is_private: bool = Field(
+        default=False,
+        description="プライベートのカレンダーの予定（ADR-0033）。計画・締めに数えない。画面は見た目で分ける",
+    )
 
     @classmethod
     def from_view(cls, view: OccurrenceView) -> CalendarOccurrenceResponse:
@@ -472,6 +474,7 @@ class CalendarOccurrenceResponse(BaseModel):
             is_done=view.is_done,
             calendar_id=view.calendar_id,
             calendar_color_key=view.calendar_color_key,
+            is_private=view.is_private,
         )
 
 
@@ -523,80 +526,3 @@ class CalendarAlarmsResponse(BaseModel):
     window_start: UtcDatetime
     window_end: UtcDatetime
     alarms: list[CalendarAlarmResponse]
-
-
-# ── 営業日カレンダー ────────────────────────────────────────────────────────
-
-
-class HolidaySchema(BaseModel):
-    date: dt.date
-    name: str | None = Field(default=None, max_length=200)
-
-    @classmethod
-    def from_holiday(cls, holiday: Holiday) -> HolidaySchema:
-        return cls(date=holiday.date, name=holiday.name)
-
-    def to_holiday(self) -> Holiday:
-        return Holiday(self.date, self.name)
-
-
-class HolidaysBulkRequest(BaseModel):
-    """祝日をまとめて足す。すでにある日はそのまま（名前も変えない）。"""
-
-    holidays: list[HolidaySchema] = Field(max_length=1000)
-
-
-class JapaneseHolidaysImportRequest(BaseModel):
-    """その年の日本の祝日・振替休日・国民の休日を足す（暦から出す。2007〜2099 年）。"""
-
-    year: int
-
-
-class BusinessCalendarCreateRequest(BaseModel):
-    name: str = Field(min_length=1, max_length=200)
-    time_zone: str | None = Field(default=None, description="IANA 名。省くと利用者の設定")
-    workdays: list[Weekday] = Field(
-        default_factory=lambda: [
-            Weekday.MONDAY, Weekday.TUESDAY, Weekday.WEDNESDAY, Weekday.THURSDAY, Weekday.FRIDAY,
-        ]
-    )
-    shift_on_holidays_only: bool = False
-    is_enabled: bool = True
-
-
-class BusinessCalendarUpdateRequest(BaseModel):
-    """名前・営業日・シフトの仕方・有効を置き換える（祝日は残す）。"""
-
-    name: str = Field(min_length=1, max_length=200)
-    workdays: list[Weekday]
-    shift_on_holidays_only: bool = False
-    is_enabled: bool = True
-
-
-class BusinessCalendarResponse(BaseModel):
-    id: int
-    name: str
-    time_zone: str
-    workdays: list[Weekday]
-    shift_on_holidays_only: bool
-    is_enabled: bool
-    holidays: list[HolidaySchema]
-    created_at: UtcDatetime | None
-    updated_at: UtcDatetime | None
-
-    @classmethod
-    def from_calendar(cls, calendar: BusinessCalendar) -> BusinessCalendarResponse:
-        assert calendar.id is not None
-        return cls(
-            id=calendar.id,
-            name=calendar.name,
-            time_zone=calendar.time_zone.name,
-            workdays=sorted(calendar.workdays, key=lambda w: w.iso_index),
-            shift_on_holidays_only=calendar.shift_on_holidays_only,
-            is_enabled=calendar.is_enabled,
-            holidays=[
-                HolidaySchema.from_holiday(h) for h in sorted(calendar.holidays, key=lambda h: h.date)
-            ],
-            created_at=calendar.created_at,
-            updated_at=calendar.updated_at,
-        )

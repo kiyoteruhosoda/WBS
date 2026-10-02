@@ -10,14 +10,14 @@
 
 扱う年は 2007 年（振替休日・国民の休日の今の規則と「昭和の日」が始まった年）から
 2099 年（春分・秋分の式が当てはまる最後の年）まで。外れは ``ValidationError``。
-法律が変わったときや公示と食い違ったときは、営業日カレンダーの祝日を手で直す。
+法律が変わったときや公示と食い違ったときは、「日本の祝日」の層（ADR-0029）の日を手で直す。
 """
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import date, timedelta
 
-from src.domain.entities.business_calendar import Holiday
 from src.domain.exceptions import ValidationError
 
 FIRST_SUPPORTED_YEAR = 2007
@@ -25,6 +25,16 @@ LAST_SUPPORTED_YEAR = 2099
 
 SUBSTITUTE_HOLIDAY = "振替休日"
 CITIZENS_HOLIDAY = "国民の休日"
+
+
+
+@dataclass(frozen=True)
+class Holiday:
+    """暦から出した祝日・休日 1 日（「日本の祝日」の層へ入れる元）。"""
+
+    date: date
+    name: str
+
 
 _MONDAY = 0
 _SUNDAY = 6
@@ -115,6 +125,7 @@ def japanese_national_holidays(year: int) -> list[Holiday]:
 
 __all__ = [
     "CITIZENS_HOLIDAY",
+    "Holiday",
     "FIRST_SUPPORTED_YEAR",
     "LAST_SUPPORTED_YEAR",
     "SUBSTITUTE_HOLIDAY",

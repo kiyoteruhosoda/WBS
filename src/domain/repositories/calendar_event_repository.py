@@ -33,3 +33,10 @@ class CalendarEventRepository(ABC):
 
         カレンダーを消すときに使う（ADR-0027）。移した件数を返す。
         """
+
+    @abstractmethod
+    def count_linked_to_tasks(self, user_id: int, calendar_id: int) -> int:
+        """その利用者の ``calendar_id`` の予定のうち、タスクを結んだものの数（ADR-0033）。
+
+        カレンダーをプライベートにできるかを確かめるときに使う。
+        """

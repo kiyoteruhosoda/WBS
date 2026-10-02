@@ -47,7 +47,9 @@ def list_calendars(current_user: CurrentUserDep, calendars: CalendarUseCasesDep)
 def create_calendar(
     body: CalendarCreateRequest, current_user: CurrentUserDep, calendars: CalendarUseCasesDep
 ) -> CalendarResponse:
-    created = calendars.create_calendar(current_user.user_id, body.name, body.color_key)
+    created = calendars.create_calendar(
+        current_user.user_id, body.name, body.color_key, body.scope
+    )
     return CalendarResponse.from_calendar(created)
 
 
@@ -105,6 +107,7 @@ def update_calendar(
         calendar_id, current_user.user_id, body.name, body.color_key,
         counts_as_day_off=body.counts_as_day_off,
         workdays=frozenset(body.workdays) if body.workdays is not None else None,
+        scope=body.scope,
     )
     return CalendarResponse.from_calendar(updated)
 

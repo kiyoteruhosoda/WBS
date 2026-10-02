@@ -41,11 +41,11 @@ from src.domain.value_objects.recurrence import (
 from tests.unit.application.scheduling.fakes import (
     FakeClock,
     FakeTasks,
-    InMemoryBusinessCalendarRepository,
+    FixedLayers,
     InMemoryCalendarEventRepository,
     RecordingUnitOfWork,
 )
-from tests.unit.domain.scheduling.support import NOW, TOKYO, utc, weekday_calendar
+from tests.unit.domain.scheduling.support import NOW, TOKYO, utc, weekday_layers
 
 USER = 1
 FAR_END = date(2030, 12, 31)
@@ -93,11 +93,11 @@ def key(rule_type: RecurrenceType, index: int) -> OccurrenceKey:
 class Matrix:
     def __init__(self) -> None:
         self.events = InMemoryCalendarEventRepository()
-        self.calendars = InMemoryBusinessCalendarRepository()
+        # 営業日は休みの層で決まる（ADR-0029・0032）。SHARED_HOLIDAY は「日本の祝日」の層の日
         self.uc = CalendarEventUseCases(
-            self.events, self.calendars, FakeTasks(), RecordingUnitOfWork(), now=FakeClock(NOW)
+            self.events, FakeTasks(), RecordingUnitOfWork(), now=FakeClock(NOW),
+            day_off_layers=FixedLayers(weekday_layers(SHARED_HOLIDAY)),
         )
-        self.calendar_id = self.calendars.save(weekday_calendar(SHARED_HOLIDAY, calendar_id=None)).id
 
     def create_series(
         self, rule_type: RecurrenceType, title: str = "orig", adjustment: AdjustmentRule | None = None,
@@ -155,14 +155,14 @@ def test_holiday_shift_none_forward_backward(m: Matrix, rule_type: RecurrenceTyp
     assert SHARED_HOLIDAY in m.dates(no_shift, *window)
 
     forward = m.create_series(
-        rule_type, title="fwd", adjustment=AdjustmentRule.next_business_day_on_holiday(m.calendar_id)
+        rule_type, title="fwd", adjustment=AdjustmentRule.next_business_day_on_holiday()
     )
     forward_dates = m.dates(forward, *window)
     assert date(2026, 6, 16) in forward_dates
     assert SHARED_HOLIDAY not in forward_dates
 
     backward = m.create_series(
-        rule_type, title="back", adjustment=AdjustmentRule.previous_business_day_on_holiday(m.calendar_id)
+        rule_type, title="back", adjustment=AdjustmentRule.previous_business_day_on_holiday()
     )
     backward_dates = m.dates(backward, *window)
     assert date(2026, 6, 12) in backward_dates

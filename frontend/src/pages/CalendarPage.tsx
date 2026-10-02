@@ -107,8 +107,8 @@ const CalendarPage: React.FC = () => {
   const editing = useCalendarEditing({ occurrencesKey, timeZone, tasks: tasks ?? [] });
   // 表示にしているカレンダーの回だけ（ADR-0027。選んだ状態はサーバーが覚えている）
   const dayOffView = useMemo(
-    () => buildDayOffView(holidaysQuery.data ?? [], editing.calendars),
-    [holidaysQuery.data, editing.calendars],
+    () => buildDayOffView(holidaysQuery.data ?? [], editing.calendars, { weeklyLabel: t('calendar.weeklyDayOffBand') }),
+    [holidaysQuery.data, editing.calendars, t],
   );
   const visibleOccurrences = useMemo(
     () => filterVisibleOccurrences(occurrencesQuery.data ?? [], editing.calendars),
@@ -118,7 +118,7 @@ const CalendarPage: React.FC = () => {
   // ── タスクから作る（task #159） ─────────────────────────────────────
 
   const createTaskEvent = (draft: TaskEventDraft) => editing.exclusive(async () => {
-    await sendCalendarRequest(taskEventRequest(draft, timeZone, calendarForNewEvent(editing.calendars)));
+    await sendCalendarRequest(taskEventRequest(draft, timeZone, calendarForNewEvent(editing.calendars, { forTask: true })));
     setSchedulingTask(null);
     // 「予定済みの時間」も変わる（読み直させるものに入っている）
     editing.refresh();

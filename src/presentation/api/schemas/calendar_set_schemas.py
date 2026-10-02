@@ -6,7 +6,13 @@ import datetime as dt
 
 from pydantic import BaseModel, Field
 
-from src.domain.entities.calendar import NAME_MAX_LENGTH, Calendar, CalendarKind, DayOffReason
+from src.domain.entities.calendar import (
+    NAME_MAX_LENGTH,
+    Calendar,
+    CalendarKind,
+    CalendarScope,
+    DayOffReason,
+)
 from src.domain.entities.calendar_view_preset import CalendarViewPreset
 from src.domain.entities.day_off import DayOff
 from src.domain.services.day_off_layers import DayOffMark
@@ -15,6 +21,10 @@ from src.domain.value_objects.recurrence import Weekday
 from src.presentation.api.schemas.types import UtcDatetime
 
 MAX_IDS = 500
+SCOPE_DESCRIPTION = (
+    "仕事 / プライベート（ADR-0033）。PRIVATE の予定は計画（予定した時間・締めの予定）と"
+    "打刻の既定のタスクに数えず、タスクを結べない"
+)
 
 
 class CalendarCreateRequest(BaseModel):
@@ -24,6 +34,7 @@ class CalendarCreateRequest(BaseModel):
     color_key: EventColorKey = Field(
         default=EventColorKey.DEFAULT, description="色。DEFAULT は色の指定なし（予定は標準の色）"
     )
+    scope: CalendarScope = Field(default=CalendarScope.WORK, description=SCOPE_DESCRIPTION)
 
 
 class CalendarUpdateRequest(BaseModel):
@@ -35,6 +46,11 @@ class CalendarUpdateRequest(BaseModel):
         default=None, description="休みの日の一覧の層: 営業日の判定で休みとして数える"
     )
     workdays: list[Weekday] | None = Field(default=None, description="営業日の層: 稼働する曜日")
+    scope: CalendarScope | None = Field(
+        default=None,
+        description="予定のカレンダー: 仕事 / プライベート（省けば今のまま）。既定のカレンダー・休みの層は"
+        " PRIVATE にできない（422）。タスクを結んだ予定があれば 409",
+    )
 
 
 class CalendarOrderRequest(BaseModel):
@@ -62,6 +78,7 @@ class CalendarResponse(BaseModel):
     workdays: list[Weekday] | None = Field(description="営業日の層の稼働する曜日（ほかは null）")
     day_off_reason: DayOffReason | None = Field(description="休みの日の一覧の層の理由（ほかは null）")
     counts_as_day_off: bool = Field(description="営業日の判定で休みとして数える（休みの日の一覧の層）")
+    scope: CalendarScope = Field(description=SCOPE_DESCRIPTION)
     created_at: UtcDatetime | None
     updated_at: UtcDatetime | None
 
@@ -83,6 +100,7 @@ class CalendarResponse(BaseModel):
             ),
             day_off_reason=calendar.day_off_reason,
             counts_as_day_off=calendar.counts_as_day_off,
+            scope=calendar.scope,
             created_at=calendar.created_at,
             updated_at=calendar.updated_at,
         )

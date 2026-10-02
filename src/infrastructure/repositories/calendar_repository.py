@@ -12,7 +12,7 @@ from datetime import date
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
-from src.domain.entities.calendar import Calendar, CalendarKind, DayOffReason
+from src.domain.entities.calendar import Calendar, CalendarKind, CalendarScope, DayOffReason
 from src.domain.entities.calendar_view_preset import CalendarViewPreset
 from src.domain.entities.day_off import DayOff
 from src.domain.exceptions import ConflictError
@@ -166,6 +166,7 @@ def _copy_calendar(calendar: Calendar, model: CalendarModel) -> None:
     )
     model.day_off_reason = calendar.day_off_reason.value if calendar.day_off_reason else None
     model.counts_as_day_off = calendar.counts_as_day_off
+    model.scope = calendar.scope.value
     model.created_at = calendar.created_at or calendar.updated_at
     model.updated_at = calendar.updated_at or calendar.created_at
 
@@ -187,6 +188,7 @@ def _calendar(model: CalendarModel) -> Calendar:
         ),
         day_off_reason=DayOffReason(model.day_off_reason) if model.day_off_reason else None,
         counts_as_day_off=bool(model.counts_as_day_off),
+        scope=CalendarScope(model.scope),
         created_at=model.created_at,
         updated_at=model.updated_at,
     )

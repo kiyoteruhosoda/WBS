@@ -17,6 +17,10 @@
 
 日付の一覧の層は「休みとして数える」（``counts_as_day_off``）を持つ。営業日の判定は表示の
 チェックに関係なくこの印で決まる。層は利用者に 1 つずつで、消せない（予定は入れられない）。
+
+予定のカレンダーは **仕事 / プライベート**（``scope``、ADR-0033）を持つ。仕事を土台の予定とし、
+プライベートの予定は計画（実績の「予定した時間」・締めの予定の列）と打刻の既定のタスクに数えない。
+プライベートのカレンダーにはタスクを結んだ予定を入れられない。既定のカレンダーは仕事のまま。
 """
 
 from __future__ import annotations
@@ -45,6 +49,15 @@ class CalendarKind(enum.StrEnum):
     """休みの層 1: 営業日（稼働する曜日の規則）。"""
     DAYS_OFF = "DAYS_OFF"
     """休みの層 2〜4: 休みの日の一覧（理由は ``DayOffReason``）。"""
+
+
+class CalendarScope(enum.StrEnum):
+    """予定のカレンダーの区別（ADR-0033）。休みの層は ``WORK`` のまま（意味を持たない）。"""
+
+    WORK = "WORK"
+    """仕事。計画・打刻の既定のタスクに数える。"""
+    PRIVATE = "PRIVATE"
+    """プライベート。表示と通知だけ（計画に数えない・タスクを結べない）。"""
 
 
 class DayOffReason(enum.StrEnum):
@@ -110,6 +123,8 @@ class Calendar:
     """休みの日の一覧の層の理由（ほかの種類は ``None``）。"""
     counts_as_day_off: bool = False
     """休みの日の一覧の層: 営業日の判定で休みとして数えるか。"""
+    scope: CalendarScope = CalendarScope.WORK
+    """予定のカレンダーの区別（仕事 / プライベート。ADR-0033）。"""
     created_at: datetime | None = None
     updated_at: datetime | None = None
 
@@ -119,6 +134,8 @@ class Calendar:
             self.workdays = frozenset(self.workdays if self.workdays is not None else WEEKDAYS_MON_TO_FRI)
         if self.kind == CalendarKind.DAYS_OFF and self.day_off_reason is None:
             raise ValidationError("a days-off calendar needs a reason")
+        if self.scope == CalendarScope.PRIVATE and (not self.holds_events or self.is_default):
+            raise ValidationError("only a non-default events calendar can be private")
 
     @property
     def holds_events(self) -> bool:
@@ -128,6 +145,20 @@ class Calendar:
     @property
     def is_day_off_layer(self) -> bool:
         return self.kind != CalendarKind.EVENTS
+
+    @property
+    def is_private(self) -> bool:
+        """プライベートの予定のカレンダーか（計画に数えない・タスクを結べない。ADR-0033）。"""
+        return self.scope == CalendarScope.PRIVATE
+
+    def change_scope(self, scope: CalendarScope, updated_at: datetime) -> None:
+        """仕事 / プライベートを変える。休みの層と既定のカレンダーはプライベートにできない。"""
+        if scope == self.scope:
+            return
+        if scope == CalendarScope.PRIVATE and (not self.holds_events or self.is_default):
+            raise ValidationError("only a non-default events calendar can be private")
+        self.scope = scope
+        self.updated_at = updated_at
 
     @classmethod
     def create_layer(
@@ -166,11 +197,13 @@ class Calendar:
         sort_order: int,
         created_at: datetime,
         is_default: bool = False,
+        scope: CalendarScope = CalendarScope.WORK,
     ) -> Calendar:
         """新しいカレンダー。最初から表示する（毎回選び直させない）。"""
         return cls(
             id=None, user_id=user_id, name=name, color_key=color_key, sort_order=sort_order,
-            is_default=is_default, is_visible=True, created_at=created_at, updated_at=created_at,
+            is_default=is_default, is_visible=True, scope=scope,
+            created_at=created_at, updated_at=created_at,
         )
 
     @classmethod
@@ -208,5 +241,6 @@ __all__ = [
     "NAME_MAX_LENGTH",
     "Calendar",
     "CalendarKind",
+    "CalendarScope",
     "calendar_name",
 ]

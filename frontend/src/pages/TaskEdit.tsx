@@ -21,6 +21,7 @@ import MoreTimeIcon from '@mui/icons-material/MoreTime';
 import { scheduleTaskPath } from '../calendar/taskScheduling';
 import { milestoneReachable, parseScope, pickableProjects } from '../projects/projectScope';
 import { useProjectScope } from '../projects/useProjectScope';
+import { useDayOffReason } from '../calendar/useDayOffReason';
 
 const STATUSES: TaskStatus[] = ['TODO', 'DOING', 'WAITING', 'DONE', 'CANCELLED'];
 const DEP_TYPES: DependencyType[] = ['FS', 'SS', 'FF', 'SF'];
@@ -85,6 +86,16 @@ const FieldLabel: React.FC<{ children: React.ReactNode; required?: boolean }> = 
 };
 
 // 優先度・緊急度のラジオpill（高/中/低）
+/** 開始・期限が休みの日に当たったときの知らせ（止めはしない。ADR-0029） */
+const DayOffHint: React.FC<{ reasons: string }> = ({ reasons }) => {
+  const { t } = useI18n();
+  return (
+    <Box role="status" sx={{ mt: '4px', fontSize: 12, color: ds.warnText }}>
+      {t('taskEdit.onDayOff', { reasons })}
+    </Box>
+  );
+};
+
 const PillRadio: React.FC<{ value: PriorityBand; onChange: (v: PriorityBand) => void }> = ({ value, onChange }) => {
   const { t } = useI18n();
   return (
@@ -126,6 +137,9 @@ const TaskEdit: React.FC = () => {
   const qc = useQueryClient();
   const { t } = useI18n();
   const [form, setForm] = useState<FormData>(defaultForm);
+  // 開始・期限が休みの日なら知らせる（タスクだけ。2026-10-02 の決定）
+  const startDayOff = useDayOffReason(form.start_date);
+  const dueDayOff = useDayOffReason(form.due_date);
   const [tab, setTab] = useState(0);
   const [showTitleError, setShowTitleError] = useState(false);
   const [memoPreview, setMemoPreview] = useState(false);
@@ -346,6 +360,7 @@ const TaskEdit: React.FC = () => {
                 value={form.start_date}
                 onChange={e => setForm({ ...form, start_date: e.target.value })}
               />
+              {startDayOff && <DayOffHint reasons={startDayOff} />}
             </Box>
             <Box sx={{ flex: '1 1 200px' }}>
               <FieldLabel>{t('taskEdit.dueDate')}</FieldLabel>
@@ -354,6 +369,7 @@ const TaskEdit: React.FC = () => {
                 value={form.due_date}
                 onChange={e => setForm({ ...form, due_date: e.target.value })}
               />
+              {dueDayOff && <DayOffHint reasons={dueDayOff} />}
             </Box>
           </Box>
 
