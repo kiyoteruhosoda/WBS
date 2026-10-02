@@ -159,7 +159,8 @@ const overlapMs = (a: Range, b: Range): number => Math.max(0, Math.min(a.endMs, 
 export const scheduledTaskIds = (ranges: readonly Range[], occurrences: readonly CalendarOccurrence[]): number[] => {
   const overlaps = new Map<number, number>();
   for (const o of occurrences) {
-    if (o.task_id == null || o.is_all_day) continue;
+    // プライベートの予定は打刻の既定のタスクに使わない（ADR-0033）
+    if (o.task_id == null || o.is_all_day || o.is_private) continue;
     const startMs = Date.parse(o.start);
     const range = { startMs, endMs: startMs + Math.max(0, o.duration_minutes) * 60_000 };
     const overlap = ranges.reduce((sum, r) => sum + overlapMs(range, r), 0);

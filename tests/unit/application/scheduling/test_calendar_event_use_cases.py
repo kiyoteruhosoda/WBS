@@ -31,7 +31,9 @@ from src.domain.value_objects.local_schedule_point import local_date_of, local_t
 from src.domain.value_objects.recurrence import (
     NO_END_DATE,
     WEEKDAYS_MON_TO_FRI,
+    AdjustmentCondition,
     AdjustmentRule,
+    AdjustmentShiftUnit,
     RecurrenceRule,
     RecurrenceType,
     Weekday,
@@ -41,11 +43,11 @@ from src.domain.value_objects.time_zone import TimeZoneId
 from tests.unit.application.scheduling.fakes import (
     FakeClock,
     FakeTasks,
-    InMemoryBusinessCalendarRepository,
+    FixedLayers,
     InMemoryCalendarEventRepository,
     RecordingUnitOfWork,
 )
-from tests.unit.domain.scheduling.support import TOKYO, utc, weekday_calendar, weekly_rule
+from tests.unit.domain.scheduling.support import TOKYO, utc, weekday_layers, weekly_rule
 
 USER = 1
 OTHER_USER = 2
@@ -56,12 +58,12 @@ WEEKDAYS = tuple(sorted(WEEKDAYS_MON_TO_FRI, key=lambda w: w.iso_index))
 class World:
     def __init__(self) -> None:
         self.events = InMemoryCalendarEventRepository()
-        self.calendars = InMemoryBusinessCalendarRepository()
+        self.layers = FixedLayers(weekday_layers())
         self.tasks = FakeTasks({10: USER, 20: OTHER_USER})
         self.uow = RecordingUnitOfWork()
         self.clock = FakeClock(CLOCK_START)
         self.uc = CalendarEventUseCases(
-            self.events, self.calendars, self.tasks, self.uow, now=self.clock
+            self.events, self.tasks, self.uow, now=self.clock, day_off_layers=self.layers
         )
 
     def single(self, title: str = "sample", **kwargs) -> CalendarEvent:
@@ -497,27 +499,37 @@ def test_split_can_unlink_the_task(w: World) -> None:
     assert single.task_id is None
 
 
-def test_adjustment_calendar_must_belong_to_the_user(w: World) -> None:
-    others = w.calendars.save(weekday_calendar(calendar_id=None, user_id=OTHER_USER))
-    with pytest.raises(NotFoundError):
-        w.uc.create_recurring_event(
-            CreateRecurringEventCommand(
-                USER, "x", "Asia/Tokyo", utc(2026, 5, 1, 9, 0), 60,
-                weekly_rule(Weekday.MONDAY, adjustment=AdjustmentRule.next_business_day_on_holiday(others.id)),
-            )
-        )
-
-
-def test_list_occurrences_applies_the_referenced_business_calendar(w: World) -> None:
-    calendar = w.calendars.save(weekday_calendar(date(2026, 5, 4), calendar_id=None))
+def test_list_occurrences_shifts_by_the_day_off_layers(w: World) -> None:
+    # 営業日シフトは休みの 4 層だけで決まる（ADR-0029・0032）。5/4（月）が数える層の日なら 5/5 へ
+    w.layers.layers = weekday_layers(date(2026, 5, 4))
     w.uc.create_recurring_event(
         CreateRecurringEventCommand(
             USER, "月曜", "Asia/Tokyo", utc(2026, 5, 1, 9, 0), 60,
-            weekly_rule(Weekday.MONDAY, adjustment=AdjustmentRule.next_business_day_on_holiday(calendar.id)),
+            weekly_rule(Weekday.MONDAY, adjustment=AdjustmentRule.next_business_day_on_holiday()),
         )
     )
     dates = [o.date for o in w.uc.list_occurrences(USER, date(2026, 5, 1), date(2026, 5, 12))]
     assert dates == [date(2026, 5, 5), date(2026, 5, 11)]
+
+
+def test_without_a_layers_source_the_week_is_monday_to_friday() -> None:
+    # 層の出どころを繋がないとき（試験など）は月〜金・休みの日なし
+    uc = CalendarEventUseCases(
+        InMemoryCalendarEventRepository(), FakeTasks({}), RecordingUnitOfWork(), now=FakeClock(CLOCK_START)
+    )
+    uc.create_recurring_event(
+        CreateRecurringEventCommand(
+            USER, "土曜", "Asia/Tokyo", utc(2026, 5, 2, 9, 0), 60,
+            weekly_rule(
+                Weekday.SATURDAY,
+                adjustment=AdjustmentRule(
+                    AdjustmentCondition.ALWAYS, AdjustmentShiftUnit.BUSINESS_DAY, 1
+                ),
+            ),
+        )
+    )
+    dates = [o.date for o in uc.list_occurrences(USER, date(2026, 5, 1), date(2026, 5, 6))]
+    assert dates == [date(2026, 5, 4)]
 
 
 def test_list_occurrences_in_the_viewer_time_zone(w: World) -> None:

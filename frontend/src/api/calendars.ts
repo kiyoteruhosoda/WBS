@@ -1,6 +1,6 @@
 import client from './client';
 import type {
-  Calendar, CalendarViewPreset, DayOffMark, EventColorKey, LayerDayOff, WeekdayCode,
+  Calendar, CalendarScope, CalendarViewPreset, DayOffMark, EventColorKey, LayerDayOff, WeekdayCode,
 } from '../types';
 
 // 予定のカレンダー・表示の選択・表示の組み合わせ（task #191、ADR-0027）。仕様の正は /api/docs。
@@ -12,6 +12,8 @@ export interface CalendarInput {
   counts_as_day_off?: boolean;
   /** 営業日の層: 稼働する曜日（省けば今のまま） */
   workdays?: WeekdayCode[];
+  /** 予定のカレンダー: 仕事 / プライベート（省けば作るときは仕事、直すときは今のまま。ADR-0033） */
+  scope?: CalendarScope;
 }
 
 /** 並び順で。既定のカレンダーが無ければサーバーが作ってから返す。 */

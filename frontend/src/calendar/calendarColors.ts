@@ -141,7 +141,8 @@ export const dayColumnBackground = (
   holiday: { reason?: string } | undefined,
   nonWorkday: boolean | null,
 ): string => {
-  if (holiday) {
+  // 曜日の休みの帯は地の色を変えない（下の曜日の休みの色のまま）
+  if (holiday && holiday.reason !== 'WEEKLY') {
     if (holiday.reason === 'COMPANY') return palette.companyDayOffBg;
     if (holiday.reason === 'PERSONAL') return palette.personalDayOffBg;
     return palette.holidayBg;
@@ -151,4 +152,15 @@ export const dayColumnBackground = (
   if (dow === 6) return palette.saturdayBg;
   return nonWorkday ? palette.weeklyOffBg : 'transparent';
 };
+
+/**
+ * プライベートの予定（ADR-0033）に重ねる斜線。地の色は予定の色のまま、白い細い斜線で仕事の予定と見分ける
+ * （色だけに頼らない。題名の白い文字は読める濃さ）。
+ */
+export const PRIVATE_HATCH =
+  'repeating-linear-gradient(135deg, rgba(255,255,255,0.32) 0 3px, rgba(255,255,255,0) 3px 8px)';
+
+/** 回の地に重ねる模様（プライベートなら斜線、ほかは無し）。 */
+export const occurrencePattern = (occurrence: { is_private?: boolean }): string =>
+  (occurrence.is_private ? PRIVATE_HATCH : 'none');
 

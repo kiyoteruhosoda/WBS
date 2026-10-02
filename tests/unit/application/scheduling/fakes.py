@@ -9,17 +9,16 @@ from __future__ import annotations
 import copy
 from datetime import date
 
-from src.domain.entities.business_calendar import BusinessCalendar
 from src.domain.entities.calendar import Calendar
 from src.domain.entities.calendar_event import CalendarEvent
 from src.domain.entities.calendar_view_preset import CalendarViewPreset
 from src.domain.entities.task import Task
-from src.domain.repositories.business_calendar_repository import BusinessCalendarRepository
 from src.domain.repositories.calendar_event_repository import CalendarEventRepository
 from src.domain.repositories.calendar_repository import (
     CalendarRepository,
     CalendarViewPresetRepository,
 )
+from src.domain.services.day_off_layers import DayOffLayers
 
 
 class InMemoryCalendarEventRepository(CalendarEventRepository):
@@ -56,31 +55,14 @@ class InMemoryCalendarEventRepository(CalendarEventRepository):
                 moved += 1
         return moved
 
+    def count_linked_to_tasks(self, user_id: int, calendar_id: int) -> int:
+        return sum(
+            1 for e in self._rows.values()
+            if e.user_id == user_id and e.calendar_id == calendar_id and e.task_id is not None
+        )
+
     def all(self) -> list[CalendarEvent]:
         return [copy.deepcopy(e) for e in self._rows.values()]
-
-
-class InMemoryBusinessCalendarRepository(BusinessCalendarRepository):
-    def __init__(self) -> None:
-        self._rows: dict[int, BusinessCalendar] = {}
-        self._next_id = 1
-
-    def find_by_id(self, calendar_id: int) -> BusinessCalendar | None:
-        found = self._rows.get(calendar_id)
-        return copy.deepcopy(found) if found is not None else None
-
-    def find_all(self, user_id: int) -> list[BusinessCalendar]:
-        return [copy.deepcopy(c) for c in self._rows.values() if c.user_id == user_id]
-
-    def save(self, calendar: BusinessCalendar) -> BusinessCalendar:
-        if calendar.id is None:
-            calendar.id = self._next_id
-            self._next_id += 1
-        self._rows[calendar.id] = copy.deepcopy(calendar)
-        return copy.deepcopy(calendar)
-
-    def delete(self, calendar_id: int) -> None:
-        self._rows.pop(calendar_id, None)
 
 
 class InMemoryCalendarRepository(CalendarRepository):
@@ -129,6 +111,18 @@ class InMemoryCalendarViewPresetRepository(CalendarViewPresetRepository):
 
     def delete(self, preset_id: int) -> None:
         self._rows.pop(preset_id, None)
+
+
+class FixedLayers:
+    """``DayOffLayersSource``。誰に聞かれても同じ休みの層を返し、聞かれた利用者を覚える。"""
+
+    def __init__(self, layers: DayOffLayers) -> None:
+        self.layers = layers
+        self.asked: list[int] = []
+
+    def layers_for(self, user_id: int) -> DayOffLayers:
+        self.asked.append(user_id)
+        return self.layers
 
 
 class FakeTasks:

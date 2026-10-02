@@ -1,6 +1,6 @@
-"""予定・営業日カレンダーの表の実装（ADR-0009）。
+"""予定の表の実装（ADR-0009）。
 
-- 例外・移動・祝日は子表で、読み直すと同じ集約に戻る
+- 例外・移動は子表で、読み直すと同じ集約に戻る
 - 期間の列（``span_start_day`` / ``span_end_day``）で粗く絞れる
 - 楽観ロック: 同じ予定を 2 つの接続で読み、片方が先に確定したら、もう片方の保存は ``ConflictError``
 - ``save`` は確定しない（確定はユースケースの ``UnitOfWork``）
@@ -14,7 +14,6 @@ from datetime import date, datetime, time
 import pytest
 from sqlalchemy.orm import Session
 
-from src.domain.entities.business_calendar import BusinessCalendar, Holiday
 from src.domain.entities.calendar_event import CalendarEvent, EventMove
 from src.domain.exceptions import ConflictError
 from src.domain.value_objects.event_schedule import (
@@ -24,7 +23,6 @@ from src.domain.value_objects.event_schedule import (
 )
 from src.domain.value_objects.recurrence import (
     NO_END_DATE,
-    WEEKDAYS_MON_TO_FRI,
     AdjustmentRule,
     RecurrenceRule,
     RecurrenceType,
@@ -34,9 +32,6 @@ from src.domain.value_objects.recurrence import (
 from src.domain.value_objects.time_zone import TimeZoneId
 from src.infrastructure.auth.auth_settings import SINGLE_USER_ID
 from src.infrastructure.database.session import get_session_factory
-from src.infrastructure.repositories.business_calendar_repository import (
-    SqlAlchemyBusinessCalendarRepository,
-)
 from src.infrastructure.repositories.calendar_event_repository import (
     SqlAlchemyCalendarEventRepository,
 )
@@ -60,11 +55,11 @@ def sessions(client) -> Iterator[Callable[[], Session]]:
         session.close()
 
 
-def _weekly_event(calendar_id: int | None = None) -> CalendarEvent:
+def _weekly_event() -> CalendarEvent:
     rule = RecurrenceRule(
         RecurrenceType.WEEKLY, 1, NO_END_DATE,
         weekly=WeeklyRule((Weekday.MONDAY, Weekday.WEDNESDAY)),
-        adjustment=AdjustmentRule.next_business_day_on_holiday(calendar_id) if calendar_id else None,
+        adjustment=AdjustmentRule.next_business_day_on_holiday(),
     )
     return CalendarEvent.create_recurring(
         user_id=SINGLE_USER_ID, title="定例", time_zone=TOKYO,
@@ -180,30 +175,3 @@ def test_a_delete_based_on_a_stale_read_is_a_conflict(sessions) -> None:
 
     with pytest.raises(ConflictError):
         second.delete(event_id)
-
-
-def test_business_calendar_round_trips_with_holidays(sessions) -> None:
-    session = sessions()
-    repo = SqlAlchemyBusinessCalendarRepository(session)
-    calendar = repo.save(
-        BusinessCalendar(
-            id=None, user_id=SINGLE_USER_ID, name="日本", time_zone=TOKYO,
-            workdays=WEEKDAYS_MON_TO_FRI, created_at=NOW, updated_at=NOW,
-        )
-    )
-    calendar.add_holiday(Holiday(date(2026, 11, 3), "文化の日"), NOW)
-    calendar.add_holiday(Holiday(date(2026, 1, 1), "元日"), NOW)
-    repo.save(calendar)
-    # 同じ日を消して入れ直しても一意制約に当たらない
-    calendar.remove_holiday(date(2026, 1, 1), NOW)
-    calendar.add_holiday(Holiday(date(2026, 1, 1), "元日"), NOW)
-    repo.save(calendar)
-    session.commit()
-
-    loaded = SqlAlchemyBusinessCalendarRepository(sessions()).find_by_id(calendar.id)
-    assert loaded.workdays == WEEKDAYS_MON_TO_FRI
-    assert [(h.date, h.name) for h in loaded.holidays] == [
-        (date(2026, 1, 1), "元日"),
-        (date(2026, 11, 3), "文化の日"),
-    ]
-    assert SqlAlchemyBusinessCalendarRepository(sessions()).find_all(SINGLE_USER_ID + 999) == []

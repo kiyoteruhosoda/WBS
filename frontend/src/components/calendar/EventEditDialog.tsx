@@ -10,7 +10,7 @@ import EventOutlinedIcon from '@mui/icons-material/EventOutlined';
 import TaskAltIcon from '@mui/icons-material/TaskAlt';
 import { useI18n } from '../../i18n';
 import type { TranslationKey } from '../../i18n/translations';
-import type { BusinessCalendar, Calendar, CalendarEvent, CalendarEventType, CalendarOccurrence, Task, WeekdayCode } from '../../types';
+import type { Calendar, CalendarEvent, CalendarEventType, CalendarOccurrence, Task, WeekdayCode } from '../../types';
 import type {
   AdjustmentDateType, AdjustmentDirection, AlarmOffsetField, EventForm, EventFormContext, FormError, RecurringScope,
   RepeatType,
@@ -21,6 +21,7 @@ import {
   withStartMinute,
 } from '../../calendar/eventForm';
 import { errorDetailOf, isConflictError } from '../../calendar/calendarRequests';
+import { isPrivateCalendar } from '../../calendar/calendarSelection';
 import { eventColor } from '../../calendar/calendarColors';
 import { formatMinute } from '../../calendar/zonedTime';
 import { sendCalendarRequests } from '../../api/calendar';
@@ -40,7 +41,6 @@ interface Props {
   /** 閲覧者のタイムゾーン（予定のものと違えば、時刻がどのゾーンのものかを書き添える） */
   viewerTimeZone: string;
   tasks: readonly Task[];
-  businessCalendars: readonly BusinessCalendar[];
   /** 予定のカレンダー（ADR-0027）。2 つ以上あるときだけ選ぶ欄を出す */
   calendars?: readonly Calendar[];
   onClose: () => void;
@@ -120,7 +120,7 @@ const Section: React.FC<{ title: React.ReactNode; open: boolean; onToggle: () =>
 const NO_CALENDARS: readonly Calendar[] = [];
 
 const EventEditDialog: React.FC<Props> = ({
-  target, viewerTimeZone, tasks, businessCalendars, calendars = NO_CALENDARS, onClose, onSaved, onConflict, onDelete,
+  target, viewerTimeZone, tasks, calendars = NO_CALENDARS, onClose, onSaved, onConflict, onDelete,
 }) => {
   const { t, weekdays } = useI18n();
   const theme = useTheme();
@@ -178,6 +178,12 @@ const EventEditDialog: React.FC<Props> = ({
   const weekIndexLabel = (n: number) => (n === -1 ? t('calendar.nthWeekLast') : t('calendar.nthWeek', { n }));
   const weekdayLabel = (code: WeekdayCode) => weekdays[WEEKDAY_CODES.indexOf(code)];
   const isTask = form.eventType === 'TASK';
+  // プライベートのカレンダー（ADR-0033）の予定にはタスクを結べない（分類はタスクにできない）
+  const privateCalendar = isPrivateCalendar(calendars.find((cal) => cal.id === form.calendarId));
+  const changeCalendar = (calendarId: number | null) => {
+    const next = calendars.find((cal) => cal.id === calendarId);
+    update(isPrivateCalendar(next) ? { calendarId, eventType: 'EVENT', taskId: null } : { calendarId });
+  };
   const alarmOn = isAlarmOn(form);
   const alarmSummary = alarmOn && form.alarm
     ? ALARM_OFFSETS.filter((o) => form.alarm?.[o.field]).map((o) => t(alarmOffsetKeys[o.field])).join('・') || t('calendar.alarmNone')
@@ -210,12 +216,20 @@ const EventEditDialog: React.FC<Props> = ({
               onChange={(_, value: CalendarEventType | null) => { if (value) update({ eventType: value }); }}
             >
               {(Object.keys(eventTypeKeys) as CalendarEventType[]).map((type) => (
-                <ToggleButton key={type} value={type} data-testid={`event-type-${type}`} sx={{ gap: '6px', minHeight: 40 }}>
+                <ToggleButton
+                  key={type} value={type} data-testid={`event-type-${type}`} sx={{ gap: '6px', minHeight: 40 }}
+                  disabled={type === 'TASK' && privateCalendar}
+                >
                   {type === 'TASK' ? <TaskAltIcon sx={{ fontSize: 18 }} /> : <EventOutlinedIcon sx={{ fontSize: 18 }} />}
                   {t(eventTypeKeys[type])}
                 </ToggleButton>
               ))}
             </ToggleButtonGroup>
+            {privateCalendar && (
+              <Box sx={{ fontSize: 12, color: 'text.secondary' }} data-testid="event-private-hint">
+                {t('calendar.privateEventHint')}
+              </Box>
+            )}
             {isTask && (
               <>
                 <Box sx={{ fontSize: 12, color: 'text.secondary' }}>{t('calendar.eventTypeHint')}</Box>
@@ -509,15 +523,7 @@ const EventEditDialog: React.FC<Props> = ({
                         />
                       )}
                     </Box>
-                    <TextField
-                      select
-                      label={t('calendar.businessCalendar')}
-                      value={form.adjustmentCalendarId ?? ''}
-                      onChange={(e) => update({ adjustmentCalendarId: e.target.value === '' ? null : Number(e.target.value) })}
-                    >
-                      <MenuItem value="">{t('calendar.businessCalendarUnset')}</MenuItem>
-                      {businessCalendars.map((cal) => <MenuItem key={cal.id} value={cal.id}>{cal.name}</MenuItem>)}
-                    </TextField>
+                    <Box sx={{ fontSize: 12, color: 'text.secondary' }}>{t('calendar.adjustmentUsesLayers')}</Box>
                   </>
                 )}
               </>
@@ -565,7 +571,7 @@ const EventEditDialog: React.FC<Props> = ({
               select
               label={t('calendar.calendar')}
               value={form.calendarId == null ? '' : String(form.calendarId)}
-              onChange={(e) => update({ calendarId: e.target.value === '' ? null : Number(e.target.value) })}
+              onChange={(e) => changeCalendar(e.target.value === '' ? null : Number(e.target.value))}
               data-testid="event-calendar"
             >
               {calendars.map((cal) => (
@@ -573,6 +579,9 @@ const EventEditDialog: React.FC<Props> = ({
                   <Box sx={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <Box sx={{ width: 12, height: 12, borderRadius: '3px', bgcolor: eventColor(cal.color_key), flexShrink: 0 }} />
                     {cal.name}
+                    {isPrivateCalendar(cal) && (
+                      <Box component="span" sx={{ fontSize: 11, color: 'text.secondary' }}>{t('calendar.privateMark')}</Box>
+                    )}
                   </Box>
                 </MenuItem>
               ))}
@@ -616,7 +625,7 @@ const EventEditDialog: React.FC<Props> = ({
           </Section>
 
           {/* タスク（WBS のタスクを結ぶ。打刻の既定のタスクになる）。分類がタスクなら上の欄で選ぶ */}
-          {!isTask && (
+          {!isTask && !privateCalendar && (
             <TaskPickerField
               label={t('calendar.task')} tasks={tasks} projects={projects} scope={scope}
               value={form.taskId} onChange={(taskId) => update({ taskId })}

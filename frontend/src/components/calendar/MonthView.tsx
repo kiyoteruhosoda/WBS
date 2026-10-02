@@ -3,10 +3,10 @@ import { Box } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
 import { useI18n } from '../../i18n';
 import type { MonthCell } from '../../calendar/monthCells';
-import { availableChipRows, visibleChipCount } from '../../calendar/monthCells';
+import { availableChipRows, isNamedDayOff, visibleChipCount } from '../../calendar/monthCells';
 import type { LinkedTask } from '../../calendar/taskScheduling';
 import { occurrenceColor } from '../../calendar/taskScheduling';
-import { dayColumnBackground, pastEventColor } from '../../calendar/calendarColors';
+import { dayColumnBackground, occurrencePattern, pastEventColor } from '../../calendar/calendarColors';
 import { formatOccurrenceTimeRange } from '../../calendar/daySegments';
 import DeadlineChip from './DeadlineChip';
 import DoneMark from './DoneMark';
@@ -50,7 +50,7 @@ const MonthView: React.FC<Props> = ({ cells, selectedDate, timeZone, onSelectDat
 
   const dayTextColor = (cell: MonthCell, selected: boolean): string => {
     if (cell.isToday || selected) return c.onColor;
-    if (cell.holiday && cell.isCurrentMonth) return c.holidayText;
+    if (isNamedDayOff(cell.holiday) && cell.isCurrentMonth) return c.holidayText;
     if (cell.isCurrentMonth) return c.textPrimary;
     return c.outOfMonthText;
   };
@@ -109,7 +109,21 @@ const MonthView: React.FC<Props> = ({ cells, selectedDate, timeZone, onSelectDat
               }}>
                 {Number(cell.date.slice(8, 10))}
               </Box>
-              {cell.holiday && (
+              {cell.holiday?.subtle && (
+                // 曜日の休み: 層の色の細い線と控えめな文字だけ（ほかの休みのチップより目立たせない）
+                <Box
+                  title={cell.holiday.name ?? ''}
+                  sx={{
+                    height: 14, lineHeight: '14px', mx: '1px', mb: '2px', px: '3px',
+                    borderLeft: `3px solid ${cell.holiday.color ?? c.textSecondary}`,
+                    color: c.textSecondary, fontSize: 10,
+                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                  }}
+                >
+                  {cell.holiday.name ?? ''}
+                </Box>
+              )}
+              {cell.holiday && !cell.holiday.subtle && (
                 <Box
                   title={cell.holiday.name ?? ''}
                   sx={{
@@ -132,6 +146,7 @@ const MonthView: React.FC<Props> = ({ cells, selectedDate, timeZone, onSelectDat
                       sx={{
                         height: 14, lineHeight: '14px', borderRadius: '3px', mx: '1px', px: '3px',
                         bgcolor: cell.isPast ? pastEventColor(occurrenceColor(o, linkedTasks), c) : occurrenceColor(o, linkedTasks),
+                        backgroundImage: occurrencePattern(o),
                         color: c.onColor, fontSize: 10,
                         overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                         // タスクの分類の回は印を付け、済みは薄く・取り消し線（ADR-0025）

@@ -15,9 +15,12 @@
                | {"kind": "NTH_WEEKDAY", "month": 1, "week_index": 2, "weekday": "MO"} | null,
       "adjustment": {"condition": "HOLIDAY" | "ALWAYS",
                      "shift_unit": "BUSINESS_DAY" | "CALENDAR_DAY",
-                     "shift_amount": -1, "calendar_id": 3 | null,
+                     "shift_amount": -1,
                      "action": "SHIFT" | "CANCEL"} | null
     }
+
+``adjustment.calendar_id``（古い営業日カレンダーの名指し）は ADR-0032 で畳んだ。表からは移行
+``0013`` で消した。入力に残っていても読み捨てる（古い画面の版から来うる）。
 
 ⚠ 表に入った形でもあるので、キーを変えるときは移行（Alembic のデータ移行）を伴う。
 読めない形は ``ValidationError``。
@@ -100,7 +103,6 @@ def _adjustment_to_mapping(adjustment: AdjustmentRule) -> dict[str, Any]:
         "condition": adjustment.condition.value,
         "shift_unit": adjustment.shift_unit.value,
         "shift_amount": adjustment.shift_amount,
-        "calendar_id": adjustment.calendar_id,
         "action": adjustment.action.value,
     }
 
@@ -165,14 +167,12 @@ def _yearly_from(data: Mapping[str, Any] | None) -> YearlyRule | None:
 def _adjustment_from(data: Mapping[str, Any] | None) -> AdjustmentRule | None:
     if data is None:
         return None
-    calendar_id = data.get("calendar_id")
     return AdjustmentRule(
         condition=_enum(AdjustmentCondition, _required(data, "condition"), "adjustment.condition"),
         shift_unit=_enum(
             AdjustmentShiftUnit, _required(data, "shift_unit"), "adjustment.shift_unit"
         ),
         shift_amount=_int(_required(data, "shift_amount"), "adjustment.shift_amount"),
-        calendar_id=None if calendar_id is None else _int(calendar_id, "adjustment.calendar_id"),
         action=_enum(AdjustmentAction, data.get("action", "SHIFT"), "adjustment.action"),
     )
 

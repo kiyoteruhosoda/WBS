@@ -83,6 +83,7 @@ const SelectedDayPanel: React.FC<Props> = ({
             const badges = [
               o.is_moved ? t('calendar.badgeMoved') : null,
               o.is_overridden ? t('calendar.badgeModified') : null,
+              o.is_private ? t('calendar.privateMark') : null,
             ].filter(Boolean).join('  ');
             const taskLabel = linkedTaskLabel(o, linkedTasks);
             return (

@@ -15,7 +15,7 @@ from __future__ import annotations
 import json
 from datetime import date
 
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
 from src.application.recurrence_rule_mapping import (
@@ -123,6 +123,20 @@ class SqlAlchemyCalendarEventRepository(CalendarEventRepository):
         # 読んだ版を覚えていれば、移したものは古い（次の保存は ConflictError で読み直させる）。
         self._session.expire_all()
         return int(result.rowcount or 0)
+
+    def count_linked_to_tasks(self, user_id: int, calendar_id: int) -> int:
+        table = CalendarEventModel.__table__
+        return int(
+            self._session.execute(
+                select(func.count())
+                .select_from(table)
+                .where(
+                    table.c.user_id == user_id,
+                    table.c.calendar_id == calendar_id,
+                    table.c.task_id.is_not(None),
+                )
+            ).scalar_one()
+        )
 
     # ── 内側 ────────────────────────────────────────────────────────────
 

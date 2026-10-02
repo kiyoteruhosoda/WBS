@@ -528,7 +528,10 @@ const Today: React.FC = () => {
     queryFn: () => getDayOffMarks(range as { from: string; to: string }),
     enabled: range != null,
   });
-  const dayOffView = useMemo(() => buildDayOffView(holidaysQuery.data ?? [], undefined), [holidaysQuery.data]);
+  const dayOffView = useMemo(
+    () => buildDayOffView(holidaysQuery.data ?? [], undefined, { weeklyLabel: t('calendar.weeklyDayOffBand') }),
+    [holidaysQuery.data, t],
+  );
   const { data: tasks } = useQuery({ queryKey: ['tasks'], queryFn: () => getTasks() });
   const { data: categories } = useQuery({ queryKey: ['categories'], queryFn: getCategories });
   const { data: milestones } = useQuery({ queryKey: ['milestones'], queryFn: getMilestones });

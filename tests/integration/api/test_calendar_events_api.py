@@ -241,10 +241,9 @@ def test_someone_elses_event_cannot_be_read_or_changed(client, two_users, theirs
     assert len(_occurrences(client, "2026-10-05", "2026-10-11")) == 2
 
 
-def test_cannot_point_at_someone_elses_task_or_business_calendar(client, two_users) -> None:
+def test_cannot_point_at_someone_elses_task(client, two_users) -> None:
     two_users.other()
     their_task = client.post("/api/tasks", json={"title": "他人のタスク"}).json()["id"]
-    their_calendar = client.post("/api/business-calendars", json={"name": "他人の暦"}).json()["id"]
     two_users.me()
 
     res = client.post(
@@ -253,17 +252,17 @@ def test_cannot_point_at_someone_elses_task_or_business_calendar(client, two_use
               "task_id": their_task},
     )
     assert res.status_code == 404
-    rule = {
-        **WEEKLY_MON_WED,
-        "adjustment": {"condition": "HOLIDAY", "shift_unit": "BUSINESS_DAY", "shift_amount": 1,
-                       "calendar_id": their_calendar},
-    }
-    res = client.post(
-        "/api/calendar/events",
-        json={"title": "x", "start": "2026-10-05T00:00:00Z", "duration_minutes": 60,
-              "recurrence": rule},
-    )
+
+
+def test_old_business_calendar_api_is_gone(client) -> None:
+    # 古い営業日カレンダー（ADR-0009）は畳んだ（ADR-0032）。休みの 4 層（/api/calendars）に一本化
+    assert client.get("/api/business-calendars").status_code == 404
+    assert client.post("/api/business-calendars", json={"name": "日本"}).status_code == 404
+    assert client.post("/api/business-calendars/1/holidays/japan", json={"year": 2026}).status_code == 404
+    res = client.get("/api/calendar/holidays", params={"from": "2026-10-01", "to": "2026-10-31"})
     assert res.status_code == 404
+    paths = client.app.openapi()["paths"]
+    assert not [p for p in paths if "business-calendars" in p or p.endswith("/calendar/holidays")]
 
 
 # ── 楽観ロック ──────────────────────────────────────────────────────────────
@@ -487,18 +486,21 @@ def test_occurrence_operations_on_a_single_event_are_422(client) -> None:
     assert res.status_code == 422
 
 
-def test_business_day_shift_uses_my_calendar(client) -> None:
-    calendar = client.post("/api/business-calendars", json={"name": "日本"}).json()
+def test_business_day_shift_uses_the_day_off_layers_and_ignores_an_old_calendar_id(client) -> None:
+    # 営業日は休みの 4 層だけで決まる（ADR-0029・0032）。古い画面が送る calendar_id は読み捨てる
+    national = next(
+        c for c in client.get("/api/calendars").json() if c["day_off_reason"] == "NATIONAL_HOLIDAY"
+    )
     client.post(
-        f"/api/business-calendars/{calendar['id']}/holidays",
-        json={"date": "2026-10-12", "name": "スポーツの日"},
+        f"/api/calendars/{national['id']}/days-off", json={"date": "2026-10-12", "name": "スポーツの日"}
     )
     rule = {
         "type": "WEEKLY", "weekly": {"weekdays": ["MO"]},
         "adjustment": {"condition": "HOLIDAY", "shift_unit": "BUSINESS_DAY", "shift_amount": 1,
-                       "calendar_id": calendar["id"]},
+                       "calendar_id": 999},
     }
-    _create(client, title="月曜の定例", recurrence=rule)
+    created = _create(client, title="月曜の定例", recurrence=rule)
+    assert "calendar_id" not in created["recurrence"]["adjustment"]
     occurrences = _occurrences(client, "2026-10-12", "2026-10-13")
     assert [(o["date"], o["series_key"]["date"]) for o in occurrences] == [
         ("2026-10-13", "2026-10-12"),

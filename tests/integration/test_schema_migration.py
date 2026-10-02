@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 import pytest
 import sqlalchemy as sa
 from alembic import command
@@ -573,6 +575,134 @@ def test_0010_makes_four_day_off_layers_and_copies_business_calendar_holidays(tm
             assert connection.exec_driver_sql(
                 "SELECT COUNT(*) FROM business_calendar_holidays"
             ).scalar() == 3
+    finally:
+        engine.dispose()
+
+
+def test_0013_retires_business_calendars_into_the_layers(tmp_path):
+    # task #191 / ADR-0032: 古い営業日カレンダーの祝日で層に無い日は「日本の祝日」の層へ写し、
+    # 層の無い利用者には 4 層を作る。繰り返しの規則の名指し（adjustment.calendar_id）を外し、表を消す
+    url = _url(tmp_path, "retire_business_calendars.db")
+    engine = sa.create_engine(url)
+    try:
+        with engine.begin() as connection:
+            command.upgrade(alembic_config(connection), "0012")
+        with engine.begin() as connection:
+            for user_id, email in ((1, "taro@example.com"), (2, "hanako@example.com")):
+                connection.exec_driver_sql(
+                    "INSERT INTO users (id, email, display_name, timezone, language, is_active, "
+                    f"created_at, updated_at) VALUES ({user_id}, '{email}', 'u', 'Asia/Tokyo', 'ja', 1, "
+                    "'2026-01-01', '2026-01-01')"
+                )
+            # 利用者 1 は 0010 の後の利用者（層は一覧で作る）を装い、層を自分で作っておく
+            connection.exec_driver_sql(
+                "INSERT INTO calendars (id, user_id, kind, name, color_key, sort_order, is_default, "
+                "is_visible, workdays, day_off_reason, counts_as_day_off, created_at, updated_at) VALUES "
+                "(10, 1, 'EVENTS', '予定', 'DEFAULT', 0, 1, 1, NULL, NULL, 0, '2026-01-01', '2026-01-01'), "
+                "(13, 1, 'DAYS_OFF', '日本の祝日', 'TOMATO', 1003, 0, 1, NULL, 'NATIONAL_HOLIDAY', 1, "
+                "'2026-01-01', '2026-01-01')"
+            )
+            connection.exec_driver_sql(
+                "INSERT INTO calendar_days_off (calendar_id, day, name) VALUES (13, '2026-10-12', 'スポーツの日')"
+            )
+            for calendar_id, user_id, workdays in ((1, 1, "MO,TU,WE,TH,FR"), (2, 2, "MO,TU,WE,TH")):
+                connection.exec_driver_sql(
+                    "INSERT INTO business_calendars (id, user_id, name, time_zone, workdays, "
+                    "shift_on_holidays_only, is_enabled, created_at, updated_at) VALUES "
+                    f"({calendar_id}, {user_id}, '暦', 'Asia/Tokyo', '{workdays}', 0, 1, "
+                    "'2026-01-01', '2026-01-01')"
+                )
+            for calendar_id, day, name in (
+                (1, "2026-10-12", "別名"), (1, "2026-11-03", "文化の日"), (2, "2026-12-29", "年末"),
+            ):
+                connection.exec_driver_sql(
+                    "INSERT INTO business_calendar_holidays (calendar_id, holiday_date, name) "
+                    f"VALUES ({calendar_id}, '{day}', '{name}')"
+                )
+            named = (
+                '{"adjustment": {"action": "SHIFT", "calendar_id": 1, "condition": "HOLIDAY", '
+                '"shift_amount": 1, "shift_unit": "BUSINESS_DAY"}, "end_date": null, "interval": 1, '
+                '"monthly": null, "type": "WEEKLY", "weekly": {"weekdays": ["MO"]}, "yearly": null}'
+            )
+            for event_id, rule in ((1, named), (2, None)):
+                rule_sql = "NULL" if rule is None else f"'{rule}'"
+                connection.exec_driver_sql(
+                    "INSERT INTO calendar_events (id, user_id, calendar_id, kind, title, time_zone, "
+                    "start_utc, duration_minutes, recurrence_rule, color_key, span_start_day, "
+                    "span_end_day, version, created_at, updated_at) VALUES "
+                    f"({event_id}, 1, 10, '{'RECURRING' if rule else 'SINGLE'}', '定例', 'Asia/Tokyo', "
+                    f"'2026-10-05 00:00:00', 60, {rule_sql}, 'DEFAULT', 1, 2, 1, "
+                    "'2026-01-01', '2026-01-01')"
+                )
+        with engine.begin() as connection:
+            command.upgrade(alembic_config(connection), "0013")
+        inspector = sa.inspect(engine)
+        assert {"business_calendars", "business_calendar_holidays"}.isdisjoint(
+            inspector.get_table_names()
+        )
+        with engine.connect() as connection:
+            days = connection.exec_driver_sql(
+                "SELECT c.user_id, d.day, d.name FROM calendar_days_off d "
+                "JOIN calendars c ON c.id = d.calendar_id "
+                "WHERE c.day_off_reason = 'NATIONAL_HOLIDAY' ORDER BY c.user_id, d.day"
+            ).all()
+            assert [tuple(d) for d in days] == [
+                (1, "2026-10-12", "スポーツの日"), (1, "2026-11-03", "文化の日"), (2, "2026-12-29", "年末"),
+            ]
+            # 層の無かった利用者 2 には 4 層（営業日の曜日は古いカレンダーのもの）
+            layers = connection.exec_driver_sql(
+                "SELECT kind, workdays, day_off_reason FROM calendars WHERE user_id = 2 ORDER BY sort_order"
+            ).all()
+            assert [tuple(row) for row in layers] == [
+                ("WORKWEEK", "MO,TU,WE,TH", None), ("DAYS_OFF", None, "COMPANY"),
+                ("DAYS_OFF", None, "PERSONAL"), ("DAYS_OFF", None, "NATIONAL_HOLIDAY"),
+            ]
+            rule = connection.exec_driver_sql(
+                "SELECT recurrence_rule FROM calendar_events WHERE id = 1"
+            ).scalar()
+            assert "calendar_id" not in json.loads(rule)["adjustment"]
+            assert json.loads(rule)["adjustment"]["shift_amount"] == 1
+
+        with engine.begin() as connection:
+            command.downgrade(alembic_config(connection), "0012")
+        with engine.connect() as connection:
+            restored = connection.exec_driver_sql(
+                "SELECT c.user_id, c.workdays, h.holiday_date FROM business_calendars c "
+                "LEFT JOIN business_calendar_holidays h ON h.calendar_id = c.id "
+                "ORDER BY c.user_id, h.holiday_date"
+            ).all()
+            assert [tuple(r) for r in restored] == [
+                (2, "MO,TU,WE,TH", "2026-12-29"),
+            ]
+    finally:
+        engine.dispose()
+
+
+def test_0014_calendars_are_work_until_made_private(tmp_path):
+    # task #191 / ADR-0033: calendars.scope（WORK / PRIVATE）。既存はすべて WORK。下げると列が消える
+    url = _url(tmp_path, "calendar_scope.db")
+    engine = sa.create_engine(url)
+    try:
+        with engine.begin() as connection:
+            command.upgrade(alembic_config(connection), "0013")
+        with engine.begin() as connection:
+            connection.exec_driver_sql(
+                "INSERT INTO users (id, email, display_name, timezone, language, is_active, "
+                "created_at, updated_at) VALUES (1, 'taro@example.com', 'u', 'Asia/Tokyo', 'ja', 1, "
+                "'2026-01-01', '2026-01-01')"
+            )
+            connection.exec_driver_sql(
+                "INSERT INTO calendars (id, user_id, kind, name, color_key, sort_order, is_default, "
+                "is_visible, counts_as_day_off, created_at, updated_at) VALUES "
+                "(1, 1, 'EVENTS', '予定', 'DEFAULT', 0, 1, 1, 0, '2026-01-01', '2026-01-01')"
+            )
+        with engine.begin() as connection:
+            command.upgrade(alembic_config(connection), "0014")
+        with engine.connect() as connection:
+            assert connection.exec_driver_sql("SELECT scope FROM calendars").scalar() == "WORK"
+        with engine.begin() as connection:
+            command.downgrade(alembic_config(connection), "0013")
+        assert "scope" not in {c["name"] for c in sa.inspect(engine).get_columns("calendars")}
     finally:
         engine.dispose()
 

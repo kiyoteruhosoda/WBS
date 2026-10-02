@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import type { Calendar, DayOffMark } from '../types';
-import { buildDayOffView, businessDaysBetween, dayOffLabel, dayOffReasonsOn } from './daysOff';
+import { buildDayOffView, businessDaysBetween, dayOffLabel, dayOffReasonsOn, notifiesDayOff } from './daysOff';
+import { layoutAllDayLane } from './weekLayout';
+import { splitIntoDaySegments } from './daySegments';
+import { TOKYO, occurrence } from './testOccurrences';
+import { dayColumnBackground } from './calendarColors';
+import { isNamedDayOff } from './monthCells';
 import { eventColor } from './calendarColors';
 
 const layer = (id: number, patch: Partial<Calendar>): Calendar => ({
@@ -49,8 +54,56 @@ describe('休みの層を重ねる（ADR-0029）', () => {
     expect(dayOffReasonsOn('2026-10-13', marks, calendars, '曜日の休み')).toBeNull();
   });
 
+  it('休みの日に置いた知らせはタスクだけ（予定は知らせない）', () => {
+    expect(notifiesDayOff('TASK')).toBe(true);
+    expect(notifiesDayOff('EVENT')).toBe(false);
+    expect(notifiesDayOff(undefined)).toBe(false);
+  });
+
   it('帯の名前', () => {
     expect(dayOffLabel(marks[3], '日本の祝日')).toBe('スポーツの日');
     expect(dayOffLabel(marks[4], '私の休み')).toBe('私の休み');
   });
 });
+
+describe('曜日の休みの帯（2026-10-02 の決定）', () => {
+  const weekend: DayOffMark[] = [
+    ...marks,
+    // 10/11（日）は私の休みでもある → 帯はそちらだけ
+    { date: '2026-10-11', reason: 'PERSONAL', calendar_id: 3, name: '帰省', counts_as_day_off: true },
+  ];
+
+  it('ほかの理由の無い曜日の休みに控えめな帯。ほかの理由があればそちらを 1 つだけ', () => {
+    const view = buildDayOffView(weekend, calendars, { weeklyLabel: '週休' });
+    expect(view.holidays.map((h) => [h.date, h.name, h.reason, h.subtle ?? false])).toEqual([
+      ['2026-10-10', '週休', 'WEEKLY', true],
+      ['2026-10-11', '私の休み: 帰省', 'PERSONAL', false],
+      ['2026-10-12', 'スポーツの日・私の休み: 旅行', 'NATIONAL_HOLIDAY', false],
+      ['2026-10-13', '私の休み', 'PERSONAL', false],
+    ]);
+    expect(view.holidays[0].color).toBe(eventColor('GRAPHITE'));
+  });
+
+  it('名前を渡さない（ガント）・営業日の層を隠したときは出さない', () => {
+    expect(buildDayOffView(weekend, calendars).holidays.some((h) => h.reason === 'WEEKLY')).toBe(false);
+    const hidden = calendars.map((c) => (c.kind === 'WORKWEEK' ? { ...c, is_visible: false } : c));
+    expect(buildDayOffView(weekend, hidden, { weeklyLabel: '週休' }).holidays.some((h) => h.reason === 'WEEKLY'))
+      .toBe(false);
+  });
+
+  it('控えめな帯は地の色・見出しの色を変えず、その日の列の予定だけを 1 段下げる', () => {
+    const band = { date: '2026-10-10', name: '週休', reason: 'WEEKLY' as const, subtle: true };
+    expect(isNamedDayOff(band)).toBe(false);
+    const palette = {
+      holidayBg: 'H', companyDayOffBg: 'C', personalDayOffBg: 'P', weeklyOffBg: 'W', sundayBg: 'SU', saturdayBg: 'SA',
+    };
+    expect(dayColumnBackground(palette, 6, band, true)).toBe('SA');
+    // 10/4（日）からの週: 10/5（月）の終日の予定は 0 段目のまま、10/10（土）の予定は帯の下
+    const segments = ['2026-10-05', '2026-10-10'].flatMap((d) => splitIntoDaySegments(occurrence(d, d, 0, 1440), TOKYO));
+    const lane = layoutAllDayLane(segments, '2026-10-04', 7, [band]);
+    const rows = lane.blocks.map((b) => [b.column, b.holiday ? 'band' : 'event', b.row]);
+    expect(rows).toEqual([[1, 'event', 0], [6, 'event', 1], [6, 'band', 0]]);
+    expect(lane.rowCount).toBe(2);
+  });
+});
+

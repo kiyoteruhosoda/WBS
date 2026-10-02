@@ -246,6 +246,8 @@ class OccurrenceView:
     """予定が属するカレンダー（ADR-0027）。"""
     calendar_color_key: EventColorKey = EventColorKey.DEFAULT
     """そのカレンダーの色（予定の色が既定のときに使う）。"""
+    is_private: bool = False
+    """プライベートのカレンダーの予定か（ADR-0033。計画・締めに数えない）。"""
 
 
 @dataclass(frozen=True)

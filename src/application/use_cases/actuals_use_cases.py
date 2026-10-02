@@ -412,11 +412,12 @@ class ActualsUseCases:
                 ledger.add(log.task_id, log.work_date, log.seconds)
             return ledger
         if source is TimeSource.PLANNED:
-            # 回はその始まりの日に数える（日をまたぐ回も割らない）。終日の回は作業の時間ではない（ADR-0014）
+            # 回はその始まりの日に数える（日をまたぐ回も割らない）。終日の回は作業の時間ではない（ADR-0014）。
+            # プライベートのカレンダーの予定は計画に数えない（ADR-0033）
             for occurrence in self._occurrences.list_occurrence_views(
                 user_id, first_day, last_day, self._clock.zone_name(user_id)
             ):
-                if occurrence.is_all_day:
+                if occurrence.is_all_day or occurrence.is_private:
                     continue
                 task_id = occurrence.task_id if occurrence.task_id in owned else None
                 ledger.add(task_id, occurrence.date, occurrence.duration_minutes * 60)

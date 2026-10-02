@@ -6,7 +6,6 @@ import {
 import { getAppInfo, getSettings, updateSettings } from '../api/settings';
 import { useI18n } from '../i18n';
 import { ds } from '../theme';
-import BusinessCalendarSettings from '../components/calendar/BusinessCalendarSettings';
 import PushSettings from '../components/PushSettings';
 
 const card = {
@@ -113,8 +112,6 @@ const Settings: React.FC = () => {
       </Box>
 
       <PushSettings />
-
-      <BusinessCalendarSettings />
 
       <Box sx={card}>
         <Box sx={sectionHeader}>{t('settings.appInfo')}</Box>

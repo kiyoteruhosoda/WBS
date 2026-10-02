@@ -2,6 +2,7 @@
 
 - 一覧（並び順）。既定のカレンダーが無ければここで作る
 - 作る（最初から表示）・名前と色を変える・並べ替える・消す（既定は消せない。予定は既定へ移る）
+- 仕事 / プライベート（ADR-0033）。タスクを結んだ予定のあるカレンダーはプライベートにできない（409）
 - 表示の選択（どれを出すか）はサーバーに覚える。全部をまとめて置き換える
 - 表示の組み合わせ: 名前付きで覚え、当てると入っているカレンダーだけが表示になる
 
@@ -15,7 +16,7 @@ from datetime import datetime
 
 from src.application.ports.unit_of_work import UnitOfWork
 from src.application.use_cases.ownership import owned_by
-from src.domain.entities.calendar import Calendar
+from src.domain.entities.calendar import Calendar, CalendarScope
 from src.domain.entities.calendar_view_preset import CalendarViewPreset
 from src.domain.exceptions import ConflictError, NotFoundError
 from src.domain.repositories.calendar_event_repository import CalendarEventRepository
@@ -59,13 +60,19 @@ class CalendarUseCases:
             self._uow.commit()
         return self._calendars.find_all(user_id)
 
-    def create_calendar(self, user_id: int, name: str, color_key: EventColorKey) -> Calendar:
+    def create_calendar(
+        self,
+        user_id: int,
+        name: str,
+        color_key: EventColorKey,
+        scope: CalendarScope = CalendarScope.WORK,
+    ) -> Calendar:
         """末尾に足す。最初から表示（新しく作ったものを選び直させない）。"""
         existing = self.list_calendars(user_id)
         calendar = Calendar.create(
             user_id=user_id, name=name, color_key=color_key,
             sort_order=max((c.sort_order for c in existing), default=-1) + 1,
-            created_at=self._now(),
+            created_at=self._now(), scope=scope,
         )
         saved = self._calendars.save(calendar)
         self._uow.commit()
@@ -80,11 +87,19 @@ class CalendarUseCases:
         *,
         counts_as_day_off: bool | None = None,
         workdays: Iterable[Weekday] | None = None,
+        scope: CalendarScope | None = None,
     ) -> Calendar:
-        """名前と色。休みの層なら「休みとして数える」・稼働する曜日も（``None`` は今のまま）。"""
+        """名前と色。休みの層なら「休みとして数える」・稼働する曜日も、予定のカレンダーなら仕事 / プライベートも
+        （``None`` は今のまま）。"""
         calendar = self._owned(calendar_id, user_id)
         now = self._now()
         calendar.change(name=name, color_key=color_key, updated_at=now)
+        if scope is not None and scope != calendar.scope:
+            if scope == CalendarScope.PRIVATE and self._events.count_linked_to_tasks(user_id, calendar_id):
+                raise ConflictError(
+                    "a calendar holding events linked to tasks cannot be private"
+                )
+            calendar.change_scope(scope, now)
         if counts_as_day_off is not None or workdays is not None:
             calendar.change_layer(
                 counts_as_day_off=counts_as_day_off, workdays=workdays, updated_at=now

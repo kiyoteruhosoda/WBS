@@ -43,7 +43,7 @@ RULES = [
         RecurrenceType.MONTHLY, 3, NO_END_DATE,
         monthly=LastDayOfMonthMonthlyRule(),
         adjustment=AdjustmentRule(
-            AdjustmentCondition.ALWAYS, AdjustmentShiftUnit.BUSINESS_DAY, -3, 7,
+            AdjustmentCondition.ALWAYS, AdjustmentShiftUnit.BUSINESS_DAY, -3,
             AdjustmentAction.SHIFT,
         ),
     ),
@@ -52,7 +52,7 @@ RULES = [
         RecurrenceType.YEARLY, 1, date(2030, 1, 1),
         yearly=NthWeekdayYearlyRule(1, 2, Weekday.MONDAY),
         adjustment=AdjustmentRule(
-            AdjustmentCondition.HOLIDAY, AdjustmentShiftUnit.CALENDAR_DAY, 1, None,
+            AdjustmentCondition.HOLIDAY, AdjustmentShiftUnit.CALENDAR_DAY, 1,
             AdjustmentAction.CANCEL,
         ),
     ),
@@ -69,6 +69,14 @@ def test_no_end_date_is_null() -> None:
     mapping = recurrence_rule_to_mapping(RULES[1])
     assert mapping["end_date"] is None
     assert mapping["monthly"] == {"kind": "DAY_OF_MONTH", "day": 31}
+
+
+def test_adjustment_names_no_calendar() -> None:
+    # 古い営業日カレンダーの名指しは畳んだ（ADR-0032）。書かず、古い入力に残っていても読み捨てる
+    mapping = recurrence_rule_to_mapping(RULES[4])
+    assert "calendar_id" not in mapping["adjustment"]
+    mapping["adjustment"]["calendar_id"] = 3
+    assert recurrence_rule_from_mapping(mapping) == RULES[4]
 
 
 def test_weekdays_are_written_monday_first() -> None:

@@ -293,6 +293,8 @@ class CalendarModel(Base):
     workdays: Mapped[str | None] = mapped_column(sa.String(32), nullable=True)
     day_off_reason: Mapped[str | None] = mapped_column(sa.String(16), nullable=True)
     counts_as_day_off: Mapped[bool] = mapped_column(sa.Boolean, nullable=False, server_default=sa.false())
+    # 予定のカレンダーの区別（WORK / PRIVATE。ADR-0033）。休みの層は WORK のまま。
+    scope: Mapped[str] = mapped_column(sa.String(16), nullable=False, server_default="WORK")
 
 
 class CalendarDayOffModel(Base):
@@ -441,37 +443,6 @@ class CalendarEventCompletionModel(Base):
     occurrence_date: Mapped[date | None] = mapped_column(sa.Date, nullable=True)
     occurrence_time: Mapped[time | None] = mapped_column(sa.Time, nullable=True)
     completed_at: Mapped[datetime] = mapped_column(sa.DateTime, nullable=False)
-
-
-class BusinessCalendarModel(Base):
-    """営業日カレンダー。``workdays`` は曜日の略号（``MO``〜``SU``）をカンマでつないだもの。"""
-
-    __tablename__ = "business_calendars"
-    __table_args__ = ({"sqlite_autoincrement": True},)
-    id: Mapped[int] = mapped_column(BigIntPK, primary_key=True, autoincrement=True)
-    user_id: Mapped[int] = mapped_column(sa.BigInteger().with_variant(sa.Integer(), "sqlite"), sa.ForeignKey("users.id"), nullable=False, index=True)
-    name: Mapped[str] = mapped_column(sa.String(200), nullable=False)
-    time_zone: Mapped[str] = mapped_column(sa.String(64), nullable=False)
-    workdays: Mapped[str] = mapped_column(sa.String(32), nullable=False)
-    shift_on_holidays_only: Mapped[bool] = mapped_column(sa.Boolean, nullable=False)
-    is_enabled: Mapped[bool] = mapped_column(sa.Boolean, nullable=False)
-    created_at: Mapped[datetime] = mapped_column(sa.DateTime, nullable=False)
-    updated_at: Mapped[datetime] = mapped_column(sa.DateTime, nullable=False)
-
-    holidays: Mapped[list[BusinessCalendarHolidayModel]] = relationship(
-        cascade="all, delete-orphan", order_by="BusinessCalendarHolidayModel.holiday_date", lazy="selectin"
-    )
-
-
-class BusinessCalendarHolidayModel(Base):
-    __tablename__ = "business_calendar_holidays"
-    __table_args__ = (
-        sa.UniqueConstraint("calendar_id", "holiday_date", name="uq_business_calendar_holidays_date"),
-    )
-    id: Mapped[int] = mapped_column(BigIntPK, primary_key=True, autoincrement=True)
-    calendar_id: Mapped[int] = mapped_column(sa.BigInteger().with_variant(sa.Integer(), "sqlite"), sa.ForeignKey("business_calendars.id", ondelete="CASCADE"), nullable=False)
-    holiday_date: Mapped[date] = mapped_column(sa.Date, nullable=False)
-    name: Mapped[str | None] = mapped_column(sa.String(200), nullable=True)
 
 
 # ── 端末への通知（Web Push。task #193、ADR-0031）────────────────────────────

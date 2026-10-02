@@ -157,7 +157,8 @@ export interface AllDayLaneLayout {
 /**
  * 終日の帯。終日の回は 1 日ずつ（複数日の終日は持たない。time-model §6）なので、日の列に
  * 置き、同じ日に重なれば段を下げる。表示している日に祝日があれば、祝日を 0 段目に置き、
- * 予定は 1 段ずつ下げる。タスクの期限は、その日の終日の予定の下に続けて積む。
+ * 予定は 1 段ずつ下げる。曜日の休みの控えめな帯（`subtle`）は、その日の列の予定だけを下げる。
+ * タスクの期限は、その日の終日の予定の下に続けて積む。
  */
 export const layoutAllDayLane = (
   segments: readonly DaySegment[],
@@ -201,8 +202,12 @@ export const layoutAllDayLane = (
     holidayBlocks.push({ segment: null, holiday: h.holiday, deadline: null, column: h.column, widthColumns: 1, row: 0 });
   }
 
-  const shift = holidayBlocks.length > 0 ? 1 : 0;
-  const blocks = [...placed.map((b) => ({ ...b, row: b.row + shift })), ...holidayBlocks];
+  // 名前で示す休みがあれば予定を 1 段下げる（移植元と同じく全部の日）。曜日の休みの控えめな帯（subtle）は
+  // その日の列だけ下げる（毎週末の帯で、平日の予定まで 1 段下がらないように）
+  const shiftAll = holidayBlocks.some((b) => !b.holiday?.subtle);
+  const subtleColumns = new Set(holidayBlocks.filter((b) => b.holiday?.subtle).map((b) => b.column));
+  const shiftOf = (column: number) => (shiftAll || subtleColumns.has(column) ? 1 : 0);
+  const blocks = [...placed.map((b) => ({ ...b, row: b.row + shiftOf(b.column) })), ...holidayBlocks];
   const rowCount = blocks.reduce((max, b) => Math.max(max, b.row + 1), 0);
   return {
     blocks,

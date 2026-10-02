@@ -137,6 +137,15 @@ describe('先頭の候補', () => {
     expect(scheduledTaskIds([{ startMs: now, endMs: now + 60_000 }], occurrences)).toEqual([3, 4]);
   });
 
+  it('プライベートの予定のタスクは候補にしない（ADR-0033）', () => {
+    const occurrences = [
+      { ...occurrence('a', '2026-09-01', hm(9), 60), task_id: 4, is_private: true },
+      { ...occurrence('b', '2026-09-01', hm(9), 60), task_id: 3 },
+    ];
+    const range = { startMs: Date.parse('2026-09-01T00:00:00Z'), endMs: Date.parse('2026-09-01T01:00:00Z') };
+    expect(scheduledTaskIds([range], occurrences)).toEqual([3]);
+  });
+
   it('直前に使ったタスクは新しい順に重ねず、選んでいる打刻と未割当は数えない', () => {
     const entries = [
       entry(1, '2026-09-01T00:00:00Z', '2026-09-01T01:00:00Z', { task_id: 1 }),

@@ -32,7 +32,7 @@ from tests.unit.domain.scheduling.support import (
     recurring_event,
     single_event,
     utc,
-    weekday_calendar,
+    weekday_layers,
     weekly_monday_from_0420,
     weekly_rule,
 )
@@ -111,10 +111,10 @@ def test_business_day_adjustment_shifts_holiday() -> None:
     rule = RecurrenceRule(
         RecurrenceType.MONTHLY, 1, date(2026, 5, 31),
         monthly=DayOfMonthMonthlyRule(4),
-        adjustment=AdjustmentRule.previous_business_day_on_holiday(1),
+        adjustment=AdjustmentRule.previous_business_day_on_holiday(),
     )
     event = recurring_event(utc(2026, 5, 1, 10, 0), rule, title="調整テスト")
-    calendar = weekday_calendar(date(2026, 5, 4), date(2026, 5, 3))
+    calendar = weekday_layers(date(2026, 5, 4), date(2026, 5, 3))
     results = expander.expand(event, date(2026, 5, 1), date(2026, 5, 31), calendar)
     # 5/4 祝日 → 5/3 祝日・5/2 土 → 5/1（金）
     assert [r.date for r in results] == [date(2026, 5, 1)]
@@ -124,13 +124,13 @@ def test_cancel_on_holiday_drops_only_the_holiday_occurrence() -> None:
     rule = weekly_rule(
         Weekday.MONDAY, end=date(2026, 5, 31),
         adjustment=AdjustmentRule(
-            AdjustmentCondition.HOLIDAY, AdjustmentShiftUnit.BUSINESS_DAY, 0, 1,
+            AdjustmentCondition.HOLIDAY, AdjustmentShiftUnit.BUSINESS_DAY, 0,
             AdjustmentAction.CANCEL,
         ),
     )
     event = recurring_event(utc(2026, 5, 1, 10, 0), rule, title="祝日はキャンセル")
     results = expander.expand(
-        event, date(2026, 5, 1), date(2026, 5, 31), weekday_calendar(date(2026, 5, 4))
+        event, date(2026, 5, 1), date(2026, 5, 31), weekday_layers(date(2026, 5, 4))
     )
     assert [r.date for r in results] == [date(2026, 5, 11), date(2026, 5, 18), date(2026, 5, 25)]
 
@@ -140,7 +140,7 @@ def _monthly_minus_business_days(monthly: MonthlyRule, days_before: int):
         RecurrenceType.MONTHLY, 1, date(2026, 6, 30),
         monthly=monthly,
         adjustment=AdjustmentRule(
-            AdjustmentCondition.ALWAYS, AdjustmentShiftUnit.BUSINESS_DAY, -days_before, 1
+            AdjustmentCondition.ALWAYS, AdjustmentShiftUnit.BUSINESS_DAY, -days_before
         ),
     )
     return recurring_event(utc(2026, 6, 1, 13, 0), rule, title="3営業日前13時")
@@ -149,14 +149,14 @@ def _monthly_minus_business_days(monthly: MonthlyRule, days_before: int):
 def test_three_business_days_before_the_15th_at_13() -> None:
     # 2026-06-15 は月曜。3 営業日前は 6/10（水）13:00。
     event = _monthly_minus_business_days(DayOfMonthMonthlyRule(15), 3)
-    results = expander.expand(event, date(2026, 6, 1), date(2026, 6, 30), weekday_calendar())
+    results = expander.expand(event, date(2026, 6, 1), date(2026, 6, 30), weekday_layers())
     assert [(r.date, r.start_time) for r in results] == [(date(2026, 6, 10), time(13, 0))]
 
 
 def test_three_business_days_before_month_end_at_13() -> None:
     # 2026-06-30 は火曜。3 営業日前は 6/25（木）13:00。
     event = _monthly_minus_business_days(LastDayOfMonthMonthlyRule(), 3)
-    results = expander.expand(event, date(2026, 6, 1), date(2026, 6, 30), weekday_calendar())
+    results = expander.expand(event, date(2026, 6, 1), date(2026, 6, 30), weekday_layers())
     assert [(r.date, r.start_time) for r in results] == [(date(2026, 6, 25), time(13, 0))]
 
 
@@ -164,7 +164,7 @@ def test_business_days_before_skip_holidays_when_counting() -> None:
     # 6/11（木）が祝日なら 6/15 から 3 営業日前は 12・10・9 → 6/9。
     event = _monthly_minus_business_days(DayOfMonthMonthlyRule(15), 3)
     results = expander.expand(
-        event, date(2026, 6, 1), date(2026, 6, 30), weekday_calendar(date(2026, 6, 11))
+        event, date(2026, 6, 1), date(2026, 6, 30), weekday_layers(date(2026, 6, 11))
     )
     assert [r.date for r in results] == [date(2026, 6, 9)]
 
@@ -172,9 +172,46 @@ def test_business_days_before_skip_holidays_when_counting() -> None:
 def test_shift_from_outside_the_window_lands_inside() -> None:
     # 窓は 6/22〜6/26。月末（6/30）は窓の外だが、3 営業日前の 6/25 は窓の中なので出す。
     event = _monthly_minus_business_days(LastDayOfMonthMonthlyRule(), 3)
-    results = expander.expand(event, date(2026, 6, 22), date(2026, 6, 26), weekday_calendar())
+    results = expander.expand(event, date(2026, 6, 22), date(2026, 6, 26), weekday_layers())
     assert [r.date for r in results] == [date(2026, 6, 25)]
     assert results[0].series_key == OccurrenceKey(date(2026, 6, 30), time(13, 0))
+
+
+def test_shift_counts_every_counted_layer_and_the_workweek() -> None:
+    # 営業日は 4 層で決まる（ADR-0029・0032）: 稼働する曜日が月〜木なら、休みの日 5/4（月）から
+    # 次の営業日は 5/5（火）。私の休み（数える）に 5/5 を足すと 5/6（水）。
+    from src.domain.entities.calendar import Calendar, DayOffReason
+    from src.domain.entities.day_off import DayOff
+    from src.domain.services.day_off_layers import DayOffLayers
+
+    rule = RecurrenceRule(
+        RecurrenceType.MONTHLY, 1, date(2026, 5, 31),
+        monthly=DayOfMonthMonthlyRule(4),
+        adjustment=AdjustmentRule.next_business_day_on_holiday(),
+    )
+    event = recurring_event(utc(2026, 5, 1, 10, 0), rule)
+    mon_to_thu = frozenset({Weekday.MONDAY, Weekday.TUESDAY, Weekday.WEDNESDAY, Weekday.THURSDAY})
+    national = weekday_layers(date(2026, 5, 4), workdays=mon_to_thu)
+    assert [r.date for r in expander.expand(event, date(2026, 5, 1), date(2026, 5, 31), national)] == [
+        date(2026, 5, 5)
+    ]
+    personal = Calendar.create_layer(1, DayOffReason.PERSONAL, utc(2026, 5, 1))
+    personal.id = 99
+    both = DayOffLayers(
+        workdays=mon_to_thu,
+        layers=[*national.layers, personal],
+        days_off=[*national.days_off, DayOff(99, date(2026, 5, 5), "旅行")],
+    )
+    assert [r.date for r in expander.expand(event, date(2026, 5, 1), date(2026, 5, 31), both)] == [
+        date(2026, 5, 6)
+    ]
+    personal.counts_as_day_off = False
+    not_counted = DayOffLayers(
+        workdays=mon_to_thu, layers=[*national.layers, personal], days_off=both.days_off
+    )
+    assert [
+        r.date for r in expander.expand(event, date(2026, 5, 1), date(2026, 5, 31), not_counted)
+    ] == [date(2026, 5, 5)]
 
 
 def test_yearly_generates_correct_dates() -> None:
@@ -205,20 +242,20 @@ def test_adjustment_does_not_shift_a_non_holiday() -> None:
     rule = RecurrenceRule(
         RecurrenceType.MONTHLY, 1, date(2026, 5, 31),
         monthly=DayOfMonthMonthlyRule(1),
-        adjustment=AdjustmentRule.previous_business_day_on_holiday(1),
+        adjustment=AdjustmentRule.previous_business_day_on_holiday(),
     )
     event = recurring_event(utc(2026, 5, 1, 10, 0), rule, title="非祝日テスト")
     results = expander.expand(
-        event, date(2026, 5, 1), date(2026, 5, 31), weekday_calendar(date(2026, 5, 4))
+        event, date(2026, 5, 1), date(2026, 5, 31), weekday_layers(date(2026, 5, 4))
     )
     assert [r.date for r in results] == [date(2026, 5, 1)]
 
 
-def test_adjustment_without_calendar_leaves_dates_alone() -> None:
+def test_adjustment_without_layers_leaves_dates_alone() -> None:
     rule = RecurrenceRule(
         RecurrenceType.MONTHLY, 1, date(2026, 5, 31),
         monthly=DayOfMonthMonthlyRule(4),
-        adjustment=AdjustmentRule.previous_business_day_on_holiday(1),
+        adjustment=AdjustmentRule.previous_business_day_on_holiday(),
     )
     event = recurring_event(utc(2026, 5, 1, 10, 0), rule)
     assert [r.date for r in expander.expand(event, date(2026, 5, 1), date(2026, 5, 31))] == [
@@ -304,8 +341,8 @@ def test_yearly_up_to_year_9999_does_not_overflow() -> None:
 def test_adjusted_series_near_year_9999_does_not_overflow() -> None:
     rule = RecurrenceRule(
         RecurrenceType.MONTHLY, 1, date(9999, 12, 31), monthly=DayOfMonthMonthlyRule(15),
-        adjustment=AdjustmentRule.next_business_day_on_holiday(1),
+        adjustment=AdjustmentRule.next_business_day_on_holiday(),
     )
     event = recurring_event(utc(9999, 12, 1, 10, 0), rule)
-    results = expander.expand(event, date(9999, 12, 1), date(9999, 12, 31), weekday_calendar())
+    results = expander.expand(event, date(9999, 12, 1), date(9999, 12, 31), weekday_layers())
     assert [r.date for r in results] == [date(9999, 12, 15)]

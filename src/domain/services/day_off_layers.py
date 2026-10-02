@@ -3,9 +3,8 @@
 **営業日 = 営業日の層の曜日に当たり、かつ「休みとして数える」の印の付いた休みの日の一覧の層
 （会社の公休・私の休み・日本の祝日）のどれにも無い日。** 表示のチェックには関係しない。
 
-繰り返しの営業日シフト（ADR-0007・0009）と定常業務の回（ADR-0025）はこの判定を使う。シフトの
-仕組み（``BusinessDayShiftService``）は ``BusinessCalendar`` を受けるので、ここで層を
-``BusinessCalendar`` の形に包んで渡す（``as_business_calendar``）。
+繰り返しの営業日シフト（ADR-0007・0009）と定常業務の回（ADR-0025）はこの判定だけを使う
+（``BusinessDayShiftService`` がこれを受ける。古い営業日カレンダーは ADR-0032 で畳んだ）。
 """
 
 from __future__ import annotations
@@ -14,11 +13,10 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 
-from src.domain.entities.business_calendar import BusinessCalendar, Holiday
 from src.domain.entities.calendar import Calendar, CalendarKind
 from src.domain.entities.day_off import DayOff
+from src.domain.exceptions import ValidationError
 from src.domain.value_objects.recurrence import WEEKDAYS_MON_TO_FRI, Weekday
-from src.domain.value_objects.time_zone import TimeZoneId
 
 WEEKLY_REASON = "WEEKLY"
 """曜日の休み（営業日の層の曜日に当たらない日）の理由の名前。"""
@@ -107,23 +105,19 @@ class DayOffLayers:
             )
         return [mark for day in sorted(by_day) for mark in by_day[day]]
 
-    def as_business_calendar(
-        self,
-        user_id: int,
-        time_zone: TimeZoneId,
-        *,
-        extra_holidays: Iterable[Holiday] = (),
-        shift_on_holidays_only: bool = False,
-    ) -> BusinessCalendar:
-        """営業日シフトに渡す形。休みの日 = 数える層の日 ∪ ``extra_holidays``（繰り返しが名指しした
-        古い営業日カレンダーの祝日、ADR-0009）。稼働する曜日は営業日の層のもの。"""
-        names = {d.day: d.name for d in self.days_off if d.day in self._counted_days}
-        holidays = [Holiday(day, names.get(day)) for day in sorted(self._counted_days)]
-        holidays.extend(extra_holidays)
-        return BusinessCalendar(
-            id=None, user_id=user_id, name="day-off layers", time_zone=time_zone,
-            workdays=self.workdays, holidays=holidays, shift_on_holidays_only=shift_on_holidays_only,
-        )
+    def shift_business_days(self, base: date, amount: int) -> date:
+        """``base`` から営業日を ``amount`` 日数えた日（負なら前へ）。``amount == 0`` は ``base``。"""
+        if amount != 0 and not self.workdays:
+            # 稼働する曜日が 1 つも無いと数え終わらない。
+            raise ValidationError("the workweek layer has no workdays")
+        current = base
+        step = timedelta(days=1 if amount > 0 else -1)
+        remaining = abs(amount)
+        while remaining > 0:
+            current = current + step
+            if self.is_business_day(current):
+                remaining -= 1
+        return current
 
 
 __all__ = ["WEEKLY_REASON", "DayOffLayers", "DayOffMark"]

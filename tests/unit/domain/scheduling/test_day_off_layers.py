@@ -12,9 +12,9 @@ import pytest
 
 from src.domain.entities.calendar import Calendar, DayOffReason
 from src.domain.entities.day_off import DayOff
+from src.domain.exceptions import ValidationError
 from src.domain.services.day_off_layers import WEEKLY_REASON, DayOffLayers
 from src.domain.value_objects.recurrence import Weekday
-from src.domain.value_objects.time_zone import TimeZoneId
 
 NOW = datetime(2026, 10, 1)
 USER = 1
@@ -101,14 +101,17 @@ def test_marks_list_every_reason_of_a_day() -> None:
     ]
 
 
-def test_as_business_calendar_holds_only_counted_days_and_legacy_holidays() -> None:
-    from src.domain.entities.business_calendar import Holiday
-
-    calendar = _layers(counts={COMPANY: False}).as_business_calendar(
-        USER, TimeZoneId("Asia/Tokyo"), extra_holidays=[Holiday(date(2026, 11, 3), "文化の日")]
-    )
-    assert calendar.is_holiday(date(2026, 10, 7))
-    assert calendar.is_holiday(date(2026, 11, 3))
-    assert not calendar.is_holiday(date(2026, 12, 29))
+def test_shift_business_days_skips_counted_days_and_weekly_days_off() -> None:
+    layers = _layers(counts={COMPANY: False})
+    assert layers.is_counted_day_off(date(2026, 10, 7))
+    assert not layers.is_counted_day_off(date(2026, 12, 29))
     # 10/6(火) の次の営業日は 10/8(木)（10/7 は私の休み）
-    assert calendar.shift_business_days(date(2026, 10, 6), 1) == date(2026, 10, 8)
+    assert layers.shift_business_days(date(2026, 10, 6), 1) == date(2026, 10, 8)
+    # 10/13(火) の前の営業日は 10/9(金)（10/12 は祝日、10/10・11 は曜日の休み）
+    assert layers.shift_business_days(date(2026, 10, 13), -1) == date(2026, 10, 9)
+    assert layers.shift_business_days(date(2026, 10, 10), 0) == date(2026, 10, 10)
+
+
+def test_shift_without_workdays_is_refused() -> None:
+    with pytest.raises(ValidationError):
+        _layers(workdays=frozenset()).shift_business_days(date(2026, 10, 6), 1)

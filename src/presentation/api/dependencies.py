@@ -16,7 +16,6 @@ from src.application.use_cases.authentication_use_cases import (
     SsoLoginUseCases,
 )
 from src.application.use_cases.backchannel_logout_use_cases import ReceiveBackchannelLogout
-from src.application.use_cases.business_calendar_use_cases import BusinessCalendarUseCases
 from src.application.use_cases.calendar_event_use_cases import CalendarEventUseCases
 from src.application.use_cases.calendar_use_cases import CalendarUseCases
 from src.application.use_cases.closing_use_cases import ClosingUseCases
@@ -30,9 +29,6 @@ from src.infrastructure.auth.auth_settings import SINGLE_USER_ID, AuthSettings
 from src.infrastructure.database.session import get_db_session
 from src.infrastructure.repositories.auth_session_repository import (
     SqlAlchemyAuthSessionRepository,
-)
-from src.infrastructure.repositories.business_calendar_repository import (
-    SqlAlchemyBusinessCalendarRepository,
 )
 from src.infrastructure.repositories.calendar_event_repository import (
     SqlAlchemyCalendarEventRepository,
@@ -227,7 +223,6 @@ def get_calendar_event_use_cases(db: DbDep) -> CalendarEventUseCases:
     """予定のユースケース。確定（``UnitOfWork``）はこのリクエストの ``Session``。"""
     return CalendarEventUseCases(
         events=SqlAlchemyCalendarEventRepository(db),
-        calendars=SqlAlchemyBusinessCalendarRepository(db),
         tasks=SqlAlchemyTaskRepository(db),
         unit_of_work=db,
         completions=SqlAlchemyOccurrenceCompletionRepository(db),
@@ -267,14 +262,6 @@ def get_calendar_use_cases(db: DbDep) -> CalendarUseCases:
     )
 
 CalendarUseCasesDep = Annotated[CalendarUseCases, Depends(get_calendar_use_cases)]
-
-
-def get_business_calendar_use_cases(db: DbDep) -> BusinessCalendarUseCases:
-    return BusinessCalendarUseCases(SqlAlchemyBusinessCalendarRepository(db), db)
-
-BusinessCalendarUseCasesDep = Annotated[
-    BusinessCalendarUseCases, Depends(get_business_calendar_use_cases)
-]
 
 
 def get_closing_use_cases(db: DbDep) -> ClosingUseCases:

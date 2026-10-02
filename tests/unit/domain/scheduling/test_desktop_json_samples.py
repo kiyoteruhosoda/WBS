@@ -15,7 +15,7 @@ from typing import Any
 
 import pytest
 
-from src.domain.entities.business_calendar import BusinessCalendar, Holiday
+from src.domain.entities.calendar import Calendar, DayOffReason
 from src.domain.entities.calendar_event import (
     CalendarEvent,
     EventException,
@@ -23,6 +23,8 @@ from src.domain.entities.calendar_event import (
     EventMove,
     ExceptionOverride,
 )
+from src.domain.entities.day_off import DayOff
+from src.domain.services.day_off_layers import DayOffLayers
 from src.domain.services.occurrence_expander import OccurrenceExpander
 from src.domain.value_objects.event_schedule import (
     OccurrenceKey,
@@ -94,9 +96,9 @@ def _rule(raw: dict[str, Any]) -> RecurrenceRule:
     adjustment = None
     if raw.get("adjustment"):
         a = raw["adjustment"]
+        # 入力例の calendarId（営業日カレンダーの名指し）は読まない。営業日は休みの層で決まる（ADR-0032）
         adjustment = AdjustmentRule(
-            AdjustmentCondition(a["condition"]), AdjustmentShiftUnit(a["shiftUnit"]),
-            a["shiftAmount"], CALENDAR_IDS.get(a.get("calendarId") or ""),
+            AdjustmentCondition(a["condition"]), AdjustmentShiftUnit(a["shiftUnit"]), a["shiftAmount"]
         )
     return RecurrenceRule(
         RecurrenceType(raw["ruleType"]), raw["interval"], date.fromisoformat(raw["endDate"]),
@@ -165,13 +167,16 @@ def desktop_event(name: str, event_id: int = 1, user_id: int = 1) -> CalendarEve
     )
 
 
-def desktop_calendar(extra_holidays: tuple[Holiday, ...] = ()) -> BusinessCalendar:
+def desktop_calendar(extra_holidays: tuple[tuple[date, str], ...] = ()) -> DayOffLayers:
+    """入力例の営業日カレンダーを休みの層にしたもの（曜日 = 営業日の層、祝日 = 日本の祝日の層）。"""
     raw = _load("営業日カレンダーサンプル")
-    return BusinessCalendar(
-        id=CALENDAR_IDS[raw["id"]], user_id=1, name=raw["name"], time_zone=TimeZoneId(raw["timezone"]),
+    national = Calendar.create_layer(1, DayOffReason.NATIONAL_HOLIDAY, datetime(2026, 1, 1))
+    national.id = CALENDAR_IDS[raw["id"]]
+    holidays = [(date.fromisoformat(h["date"]), h["name"]) for h in raw["holidays"]]
+    return DayOffLayers(
         workdays=frozenset(Weekday(w) for w in raw["workdaysOfWeek"]),
-        holidays=[Holiday(date.fromisoformat(h["date"]), h["name"]) for h in raw["holidays"]]
-        + list(extra_holidays),
+        layers=[national],
+        days_off=[DayOff(national.id, d, n) for d, n in [*holidays, *extra_holidays]],
     )
 
 
@@ -255,7 +260,7 @@ def test_second_monday_without_holiday_hits() -> None:
 def test_second_monday_on_a_holiday_moves_to_the_previous_business_day() -> None:
     # 2026 年のスポーツの日（10/12）は第 2 月曜。足すと前の営業日 10/9（金）へ寄る。
     event = desktop_event("毎月第2月曜、祝日なら前営業日へ")
-    calendar = desktop_calendar((Holiday(date(2026, 10, 12), "スポーツの日"),))
+    calendar = desktop_calendar(((date(2026, 10, 12), "スポーツの日"),))
     dates = _dates(event, date(2026, 4, 1), date(2026, 12, 31), calendar)
     assert date(2026, 10, 12) not in dates
     assert date(2026, 10, 9) in dates

@@ -99,3 +99,6 @@ API を足す。ADR-0007 から持ち越した判断は 4 つ: リポジトリ�
 - 営業日カレンダーを消しても、それを参照する繰り返しは消えない（シフトせずに名目の日に出る。移植元と同じ）。
   `calendar_id` は規則の JSON の中にあり外部キーは張っていない。
 - デスクトップ版の JSON の取り込み（#155 の表の最後の行）は、この表へ写す口として別に作る。
+
+> 追記（2026-10-02）: 営業日カレンダーの表（`business_calendars`・`business_calendar_holidays`）と API
+> （`/api/business-calendars`・`GET /api/calendar/holidays`）は ADR-0032 で畳んだ（休みの 4 層に一本化。移行 `0013`）。

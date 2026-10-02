@@ -143,7 +143,7 @@ YearlyRule = DayOfMonthYearlyRule | NthWeekdayYearlyRule
 
 class AdjustmentCondition(enum.StrEnum):
     HOLIDAY = "HOLIDAY"
-    """候補日が祝日のときだけ寄せる。"""
+    """候補日が休みの日（「休みとして数える」層の日）のときだけ寄せる。"""
     ALWAYS = "ALWAYS"
     """祝日かどうかに関わらず寄せる（例: 「15 日の 3 営業日前」）。"""
 
@@ -161,23 +161,25 @@ class AdjustmentAction(enum.StrEnum):
 
 @dataclass(frozen=True)
 class AdjustmentRule:
-    """営業日シフト。``shift_amount`` が負なら前倒し、正なら後ろ倒し。"""
+    """営業日シフト。``shift_amount`` が負なら前倒し、正なら後ろ倒し。
+
+    営業日・休みの日は利用者の休みの 4 層で決まる（ADR-0029）。カレンダーは名指ししない（ADR-0032）。
+    """
 
     condition: AdjustmentCondition
     shift_unit: AdjustmentShiftUnit
     shift_amount: int
-    calendar_id: int | None = None
     action: AdjustmentAction = AdjustmentAction.SHIFT
 
     @classmethod
-    def previous_business_day_on_holiday(cls, calendar_id: int | None = None) -> AdjustmentRule:
-        """祝日なら前の営業日へ（移植元の ``AdjustmentRule(Backward)``）。"""
-        return cls(AdjustmentCondition.HOLIDAY, AdjustmentShiftUnit.BUSINESS_DAY, -1, calendar_id)
+    def previous_business_day_on_holiday(cls) -> AdjustmentRule:
+        """休みの日なら前の営業日へ（移植元の ``AdjustmentRule(Backward)``）。"""
+        return cls(AdjustmentCondition.HOLIDAY, AdjustmentShiftUnit.BUSINESS_DAY, -1)
 
     @classmethod
-    def next_business_day_on_holiday(cls, calendar_id: int | None = None) -> AdjustmentRule:
-        """祝日なら次の営業日へ（移植元の ``AdjustmentRule(Forward)``）。"""
-        return cls(AdjustmentCondition.HOLIDAY, AdjustmentShiftUnit.BUSINESS_DAY, 1, calendar_id)
+    def next_business_day_on_holiday(cls) -> AdjustmentRule:
+        """休みの日なら次の営業日へ（移植元の ``AdjustmentRule(Forward)``）。"""
+        return cls(AdjustmentCondition.HOLIDAY, AdjustmentShiftUnit.BUSINESS_DAY, 1)
 
 
 @dataclass(frozen=True)
