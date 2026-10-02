@@ -46,6 +46,11 @@ export interface SchedulerCalendarProps extends CalendarInteractions {
   dropPreview?: TaskDropPreview | null;
   /** 曜日の休み（営業日の層が表示のとき。ADR-0029） */
   nonWorkdays?: ReadonlySet<string> | null;
+  /** 見出しの表示の切り替えの行の左・右端に置く物（CalendarHeader へ渡す） */
+  toolbarStart?: React.ReactNode;
+  toolbarEnd?: React.ReactNode;
+  /** 見出しと時間グリッドの間に出す物（狭い画面のタスクの一覧。出している間だけ） */
+  beneathHeader?: React.ReactNode;
 }
 
 const useClock = (fixed: Date | undefined): number => {
@@ -67,7 +72,7 @@ const EMPTY_DEADLINES: readonly CalendarDeadline[] = [];
  */
 const SchedulerCalendar: React.FC<SchedulerCalendarProps> = ({
   occurrences, holidays = EMPTY_HOLIDAYS, deadlines = EMPTY_DEADLINES, timeZone: requestedTimeZone, initialMode = 'week', now: fixedNow,
-  onVisibleRangeChange, linkedTasks, dropPreview, nonWorkdays, ...interactions
+  onVisibleRangeChange, linkedTasks, dropPreview, nonWorkdays, toolbarStart, toolbarEnd, beneathHeader, ...interactions
 }) => {
   const { t, weekdays, lang } = useI18n();
   const c = useTheme().palette.calendar;
@@ -144,8 +149,11 @@ const SchedulerCalendar: React.FC<SchedulerCalendarProps> = ({
         onRedo={interactions.onRedo}
         canUndo={interactions.canUndo}
         canRedo={interactions.canRedo}
+        toolbarStart={toolbarStart}
+        toolbarEnd={toolbarEnd}
       />
       <Box sx={{ height: '1px', bgcolor: c.border, flexShrink: 0 }} />
+      {beneathHeader}
       <Box sx={{ flex: 1, minHeight: 0, overflow: position.mode === 'month' ? 'auto' : 'hidden' }}>
         {position.mode === 'month' ? (
           <MonthView

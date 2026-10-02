@@ -1,9 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Box, Button, Collapse, useMediaQuery } from '@mui/material';
+import { Box } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
 import DragIndicatorIcon from '@mui/icons-material/DragIndicator';
-import ExpandLessIcon from '@mui/icons-material/ExpandLess';
-import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import { useI18n } from '../../i18n';
 import type { Category, Task } from '../../types';
 import { categoryColor } from '../../theme';
@@ -18,6 +16,8 @@ import { locateWeekSlot, weekScrollElement } from './weekSlotLocator';
 // - マウス: 8px 動けば引き始める
 // - 指: 300ms の長押しで引き始める（それより先に動けば一覧のスクロール）
 // - Esc・2 本目の指で中止。離したら 300ms はクリック（選ぶ）を無視する
+// 出す・しまうはカレンダーの見出しの「タスク」のボタン（ADR-0035）。広い画面は右の列（column）、
+// 狭い画面は見出しと時間グリッドの間（inline。落とし先の時間グリッドが下に見えたまま）。
 
 const SUPPRESS_CLICK_MS = 300;
 
@@ -33,6 +33,8 @@ interface Props {
   onDragEnd: () => void;
   /** 時間グリッドへ落とした */
   onDropTask: (task: Task, slot: WeekSlot) => void;
+  /** column = 広い画面の右の列（枠と見出しつき）/ inline = 狭い画面のカレンダーの中（高さを抑える） */
+  variant?: 'column' | 'inline';
 }
 
 interface Press {
@@ -46,13 +48,10 @@ interface Press {
 }
 
 const TaskSchedulePanel: React.FC<Props> = ({
-  tasks, categories, selectedTaskId, onSelectTask, onDragOver, onDragEnd, onDropTask,
+  tasks, categories, selectedTaskId, onSelectTask, onDragOver, onDragEnd, onDropTask, variant = 'column',
 }) => {
   const { t } = useI18n();
-  const theme = useTheme();
-  const c = theme.palette.calendar;
-  const narrow = useMediaQuery(theme.breakpoints.down('md'));
-  const [open, setOpen] = useState(false);
+  const c = useTheme().palette.calendar;
   const [dragging, setDragging] = useState<{ task: Task; at: PointerPoint } | null>(null);
   const pressRef = useRef<Press | null>(null);
   const frameRef = useRef<number | null>(null);
@@ -243,27 +242,21 @@ const TaskSchedulePanel: React.FC<Props> = ({
     </Box>
   );
 
+  const inline = variant === 'inline';
   return (
     <Box
       data-testid="task-schedule-panel"
-      sx={{
-        display: 'flex', flexDirection: 'column', minHeight: 0, height: narrow ? 'auto' : '100%',
+      sx={inline ? {
+        display: 'flex', flexDirection: 'column', flexShrink: 0, bgcolor: c.surface, borderBottom: `1px solid ${c.border}`,
+      } : {
+        display: 'flex', flexDirection: 'column', minHeight: 0, height: '100%',
         bgcolor: c.surface, border: `1px solid ${c.border}`, borderRadius: '10px', overflow: 'hidden',
       }}
     >
-      {narrow ? (
+      {inline ? (
         <>
-          <Button
-            onClick={() => setOpen((v) => !v)}
-            endIcon={open ? <ExpandLessIcon /> : <ExpandMoreIcon />}
-            aria-expanded={open}
-            sx={{ justifyContent: 'space-between', px: '12px', color: c.textPrimary }}
-          >
-            {t('calendar.taskPanelTitle', { count: tasks.length })}
-          </Button>
-          <Collapse in={open}>
-            <Box sx={{ maxHeight: 220, overflowY: 'auto' }}>{list}</Box>
-          </Collapse>
+          <Box sx={{ px: '12px', pt: '6px', fontSize: 11, color: c.textSecondary }}>{t('calendar.taskPanelHint')}</Box>
+          <Box sx={{ maxHeight: 'min(220px, 30svh)', overflowY: 'auto' }}>{list}</Box>
         </>
       ) : (
         <>
