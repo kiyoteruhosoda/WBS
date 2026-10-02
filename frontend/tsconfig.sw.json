@@ -20,5 +20,5 @@
     "erasableSyntaxOnly": true,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["src/serviceWorker/sw.ts", "src/serviceWorker/requestRoutes.ts"]
+  "include": ["src/serviceWorker/sw.ts", "src/serviceWorker/requestRoutes.ts", "src/serviceWorker/pushNotice.ts"]
 }

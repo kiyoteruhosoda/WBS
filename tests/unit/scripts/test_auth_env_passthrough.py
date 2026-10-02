@@ -14,7 +14,10 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parents[3]
-SETTINGS_SOURCE = ROOT / "src" / "infrastructure" / "auth" / "auth_settings.py"
+SETTINGS_SOURCES = (
+    ROOT / "src" / "infrastructure" / "auth" / "auth_settings.py",
+    ROOT / "src" / "infrastructure" / "push" / "push_settings.py",  # 端末への通知（ADR-0031）
+)
 COMPOSE_FILES = (
     ROOT / "docker-compose.yml",                 # ローカル開発
     ROOT / "docker" / "deploy" / "docker-compose.yml",  # stg / prod
@@ -25,10 +28,9 @@ ENV_READERS = {"getenv", "_env_bool", "_env_float", "_env_domains", "_env_samesi
 
 
 def auth_env_keys() -> set[str]:
-    """``auth_settings.py`` が読む環境変数名を、ソースから拾う。"""
-    tree = ast.parse(SETTINGS_SOURCE.read_text(encoding="utf-8"))
+    """``auth_settings.py``（と通知の設定）が読む環境変数名を、ソースから拾う。"""
     keys: set[str] = set()
-    for node in ast.walk(tree):
+    for node in (n for path in SETTINGS_SOURCES for n in ast.walk(ast.parse(path.read_text(encoding="utf-8")))):
         if not isinstance(node, ast.Call) or not node.args:
             continue
         func = node.func
@@ -44,7 +46,7 @@ def auth_env_keys() -> set[str]:
 def test_the_scan_finds_the_known_keys() -> None:
     # 拾い方が壊れると検査が素通りになるので、代表的なキーで自己点検する
     keys = auth_env_keys()
-    assert {"AUTH_MODE", "OIDC_ISSUER", "AUTH_COOKIE_SECURE"} <= keys
+    assert {"AUTH_MODE", "OIDC_ISSUER", "AUTH_COOKIE_SECURE", "WEB_PUSH_VAPID_PRIVATE_KEY_FILE"} <= keys
     assert len(keys) >= 10
 
 

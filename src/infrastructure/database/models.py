@@ -472,3 +472,62 @@ class BusinessCalendarHolidayModel(Base):
     calendar_id: Mapped[int] = mapped_column(sa.BigInteger().with_variant(sa.Integer(), "sqlite"), sa.ForeignKey("business_calendars.id", ondelete="CASCADE"), nullable=False)
     holiday_date: Mapped[date] = mapped_column(sa.Date, nullable=False)
     name: Mapped[str | None] = mapped_column(sa.String(200), nullable=True)
+
+
+# ── 端末への通知（Web Push。task #193、ADR-0031）────────────────────────────
+class PushSubscriptionModel(Base):
+    """ブラウザ・PWA の購読（端末 1 台ぶん）。
+
+    ⚠ ``endpoint`` は数百文字あり MariaDB の索引の長さを超えるので、一意は sha256 の
+    ``endpoint_hash`` に張る（雛形 fastapitemplate の ADR-0047 と同じ）。
+    """
+
+    __tablename__ = "push_subscriptions"
+    __table_args__ = (
+        sa.UniqueConstraint("endpoint_hash", name="uq_push_subscriptions_endpoint_hash"),
+        sa.Index("ix_push_subscriptions_user_id", "user_id"),
+        {"sqlite_autoincrement": True},
+    )
+    id: Mapped[int] = mapped_column(BigIntPK, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(sa.BigInteger().with_variant(sa.Integer(), "sqlite"), sa.ForeignKey("users.id"), nullable=False)
+    endpoint: Mapped[str] = mapped_column(sa.Text, nullable=False)
+    endpoint_hash: Mapped[str] = mapped_column(sa.String(64), nullable=False)
+    p256dh: Mapped[str] = mapped_column(sa.String(128), nullable=False)
+    auth: Mapped[str] = mapped_column(sa.String(64), nullable=False)
+    label: Mapped[str] = mapped_column(sa.String(100), nullable=False)
+    receives_calendar: Mapped[bool] = mapped_column(sa.Boolean, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(sa.DateTime, nullable=False)
+    last_sent_at: Mapped[datetime | None] = mapped_column(sa.DateTime, nullable=True)
+
+
+class PushPreferencesModel(Base):
+    """利用者ごとの通知の種類の入り / 切り。行が無い利用者は既定（すべて入り）。"""
+
+    __tablename__ = "push_preferences"
+    user_id: Mapped[int] = mapped_column(sa.BigInteger().with_variant(sa.Integer(), "sqlite"), sa.ForeignKey("users.id"), primary_key=True, autoincrement=False)
+    event_alarm: Mapped[bool] = mapped_column(sa.Boolean, nullable=False)
+    routine_start: Mapped[bool] = mapped_column(sa.Boolean, nullable=False)
+    timer_left_running: Mapped[bool] = mapped_column(sa.Boolean, nullable=False)
+    closing_due: Mapped[bool] = mapped_column(sa.Boolean, nullable=False)
+    timer_left_running_hours: Mapped[int] = mapped_column(sa.Integer, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(sa.DateTime, nullable=False)
+
+
+class PushDispatchModel(Base):
+    """送った通知の記録（同じ通知を 2 度送らない）。``(user_id, kind, notice_key)`` が一意。
+
+    ⚠ 送る係は送る**前**にこの行を書いて確定する。複数のワーカーが同じ周回を走らせても、
+    一意制約で 1 つだけが書けて、書けたものだけが送る。``kind`` は ``PushKind`` の値（ENUM にしない）。
+    """
+
+    __tablename__ = "push_dispatches"
+    __table_args__ = (
+        sa.UniqueConstraint("user_id", "kind", "notice_key", name="uq_push_dispatches_notice"),
+        sa.Index("ix_push_dispatches_sent_at", "sent_at"),
+        {"sqlite_autoincrement": True},
+    )
+    id: Mapped[int] = mapped_column(BigIntPK, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(sa.BigInteger().with_variant(sa.Integer(), "sqlite"), sa.ForeignKey("users.id"), nullable=False)
+    kind: Mapped[str] = mapped_column(sa.String(32), nullable=False)
+    notice_key: Mapped[str] = mapped_column(sa.String(200), nullable=False)
+    sent_at: Mapped[datetime] = mapped_column(sa.DateTime, nullable=False)

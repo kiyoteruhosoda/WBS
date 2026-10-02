@@ -124,3 +124,27 @@ curl -sI -A "Mozilla/5.0" https://wbs.nolumia.com/sw.js | grep -i cache-control 
 配った版は `curl -s -A "Mozilla/5.0" https://wbs.nolumia.com/api/info` の `git_sha` で見る。ブラウザで見るときは、
 先に Service Worker を更新して読み直す（`(await navigator.serviceWorker.getRegistrations()).forEach(r => r.update())`、
 1〜2 秒待って再読み込み）。
+
+## 端末への通知（Web Push）を使えるようにしたいとき
+
+ADR-0031。⚠ **鍵が無ければ通知は送らない**（既定。画面は「このサーバーでは使えません」）。
+
+1. VAPID の秘密鍵（P-256）を**ホストの上で**作り、api のコンテナから読める場所に置く（値を環境変数・画面に入れない）:
+
+   ```bash
+   openssl ecparam -name prime256v1 -genkey -noout | openssl pkcs8 -topk8 -nocrypt -out vapid.pem
+   ```
+
+   ⚠ 中身を画面・ログへ出さない。⚠ **作り直すと、いまある購読はすべて届かなくなる**（各端末で「この端末で受け取る」を押し直す）。
+2. 環境変数を足して配り直す:
+
+   ```bash
+   WEB_PUSH_VAPID_PRIVATE_KEY_FILE=/run/push/vapid.pem   # 1 の置き場（コンテナの中の道）
+   WEB_PUSH_SUBJECT=mailto:<連絡先>                       # 通知サービスが困ったときの連絡先
+   ```
+
+3. 確かめる:
+   - 起動のログに `push.dispatch.disabled` が**出ない**こと（出たら 2 が届いていない）。`push.key_unreadable` が出たら
+     置き場・権限・形（P-256 の PEM）を見直す
+   - 設定 → 「端末への通知」で「この端末で受け取る」が押せること（ログイン中に `GET /api/push/config` が `enabled: true`）
+   - 送ったときはログに `push.dispatch.finished`（送った数・届いた数・外した数・失敗した数）
