@@ -72,7 +72,7 @@ export const UNASSIGNED_FILL = `repeating-linear-gradient(135deg, ${UNGROUPED_CO
 
 /**
  * グループの塗り。カテゴリはカテゴリの色（ほかの画面と同じ ``categoryColor`` を渡す）、
- * マイルストーンは並び順の固定色。
+ * マイルストーンは並び順の固定色。プロジェクトは自分の色（無ければ並び順の固定色）。
  */
 export const groupFill = (
   group: BreakdownGroup,
@@ -82,6 +82,8 @@ export const groupFill = (
   if (group.key === 'unassigned') return UNASSIGNED_FILL;
   if (group.key === 'none') return UNGROUPED_COLOR;
   if (group.key.startsWith('category:')) return categoryFill(Number(group.key.slice('category:'.length)), group.color);
+  // プロジェクトは色を持っていればその色、無ければマイルストーンと同じ並び順の固定色
+  if (group.key.startsWith('project:') && group.color) return group.color;
   return MILESTONE_COLORS[milestoneOrder] ?? OVERFLOW_COLOR;
 };
 

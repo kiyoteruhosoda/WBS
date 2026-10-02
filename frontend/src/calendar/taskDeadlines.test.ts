@@ -13,10 +13,10 @@ const task = (id: number, title: string, due: string | null, patch: Partial<Task
   estimated_hours: null, remaining_hours: null, remaining_hours_entered: null, actual_hours: 0, has_subtasks: false,
   rollup_actual_hours: 0, rollup_remaining_hours: null, progress_percent: 0, scheduled_hours: 0,
   unscheduled_hours: null, priority_score: 0, memo: null,
-  parent_task_id: null, milestone_id: null, completed_at: null, deleted_at: null,
+  parent_task_id: null, milestone_id: null, project_id: null, project_path: null, completed_at: null, deleted_at: null,
   created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z', ...patch,
 });
-const milestone = (id: number, name: string, due: string | null): Milestone => ({ id, name, due_date: due, description: null });
+const milestone = (id: number, name: string, due: string | null): Milestone => ({ id, name, due_date: due, description: null, project_id: null });
 const categories: Category[] = [{ id: 2, name: '開発', color: '#0b8043', sort_order: 1 }];
 const RANGE = { from: '2026-05-03', to: '2026-05-09' };
 

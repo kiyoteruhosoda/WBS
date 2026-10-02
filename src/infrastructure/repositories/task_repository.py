@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
 from src.domain.entities.task import Task
@@ -42,6 +42,11 @@ class SqlAlchemyTaskRepository(TaskRepository):
             stmt = stmt.where(TaskModel.milestone_id == filters["milestone_id"])
         if "parent_task_id" in filters and filters["parent_task_id"] is not None:
             stmt = stmt.where(TaskModel.parent_task_id == filters["parent_task_id"])
+        # プロジェクトの子孫まで含めた id の一覧（呼ぶ側が再帰 CTE で引いて渡す。ADR-0024）
+        if filters.get("project_ids") is not None:
+            stmt = stmt.where(TaskModel.project_id.in_(filters["project_ids"]))
+        if filters.get("unclassified"):
+            stmt = stmt.where(TaskModel.project_id.is_(None))
         stmt = stmt.order_by(TaskModel.priority.desc(), TaskModel.urgency.desc(), TaskModel.id)
         return [self._to_entity(m) for m in self._session.scalars(stmt)]
 
@@ -70,6 +75,7 @@ class SqlAlchemyTaskRepository(TaskRepository):
             model.memo = task.memo
             model.parent_task_id = task.parent_task_id
             model.milestone_id = task.milestone_id
+            model.project_id = task.project_id
             model.completed_at = task.completed_at
             model.updated_at = utcnow()
             self._session.flush()
@@ -105,6 +111,41 @@ class SqlAlchemyTaskRepository(TaskRepository):
         )
         return {task_id: float(total or 0) for task_id, total in rows}
 
+    def subtree_ids(self, user_id: int, task_id: int) -> list[int]:
+        # UNION（重複を落とす）なので、親子が万一環になっていても止まる
+        base = (
+            select(TaskModel.id)
+            .where(TaskModel.id == task_id, TaskModel.user_id == user_id)
+            .cte("task_subtree", recursive=True)
+        )
+        child = (
+            select(TaskModel.id)
+            .join(base, TaskModel.parent_task_id == base.c.id)
+            .where(TaskModel.user_id == user_id)
+        )
+        tree = base.union(child)
+        return [int(i) for i in self._session.scalars(select(tree.c.id))]
+
+    def set_project(self, task_ids: list[int], project_id: int | None) -> None:
+        if not task_ids:
+            return
+        self._session.execute(
+            update(TaskModel)
+            .where(TaskModel.id.in_(task_ids))
+            .values(project_id=project_id, updated_at=utcnow())
+        )
+        self._session.flush()
+
+    def detach_milestone(self, task_ids: list[int]) -> None:
+        if not task_ids:
+            return
+        self._session.execute(
+            update(TaskModel)
+            .where(TaskModel.id.in_(task_ids))
+            .values(milestone_id=None, updated_at=utcnow())
+        )
+        self._session.flush()
+
     def _to_entity(self, model: TaskModel) -> Task:
         return Task(
             id=model.id,
@@ -121,6 +162,7 @@ class SqlAlchemyTaskRepository(TaskRepository):
             memo=model.memo,
             parent_task_id=model.parent_task_id,
             milestone_id=model.milestone_id,
+            project_id=model.project_id,
             completed_at=model.completed_at,
             deleted_at=model.deleted_at,
             created_at=model.created_at,
@@ -142,5 +184,6 @@ class SqlAlchemyTaskRepository(TaskRepository):
             memo=task.memo,
             parent_task_id=task.parent_task_id,
             milestone_id=task.milestone_id,
+            project_id=task.project_id,
             completed_at=task.completed_at,
         )

@@ -25,12 +25,14 @@ class TimeSource(StrEnum):
 class BreakdownGroupBy(StrEnum):
     CATEGORY = "category"
     MILESTONE = "milestone"
+    PROJECT = "project"
+    """プロジェクトの枝ごと（子孫の分を積み上げる。ADR-0024）。"""
 
 
 UNASSIGNED_GROUP = "unassigned"
 """タスク外（未割当の打刻・タスクに結ばない予定）。"""
 UNGROUPED_GROUP = "none"
-"""タスクはあるが、カテゴリ（マイルストーン）が無い・消えた。"""
+"""タスクはあるが、カテゴリ（マイルストーン・プロジェクト）が無い・消えた。"""
 
 
 @dataclass(frozen=True)
@@ -110,7 +112,7 @@ class PeriodReport:
 @dataclass(frozen=True)
 class BreakdownGroup:
     key: str
-    """``category:<id>`` / ``milestone:<id>`` / ``none`` / ``unassigned``。"""
+    """``category:<id>`` / ``milestone:<id>`` / ``project:<id>`` / ``none`` / ``unassigned``。"""
     name: str | None
     color: str | None
 

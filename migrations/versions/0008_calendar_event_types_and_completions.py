@@ -1,15 +1,12 @@
 """予定の分類（予定 / タスク）と、タスクの回の「済み」（task #190 / ADR-0025）
 
 Revision ID: 0008
-Revises: 0006
+Revises: 0007
 Create Date: 2026-10-01
 
 - ``calendar_events.event_type``: ``EVENT``（予定）/ ``TASK``（タスク）。**既存の予定は EVENT**。
 - ``calendar_event_completions``: タスクの分類の予定の回の済み。回は（候補日, 系列の開始時刻）、
   単発は両方 NULL。予定を消すと一緒に消える。
-
-⚠ task #187 の 0007 がまだ main に無い間は ``down_revision`` を 0006 にしてある。0007 が
-入ったら 0007 に付け直す。
 """
 
 from __future__ import annotations
@@ -20,7 +17,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "0008"
-down_revision: str | Sequence[str] | None = "0006"
+down_revision: str | Sequence[str] | None = "0007"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

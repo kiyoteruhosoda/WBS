@@ -140,7 +140,7 @@ describe('タスクを振る候補', () => {
     id, user_id: 1, title, category_id: null, priority: 3, urgency: 3, status: 'TODO', start_date: null, due_date: null,
     estimated_hours: null, remaining_hours: null, remaining_hours_entered: null, actual_hours: 0, has_subtasks: false,
     rollup_actual_hours: 0, rollup_remaining_hours: null, progress_percent: null, scheduled_hours: null, unscheduled_hours: null,
-    priority_score: 0, memo: null, parent_task_id: null, milestone_id: null, completed_at: null, deleted_at: null,
+    priority_score: 0, memo: null, parent_task_id: null, milestone_id: null, project_id: null, project_path: null, completed_at: null, deleted_at: null,
     created_at: '2026-09-01T00:00:00Z', updated_at: '2026-09-01T00:00:00Z', ...overrides,
   });
 

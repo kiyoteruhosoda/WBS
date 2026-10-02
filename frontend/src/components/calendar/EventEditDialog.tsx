@@ -17,7 +17,7 @@ import type {
 } from '../../calendar/eventForm';
 import {
   ALARM_OFFSETS, EVENT_COLOR_KEYS, WEEK_INDEXES, WEEKDAY_CODES, endOf, endTimeOptions, isAlarmOn, needsNewTask,
-  planEventSave, startTimeOptions, withAlarmOffset, withAlarmOn, withEndMinute, withLinkedTask, withRepeat,
+  newTaskPayload, planEventSave, startTimeOptions, withAlarmOffset, withAlarmOn, withEndMinute, withLinkedTask, withRepeat,
   withStartMinute,
 } from '../../calendar/eventForm';
 import { errorDetailOf, isConflictError } from '../../calendar/calendarRequests';
@@ -25,6 +25,8 @@ import { eventColor } from '../../calendar/calendarColors';
 import { formatMinute } from '../../calendar/zonedTime';
 import { sendCalendarRequests } from '../../api/calendar';
 import { createTask } from '../../api/tasks';
+import { pickableProjects } from '../../projects/projectScope';
+import { useProjectScope } from '../../projects/useProjectScope';
 import RecurringScopeDialog from './RecurringScopeDialog';
 
 export interface EventEditTarget {
@@ -118,7 +120,11 @@ const EventEditDialog: React.FC<Props> = ({
   const theme = useTheme();
   const fullScreen = useMediaQuery(theme.breakpoints.down('sm'));
   const c = theme.palette.calendar;
-  const [form, setForm] = useState<EventForm>(target.form);
+  // 「同じ名前のタスク」のプロジェクトは、サイドバーで絞っているプロジェクトを既定にする（タスクの新規作成と同じ）
+  const { scope, projects } = useProjectScope();
+  const [form, setForm] = useState<EventForm>(() => (
+    typeof scope === 'number' && target.form.newTaskProjectId == null ? { ...target.form, newTaskProjectId: scope } : target.form
+  ));
   const { context } = target;
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -143,7 +149,7 @@ const EventEditDialog: React.FC<Props> = ({
       // 分類がタスクでタスクを選んでいなければ、送る直前に同じ名前のタスクを作って結ぶ（ADR-0025）。
       // 作ったタスクは入力に残す（予定の保存に失敗してやり直しても、もう 1 つ作らない）。
       if (needsNewTask(form)) {
-        const task = await createTask({ title: form.title.trim() });
+        const task = await createTask(newTaskPayload(form));
         const linked = withLinkedTask(form, task.id);
         setForm(linked);
         const again = planEventSave(linked, context, scope);
@@ -230,6 +236,31 @@ const EventEditDialog: React.FC<Props> = ({
                       ? t('calendar.linkNewTaskNamed', { title: form.title.trim() })
                       : t('calendar.linkNewTask')}
                   />
+                )}
+                {/* 作るタスクのプロジェクト（ADR-0024。作るのは根のタスクなので選べる） */}
+                {form.taskId == null && form.linkNewTask && (
+                  <TextField
+                    select
+                    label={t('calendar.newTaskProject')}
+                    value={form.newTaskProjectId == null ? '' : String(form.newTaskProjectId)}
+                    onChange={(e) => update({ newTaskProjectId: e.target.value === '' ? null : Number(e.target.value) })}
+                    slotProps={{
+                      inputLabel: { shrink: true },
+                      select: {
+                        displayEmpty: true,
+                        // 選んだ後は道筋で出す（同じ名前の子プロジェクトが別の枝にあっても取り違えない）
+                        renderValue: (v) => (v === '' ? t('scope.none') : projects.find((p) => String(p.id) === v)?.path ?? ''),
+                      },
+                    }}
+                    data-testid="event-new-task-project"
+                  >
+                    <MenuItem value="">{t('scope.none')}</MenuItem>
+                    {pickableProjects(projects, form.newTaskProjectId).map(({ project, depth }) => (
+                      <MenuItem key={project.id} value={String(project.id)} sx={{ pl: `${16 + depth * 14}px` }}>
+                        {project.name}
+                      </MenuItem>
+                    ))}
+                  </TextField>
                 )}
               </>
             )}

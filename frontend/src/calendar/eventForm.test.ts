@@ -3,7 +3,7 @@ import type { EventForm } from './eventForm';
 import {
   DEFAULT_ALARM, buildAdjustment, buildRecurrence, endOf, endTimeOptions, formFromEvent, isAlarmOn, needsNewTask,
   newEventForm, parseTime, planEventSave, planOccurrenceDelete, startTimeOptions, withAlarmOffset, withAlarmOn,
-  withEndMinute, withLinkedTask, withRepeat, withStartMinute,
+  newTaskPayload, withEndMinute, withLinkedTask, withRepeat, withStartMinute,
 } from './eventForm';
 import { apiOccurrence, recurringEvent, recurringOccurrence, singleEvent } from './calendarFixtures';
 
@@ -361,5 +361,10 @@ describe('分類（予定 / タスク、ADR-0025）', () => {
       .toEqual({ kind: 'invalid', error: 'taskRequired' });
     // 予定の分類はタスクが無くてよい
     expect(needsNewTask(fresh({ taskId: null }))).toBe(false);
+  });
+
+  it('作るタスクは題名と選んだプロジェクト（既定は未分類）', () => {
+    expect(newTaskPayload(fresh({ title: ' 日報 ' }))).toEqual({ title: '日報', project_id: null });
+    expect(newTaskPayload(fresh({ title: '日報', newTaskProjectId: 4 }))).toEqual({ title: '日報', project_id: 4 });
   });
 });

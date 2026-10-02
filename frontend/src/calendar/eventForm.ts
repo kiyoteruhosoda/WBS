@@ -88,6 +88,8 @@ export interface EventForm {
   eventType: CalendarEventType;
   /** 分類がタスクでタスクを選んでいないとき、保存で「同じ名前のタスク」を作って結ぶ */
   linkNewTask: boolean;
+  /** 「同じ名前のタスク」を作るときのプロジェクト（ADR-0024。null は未分類。作るタスクは根なので選べる） */
+  newTaskProjectId: number | null;
   /** 通知。null は通知を持たない（既存の予定で一度も入れていないもの）。保存ではそのまま送る */
   alarm: EventAlarmData | null;
 }
@@ -230,6 +232,7 @@ export const newEventForm = (
     taskId: null,
     eventType: 'EVENT',
     linkNewTask: true,
+    newTaskProjectId: null,
     alarm: DEFAULT_ALARM,
   });
 };
@@ -401,6 +404,10 @@ const details = (form: EventForm) => ({
 /** 保存の前に「同じ名前のタスク」を作って結ぶか（分類がタスクで、タスクを選んでいない）。 */
 export const needsNewTask = (form: Pick<EventForm, 'eventType' | 'taskId' | 'linkNewTask'>): boolean =>
   form.eventType === 'TASK' && form.taskId == null && form.linkNewTask;
+
+/** 作る「同じ名前のタスク」の中身（根のタスク。プロジェクトは選んだもの、未分類は null）。 */
+export const newTaskPayload = (form: Pick<EventForm, 'title' | 'newTaskProjectId'>): { title: string; project_id: number | null } =>
+  ({ title: form.title.trim(), project_id: form.newTaskProjectId });
 
 /** 作ったタスク（または選んだタスク）を結ぶ。 */
 export const withLinkedTask = (form: EventForm, taskId: number): EventForm => ({ ...form, taskId });

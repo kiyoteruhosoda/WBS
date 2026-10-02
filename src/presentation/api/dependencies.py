@@ -49,6 +49,7 @@ from src.infrastructure.repositories.milestone_repository import SqlAlchemyMiles
 from src.infrastructure.repositories.occurrence_completion_repository import (
     SqlAlchemyOccurrenceCompletionRepository,
 )
+from src.infrastructure.repositories.project_repository import SqlAlchemyProjectRepository
 from src.infrastructure.repositories.task_repository import SqlAlchemyTaskRepository
 from src.infrastructure.repositories.time_entry_repository import SqlAlchemyTimeEntryRepository
 from src.infrastructure.repositories.user_account_repository import (
@@ -275,6 +276,7 @@ def get_actuals_use_cases(db: DbDep) -> ActualsUseCases:
         closing_periods=SqlAlchemyClosingPeriodRepository(db),
         categories=SqlAlchemyCategoryRepository(db),
         milestones=SqlAlchemyMilestoneRepository(db),
+        projects=SqlAlchemyProjectRepository(db),
         occurrences=calendar,
     )
 
