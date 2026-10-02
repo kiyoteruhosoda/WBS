@@ -103,3 +103,24 @@ OIDC_LINK_BY_EMAIL=true
 
 ⚠ **移行が済んだら戻す。** 結び付いた後の人はこの枝を通らないので、戻しても入れなくなる人は
 出ない。
+
+## PWA のアイコンを変えたいとき
+
+1. `scripts/generate_pwa_icons.py` の配色（`GRADIENT_*`）か図柄（`MARK_BOXES`）を直す
+2. `python3 scripts/generate_pwa_icons.py` を流し、`frontend/public/` に出たファイルをまとめてコミットする
+3. 色を変えたら `frontend/public/manifest.webmanifest` の `theme_color` と `frontend/index.html` の `theme-color` も揃える
+
+## PWA が本番で効いているか確かめたいとき
+
+ログインしていない状態（Cookie なし）で、次がすべて 200 で転送されないこと:
+
+```bash
+for p in /sw.js /manifest.webmanifest /pwa-192x192.png /pwa-512x512.png /pwa-maskable-512x512.png; do
+  curl -s -A "Mozilla/5.0" -o /dev/null -w "%{http_code} %{content_type} $p\n" "https://wbs.nolumia.com$p"
+done
+curl -sI -A "Mozilla/5.0" https://wbs.nolumia.com/sw.js | grep -i cache-control   # no-cache
+```
+
+配った版は `curl -s -A "Mozilla/5.0" https://wbs.nolumia.com/api/info` の `git_sha` で見る。ブラウザで見るときは、
+先に Service Worker を更新して読み直す（`(await navigator.serviceWorker.getRegistrations()).forEach(r => r.update())`、
+1〜2 秒待って再読み込み）。

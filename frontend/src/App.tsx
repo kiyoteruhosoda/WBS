@@ -1,6 +1,6 @@
 import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { MutationCache, QueryCache, QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ThemeProvider } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
 import { theme } from './theme';
@@ -20,8 +20,22 @@ import Settings from './pages/Settings';
 import AppReturnPage from './pages/AppReturnPage';
 import { I18nProvider } from './i18n';
 import { AuthProvider } from './auth/AuthProvider';
+import AppUpdatePrompt from './components/AppUpdatePrompt';
+import { watchForUpdate } from './pwa/appUpdate';
+import { isNetworkFailure, noteRequestOutcome } from './pwa/connectivity';
 
-const queryClient = new QueryClient({ defaultOptions: { queries: { retry: 1, staleTime: 30_000 } } });
+// 取得の成否で「オフラインです」を出し消しする（task #192 / ADR-0028）。応答なしで落ちたらオフライン、何か取れたら戻す
+const queryClient = new QueryClient({
+  defaultOptions: { queries: { retry: 1, staleTime: 30_000 } },
+  queryCache: new QueryCache({
+    onError: (error) => noteRequestOutcome(isNetworkFailure(error)),
+    onSuccess: () => noteRequestOutcome(false),
+  }),
+  mutationCache: new MutationCache({
+    onError: (error) => noteRequestOutcome(isNetworkFailure(error)),
+    onSuccess: () => noteRequestOutcome(false),
+  }),
+});
 
 /** ログインの内側の画面（SSO 有効なら未ログインでログイン画面を出す）。 */
 const SignedInApp: React.FC = () => (
@@ -65,6 +79,8 @@ const App: React.FC = () => (
           <Route path="*" element={<SignedInApp />} />
         </Routes>
       </BrowserRouter>
+      {/* 新しい版の知らせ（ADR-0028）。ログイン画面でも出す */}
+      <AppUpdatePrompt watch={watchForUpdate} />
     </ThemeProvider>
   </QueryClientProvider>
 );

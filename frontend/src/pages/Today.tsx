@@ -23,7 +23,6 @@ import WeekView from '../components/calendar/WeekView';
 import { useCalendarEditing } from '../components/calendar/useCalendarEditing';
 import CategoryDot from '../components/CategoryDot';
 import { useHeightToViewportBottom } from '../components/useHeightToViewportBottom';
-import TimerFailureNotice from '../components/TimerFailureNotice';
 import { PlayIcon, StopIcon } from '../components/icons';
 import { categoryColor, ds } from '../theme';
 import { groupSegmentsByDate } from '../calendar/daySegments';
@@ -37,7 +36,7 @@ import { buildLinkedTasks, scheduleTaskPath } from '../calendar/taskScheduling';
 import { formatMinute, resolveTimeZone, toZonedPoint } from '../calendar/zonedTime';
 import { elapsedOf } from '../timer/timerState';
 import type { CurrentSnapshot } from '../timer/timerState';
-import { useCurrentTimeEntry, useTimerWrites } from '../timer/useTimer';
+import { useProjectedTimeEntry, useTimerWrites } from '../timer/useTimer';
 import type { TaskUrgency } from '../today/todayView';
 import {
   TASKS_SHOWN_FIRST, currentAndNext, entryBands, liveActuals, nextFreeStartMinute, occurrenceStartOf, routineTasksOf,
@@ -112,9 +111,11 @@ const NowPanel: React.FC<{
   next: DaySegment | null;
   linkedTasks: ReadonlyMap<number, LinkedTask>;
   busy: boolean;
+  /** 走っている打刻が端末に溜まった Start で、タスクをサーバに任せた（送ったときに決まる） */
+  taskDecidedOnSend: boolean;
   onStart: (taskId: number) => void;
   onStop: () => void;
-}> = ({ snapshot, timeZone, totalSeconds, current, next, linkedTasks, busy, onStart, onStop }) => {
+}> = ({ snapshot, timeZone, totalSeconds, current, next, linkedTasks, busy, taskDecidedOnSend, onStart, onStop }) => {
   const { t } = useI18n();
   const entry = snapshot?.current.entry ?? null;
   const taskTitle = (taskId: number | null) => (taskId != null ? linkedTasks.get(taskId)?.title : undefined);
@@ -137,7 +138,7 @@ const NowPanel: React.FC<{
               </Box>
               <Box sx={{ display: 'flex', alignItems: 'baseline', gap: '10px', minWidth: 0 }}>
                 <Box sx={{ fontSize: 16, fontWeight: 700, color: ds.text, ...ellipsis }}>
-                  {entry.task_title ?? t('timer.unassigned')}
+                  {entry.task_title ?? t(taskDecidedOnSend ? 'timer.taskOnSend' : 'timer.unassigned')}
                 </Box>
                 <Box sx={{ fontSize: 16, fontWeight: 700, color: ds.primary, fontVariantNumeric: 'tabular-nums', flexShrink: 0 }}>
                   <RunningElapsed snapshot={snapshot} entry={entry} />
@@ -527,7 +528,8 @@ const Today: React.FC = () => {
   const { data: tasks } = useQuery({ queryKey: ['tasks'], queryFn: () => getTasks() });
   const { data: categories } = useQuery({ queryKey: ['categories'], queryFn: getCategories });
   const { data: milestones } = useQuery({ queryKey: ['milestones'], queryFn: getMilestones });
-  const { data: current } = useCurrentTimeEntry();
+  // 端末に溜まった押下（オフラインで押した Start / Stop）を重ねた控え（ADR-0028）
+  const { snapshot: current, pendingStart } = useProjectedTimeEntry();
   const writes = useTimerWrites();
   // 予定の書き込みと編集の画面はカレンダーと同じもの（task #185）
   const editing = useCalendarEditing({ occurrencesKey, timeZone, tasks: tasks ?? [] });
@@ -562,8 +564,8 @@ const Today: React.FC = () => {
   const routine = routineTasksOf(occurrencesQuery.data ?? [], date);
   const hasRoutine = routine.length > 0;
   const { current: currentSegment, next: nextSegment } = currentAndNext(todaySegments, now.date === date ? now.minute : -1);
-  const start = (taskId: number) => writes.start.mutate(taskId);
   const taskTitle = (taskId: number | null) => (taskId != null ? linkedTasks.get(taskId)?.title : undefined);
+  const start = (taskId: number) => writes.start(taskId, taskTitle(taskId));
   // 「予定を作る」: 今の後で空いている最初の 15 分刻みから（今日を見ていないときは編集画面の既定の 9:00）
   const addEvent = () => editing.openCreate(
     date,
@@ -600,8 +602,9 @@ const Today: React.FC = () => {
         next={nextSegment}
         linkedTasks={linkedTasks}
         busy={writes.busy}
+        taskDecidedOnSend={pendingStart != null && pendingStart.taskId === undefined}
         onStart={start}
-        onStop={() => writes.stop.mutate()}
+        onStop={writes.stop}
       />
 
       {hasRoutine && (
@@ -693,7 +696,6 @@ const Today: React.FC = () => {
       <ActualsCard totalSeconds={live.totalSeconds} actuals={live.actuals} colorOf={colorOf} />
       <KpiCard />
 
-      <TimerFailureNotice failure={writes.failure} onClose={writes.clearFailure} />
       {editing.dialogs}
     </Box>
   );

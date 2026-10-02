@@ -43,7 +43,36 @@ server {
         proxy_set_header X-Forwarded-Proto $scheme;
     }
 
+    # ── PWA（task #192・ADR-0028）──────────────────────────────────────
+    # ⚠ Service Worker・manifest・アイコンは認証の外（ここは静的に配るだけで、ログインを求めない）。
+    #   sw.js を転送（302）で返すとブラウザは登録できず、ホーム画面に置けなくなる。
+    # ⚠ 無いファイルに index.html を返さない（=404）。sw.js や assets に index.html（200）が返ると、
+    #   Service Worker が HTML を JavaScript として殻に入れてしまう。
+    # ⚠ sw.js・index.html・manifest は no-cache（毎回確かめる）。古いものが残ると新しい版に気付けない。
+    #   ハッシュ付きの assets/ だけ長く持たせる。
+    location = /sw.js {
+        try_files $uri =404;
+        add_header Cache-Control "no-cache" always;
+    }
+
+    location = /manifest.webmanifest {
+        types { application/manifest+json webmanifest; }
+        try_files $uri =404;
+        add_header Cache-Control "no-cache" always;
+    }
+
+    location /assets/ {
+        try_files $uri =404;
+        # always を付けない（404 を長く持たせない）
+        add_header Cache-Control "public, max-age=31536000, immutable";
+    }
+
+    location = /index.html {
+        add_header Cache-Control "no-cache" always;
+    }
+
     location / {
         try_files $uri /index.html;
+        add_header Cache-Control "no-cache" always;
     }
 }

@@ -496,6 +496,18 @@ const ja = {
   'timer.error': '打刻できませんでした。もう一度押してください',
   'timer.conflict': '打刻を書き込めませんでした。締めで確定した期間に掛かっているなど、いまは書き換えられない状態です',
   'timer.elapsed': '経過時間',
+  'timer.pending': '未送信 {count} 件',
+  'timer.pendingHint': 'つながっていないときに押した打刻です。つながったら、押した時刻で送ります',
+  'timer.taskOnSend': 'タスクは送ったときに決まります',
+  'timer.kept': '打刻を送れませんでした。この端末に残してあり、あとで送り直します（押し直さなくて大丈夫です）',
+  'timer.dropped': '未送信の打刻 {count} 件を記録できませんでした（ほかの打刻と重なる・締めで確定した期間・7 日より前など）。締めの画面で直してください',
+
+  'update.available': '新しい版があります',
+  'update.reload': '読み込み直す',
+
+  'offline.notice': 'オフラインです。データは読み込めません。打刻はこの端末に残し、つながったら送ります',
+  'offline.noSession': 'オフラインです。つながってから開き直してください',
+  'offline.retry': '読み込み直す',
 
   'picker.search': 'タスク・プロジェクトで探す',
   'picker.head': '候補',
@@ -1089,6 +1101,18 @@ const en: Record<TranslationKey, string> = {
   'timer.error': 'Could not record the time. Please try again',
   'timer.conflict': 'Could not record the time. It cannot be changed right now (for example, it falls in a closed period)',
   'timer.elapsed': 'Elapsed time',
+  'timer.pending': '{count} unsent',
+  'timer.pendingHint': 'Pressed while offline. They will be sent with the time you pressed once you are back online',
+  'timer.taskOnSend': 'Task is chosen when sent',
+  'timer.kept': 'Could not send the time. It is kept on this device and will be sent again later (no need to press again)',
+  'timer.dropped': 'Could not record {count} unsent press(es) (overlapping, in a closed period, older than 7 days, etc.). Please fix them on the closing screen',
+
+  'update.available': 'A new version is available',
+  'update.reload': 'Reload',
+
+  'offline.notice': 'You are offline. Data cannot be loaded. Timer presses are kept on this device and sent when you are back online',
+  'offline.noSession': 'You are offline. Please open the app again once you are back online',
+  'offline.retry': 'Reload',
 
   'picker.search': 'Search tasks and projects',
   'picker.head': 'Suggested',
