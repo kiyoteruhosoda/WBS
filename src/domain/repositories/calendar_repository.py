@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from collections.abc import Iterable
+from datetime import date
 
 from src.domain.entities.calendar import Calendar
 from src.domain.entities.calendar_view_preset import CalendarViewPreset
+from src.domain.entities.day_off import DayOff
 
 
 class CalendarRepository(ABC):
@@ -42,3 +45,24 @@ class CalendarViewPresetRepository(ABC):
 
     @abstractmethod
     def delete(self, preset_id: int) -> None: ...
+
+
+class DayOffRepository(ABC):
+    """休みの日の一覧の層の日付（ADR-0029）。持ち主はカレンダーで決まる（呼び出し側が確かめる）。
+
+    ⚠ 書き込みは flush までで、確定はユースケースの ``UnitOfWork.commit()``。
+    """
+
+    @abstractmethod
+    def find(
+        self, calendar_ids: Iterable[int], from_date: date | None = None, to_date: date | None = None
+    ) -> list[DayOff]:
+        """そのカレンダーたちの日（両端を含む。``None`` は端なし）を日付の順で。"""
+
+    @abstractmethod
+    def add(self, day_off: DayOff) -> bool:
+        """足す。同じカレンダーの同じ日がすでにあれば何もせず ``False``。"""
+
+    @abstractmethod
+    def remove(self, calendar_id: int, day: date) -> bool:
+        """消す。無ければ ``False``。"""

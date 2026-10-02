@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from src.domain.entities.calendar import Calendar
+from src.domain.entities.calendar import LAYER_ORDER, Calendar, CalendarKind
 from src.domain.repositories.calendar_repository import CalendarRepository
 
 
@@ -17,7 +17,7 @@ def ensure_default_calendar(calendars: CalendarRepository, user_id: int, now: da
 
     既定の印の付いたものが無いのにカレンダーがある（手で直した DB など）なら、並びの先頭を既定にする。
     """
-    found = calendars.find_all(user_id)
+    found = [c for c in calendars.find_all(user_id) if c.kind == CalendarKind.EVENTS]
     for calendar in found:
         if calendar.is_default:
             return calendar
@@ -29,4 +29,18 @@ def ensure_default_calendar(calendars: CalendarRepository, user_id: int, now: da
     return calendars.save(Calendar.create_default(user_id, now))
 
 
-__all__ = ["ensure_default_calendar"]
+def ensure_day_off_layers(calendars: CalendarRepository, user_id: int, now: datetime) -> bool:
+    """休みの 4 層（ADR-0029）のうち無いものを作る。作ったら ``True``（flush まで）。"""
+    existing = calendars.find_all(user_id)
+    has_workweek = any(c.kind == CalendarKind.WORKWEEK for c in existing)
+    reasons = {c.day_off_reason for c in existing if c.kind == CalendarKind.DAYS_OFF}
+    created = False
+    for reason in LAYER_ORDER:
+        if (reason is None and has_workweek) or (reason is not None and reason in reasons):
+            continue
+        calendars.save(Calendar.create_layer(user_id, reason, now))
+        created = True
+    return created
+
+
+__all__ = ["ensure_day_off_layers", "ensure_default_calendar"]

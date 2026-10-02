@@ -262,6 +262,10 @@ export interface CalendarOccurrence {
 export interface CalendarHoliday {
   date: string; // YYYY-MM-DD
   name: string | null;
+  /** 休みの理由（休みの層から作ったとき。塗りを分ける。ADR-0029） */
+  reason?: DayOffReason;
+  /** 終日の帯の色（層の色） */
+  color?: string;
 }
 
 /** 曜日（ドメインの `Weekday`。iCalendar の 2 文字）。 */
@@ -340,9 +344,14 @@ export interface CalendarEvent {
 }
 
 /** 予定のカレンダー（`/api/calendars`。ADR-0027）。表示するか（`is_visible`）はサーバーに覚える。 */
+export type CalendarKind = 'EVENTS' | 'WORKWEEK' | 'DAYS_OFF';
+/** 休みの日の一覧の層の理由（ADR-0029） */
+export type DayOffReason = 'NATIONAL_HOLIDAY' | 'COMPANY' | 'PERSONAL';
+
 export interface Calendar {
   id: number;
-  kind: 'EVENTS';
+  /** EVENTS = 予定を入れる / WORKWEEK = 営業日の層（曜日の規則）/ DAYS_OFF = 休みの日の一覧の層 */
+  kind: CalendarKind;
   name: string;
   /** DEFAULT は色の指定なし（予定は結んだタスクの色・標準の色） */
   color_key: EventColorKey;
@@ -351,8 +360,31 @@ export interface Calendar {
   is_default: boolean;
   /** カレンダーの画面に出す */
   is_visible: boolean;
+  /** 営業日の層の稼働する曜日（ほかは null） */
+  workdays: WeekdayCode[] | null;
+  /** 休みの日の一覧の層の理由（ほかは null） */
+  day_off_reason: DayOffReason | null;
+  /** 営業日の判定で休みとして数える（休みの日の一覧の層） */
+  counts_as_day_off: boolean;
   created_at: string | null;
   updated_at: string | null;
+}
+
+/** ある日が休みである理由 1 つ（`GET /api/calendars/days-off`。ADR-0029）。 */
+export interface DayOffMark {
+  date: string;
+  /** WEEKLY = 曜日の休み（営業日の層の曜日に当たらない） */
+  reason: DayOffReason | 'WEEKLY';
+  calendar_id: number | null;
+  name: string | null;
+  /** 営業日の判定で休みとして数える（false の層の日は塗るが営業日のまま） */
+  counts_as_day_off: boolean;
+}
+
+/** 休みの日の一覧の層の 1 日。 */
+export interface LayerDayOff {
+  date: string;
+  name: string | null;
 }
 
 /** 表示の組み合わせ（`/api/calendar-view-presets`）。当てると `calendar_ids` だけが表示になる。 */

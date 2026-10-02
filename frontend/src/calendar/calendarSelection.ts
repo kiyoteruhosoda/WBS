@@ -40,8 +40,10 @@ export const allVisible = (calendars: readonly Calendar[]): boolean => calendars
  * 新しい予定を入れるカレンダー。既定のカレンダーが表示ならそれ、隠していれば表示の先頭
  * （作った予定が画面から消えないように）。どれも隠していれば既定。一覧が無ければ null（サーバーが既定に入れる）。
  */
-export const calendarForNewEvent = (calendars: readonly Calendar[] | undefined): number | null => {
-  if (!calendars || calendars.length === 0) return null;
+export const calendarForNewEvent = (all: readonly Calendar[] | undefined): number | null => {
+  // 予定は休みの層（ADR-0029）には入れない
+  const calendars = (all ?? []).filter((c) => c.kind === 'EVENTS');
+  if (calendars.length === 0) return null;
   const fallback = calendars.find((c) => c.is_default) ?? calendars[0];
   if (fallback.is_visible) return fallback.id;
   return calendars.find((c) => c.is_visible)?.id ?? fallback.id;

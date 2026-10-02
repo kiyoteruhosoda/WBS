@@ -10,7 +10,7 @@ import EventOutlinedIcon from '@mui/icons-material/EventOutlined';
 import TaskAltIcon from '@mui/icons-material/TaskAlt';
 import { useI18n } from '../../i18n';
 import type { TranslationKey } from '../../i18n/translations';
-import type { BusinessCalendar, Calendar, CalendarEventType, CalendarOccurrence, Task, WeekdayCode } from '../../types';
+import type { BusinessCalendar, Calendar, CalendarEvent, CalendarEventType, CalendarOccurrence, Task, WeekdayCode } from '../../types';
 import type {
   AdjustmentDateType, AdjustmentDirection, AlarmOffsetField, EventForm, EventFormContext, FormError, RecurringScope,
   RepeatType,
@@ -44,7 +44,8 @@ interface Props {
   /** 予定のカレンダー（ADR-0027）。2 つ以上あるときだけ選ぶ欄を出す */
   calendars?: readonly Calendar[];
   onClose: () => void;
-  onSaved: () => void;
+  /** 保存した（最後に書いた予定。消しただけなら null）。休みの日の知らせに使う */
+  onSaved: (written: CalendarEvent | null) => void;
   /** ほかで予定が変わっていた（409）。呼び手が取り直して知らせる */
   onConflict: () => void;
   /** 削除（範囲を聞くのは呼び手） */
@@ -161,8 +162,8 @@ const EventEditDialog: React.FC<Props> = ({
         if (again.kind !== 'requests') return;
         requests = again.requests;
       }
-      await sendCalendarRequests(requests);
-      onSaved();
+      const written = await sendCalendarRequests(requests);
+      onSaved(written);
     } catch (e) {
       if (isConflictError(e)) { onConflict(); return; }
       setError(t('calendar.saveFailed', { detail: errorDetailOf(e) ?? '' }));

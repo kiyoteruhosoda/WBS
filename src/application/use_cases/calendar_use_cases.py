@@ -23,8 +23,9 @@ from src.domain.repositories.calendar_repository import (
     CalendarRepository,
     CalendarViewPresetRepository,
 )
-from src.domain.services.default_calendar import ensure_default_calendar
+from src.domain.services.default_calendar import ensure_day_off_layers, ensure_default_calendar
 from src.domain.value_objects.event_color import EventColorKey
+from src.domain.value_objects.recurrence import Weekday
 from src.shared.clock import utcnow
 
 
@@ -47,9 +48,14 @@ class CalendarUseCases:
     # ── カレンダー ──────────────────────────────────────────────────────
 
     def list_calendars(self, user_id: int) -> list[Calendar]:
-        """並び順で。既定のカレンダーが無ければ作ってから返す。"""
-        if not any(c.is_default for c in self._calendars.find_all(user_id)):
-            ensure_default_calendar(self._calendars, user_id, self._now())
+        """並び順で。既定のカレンダーと休みの 4 層（ADR-0029）が無ければ作ってから返す。"""
+        now = self._now()
+        created = False
+        if not any(c.is_default and c.holds_events for c in self._calendars.find_all(user_id)):
+            ensure_default_calendar(self._calendars, user_id, now)
+            created = True
+        created = ensure_day_off_layers(self._calendars, user_id, now) or created
+        if created:
             self._uow.commit()
         return self._calendars.find_all(user_id)
 
@@ -66,10 +72,23 @@ class CalendarUseCases:
         return saved
 
     def update_calendar(
-        self, calendar_id: int, user_id: int, name: str, color_key: EventColorKey
+        self,
+        calendar_id: int,
+        user_id: int,
+        name: str,
+        color_key: EventColorKey,
+        *,
+        counts_as_day_off: bool | None = None,
+        workdays: Iterable[Weekday] | None = None,
     ) -> Calendar:
+        """名前と色。休みの層なら「休みとして数える」・稼働する曜日も（``None`` は今のまま）。"""
         calendar = self._owned(calendar_id, user_id)
-        calendar.change(name=name, color_key=color_key, updated_at=self._now())
+        now = self._now()
+        calendar.change(name=name, color_key=color_key, updated_at=now)
+        if counts_as_day_off is not None or workdays is not None:
+            calendar.change_layer(
+                counts_as_day_off=counts_as_day_off, workdays=workdays, updated_at=now
+            )
         saved = self._calendars.save(calendar)
         self._uow.commit()
         return saved
@@ -96,6 +115,8 @@ class CalendarUseCases:
         calendar = self._owned(calendar_id, user_id)
         if calendar.is_default:
             raise ConflictError("the default calendar cannot be deleted")
+        if calendar.is_day_off_layer:
+            raise ConflictError("a day-off layer cannot be deleted (hide it or stop counting it)")
         default = ensure_default_calendar(self._calendars, user_id, self._now())
         assert default.id is not None
         moved = self._events.reassign_calendar(user_id, calendar_id, default.id)

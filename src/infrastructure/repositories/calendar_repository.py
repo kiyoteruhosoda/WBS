@@ -6,19 +6,30 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Iterable
+from datetime import date
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
-from src.domain.entities.calendar import Calendar, CalendarKind
+from src.domain.entities.calendar import Calendar, CalendarKind, DayOffReason
 from src.domain.entities.calendar_view_preset import CalendarViewPreset
+from src.domain.entities.day_off import DayOff
 from src.domain.exceptions import ConflictError
 from src.domain.repositories.calendar_repository import (
     CalendarRepository,
     CalendarViewPresetRepository,
+    DayOffRepository,
 )
 from src.domain.value_objects.event_color import EventColorKey
-from src.infrastructure.database.models import CalendarModel, CalendarViewPresetModel
+from src.domain.value_objects.recurrence import Weekday
+from src.infrastructure.database.models import (
+    CalendarDayOffModel,
+    CalendarModel,
+    CalendarViewPresetModel,
+)
+
+_WORKDAY_SEPARATOR = ","
 
 
 class SqlAlchemyCalendarRepository(CalendarRepository):
@@ -99,6 +110,48 @@ class SqlAlchemyCalendarViewPresetRepository(CalendarViewPresetRepository):
         self._session.flush()
 
 
+class SqlAlchemyDayOffRepository(DayOffRepository):
+    def __init__(self, session: Session) -> None:
+        self._session = session
+
+    def find(
+        self, calendar_ids: Iterable[int], from_date: date | None = None, to_date: date | None = None
+    ) -> list[DayOff]:
+        ids = list(calendar_ids)
+        if not ids:
+            return []
+        stmt = select(CalendarDayOffModel).where(CalendarDayOffModel.calendar_id.in_(ids))
+        if from_date is not None:
+            stmt = stmt.where(CalendarDayOffModel.day >= from_date)
+        if to_date is not None:
+            stmt = stmt.where(CalendarDayOffModel.day <= to_date)
+        stmt = stmt.order_by(CalendarDayOffModel.day, CalendarDayOffModel.calendar_id)
+        return [DayOff(m.calendar_id, m.day, m.name) for m in self._session.scalars(stmt)]
+
+    def add(self, day_off: DayOff) -> bool:
+        exists = self._session.scalar(
+            select(CalendarDayOffModel.id).where(
+                CalendarDayOffModel.calendar_id == day_off.calendar_id,
+                CalendarDayOffModel.day == day_off.day,
+            )
+        )
+        if exists is not None:
+            return False
+        self._session.add(
+            CalendarDayOffModel(calendar_id=day_off.calendar_id, day=day_off.day, name=day_off.name)
+        )
+        self._session.flush()
+        return True
+
+    def remove(self, calendar_id: int, day: date) -> bool:
+        result = self._session.execute(
+            delete(CalendarDayOffModel).where(
+                CalendarDayOffModel.calendar_id == calendar_id, CalendarDayOffModel.day == day
+            )
+        )
+        return bool(result.rowcount)
+
+
 def _copy_calendar(calendar: Calendar, model: CalendarModel) -> None:
     model.kind = calendar.kind.value
     model.name = calendar.name
@@ -106,6 +159,13 @@ def _copy_calendar(calendar: Calendar, model: CalendarModel) -> None:
     model.sort_order = calendar.sort_order
     model.is_default = calendar.is_default
     model.is_visible = calendar.is_visible
+    model.workdays = (
+        _WORKDAY_SEPARATOR.join(w.value for w in sorted(calendar.workdays, key=lambda w: w.iso_index))
+        if calendar.workdays is not None
+        else None
+    )
+    model.day_off_reason = calendar.day_off_reason.value if calendar.day_off_reason else None
+    model.counts_as_day_off = calendar.counts_as_day_off
     model.created_at = calendar.created_at or calendar.updated_at
     model.updated_at = calendar.updated_at or calendar.created_at
 
@@ -120,6 +180,13 @@ def _calendar(model: CalendarModel) -> Calendar:
         is_default=model.is_default,
         is_visible=model.is_visible,
         kind=CalendarKind(model.kind),
+        workdays=(
+            frozenset(Weekday(code) for code in model.workdays.split(_WORKDAY_SEPARATOR) if code)
+            if model.workdays is not None
+            else None
+        ),
+        day_off_reason=DayOffReason(model.day_off_reason) if model.day_off_reason else None,
+        counts_as_day_off=bool(model.counts_as_day_off),
         created_at=model.created_at,
         updated_at=model.updated_at,
     )
@@ -146,4 +213,8 @@ def _preset(model: CalendarViewPresetModel) -> CalendarViewPreset:
     )
 
 
-__all__ = ["SqlAlchemyCalendarRepository", "SqlAlchemyCalendarViewPresetRepository"]
+__all__ = [
+    "SqlAlchemyCalendarRepository",
+    "SqlAlchemyCalendarViewPresetRepository",
+    "SqlAlchemyDayOffRepository",
+]

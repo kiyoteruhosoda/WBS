@@ -13,7 +13,7 @@ import {
 } from '../../calendar/weekLayout';
 import type { DayBand, WeekEventBlock } from '../../calendar/weekLayout';
 import { holidaysByDate } from '../../calendar/monthCells';
-import { darken, pastEventColor } from '../../calendar/calendarColors';
+import { darken, dayColumnBackground, pastEventColor } from '../../calendar/calendarColors';
 import type { LinkedTask } from '../../calendar/taskScheduling';
 import { linkedTaskLabel, occurrenceColor } from '../../calendar/taskScheduling';
 import { formatWeekHeader } from '../../calendar/calendarTitles';
@@ -67,6 +67,8 @@ interface Props extends Pick<
   occurrenceAction?: (occurrence: CalendarOccurrence) => React.ReactNode;
   /** 今日を含むとき、開いた位置を今の何分前にするか（既定は 4 時間前） */
   scrollLeadMinutes?: number;
+  /** 曜日の休み（営業日の層が表示のとき。ADR-0029）。null・省略は土日の色だけ */
+  nonWorkdays?: ReadonlySet<string> | null;
 }
 
 /**
@@ -75,7 +77,7 @@ interface Props extends Pick<
 const WeekView: React.FC<Props> = ({
   dates, timeZone, segmentsByDate, holidays, deadlines, today, nowMinute, selectedDate, selectedSegmentKey,
   onSelectDate, onSelectSegment, onCreateRange, onRescheduleOccurrence, onEditOccurrence, onCreateEvent, onToggleDone,
-  linkedTasks, dropPreview, bands, occurrenceAction, scrollLeadMinutes,
+  linkedTasks, dropPreview, bands, occurrenceAction, scrollLeadMinutes, nonWorkdays,
 }) => {
   const { t, weekdays } = useI18n();
   const theme = useTheme();
@@ -121,11 +123,7 @@ const WeekView: React.FC<Props> = ({
   }, [firstDate, dates.length, isCurrentWeek, scrollLeadMinutes]);
 
   const dayBackground = (date: string): string => {
-    const dow = dayOfWeek(date);
-    if (holidayMap.has(date) && dow !== 6) return c.holidayBg;
-    if (dow === 0) return c.sundayBg;
-    if (dow === 6) return c.saturdayBg;
-    return 'transparent';
+    return dayColumnBackground(c, dayOfWeek(date), holidayMap.get(date), nonWorkdays ? nonWorkdays.has(date) : null);
   };
 
   const headerColor = (date: string): string => {
@@ -257,7 +255,7 @@ const WeekView: React.FC<Props> = ({
                   );
                 }
                 const segment = b.segment;
-                const color = segment ? occurrenceColor(segment.occurrence, linkedTasks) : c.red;
+                const color = segment ? occurrenceColor(segment.occurrence, linkedTasks) : b.holiday?.color ?? c.red;
                 // 過ぎた日の予定は影の上に描き、地だけ沈める（文字は白のまま読める）
                 const bg = date < today ? pastEventColor(color, c) : color;
                 const title = segment ? segment.occurrence.title : b.holiday?.name ?? '';

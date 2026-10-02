@@ -7,8 +7,10 @@ import {
 import { useI18n } from '../../i18n';
 import type { TranslationKey } from '../../i18n/translations';
 import type { CalendarEvent, CalendarOccurrence, Task } from '../../types';
-import { getBusinessCalendars, getEvent, sendCalendarRequest } from '../../api/calendar';
-import { getCalendars } from '../../api/calendars';
+import { getBusinessCalendars, getEvent, getOccurrences, sendCalendarRequest } from '../../api/calendar';
+import { getCalendars, getDayOffMarks } from '../../api/calendars';
+import { dayOffReasonsOn } from '../../calendar/daysOff';
+import { formatDate } from '../../utils/format';
 import { calendarForNewEvent } from '../../calendar/calendarSelection';
 import EventEditDialog from './EventEditDialog';
 import type { EventEditTarget } from './EventEditDialog';
@@ -26,7 +28,10 @@ import {
   canRedo, canUndo, emptyHistory, recordOperation, redoOperation, undoOperation,
 } from '../../calendar/operationHistory';
 import { CALENDARS_QUERY, OCCURRENCES_QUERY, queriesAfterEventWrite } from '../../calendar/calendarQueries';
-import { toZonedPoint } from '../../calendar/zonedTime';
+import { addDays, toZonedPoint } from '../../calendar/zonedTime';
+
+/** 繰り返しを書いたとき、休みの日に当たる回を何日先まで見るか。 */
+const WARN_RECURRING_DAYS = 62;
 
 export interface CalendarNotice {
   message: string;
@@ -66,6 +71,41 @@ export const useCalendarEditing = ({ occurrencesKey, timeZone, tasks }: Options)
   const today = () => toZonedPoint(Date.now(), timeZone).date;
   const notify = (key: TranslationKey, severity: CalendarNotice['severity'], params?: Record<string, string | number>) =>
     setNotice({ message: t(key, params), severity });
+
+  /**
+   * 休みの日に置いたら知らせる（止めはしない。ADR-0029）。休みかどうかは表示に関係なく「休みとして数える」で決まる。
+   * 知らせは添えものなので、取れなくても黙る（書き込みは済んでいる）。
+   */
+  const warnDaysOff = async (dates: readonly string[]) => {
+    const unique = [...new Set(dates)].sort();
+    if (unique.length === 0) return;
+    try {
+      const marks = await getDayOffMarks({ from: unique[0], to: unique[unique.length - 1] });
+      const hits = unique
+        .map((date) => ({ date, reasons: dayOffReasonsOn(date, marks, calendars, t('calendar.weeklyDayOff')) }))
+        .filter((h) => h.reasons != null);
+      if (hits.length === 0) return;
+      notify(hits.length === 1 ? 'calendar.placedOnDayOff' : 'calendar.placedOnDaysOff', 'warning', {
+        date: formatDate(hits[0].date), reasons: hits[0].reasons ?? '', count: hits.length,
+      });
+    } catch {
+      // 知らせだけ出さない
+    }
+  };
+
+  /** 書いた予定の回の日（繰り返しは今日か先頭の回から 62 日ぶん）。 */
+  const datesOfWritten = async (written: CalendarEvent): Promise<string[]> => {
+    const first = toZonedPoint(Date.parse(written.start), timeZone).date;
+    const from = written.kind === 'RECURRING' && first < today() ? today() : first;
+    const span = written.kind === 'RECURRING' ? WARN_RECURRING_DAYS : Math.ceil(written.duration_minutes / 1440);
+    const occurrences = await getOccurrences({ from, to: addDays(from, span) }, timeZone);
+    return occurrences.filter((o) => o.event_id === written.id).map((o) => o.date);
+  };
+
+  const warnDaysOffOf = (written: CalendarEvent | null) => {
+    if (!written) return;
+    void datesOfWritten(written).then(warnDaysOff, () => undefined);
+  };
 
   const refresh = () => {
     for (const queryKey of queriesAfterEventWrite()) void qc.invalidateQueries({ queryKey });
@@ -118,6 +158,7 @@ export const useCalendarEditing = ({ occurrencesKey, timeZone, tasks }: Options)
     if (!written) return;
     setHistory((h) => withEventVersion(recordOperation(h, rescheduleEntryOf(change, written.version)), eventId, written.version));
     afterWrite(eventId, written);
+    if (change.after.date !== change.occurrence.date) void warnDaysOff([change.after.date]);
   });
 
   const undo = () => exclusive(async () => {
@@ -198,9 +239,9 @@ export const useCalendarEditing = ({ occurrencesKey, timeZone, tasks }: Options)
           viewerTimeZone={timeZone}
           tasks={tasks}
           businessCalendars={businessCalendars ?? []}
-          calendars={calendars ?? []}
+          calendars={(calendars ?? []).filter((c) => c.kind === 'EVENTS')}
           onClose={() => setEditTarget(null)}
-          onSaved={() => afterDialogWrite('calendar.saved')}
+          onSaved={(written) => { afterDialogWrite('calendar.saved'); warnDaysOffOf(written); }}
           onConflict={() => { setEditTarget(null); onConflict(); }}
           onDelete={setDeleteTarget}
         />
@@ -253,5 +294,7 @@ export const useCalendarEditing = ({ occurrencesKey, timeZone, tasks }: Options)
     dialogs,
     /** 予定のカレンダー（読み込み前は undefined） */
     calendars,
+    /** 休みの日に置いたら知らせる（タスクの一覧から落としたときなど） */
+    warnDaysOff: (dates: readonly string[]) => void warnDaysOff(dates),
   };
 };

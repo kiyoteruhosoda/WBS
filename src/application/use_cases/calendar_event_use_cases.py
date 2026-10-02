@@ -31,6 +31,7 @@ from src.application.dto.calendar_event_dto import (
     UpdateRecurringSeriesCommand,
 )
 from src.application.dto.unset import UNSET, UnsetType
+from src.application.ports.day_off_layers_source import DayOffLayersSource
 from src.application.ports.task_lookup import OwnedTaskLookup
 from src.application.ports.unit_of_work import UnitOfWork
 from src.application.use_cases.ownership import owned_by
@@ -48,6 +49,7 @@ from src.domain.repositories.calendar_repository import CalendarRepository
 from src.domain.repositories.occurrence_completion_repository import (
     OccurrenceCompletionRepository,
 )
+from src.domain.services.day_off_layers import DayOffLayers
 from src.domain.services.default_calendar import ensure_default_calendar
 from src.domain.services.occurrence_display_projection import to_display_time_zone
 from src.domain.services.occurrence_expander import OccurrenceExpander
@@ -109,8 +111,11 @@ class CalendarEventUseCases:
         now: Callable[[], datetime] = utcnow,
         completions: OccurrenceCompletionRepository | None = None,
         event_calendars: CalendarRepository | None = None,
+        day_off_layers: DayOffLayersSource | None = None,
     ) -> None:
         self._events = events
+        # 休みの層（ADR-0029）。あれば営業日シフトはこの判定を使う（無ければ名指しの営業日カレンダーだけ）。
+        self._day_off_layers = day_off_layers
         # 予定のカレンダー（ADR-0027）。無ければカレンダーを決めずに保存する（保存先が既定へ入れる）。
         self._event_calendars = event_calendars
         # 回の済み（ADR-0025）。無ければ済みは出さない（どの回も済みでない）。
@@ -317,14 +322,14 @@ class CalendarEventUseCases:
         expand_from = _shift_clamped(from_date, -pad)
         expand_to = _shift_clamped(to_date, pad)
 
-        calendars: dict[int, BusinessCalendar | None] = {}
+        calendars = _ShiftCalendars(self, user_id)
         results: list[tuple[CalendarEvent, EventOccurrence]] = []
         for event in self._events.find_by_period(user_id, expand_from, expand_to):
             if linked_to_tasks_only and event.task_id is None:
                 continue
             if with_alarm_only and (event.alarm is None or not event.alarm.minutes_before()):
                 continue
-            calendar = self._calendar_for(event, calendars)
+            calendar = calendars.for_event(event)
             for occurrence in self._expander.expand(event, expand_from, expand_to, calendar):
                 if viewer is not None:
                     occurrence = to_display_time_zone(occurrence, event.time_zone, viewer)
@@ -712,7 +717,7 @@ class CalendarEventUseCases:
         ):
             return True
         # 営業日シフトで回は候補日から動きうるので、候補日の前後を広めに展開して鍵で探す。
-        calendar = self._calendar_for(event, {})
+        calendar = _ShiftCalendars(self, event.user_id).for_event(event)
         found = self._expander.expand(
             event,
             _shift_clamped(key.date, -PERIOD_OVERLAP_MARGIN_DAYS),
@@ -733,6 +738,9 @@ class CalendarEventUseCases:
         if self._tasks.find_by_id_for_user(task_id, user_id) is None:
             raise NotFoundError("Task", task_id)
 
+    def _layers_for(self, user_id: int) -> DayOffLayers | None:
+        return self._day_off_layers.layers_for(user_id) if self._day_off_layers else None
+
     def _task_title(
         self, task_id: int | None, user_id: int, cache: dict[int, str | None]
     ) -> str | None:
@@ -750,10 +758,13 @@ class CalendarEventUseCases:
         """自分のカレンダーか確かめる（他人・無いものは 404）。"""
         if self._event_calendars is None:
             raise NotFoundError("Calendar", calendar_id)
-        owned_by(
+        calendar = owned_by(
             self._event_calendars.find_by_id(calendar_id), user_id,
             resource="Calendar", resource_id=calendar_id,
         )
+        if not calendar.holds_events:
+            # 休みの層（ADR-0029）には予定を入れない。
+            raise ValidationError("events can only be put into an events calendar")
         return calendar_id
 
     def _calendar_for_new_event(self, calendar_id: int | None, user_id: int) -> int | None:
@@ -792,7 +803,7 @@ class CalendarEventUseCases:
         )
 
     def _calendar_for(
-        self, event: CalendarEvent, cache: dict[int, BusinessCalendar | None]
+        self, event: CalendarEvent, cache: dict[int | None, BusinessCalendar | None]
     ) -> BusinessCalendar | None:
         """繰り返しの営業日シフトが参照するカレンダー（持ち主の違うものは使わない）。"""
         schedule = event.recurring_schedule
@@ -805,6 +816,46 @@ class CalendarEventUseCases:
             found = self._calendars.find_by_id(calendar_id)
             cache[calendar_id] = found if found is not None and found.user_id == event.user_id else None
         return cache[calendar_id]
+
+
+class _ShiftCalendars:
+    """展開 1 回ぶんの、営業日シフトに渡すカレンダー（休みの層は 1 回だけ引く）。
+
+    休みの層があれば: 稼働する曜日は営業日の層、休みの日は「数える」層の日 ∪ 繰り返しが名指しした
+    古い営業日カレンダー（ADR-0009）の祝日。「祝日だけ飛ばす」は名指しのカレンダーのもの。
+    層が無ければ（試験など）名指しの営業日カレンダーだけ（名指しが無ければシフトしない）。
+    """
+
+    def __init__(self, owner: CalendarEventUseCases, user_id: int) -> None:
+        self._owner = owner
+        self._user_id = user_id
+        self._legacy: dict[int | None, BusinessCalendar | None] = {}
+        self._layers: list[DayOffLayers | None] = []
+        self._wrapped: dict[int | None, BusinessCalendar | None] = {}
+
+    def for_event(self, event: CalendarEvent) -> BusinessCalendar | None:
+        schedule = event.recurring_schedule
+        if schedule is None or schedule.recurrence_rule.adjustment is None:
+            return None
+        calendar_id = schedule.recurrence_rule.adjustment.calendar_id
+        if calendar_id in self._wrapped:
+            return self._wrapped[calendar_id]
+        legacy = self._owner._calendar_for(event, self._legacy)
+        if not self._layers:
+            self._layers.append(self._owner._layers_for(self._user_id))
+        layers = self._layers[0]
+        wrapped = (
+            legacy
+            if layers is None
+            else layers.as_business_calendar(
+                event.user_id,
+                legacy.time_zone if legacy else event.time_zone,
+                extra_holidays=legacy.holidays if legacy else (),
+                shift_on_holidays_only=legacy.shift_on_holidays_only if legacy else False,
+            )
+        )
+        self._wrapped[calendar_id] = wrapped
+        return wrapped
 
 
 def _completion_key_of(event: CalendarEvent, occurrence: EventOccurrence) -> OccurrenceKey | None:
