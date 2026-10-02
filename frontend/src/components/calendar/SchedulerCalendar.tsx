@@ -154,6 +154,7 @@ const SchedulerCalendar: React.FC<SchedulerCalendarProps> = ({
             onRescheduleOccurrence={interactions.onRescheduleOccurrence}
             onEditOccurrence={interactions.onEditOccurrence}
             onCreateEvent={interactions.onCreateEvent}
+            onToggleDone={interactions.onToggleDone}
             linkedTasks={linkedTasks}
             dropPreview={dropPreview}
           />
@@ -171,6 +172,7 @@ const SchedulerCalendar: React.FC<SchedulerCalendarProps> = ({
           onCreateEvent={interactions.onCreateEvent}
           onEditOccurrence={interactions.onEditOccurrence}
           onDeleteOccurrence={interactions.onDeleteOccurrence}
+          onToggleDone={interactions.onToggleDone}
           onOpenDeadline={interactions.onOpenDeadline}
           linkedTasks={linkedTasks}
         />

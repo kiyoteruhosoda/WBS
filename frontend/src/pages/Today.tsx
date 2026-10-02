@@ -7,6 +7,8 @@ import { useTheme } from '@mui/material/styles';
 import AddIcon from '@mui/icons-material/Add';
 import UndoIcon from '@mui/icons-material/Undo';
 import RedoIcon from '@mui/icons-material/Redo';
+import CheckBoxIcon from '@mui/icons-material/CheckBox';
+import CheckBoxOutlineBlankIcon from '@mui/icons-material/CheckBoxOutlineBlank';
 import { useNavigate } from 'react-router-dom';
 import { useI18n } from '../i18n';
 import type { TranslationKey } from '../i18n/translations';
@@ -38,7 +40,8 @@ import type { CurrentSnapshot } from '../timer/timerState';
 import { useCurrentTimeEntry, useTimerWrites } from '../timer/useTimer';
 import type { TaskUrgency } from '../today/todayView';
 import {
-  TASKS_SHOWN_FIRST, currentAndNext, entryBands, liveActuals, nextFreeStartMinute, occurrenceStartOf, taskUrgencyOf,
+  TASKS_SHOWN_FIRST, currentAndNext, entryBands, liveActuals, nextFreeStartMinute, occurrenceStartOf, routineTasksOf,
+  taskUrgencyOf,
 } from '../today/todayView';
 import { formatClockDuration, formatExactDuration, formatHours } from '../utils/format';
 
@@ -48,6 +51,8 @@ import { formatClockDuration, formatExactDuration, formatHours } from '../utils/
 //   3. 今日の実績（打刻の合計、タスク別）と全体の KPI
 // スマホ幅では上から この順。広い画面では左にグリッド、右に残りを積む。
 // グリッドではカレンダーの週表示と同じ操作で予定を作る・動かす・直す（task #185、ADR-0022）。
+// 予定の分類が「タスク」の今日の回（毎日の定常業務など）は「今日やること」に並べ、済みのチェックと ▶ を付ける
+// （task #190、ADR-0025）。無い日はこのカードを出さない。
 
 const UNASSIGNED_COLOR = ds.todoGray;
 /** グリッドを開いたとき、今の何分前を上端にするか（狭い画面でも今と次の予定が見える） */
@@ -243,6 +248,91 @@ const BlockStart: React.FC<{
     >
       <PlayIcon size={12} />
     </ButtonBase>
+  );
+};
+
+// ── 今日やること（タスクの分類の回、ADR-0025）─────────────────────────
+
+const RoutineList: React.FC<{
+  occurrences: readonly CalendarOccurrence[];
+  timeZone: string;
+  running: TimeEntry | null;
+  titleOf: (occurrence: CalendarOccurrence) => string;
+  busy: boolean;
+  onToggleDone: (occurrence: CalendarOccurrence) => void;
+  onStart: (taskId: number) => void;
+  onOpen: (occurrence: CalendarOccurrence) => void;
+}> = ({ occurrences, timeZone, running, titleOf, busy, onToggleDone, onStart, onOpen }) => {
+  const { t } = useI18n();
+  const done = occurrences.filter((o) => o.is_done).length;
+  return (
+    <Box sx={{ ...card, gridArea: 'routine' }} data-testid="today-routine">
+      <Box sx={cardHeader}>
+        <Box sx={sectionTitle}>{t('today.routine')}</Box>
+        <Box sx={{ fontSize: 12, color: done === occurrences.length ? ds.success : ds.textSub, fontVariantNumeric: 'tabular-nums' }}>
+          {t('today.routineCount', { done, total: occurrences.length })}
+        </Box>
+      </Box>
+      {occurrences.map((o) => {
+        const intent = o.is_done ? null : occurrenceStartOf(o, running);
+        const startLabel = intent && intent !== 'running'
+          ? t(intent === 'switch' ? 'today.switchTask' : 'today.startTask', { title: titleOf(o) })
+          : null;
+        const startMinute = toZonedPoint(Date.parse(o.start), timeZone).minute;
+        return (
+          <Box key={o.id} sx={{
+            display: 'flex', alignItems: 'center', gap: '4px', pl: '4px', pr: '10px', py: '2px',
+            borderBottom: `1px solid ${ds.hairline}`, '&:last-of-type': { borderBottom: 'none' },
+          }}>
+            <IconButton
+              role="checkbox"
+              aria-checked={o.is_done}
+              aria-label={t(o.is_done ? 'calendar.markUndone' : 'calendar.markDone')}
+              onClick={() => onToggleDone(o)}
+              sx={{ width: 44, height: 44, color: o.is_done ? ds.success : ds.textSub, flexShrink: 0 }}
+            >
+              {o.is_done ? <CheckBoxIcon /> : <CheckBoxOutlineBlankIcon />}
+            </IconButton>
+            <Box
+              component="button"
+              onClick={() => onOpen(o)}
+              sx={{
+                flex: 1, minWidth: 0, p: 0, border: 'none', bgcolor: 'transparent', font: 'inherit', textAlign: 'left',
+                cursor: 'pointer', display: 'flex', alignItems: 'baseline', gap: '8px',
+              }}
+            >
+              <Box component="span" sx={{
+                fontSize: 12, color: ds.textMuted, fontVariantNumeric: 'tabular-nums', flexShrink: 0, minWidth: 34,
+              }}>
+                {o.is_all_day ? t('today.routineAllDay') : formatMinute(startMinute)}
+              </Box>
+              <Box component="span" sx={{
+                fontSize: 14, ...ellipsis, color: o.is_done ? ds.textMuted : ds.text,
+                textDecoration: o.is_done ? 'line-through' : 'none',
+              }}>
+                {o.title}
+              </Box>
+            </Box>
+            {intent === 'running' && (
+              <Box component="span" sx={{ fontSize: 11, color: ds.primary, fontWeight: 700, flexShrink: 0 }}>
+                {t('today.runningTask')}
+              </Box>
+            )}
+            {startLabel && (
+              <IconButton
+                aria-label={startLabel}
+                title={startLabel}
+                disabled={busy}
+                onClick={() => onStart(o.task_id as number)}
+                sx={{ width: 40, height: 40, color: ds.success, flexShrink: 0 }}
+              >
+                <PlayIcon size={16} />
+              </IconButton>
+            )}
+          </Box>
+        );
+      })}
+    </Box>
   );
 };
 
@@ -469,6 +559,8 @@ const Today: React.FC = () => {
   const running = current?.current.entry ?? null;
   const live = liveActuals(summary, snapshot.receivedAt, nowMs);
   const todaySegments = segmentsByDate.get(date) ?? [];
+  const routine = routineTasksOf(occurrencesQuery.data ?? [], date);
+  const hasRoutine = routine.length > 0;
   const { current: currentSegment, next: nextSegment } = currentAndNext(todaySegments, now.date === date ? now.minute : -1);
   const start = (taskId: number) => writes.start.mutate(taskId);
   const taskTitle = (taskId: number | null) => (taskId != null ? linkedTasks.get(taskId)?.title : undefined);
@@ -488,11 +580,17 @@ const Today: React.FC = () => {
       // 1fr の行がグリッドの高さぶん伸びて、ページの下に数百 px の空きができる。
       height: { md: fill.height != null ? `${fill.height}px` : 'calc(100vh - 140px)' }, minHeight: { md: 560 },
       gridTemplateColumns: { xs: 'minmax(0, 1fr)', md: 'minmax(0, 1fr) minmax(300px, 380px)' },
-      gridTemplateAreas: {
-        xs: '"now" "grid" "tasks" "actuals" "kpi"',
-        md: '"grid now" "grid tasks" "grid actuals" "grid kpi" "grid ."',
-      },
-      gridTemplateRows: { md: 'auto auto auto auto 1fr' },
+      gridTemplateAreas: hasRoutine
+        ? {
+          xs: '"now" "routine" "grid" "tasks" "actuals" "kpi"',
+          md: '"grid now" "grid routine" "grid tasks" "grid actuals" "grid kpi" "grid ."',
+        }
+        : {
+          xs: '"now" "grid" "tasks" "actuals" "kpi"',
+          md: '"grid now" "grid tasks" "grid actuals" "grid kpi" "grid ."',
+        },
+      // 右の列の行は中身の高さ（auto だと、overflow: hidden のカードは最小が 0 とみなされ、行が詰められて重なる）
+      gridTemplateRows: { md: `${'max-content '.repeat(hasRoutine ? 5 : 4)}1fr` },
     }}>
       <NowPanel
         snapshot={current}
@@ -505,6 +603,19 @@ const Today: React.FC = () => {
         onStart={start}
         onStop={() => writes.stop.mutate()}
       />
+
+      {hasRoutine && (
+        <RoutineList
+          occurrences={routine}
+          timeZone={timeZone}
+          running={running}
+          titleOf={(o) => taskTitle(o.task_id) ?? o.title}
+          busy={writes.busy}
+          onToggleDone={editing.toggleDone}
+          onStart={start}
+          onOpen={editing.openEdit}
+        />
+      )}
 
       <Box sx={{
         ...card, gridArea: 'grid', display: 'flex', flexDirection: 'column',
@@ -556,6 +667,7 @@ const Today: React.FC = () => {
             onCreateEvent={editing.openCreate}
             onCreateRange={(r) => editing.openCreate(r.date, r.startMinute, r.endMinute)}
             onRescheduleOccurrence={editing.reschedule}
+            onToggleDone={editing.toggleDone}
             linkedTasks={linkedTasks}
             bands={bands}
             scrollLeadMinutes={SCROLL_LEAD_MINUTES}

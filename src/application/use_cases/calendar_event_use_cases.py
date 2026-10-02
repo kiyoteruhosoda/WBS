@@ -4,6 +4,7 @@
 - 作る・直す: 単発／繰り返し、すべて・この回以降・この回だけ
 - 回の操作: 飛ばす・飛ばすの取り消し・移動・移動の取り消し
 - 消す: 予定ごと・この回以降
+- 済み: 分類がタスクの予定の回に済みを付ける・外す（ADR-0025）
 
 どの操作も ``user_id`` で持ち主を確かめる（他人の予定は「無い」として扱う）。
 時刻は UTC の瞬間 ＋ 長さ（分）で受け取り、作成・更新の時刻は ``now``
@@ -12,8 +13,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
-from datetime import date, datetime, timedelta
+from collections.abc import Callable, Iterable
+from datetime import date, datetime, time, timedelta
 
 from src.application.dto.calendar_event_dto import (
     ChangeFollowingOccurrencesCommand,
@@ -21,6 +22,7 @@ from src.application.dto.calendar_event_dto import (
     CreateSingleEventCommand,
     MoveOccurrenceCommand,
     OccurrenceCommand,
+    OccurrenceDoneCommand,
     OccurrenceView,
     PlannedAlarm,
     RescheduleSingleEventCommand,
@@ -33,15 +35,24 @@ from src.application.ports.task_lookup import OwnedTaskLookup
 from src.application.ports.unit_of_work import UnitOfWork
 from src.application.use_cases.ownership import owned_by
 from src.domain.entities.business_calendar import BusinessCalendar
-from src.domain.entities.calendar_event import CalendarEvent
+from src.domain.entities.calendar_event import (
+    PERIOD_OVERLAP_MARGIN_DAYS,
+    CalendarEvent,
+    ExceptionType,
+)
+from src.domain.entities.occurrence_completion import OccurrenceCompletion
 from src.domain.exceptions import NotFoundError, ValidationError
 from src.domain.repositories.business_calendar_repository import BusinessCalendarRepository
 from src.domain.repositories.calendar_event_repository import CalendarEventRepository
+from src.domain.repositories.occurrence_completion_repository import (
+    OccurrenceCompletionRepository,
+)
 from src.domain.services.occurrence_display_projection import to_display_time_zone
 from src.domain.services.occurrence_expander import OccurrenceExpander
 from src.domain.value_objects.event_alarm import ALARM_OFFSETS_MINUTES, EventAlarm
 from src.domain.value_objects.event_schedule import (
     EventOccurrence,
+    OccurrenceKey,
     RecurringEventSchedule,
     SingleEventSchedule,
 )
@@ -93,8 +104,11 @@ class CalendarEventUseCases:
         *,
         expander: OccurrenceExpander | None = None,
         now: Callable[[], datetime] = utcnow,
+        completions: OccurrenceCompletionRepository | None = None,
     ) -> None:
         self._events = events
+        # 回の済み（ADR-0025）。無ければ済みは出さない（どの回も済みでない）。
+        self._completions = completions
         self._calendars = calendars
         self._tasks = tasks
         self._uow = unit_of_work
@@ -137,6 +151,8 @@ class CalendarEventUseCases:
         ずらさないので、閲覧者のその日の 0:00 になる）。
         """
         viewer = TimeZoneId(viewer_time_zone)
+        pairs = self._expand(user_id, from_date, to_date, viewer_time_zone)
+        done = self._done_keys(event for event, _ in pairs if event.is_task())
         return [
             OccurrenceView(
                 event_id=event.id,
@@ -155,8 +171,11 @@ class CalendarEventUseCases:
                 is_overridden=occurrence.is_overridden,
                 series_key=occurrence.series_key if event.is_recurring() else None,
                 alarm=event.alarm,
+                event_type=event.event_type,
+                is_done=event.is_task()
+                and (event.id, _completion_key_of(event, occurrence)) in done,
             )
-            for event, occurrence in self._expand(user_id, from_date, to_date, viewer_time_zone)
+            for event, occurrence in pairs
             if event.id is not None
         ]
 
@@ -319,6 +338,7 @@ class CalendarEventUseCases:
             color_key=cmd.color_key,
             task_id=cmd.task_id,
             alarm=_alarm_or_default(cmd.alarm),
+            event_type=cmd.event_type,
         )
         saved = self._events.save(event)
         self._uow.commit()
@@ -338,6 +358,7 @@ class CalendarEventUseCases:
             color_key=cmd.color_key,
             task_id=cmd.task_id,
             alarm=_alarm_or_default(cmd.alarm),
+            event_type=cmd.event_type,
         )
         saved = self._events.save(event)
         self._uow.commit()
@@ -357,6 +378,7 @@ class CalendarEventUseCases:
             description=cmd.description,
             task_id=cmd.task_id,
             updated_at=now,
+            event_type=cmd.event_type,
         )
         if event.is_single() and cmd.start_utc is not None and cmd.duration_minutes is not None:
             event.reschedule_single(SingleEventSchedule(cmd.start_utc, cmd.duration_minutes), now)
@@ -392,11 +414,15 @@ class CalendarEventUseCases:
             description=cmd.description,
             task_id=cmd.task_id,
             updated_at=now,
+            event_type=cmd.event_type,
         )
         anchor = cmd.anchor_utc if cmd.anchor_utc is not None else event.recurring_schedule.anchor_utc
+        old_start_time = event.series_start_time()
         event.change_recurrence_schedule(
             RecurringEventSchedule(anchor, cmd.duration_minutes, cmd.recurrence_rule), now
         )
+        # 系列の開始時刻が変わったら、例外・移動と同じく済みの鍵も付け替える。
+        self._rekey_completions(event, old_start_time, event.series_start_time())
         event.set_color(cmd.color_key, now)
         event.set_alarm(_alarm_or(cmd.alarm, event.alarm), now)
         saved = self._events.save(event)
@@ -429,9 +455,26 @@ class CalendarEventUseCases:
             color_key=cmd.color_key,
             task_id=task_id,
             alarm=_alarm_or(cmd.alarm, event.alarm),
+            event_type=cmd.event_type or event.event_type,
         )
+        # この回以降の済みは新しい系列へ移す（鍵の時刻は新しい系列の開始時刻）。
+        carried = [
+            c for c in self._completions_of(event)
+            if c.occurrence_key is not None and c.occurrence_key.date >= cmd.from_occurrence_key.date
+        ]
         self._end_series_before(event, cmd.from_occurrence_key.date, now)
         saved = self._events.save(new_series)
+        if carried and saved.is_task():
+            assert saved.id is not None and self._completions is not None
+            new_time = saved.series_start_time()
+            self._completions.replace_for_event(
+                saved.id,
+                [
+                    c.rekeyed(OccurrenceKey(c.occurrence_key.date, new_time), saved.id)
+                    for c in carried
+                    if c.occurrence_key is not None
+                ],
+            )
         self._uow.commit()
         return saved
 
@@ -456,10 +499,21 @@ class CalendarEventUseCases:
             color_key=cmd.color_key,
             task_id=task_id,
             alarm=_alarm_or(cmd.alarm, event.alarm),
+            event_type=cmd.event_type or event.event_type,
         )
         event.skip_occurrence(cmd.occurrence_key, now)
         self._events.save(event)
         saved = self._events.save(single)
+        # 切り出した回に済みが付いていたら、新しい単発へ移す（飛ばした回には残さない）。
+        completions = self._completions_of(event)
+        moved = [c for c in completions if c.occurrence_key == cmd.occurrence_key]
+        if moved:
+            assert event.id is not None and saved.id is not None and self._completions is not None
+            self._completions.replace_for_event(
+                event.id, [c for c in completions if c.occurrence_key != cmd.occurrence_key]
+            )
+            if saved.is_task():
+                self._completions.replace_for_event(saved.id, [moved[0].rekeyed(None, saved.id)])
         self._uow.commit()
         return saved
 
@@ -516,11 +570,52 @@ class CalendarEventUseCases:
         self._uow.commit()
         return saved
 
+    # ── 済み（ADR-0025）────────────────────────────────────────────────
+
+    def set_occurrence_done(self, cmd: OccurrenceDoneCommand) -> bool:
+        """タスクの分類の予定の回に済みを付ける（``done``）・外す。済みかどうかを返す。
+
+        予定の版は進めない（済みは予定の中身ではない）。付けるのも外すのも、もうそうなって
+        いればそのまま（何度送っても同じ）。
+
+        - 予定の分類が「予定」なら ``ValidationError``
+        - 単発は鍵なし（``occurrence_key`` が ``None``）、繰り返しは鍵が要る
+        - 繰り返しの鍵は、その系列に本当にある回（飛ばした回は無い。移した回は元の鍵で指す）
+        """
+        if self._completions is None:
+            raise ValidationError("occurrence completions are not available")
+        event = self._owned(cmd.event_id, cmd.user_id)
+        assert event.id is not None
+        if not event.is_task():
+            raise ValidationError("only task-type events can be marked as done")
+        key = cmd.occurrence_key
+        if event.is_single():
+            if key is not None:
+                raise ValidationError("a single event has no occurrence key")
+        else:
+            if key is None:
+                raise ValidationError("a recurring event needs the occurrence key")
+            if not self._has_occurrence(event, key):
+                raise NotFoundError("Occurrence", f"{event.id}:{key.date.isoformat()}")
+
+        completions = self._completions_of(event)
+        others = [c for c in completions if c.occurrence_key != key]
+        already = len(others) != len(completions)
+        if cmd.done and not already:
+            self._completions.replace_for_event(
+                event.id, [*completions, OccurrenceCompletion(event.id, key, self._now())]
+            )
+        elif not cmd.done and already:
+            self._completions.replace_for_event(event.id, others)
+        self._uow.commit()
+        return cmd.done
+
     # ── 消す ────────────────────────────────────────────────────────────
 
     def delete_event(self, event_id: int, user_id: int, expected_version: int | None = None) -> None:
         event = self._owned(event_id, user_id)
         event.ensure_version(expected_version)
+        self._forget_completions(event_id)
         self._events.delete(event_id)
         self._uow.commit()
 
@@ -538,12 +633,72 @@ class CalendarEventUseCases:
     def _end_series_before(self, event: CalendarEvent, from_date: date, now: datetime) -> None:
         """系列を ``from_date`` の前日で終える。先頭の回より前になるなら系列ごと消す。"""
         new_end = _shift_clamped(from_date, -1)
+        assert event.id is not None
         if from_date <= event.series_start_date():
-            assert event.id is not None
+            self._forget_completions(event.id)
             self._events.delete(event.id)
             return
         event.change_recurrence_end_date(new_end, now)
         self._events.save(event)
+        # 終えた後ろの回の済みは消す（もう出ない回）。
+        completions = self._completions_of(event)
+        kept = [
+            c for c in completions
+            if c.occurrence_key is None or c.occurrence_key.date < from_date
+        ]
+        if len(kept) != len(completions):
+            assert self._completions is not None
+            self._completions.replace_for_event(event.id, kept)
+
+    def _completions_of(self, event: CalendarEvent) -> list[OccurrenceCompletion]:
+        if self._completions is None or event.id is None:
+            return []
+        return self._completions.find_by_events([event.id])
+
+    def _forget_completions(self, event_id: int) -> None:
+        # ⚠ SQLite は外部キーの ON DELETE CASCADE を効かせていないので、予定より先に消す。
+        if self._completions is not None:
+            self._completions.replace_for_event(event_id, [])
+
+    def _done_keys(
+        self, events: Iterable[CalendarEvent]
+    ) -> set[tuple[int, OccurrenceKey | None]]:
+        if self._completions is None:
+            return set()
+        ids = {e.id for e in events if e.id is not None}
+        return {(c.event_id, c.occurrence_key) for c in self._completions.find_by_events(ids)}
+
+    def _rekey_completions(self, event: CalendarEvent, old_time: time, new_time: time) -> None:
+        if old_time == new_time or self._completions is None or event.id is None:
+            return
+        completions = self._completions.find_by_events([event.id])
+        if not any(c.occurrence_key is not None and c.occurrence_key.time == old_time for c in completions):
+            return
+        self._completions.replace_for_event(
+            event.id,
+            [
+                c.rekeyed(OccurrenceKey(c.occurrence_key.date, new_time))
+                if c.occurrence_key is not None and c.occurrence_key.time == old_time
+                else c
+                for c in completions
+            ],
+        )
+
+    def _has_occurrence(self, event: CalendarEvent, key: OccurrenceKey) -> bool:
+        """``key`` が系列に今ある回か（飛ばした回・候補でない日は無い）。"""
+        if any(m.occurrence_key == key for m in event.moves) and not any(
+            e.occurrence_key == key and e.type == ExceptionType.SKIP for e in event.exceptions
+        ):
+            return True
+        # 営業日シフトで回は候補日から動きうるので、候補日の前後を広めに展開して鍵で探す。
+        calendar = self._calendar_for(event, {})
+        found = self._expander.expand(
+            event,
+            _shift_clamped(key.date, -PERIOD_OVERLAP_MARGIN_DAYS),
+            _shift_clamped(key.date, PERIOD_OVERLAP_MARGIN_DAYS),
+            calendar,
+        )
+        return any(o.series_key == key for o in found)
 
     def _owned(self, event_id: int, user_id: int) -> CalendarEvent:
         return owned_by(
@@ -591,6 +746,11 @@ class CalendarEventUseCases:
             found = self._calendars.find_by_id(calendar_id)
             cache[calendar_id] = found if found is not None and found.user_id == event.user_id else None
         return cache[calendar_id]
+
+
+def _completion_key_of(event: CalendarEvent, occurrence: EventOccurrence) -> OccurrenceKey | None:
+    """済みを引く鍵。単発は ``None``（投影で ``series_key`` が埋まっていても使わない）。"""
+    return occurrence.series_key if event.is_recurring() else None
 
 
 __all__ = ["CalendarEventUseCases"]

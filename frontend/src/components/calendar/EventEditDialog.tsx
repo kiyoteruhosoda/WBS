@@ -1,26 +1,32 @@
 import React, { useState } from 'react';
 import {
   Alert, Autocomplete, Box, Button, Checkbox, Collapse, Dialog, DialogActions, DialogContent, DialogTitle,
-  FormControlLabel, MenuItem, Switch, TextField, useMediaQuery,
+  FormControlLabel, MenuItem, Switch, TextField, ToggleButton, ToggleButtonGroup, useMediaQuery,
 } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import NotificationsNoneIcon from '@mui/icons-material/NotificationsNone';
+import EventOutlinedIcon from '@mui/icons-material/EventOutlined';
+import TaskAltIcon from '@mui/icons-material/TaskAlt';
 import { useI18n } from '../../i18n';
 import type { TranslationKey } from '../../i18n/translations';
-import type { BusinessCalendar, CalendarOccurrence, Task, WeekdayCode } from '../../types';
+import type { BusinessCalendar, CalendarEventType, CalendarOccurrence, Task, WeekdayCode } from '../../types';
 import type {
   AdjustmentDateType, AdjustmentDirection, AlarmOffsetField, EventForm, EventFormContext, FormError, RecurringScope,
   RepeatType,
 } from '../../calendar/eventForm';
 import {
-  ALARM_OFFSETS, EVENT_COLOR_KEYS, WEEK_INDEXES, WEEKDAY_CODES, endOf, endTimeOptions, isAlarmOn, planEventSave,
-  startTimeOptions, withAlarmOffset, withAlarmOn, withEndMinute, withRepeat, withStartMinute,
+  ALARM_OFFSETS, EVENT_COLOR_KEYS, WEEK_INDEXES, WEEKDAY_CODES, endOf, endTimeOptions, isAlarmOn, needsNewTask,
+  newTaskPayload, planEventSave, startTimeOptions, withAlarmOffset, withAlarmOn, withEndMinute, withLinkedTask, withRepeat,
+  withStartMinute,
 } from '../../calendar/eventForm';
 import { errorDetailOf, isConflictError } from '../../calendar/calendarRequests';
 import { eventColor } from '../../calendar/calendarColors';
 import { formatMinute } from '../../calendar/zonedTime';
 import { sendCalendarRequests } from '../../api/calendar';
+import { createTask } from '../../api/tasks';
+import { pickableProjects } from '../../projects/projectScope';
+import { useProjectScope } from '../../projects/useProjectScope';
 import RecurringScopeDialog from './RecurringScopeDialog';
 
 export interface EventEditTarget {
@@ -46,6 +52,12 @@ const formErrorKeys: Record<FormError, TranslationKey> = {
   titleRequired: 'calendar.errorTitleRequired',
   weekdayRequired: 'calendar.errorWeekdayRequired',
   endDateBeforeStart: 'calendar.errorEndDateBeforeStart',
+  taskRequired: 'calendar.errorTaskRequired',
+};
+
+const eventTypeKeys: Record<CalendarEventType, TranslationKey> = {
+  EVENT: 'calendar.eventTypeEVENT',
+  TASK: 'calendar.eventTypeTASK',
 };
 
 const repeatKeys: Record<RepeatType, TranslationKey> = {
@@ -108,7 +120,11 @@ const EventEditDialog: React.FC<Props> = ({
   const theme = useTheme();
   const fullScreen = useMediaQuery(theme.breakpoints.down('sm'));
   const c = theme.palette.calendar;
-  const [form, setForm] = useState<EventForm>(target.form);
+  // 「同じ名前のタスク」のプロジェクトは、サイドバーで絞っているプロジェクトを既定にする（タスクの新規作成と同じ）
+  const { scope, projects } = useProjectScope();
+  const [form, setForm] = useState<EventForm>(() => (
+    typeof scope === 'number' && target.form.newTaskProjectId == null ? { ...target.form, newTaskProjectId: scope } : target.form
+  ));
   const { context } = target;
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -129,7 +145,18 @@ const EventEditDialog: React.FC<Props> = ({
     if (plan.kind === 'needsScope') { setAskScope(true); return; }
     setSaving(true);
     try {
-      await sendCalendarRequests(plan.requests);
+      let { requests } = plan;
+      // 分類がタスクでタスクを選んでいなければ、送る直前に同じ名前のタスクを作って結ぶ（ADR-0025）。
+      // 作ったタスクは入力に残す（予定の保存に失敗してやり直しても、もう 1 つ作らない）。
+      if (needsNewTask(form)) {
+        const task = await createTask(newTaskPayload(form));
+        const linked = withLinkedTask(form, task.id);
+        setForm(linked);
+        const again = planEventSave(linked, context, scope);
+        if (again.kind !== 'requests') return;
+        requests = again.requests;
+      }
+      await sendCalendarRequests(requests);
       onSaved();
     } catch (e) {
       if (isConflictError(e)) { onConflict(); return; }
@@ -145,6 +172,7 @@ const EventEditDialog: React.FC<Props> = ({
   const weekIndexLabel = (n: number) => (n === -1 ? t('calendar.nthWeekLast') : t('calendar.nthWeek', { n }));
   const weekdayLabel = (code: WeekdayCode) => weekdays[WEEKDAY_CODES.indexOf(code)];
   const selectedTask = tasks.find((task) => task.id === form.taskId) ?? null;
+  const isTask = form.eventType === 'TASK';
   const taskOptions = tasks.filter((task) => !task.deleted_at);
   const alarmOn = isAlarmOn(form);
   const alarmSummary = alarmOn && form.alarm
@@ -165,6 +193,78 @@ const EventEditDialog: React.FC<Props> = ({
             onChange={(e) => update({ title: e.target.value })}
             slotProps={{ htmlInput: { 'data-testid': 'event-title', maxLength: 500 } }}
           />
+
+          {/* 分類（ADR-0025）。タスクは回ごとに済みを付け、WBS のタスクに結ぶ */}
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            <ToggleButtonGroup
+              exclusive
+              fullWidth
+              size="small"
+              color="primary"
+              value={form.eventType}
+              aria-label={t('calendar.eventType')}
+              onChange={(_, value: CalendarEventType | null) => { if (value) update({ eventType: value }); }}
+            >
+              {(Object.keys(eventTypeKeys) as CalendarEventType[]).map((type) => (
+                <ToggleButton key={type} value={type} data-testid={`event-type-${type}`} sx={{ gap: '6px', minHeight: 40 }}>
+                  {type === 'TASK' ? <TaskAltIcon sx={{ fontSize: 18 }} /> : <EventOutlinedIcon sx={{ fontSize: 18 }} />}
+                  {t(eventTypeKeys[type])}
+                </ToggleButton>
+              ))}
+            </ToggleButtonGroup>
+            {isTask && (
+              <>
+                <Box sx={{ fontSize: 12, color: 'text.secondary' }}>{t('calendar.eventTypeHint')}</Box>
+                <Autocomplete
+                  options={taskOptions}
+                  value={selectedTask}
+                  onChange={(_, task) => update({ taskId: task?.id ?? null })}
+                  getOptionLabel={(task) => task.title}
+                  isOptionEqualToValue={(a, b) => a.id === b.id}
+                  renderInput={(params) => <TextField {...params} label={t('calendar.taskToLink')} />}
+                />
+                {form.taskId == null && (
+                  <FormControlLabel
+                    control={(
+                      <Checkbox
+                        checked={form.linkNewTask}
+                        onChange={(e) => update({ linkNewTask: e.target.checked })}
+                        data-testid="event-link-new-task"
+                      />
+                    )}
+                    label={form.title.trim()
+                      ? t('calendar.linkNewTaskNamed', { title: form.title.trim() })
+                      : t('calendar.linkNewTask')}
+                  />
+                )}
+                {/* 作るタスクのプロジェクト（ADR-0024。作るのは根のタスクなので選べる） */}
+                {form.taskId == null && form.linkNewTask && (
+                  <TextField
+                    select
+                    label={t('calendar.newTaskProject')}
+                    value={form.newTaskProjectId == null ? '' : String(form.newTaskProjectId)}
+                    onChange={(e) => update({ newTaskProjectId: e.target.value === '' ? null : Number(e.target.value) })}
+                    slotProps={{
+                      inputLabel: { shrink: true },
+                      select: {
+                        displayEmpty: true,
+                        // 選んだ後は道筋で出す（同じ名前の子プロジェクトが別の枝にあっても取り違えない）
+                        renderValue: (v) => (v === '' ? t('scope.none') : projects.find((p) => String(p.id) === v)?.path ?? ''),
+                      },
+                    }}
+                    data-testid="event-new-task-project"
+                  >
+                    <MenuItem value="">{t('scope.none')}</MenuItem>
+                    {pickableProjects(projects, form.newTaskProjectId).map(({ project, depth }) => (
+                      <MenuItem key={project.id} value={String(project.id)} sx={{ pl: `${16 + depth * 14}px` }}>
+                        {project.name}
+                      </MenuItem>
+                    ))}
+                  </TextField>
+                )}
+              </>
+            )}
+          </Box>
           <TextField label={t('calendar.fieldLocation')} value={form.location} onChange={(e) => update({ location: e.target.value })} />
           <TextField
             label={t('calendar.fieldMemo')}
@@ -495,15 +595,15 @@ const EventEditDialog: React.FC<Props> = ({
             </Box>
           </Section>
 
-          {/* タスク（WBS のタスクを結ぶ。打刻の既定のタスクになる） */}
-          <Autocomplete
+          {/* タスク（WBS のタスクを結ぶ。打刻の既定のタスクになる）。分類がタスクなら上の欄で選ぶ */}
+          {!isTask && <Autocomplete
             options={taskOptions}
             value={selectedTask}
             onChange={(_, task) => update({ taskId: task?.id ?? null })}
             getOptionLabel={(task) => task.title}
             isOptionEqualToValue={(a, b) => a.id === b.id}
             renderInput={(params) => <TextField {...params} label={t('calendar.task')} />}
-          />
+          />}
         </DialogContent>
         <DialogActions sx={{ px: '24px', py: '12px' }}>
           {deletable && onDelete && (

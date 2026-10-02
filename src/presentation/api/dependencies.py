@@ -46,6 +46,9 @@ from src.infrastructure.repositories.logout_delivery_repository import (
     SqlAlchemyLogoutDeliveryRepository,
 )
 from src.infrastructure.repositories.milestone_repository import SqlAlchemyMilestoneRepository
+from src.infrastructure.repositories.occurrence_completion_repository import (
+    SqlAlchemyOccurrenceCompletionRepository,
+)
 from src.infrastructure.repositories.project_repository import SqlAlchemyProjectRepository
 from src.infrastructure.repositories.task_repository import SqlAlchemyTaskRepository
 from src.infrastructure.repositories.time_entry_repository import SqlAlchemyTimeEntryRepository
@@ -213,6 +216,7 @@ def get_calendar_event_use_cases(db: DbDep) -> CalendarEventUseCases:
         calendars=SqlAlchemyBusinessCalendarRepository(db),
         tasks=SqlAlchemyTaskRepository(db),
         unit_of_work=db,
+        completions=SqlAlchemyOccurrenceCompletionRepository(db),
     )
 
 CalendarEventUseCasesDep = Annotated[CalendarEventUseCases, Depends(get_calendar_event_use_cases)]

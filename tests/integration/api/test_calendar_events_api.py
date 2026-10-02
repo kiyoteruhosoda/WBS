@@ -123,6 +123,9 @@ def test_single_event_is_listed_in_the_viewers_time_zone(client) -> None:
             "notify_1_min": True,
             "notify_at_start": True,
         },
+        # 作るときに分類を省くと予定（ADR-0025）
+        "event_type": "EVENT",
+        "is_done": False,
     }
 
 

@@ -1,6 +1,8 @@
 import React from 'react';
 import { Box, IconButton } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
+import CheckBoxIcon from '@mui/icons-material/CheckBox';
+import CheckBoxOutlineBlankIcon from '@mui/icons-material/CheckBoxOutlineBlank';
 import AddIcon from '@mui/icons-material/Add';
 import CloseIcon from '@mui/icons-material/Close';
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
@@ -16,7 +18,9 @@ import type { CalendarInteractions } from './calendarInteractions';
 import type { CalendarDeadline } from '../../calendar/taskDeadlines';
 import DeadlineChip from './DeadlineChip';
 
-interface Props extends Pick<CalendarInteractions, 'onCreateEvent' | 'onEditOccurrence' | 'onDeleteOccurrence' | 'onOpenDeadline'> {
+interface Props extends Pick<
+  CalendarInteractions, 'onCreateEvent' | 'onEditOccurrence' | 'onDeleteOccurrence' | 'onOpenDeadline' | 'onToggleDone'
+> {
   date: string;
   segments: readonly DaySegment[];
   deadlines: readonly CalendarDeadline[];
@@ -31,7 +35,7 @@ interface Props extends Pick<CalendarInteractions, 'onCreateEvent' | 'onEditOccu
 /** 選んだ日の予定の一覧（移植元 CalendarPage.xaml の SelectedDayPanel）。 */
 const SelectedDayPanel: React.FC<Props> = ({
   date, segments, deadlines, holidays, timeZone, selectedSegmentKey, onClose, onCreateEvent, onEditOccurrence, onDeleteOccurrence,
-  onOpenDeadline, linkedTasks,
+  onOpenDeadline, onToggleDone, linkedTasks,
 }) => {
   const { t, weekdays } = useI18n();
   const c = useTheme().palette.calendar;
@@ -92,8 +96,24 @@ const SelectedDayPanel: React.FC<Props> = ({
                 }}
               >
                 <Box sx={{ width: 4, height: 32, borderRadius: '2px', bgcolor: occurrenceColor(o, linkedTasks), flexShrink: 0 }} />
-                <Box sx={{ flex: 1, minWidth: 0 }}>
-                  <Box sx={{ fontSize: 14, color: c.textPrimary, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {/* タスクの分類の回は済みのチェック（ADR-0025） */}
+                {o.event_type === 'TASK' && (
+                  <IconButton
+                    role="checkbox"
+                    aria-checked={o.is_done}
+                    aria-label={t(o.is_done ? 'calendar.markUndone' : 'calendar.markDone')}
+                    disabled={!onToggleDone}
+                    onClick={() => onToggleDone?.(o)}
+                    sx={{ ...iconButton, ml: '-8px', mr: '-4px', color: o.is_done ? c.blue : c.textSecondary }}
+                  >
+                    {o.is_done ? <CheckBoxIcon /> : <CheckBoxOutlineBlankIcon />}
+                  </IconButton>
+                )}
+                <Box sx={{ flex: 1, minWidth: 0, opacity: o.is_done ? 0.6 : 1 }}>
+                  <Box sx={{
+                    fontSize: 14, color: c.textPrimary, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                    textDecoration: o.is_done ? 'line-through' : 'none',
+                  }}>
                     {o.title}
                   </Box>
                   {taskLabel && (

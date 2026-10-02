@@ -4,8 +4,9 @@
 // - 予定のブロックから Start するときの意図（そのタスクで始める・切り替える・もう走っている）
 // - 今日の実績に、要約を受け取ってから走った分を足す（1 秒ごとに問い合わせない）
 // - 走っていないときに「いまの予定・次の予定」を出す
+// - 今日のタスクの分類の回（定常業務など）を「今日やること」に並べる（ADR-0025）
 
-import type { Task, TaskActual, TimeEntry, TodaySummary } from '../types';
+import type { CalendarOccurrence, Task, TaskActual, TimeEntry, TodaySummary } from '../types';
 import type { DaySegment } from '../calendar/daySegments';
 import type { DayBand } from '../calendar/weekLayout';
 import { MINUTES_PER_DAY, addDays, formatMinute, fromZonedPoint, toZonedPoint } from '../calendar/zonedTime';
@@ -144,3 +145,12 @@ export const nextFreeStartMinute = (
   }
   return Math.max(0, Math.min(first, latest));
 };
+
+/**
+ * 「今日やること」: その日（閲覧者のローカル日）のタスクの分類の回。終日の回が先、あとは始まりの順。
+ * 済みの回も並べたまま（チェックが付く）。
+ */
+export const routineTasksOf = (occurrences: readonly CalendarOccurrence[], date: string): CalendarOccurrence[] =>
+  occurrences
+    .filter((o) => o.event_type === 'TASK' && o.date === date)
+    .sort((a, b) => Number(b.is_all_day) - Number(a.is_all_day) || Date.parse(a.start) - Date.parse(b.start) || a.id.localeCompare(b.id));

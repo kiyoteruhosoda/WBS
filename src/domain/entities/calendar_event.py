@@ -4,6 +4,10 @@
 ``exceptions``（飛ばす／内容の上書き）と ``moves``（別の日時へ移した回）で持つ。
 回は ``OccurrenceKey``（予定のタイムゾーンでの候補日 ＋ 系列の開始時刻）で指す。
 
+分類（``event_type``、ADR-0025）は「予定」か「タスク」（定常業務など、回ごとに済みを付けるもの）。
+タスクの分類の予定は WBS のタスクに結ぶ（``task_id`` が要る）。回の済みは別の表
+（``OccurrenceCompletion``）で持ち、予定の版は進めない。
+
 更新のたびに ``version`` が 1 つ進む（楽観ロック）。時刻は呼び出し側が渡す
 （ドメインは時計を持たない）。
 """
@@ -36,6 +40,15 @@ PERIOD_OVERLAP_MARGIN_DAYS = 31
 class EventKind(enum.StrEnum):
     SINGLE = "SINGLE"
     RECURRING = "RECURRING"
+
+
+class EventType(enum.StrEnum):
+    """予定の分類（ADR-0025）。繰り返しの仕組みはどちらも同じ。"""
+
+    EVENT = "EVENT"
+    """予定（会議・外出など。済みは付けない）。"""
+    TASK = "TASK"
+    """タスク（毎日の定常業務など）。回ごとに済みを付け、WBS のタスクに結ぶ。"""
 
 
 class ExceptionType(enum.StrEnum):
@@ -116,6 +129,8 @@ class CalendarEvent:
     alarm: EventAlarm | None = None
     """通知の設定（ADR-0021）。``None`` は通知を持たない。繰り返しは系列で 1 つで、移した回も
     同じ設定で知らせる（移植元と同じ。回ごとの上書きは持たない）。"""
+    event_type: EventType = EventType.EVENT
+    """分類（ADR-0025）。``TASK`` は ``task_id`` が要る。"""
     exceptions: list[EventException] = field(default_factory=list)
     moves: list[EventMove] = field(default_factory=list)
     version: int = 1
@@ -133,6 +148,7 @@ class CalendarEvent:
             if self.recurring_schedule is None or self.single_schedule is not None:
                 raise ValidationError("a recurring event needs exactly a recurring schedule")
             self._ensure_recurrence_starts_on_or_before_end(self.recurring_schedule)
+        self._ensure_task_type_has_task()
 
     # ── 作る ────────────────────────────────────────────────────────────
 
@@ -150,12 +166,14 @@ class CalendarEvent:
         color_key: EventColorKey = EventColorKey.DEFAULT,
         task_id: int | None = None,
         alarm: EventAlarm | None = None,
+        event_type: EventType = EventType.EVENT,
     ) -> CalendarEvent:
         return cls(
             id=None, user_id=user_id, kind=EventKind.SINGLE, title=title,
             time_zone=time_zone, single_schedule=schedule,
             location=location, description=description, color_key=color_key,
-            task_id=task_id, alarm=alarm, created_at=created_at, updated_at=created_at,
+            task_id=task_id, alarm=alarm, event_type=event_type,
+            created_at=created_at, updated_at=created_at,
         )
 
     @classmethod
@@ -172,12 +190,14 @@ class CalendarEvent:
         color_key: EventColorKey = EventColorKey.DEFAULT,
         task_id: int | None = None,
         alarm: EventAlarm | None = None,
+        event_type: EventType = EventType.EVENT,
     ) -> CalendarEvent:
         return cls(
             id=None, user_id=user_id, kind=EventKind.RECURRING, title=title,
             time_zone=time_zone, recurring_schedule=schedule,
             location=location, description=description, color_key=color_key,
-            task_id=task_id, alarm=alarm, created_at=created_at, updated_at=created_at,
+            task_id=task_id, alarm=alarm, event_type=event_type,
+            created_at=created_at, updated_at=created_at,
         )
 
     # ── 問い合わせ ──────────────────────────────────────────────────────
@@ -187,6 +207,15 @@ class CalendarEvent:
 
     def is_recurring(self) -> bool:
         return self.kind == EventKind.RECURRING
+
+    def is_task(self) -> bool:
+        """分類がタスク（回ごとに済みを付けられる）か。"""
+        return self.event_type == EventType.TASK
+
+    def series_start_time(self) -> time:
+        """繰り返しの回の鍵に使う系列の開始時刻（予定のタイムゾーンの壁時計）。"""
+        schedule = self._require_recurring()
+        return local_time_of(schedule.anchor_utc, self.time_zone.zone)
 
     def has_exception_for(self, key: OccurrenceKey) -> bool:
         return any(e.occurrence_key == key for e in self.exceptions)
@@ -257,12 +286,18 @@ class CalendarEvent:
         description: str | None,
         task_id: int | None,
         updated_at: datetime,
+        event_type: EventType | None = None,
     ) -> None:
+        """詳細を置き換える。``event_type`` が ``None`` なら分類は今のまま。"""
         _check_title(title)
+        new_type = self.event_type if event_type is None else event_type
+        if new_type == EventType.TASK and task_id is None:
+            raise ValidationError("a task-type event must be linked to a task")
         self.title = title
         self.location = location
         self.description = description
         self.task_id = task_id
+        self.event_type = new_type
         self._touch(updated_at)
 
     def set_color(self, color_key: EventColorKey, updated_at: datetime) -> None:
@@ -371,6 +406,11 @@ class CalendarEvent:
         if anchor_local_date > schedule.recurrence_rule.end_date:
             raise ValidationError("start date must be on or before the recurrence end date")
 
+    def _ensure_task_type_has_task(self) -> None:
+        # 不変条件: タスクの分類の予定は WBS のタスクに結ぶ（打刻・締めで実績を確定するのに要る）。
+        if self.event_type == EventType.TASK and self.task_id is None:
+            raise ValidationError("a task-type event must be linked to a task")
+
     def _rekey_occurrence_customizations(self, old_time: time, new_time: time) -> None:
         self.exceptions = [
             e.rekeyed(OccurrenceKey(e.occurrence_key.date, new_time))
@@ -405,6 +445,7 @@ __all__ = [
     "EventException",
     "EventKind",
     "EventMove",
+    "EventType",
     "ExceptionOverride",
     "ExceptionType",
 ]

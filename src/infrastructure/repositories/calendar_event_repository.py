@@ -27,6 +27,7 @@ from src.domain.entities.calendar_event import (
     EventException,
     EventKind,
     EventMove,
+    EventType,
     ExceptionOverride,
     ExceptionType,
 )
@@ -153,6 +154,7 @@ class SqlAlchemyCalendarEventRepository(CalendarEventRepository):
         model.description = event.description
         model.color_key = event.color_key.value
         model.task_id = event.task_id
+        model.event_type = event.event_type.value
         alarm = event.alarm
         model.alarm_enabled = alarm.is_enabled if alarm is not None else None
         model.alarm_15_min = alarm.notify_15_min if alarm is not None else False
@@ -190,6 +192,7 @@ class SqlAlchemyCalendarEventRepository(CalendarEventRepository):
             color_key=EventColorKey(model.color_key),
             task_id=model.task_id,
             alarm=_alarm_to_entity(model),
+            event_type=EventType(model.event_type),
             exceptions=[_exception_to_entity(e) for e in model.exceptions],
             moves=[_move_to_entity(m) for m in model.moves],
             version=model.version,

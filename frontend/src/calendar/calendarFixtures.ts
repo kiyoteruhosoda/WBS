@@ -14,6 +14,7 @@ export const singleEvent = (patch: Partial<CalendarEvent> = {}): CalendarEvent =
   color_key: 'TOMATO',
   task_id: 12,
   alarm: { enabled: true, notify_15_min: true, notify_5_min: false, notify_1_min: false, notify_at_start: true },
+  event_type: 'EVENT',
   exceptions: [],
   moves: [],
   version: 3,
@@ -66,6 +67,8 @@ export const apiOccurrence = (patch: Partial<CalendarOccurrence> = {}): Calendar
   is_overridden: false,
   series_key: null,
   alarm: null,
+  event_type: 'EVENT',
+  is_done: false,
   ...patch,
 });
 

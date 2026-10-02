@@ -30,6 +30,8 @@ export const occurrence = (
   is_overridden: false,
   series_key: null,
   alarm: null,
+  event_type: 'EVENT',
+  is_done: false,
 });
 
 /** 時:分 → 分 */

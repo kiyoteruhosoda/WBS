@@ -216,6 +216,9 @@ export interface EventAlarmData {
   notify_at_start: boolean;
 }
 
+/** 予定の分類（ADR-0025）: 予定 / タスク（毎日の定常業務など。回ごとに済みを付ける）。 */
+export type CalendarEventType = 'EVENT' | 'TASK';
+
 export interface CalendarOccurrence {
   /** 回の識別子（React の key・選択に使う）。`event_id` と系列の鍵から作る */
   id: string;
@@ -245,6 +248,10 @@ export interface CalendarOccurrence {
   series_key: OccurrenceSeriesKey | null;
   /** 予定の通知（繰り返しは系列のもの。移した回も同じ） */
   alarm: EventAlarmData | null;
+  /** 予定の分類（ADR-0025）。TASK は回ごとに済みを付ける */
+  event_type: CalendarEventType;
+  /** タスクの分類の回に済みが付いている（予定の分類は常に false） */
+  is_done: boolean;
 }
 
 /** 祝日・休日（有効な営業日カレンダーから集めたもの）。 */
@@ -310,6 +317,8 @@ export interface CalendarEvent {
   task_id: number | null;
   /** 通知。null は通知を持たない */
   alarm: EventAlarmData | null;
+  /** 分類（ADR-0025）。TASK は WBS のタスクに結ぶ */
+  event_type: CalendarEventType;
   exceptions: { occurrence: OccurrenceSeriesKey; type: string }[];
   moves: {
     occurrence: OccurrenceSeriesKey;

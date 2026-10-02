@@ -22,6 +22,7 @@ import { formatTimingRange, ghostPieces, resizeEdgeAt, tapCreateMinute } from '.
 import type { CalendarInteractions, TaskDropPreview } from './calendarInteractions';
 import { useWeekDrag } from './useWeekDrag';
 import DeadlineChip from './DeadlineChip';
+import DoneMark from './DoneMark';
 import HourLabels from './HourLabels';
 import type { CalendarDeadline } from '../../calendar/taskDeadlines';
 
@@ -42,7 +43,9 @@ const BAND_MARGIN_RIGHT = 3;
 // 右へ行くほど日の列が本体とずれる。スクロールバーが重なって出る環境（スマホ・macOS）では溝は 0。
 const SCROLLBAR_GUTTER = { overflowY: 'hidden', scrollbarGutter: 'stable' } as const;
 
-interface Props extends Pick<CalendarInteractions, 'onCreateRange' | 'onRescheduleOccurrence' | 'onEditOccurrence' | 'onCreateEvent'> {
+interface Props extends Pick<
+  CalendarInteractions, 'onCreateRange' | 'onRescheduleOccurrence' | 'onEditOccurrence' | 'onCreateEvent' | 'onToggleDone'
+> {
   dates: string[];
   timeZone: string;
   segmentsByDate: ReadonlyMap<string, DaySegment[]>;
@@ -71,7 +74,7 @@ interface Props extends Pick<CalendarInteractions, 'onCreateRange' | 'onReschedu
  */
 const WeekView: React.FC<Props> = ({
   dates, timeZone, segmentsByDate, holidays, deadlines, today, nowMinute, selectedDate, selectedSegmentKey,
-  onSelectDate, onSelectSegment, onCreateRange, onRescheduleOccurrence, onEditOccurrence, onCreateEvent,
+  onSelectDate, onSelectSegment, onCreateRange, onRescheduleOccurrence, onEditOccurrence, onCreateEvent, onToggleDone,
   linkedTasks, dropPreview, bands, occurrenceAction, scrollLeadMinutes,
 }) => {
   const { t, weekdays } = useI18n();
@@ -165,6 +168,22 @@ const WeekView: React.FC<Props> = ({
   };
 
   const chipText = { color: c.onColor, fontSize: 10, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } as const;
+  // 済みのタスクの回は薄く・取り消し線（ADR-0025）
+  const doneText = (o: CalendarOccurrence) => (o.is_done ? { textDecoration: 'line-through' } : {});
+  const DONE_OPACITY = 0.55;
+
+  // タスクの分類の回の印。押すと済みを切り替える（ドラッグの直後の click は既存の判定で捨てる）。
+  const doneMark = (o: CalendarOccurrence, sx?: object) => {
+    if (o.event_type !== 'TASK') return null;
+    return (
+      <DoneMark
+        done={o.is_done}
+        color={c.onColor}
+        onToggle={onToggleDone ? () => { if (!drag.shouldSuppressClick()) onToggleDone(o); } : undefined}
+        sx={sx}
+      />
+    );
+  };
 
   // 繰り返し・振替の印は題名と同じ白（移植元も White）。`overlay` は時間の予定の右下に重ねる（移植元 WeekCalendarView の
   // HorizontalAlignment Right・VerticalAlignment Bottom）。題名の横に並べると題名の幅を食う。
@@ -253,12 +272,13 @@ const WeekView: React.FC<Props> = ({
                       position: 'absolute', zIndex: 1, top: b.row * ALL_DAY_ROW_HEIGHT + 1, left: 0, right: '4px',
                       height: ALL_DAY_CHIP_HEIGHT, px: '6px', py: '2px', borderRadius: '2px', boxSizing: 'border-box',
                       display: 'flex', alignItems: 'center', gap: '2px',
-                      bgcolor: bg, opacity: segment ? 0.82 : 0.7,
+                      bgcolor: bg, opacity: segment ? (segment.occurrence.is_done ? DONE_OPACITY : 0.82) : 0.7,
                       border: selected ? `2px solid ${c.onColor}` : `1px solid ${darken(bg)}`,
                       cursor: segment ? 'pointer' : 'default', pointerEvents: segment ? 'auto' : 'none',
                     }}
                   >
-                    <Box sx={{ ...chipText, flex: 1 }}>{title}</Box>
+                    {segment && doneMark(segment.occurrence)}
+                    <Box sx={{ ...chipText, flex: 1, ...(segment ? doneText(segment.occurrence) : {}) }}>{title}</Box>
                     {segment && occurrenceMark(segment)}
                   </Box>
                 );
@@ -334,23 +354,27 @@ const WeekView: React.FC<Props> = ({
                       left: `calc(${block.leftRatio * 100}% + ${chipLeft}px)`,
                       width: `calc(${chipWidthRatio * 100}% - ${chipRightGap}px)`,
                       px: fill ? '2px' : '4px', borderRadius: '2px', bgcolor: bg, cursor: 'pointer', touchAction: 'none',
-                      opacity: dragging ? 0.5 : 1,
+                      opacity: dragging ? 0.5 : o.is_done ? DONE_OPACITY : 1,
                       border: selected ? `2px solid ${c.onColor}` : `1px solid ${darken(bg)}`,
                       boxShadow: selected ? `0 0 0 1px ${c.blue}` : 'none',
                       display: 'flex', flexDirection: 'column', justifyContent: block.height < 30 ? 'center' : 'flex-start',
                     }}
                   >
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: '2px', minWidth: 0 }}>
+                    <Box sx={{ display: 'flex', alignItems: fill ? 'flex-start' : 'center', gap: '2px', minWidth: 0 }}>
+                      {!fill && doneMark(o)}
                       <Box sx={fill
                         ? {
                           ...chipText, flex: 1, whiteSpace: 'normal', wordBreak: 'break-all', lineHeight: `${NARROW_TITLE_LINE}px`,
                           display: '-webkit-box', WebkitBoxOrient: 'vertical',
                           WebkitLineClamp: Math.max(1, Math.floor((block.height - 2) / NARROW_TITLE_LINE)),
+                          ...doneText(o),
                         }
-                        : { ...chipText, flex: 1 }}
+                        : { ...chipText, flex: 1, ...doneText(o) }}
                       >
                         {/* 重なって列を分けた細いチップ（1 字幅）は題名を優先する */}
-                        {fill && block.widthRatio > 0.99 && occurrenceMark(segment, 'float')}
+                        {fill && block.widthRatio > 0.99 && o.event_type !== 'TASK' && occurrenceMark(segment, 'float')}
+                        {/* 狭い列は題名を印に回り込ませる（印に 1 列を取られると題名が 1 字幅になる）。繰り返しの印より済みの印を優先する */}
+                        {fill && doneMark(o, { float: 'left', mt: '1px', mr: '1px' })}
                         {o.title}
                       </Box>
                       {occurrenceAction?.(o)}

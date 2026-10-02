@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import type { OccurrenceReschedule } from '../components/calendar/calendarInteractions';
 import {
-  applyScheduleToOccurrences, errorDetailOf, isConflictError, redoRequest, rescheduleEntryOf, rescheduleRequest,
-  undoRequest, withEventVersion, withOccurrenceEventVersion,
+  applyScheduleToOccurrences, errorDetailOf, isConflictError, occurrenceDoneRequest, redoRequest, rescheduleEntryOf,
+  rescheduleRequest, undoRequest, withEventVersion, withOccurrenceDone, withOccurrenceEventVersion,
 } from './calendarRequests';
 import { recordOperation, emptyHistory, undoOperation } from './operationHistory';
 import type { RescheduleEntry } from './calendarRequests';
@@ -141,5 +141,26 @@ describe('応答の誤り', () => {
     expect(errorDetailOf({ response: { data: { detail: 'event not found' } } })).toBe('event not found');
     expect(errorDetailOf({ response: { data: { detail: [{ msg: 'a' }, { msg: 'b' }] } } })).toBe('a / b');
     expect(errorDetailOf(new Error('x'))).toBeNull();
+  });
+});
+
+describe('タスクの回の済み（ADR-0025）', () => {
+  it('繰り返しは回の鍵、単発は鍵なしで送る（版は送らない）', () => {
+    expect(occurrenceDoneRequest(recurringOccurrence({ event_type: 'TASK' }), true)).toEqual({
+      method: 'PUT',
+      url: '/calendar/events/7/done',
+      body: { occurrence: { date: '2026-07-14', start_time: '10:00' }, done: true },
+    });
+    expect(occurrenceDoneRequest(apiOccurrence({ event_type: 'TASK' }), false)).toEqual({
+      method: 'PUT',
+      url: '/calendar/events/5/done',
+      body: { occurrence: null, done: false },
+    });
+  });
+
+  it('応答を待たずに、その回だけ済みを入れ替えて見せる', () => {
+    const list = [apiOccurrence(), recurringOccurrence()];
+    const next = withOccurrenceDone(list, recurringOccurrence().id, true);
+    expect(next.map((o) => o.is_done)).toEqual([false, true]);
   });
 });

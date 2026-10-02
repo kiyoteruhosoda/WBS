@@ -306,6 +306,8 @@ class CalendarEventModel(Base):
     alarm_5_min: Mapped[bool] = mapped_column(sa.Boolean, nullable=False, server_default=sa.false())
     alarm_1_min: Mapped[bool] = mapped_column(sa.Boolean, nullable=False, server_default=sa.false())
     alarm_at_start: Mapped[bool] = mapped_column(sa.Boolean, nullable=False, server_default=sa.false())
+    # 分類（ADR-0025）。EVENT = 予定 / TASK = タスク（回ごとに済みを付ける）。ネイティブ ENUM にしない。
+    event_type: Mapped[str] = mapped_column(sa.String(16), nullable=False, server_default="EVENT")
 
     exceptions: Mapped[list[CalendarEventExceptionModel]] = relationship(
         cascade="all, delete-orphan", order_by="CalendarEventExceptionModel.id", lazy="selectin"
@@ -355,6 +357,27 @@ class CalendarEventMoveModel(Base):
     new_duration_minutes: Mapped[int | None] = mapped_column(sa.Integer, nullable=True)
     title: Mapped[str | None] = mapped_column(sa.String(500), nullable=True)
     location: Mapped[str | None] = mapped_column(sa.String(500), nullable=True)
+
+
+class CalendarEventCompletionModel(Base):
+    """タスクの分類の予定の回の「済み」（ADR-0025）。行がある = 済み。
+
+    回は（候補日, 系列の開始時刻）で指す（例外・移動と同じ鍵）。単発は両方 NULL。
+    予定の集約の外に置く（済みを付けても予定の版を進めない）。
+    """
+
+    __tablename__ = "calendar_event_completions"
+    __table_args__ = (
+        sa.UniqueConstraint(
+            "event_id", "occurrence_date", "occurrence_time",
+            name="uq_calendar_event_completions_occurrence",
+        ),
+    )
+    id: Mapped[int] = mapped_column(BigIntPK, primary_key=True, autoincrement=True)
+    event_id: Mapped[int] = mapped_column(sa.BigInteger().with_variant(sa.Integer(), "sqlite"), sa.ForeignKey("calendar_events.id", ondelete="CASCADE"), nullable=False)
+    occurrence_date: Mapped[date | None] = mapped_column(sa.Date, nullable=True)
+    occurrence_time: Mapped[time | None] = mapped_column(sa.Time, nullable=True)
+    completed_at: Mapped[datetime] = mapped_column(sa.DateTime, nullable=False)
 
 
 class BusinessCalendarModel(Base):
