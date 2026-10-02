@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Box, ButtonBase, CircularProgress, Divider, ListItemButton, ListItemText, Popover, Tooltip } from '@mui/material';
+import { Box, ButtonBase, Divider, ListItemButton, ListItemText, Popover, Tooltip } from '@mui/material';
 import { ds } from '../theme';
 import { useI18n } from '../i18n';
 import { getTasks } from '../api/tasks';
