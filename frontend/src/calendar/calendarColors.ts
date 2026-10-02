@@ -11,6 +11,12 @@ export interface CalendarPalette {
   border: string;
   outOfMonthText: string;
   holidayBg: string;
+  /** 会社の公休の日の地（ADR-0029） */
+  companyDayOffBg: string;
+  /** 私の休みの日の地 */
+  personalDayOffBg: string;
+  /** 曜日の休み（営業日の層の曜日に当たらない平日）の地 */
+  weeklyOffBg: string;
   sundayBg: string;
   saturdayBg: string;
   /**
@@ -48,6 +54,9 @@ export const calendarPalettes: Record<'light' | 'dark', CalendarPalette> = {
     border: '#e0e0e0',
     outOfMonthText: '#bdbdbd',
     holidayBg: '#fff0f0',
+    companyDayOffBg: '#fff4e0',
+    personalDayOffBg: '#e8f5ec',
+    weeklyOffBg: '#f1f3f4',
     sundayBg: '#fff8f8',
     saturdayBg: '#f0f4ff',
     pastShade: 'rgba(0, 0, 0, 0.1)',
@@ -72,6 +81,9 @@ export const calendarPalettes: Record<'light' | 'dark', CalendarPalette> = {
     border: '#3c3c3c',
     outOfMonthText: '#555555',
     holidayBg: '#3a1a1a',
+    companyDayOffBg: '#3a2c16',
+    personalDayOffBg: '#17301f',
+    weeklyOffBg: '#2a2a2a',
     sundayBg: '#2d1a1a',
     saturdayBg: '#1a1a2d',
     pastShade: 'rgba(0, 0, 0, 0.2)',
@@ -118,3 +130,25 @@ export const darken = (hex: string, factor = 0.72): string => {
   const channel = (h: string) => Math.floor(parseInt(h, 16) * factor).toString(16).padStart(2, '0');
   return `#${channel(m[1])}${channel(m[2])}${channel(m[3])}`;
 };
+
+/**
+ * 日の列の地（ADR-0029）。休みの層の帯があればその理由の色、曜日の休み（営業日の層が表示のとき）なら
+ * 土日は今までの色・平日は曜日の休みの色。営業日の層を隠しているとき（`nonWorkdays` が null）は土日の色だけ。
+ */
+export const dayColumnBackground = (
+  palette: Pick<CalendarPalette, 'holidayBg' | 'companyDayOffBg' | 'personalDayOffBg' | 'weeklyOffBg' | 'sundayBg' | 'saturdayBg'>,
+  dow: number,
+  holiday: { reason?: string } | undefined,
+  nonWorkday: boolean | null,
+): string => {
+  if (holiday) {
+    if (holiday.reason === 'COMPANY') return palette.companyDayOffBg;
+    if (holiday.reason === 'PERSONAL') return palette.personalDayOffBg;
+    return palette.holidayBg;
+  }
+  if (nonWorkday === false) return 'transparent';
+  if (dow === 0) return palette.sundayBg;
+  if (dow === 6) return palette.saturdayBg;
+  return nonWorkday ? palette.weeklyOffBg : 'transparent';
+};
+

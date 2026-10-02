@@ -1,5 +1,11 @@
 import React, { useEffect, useMemo, useRef } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { Box, Checkbox, IconButton, Tooltip } from '@mui/material';
+import { useTheme } from '@mui/material/styles';
+import { getCalendars, getDayOffMarks } from '../api/calendars';
+import { CALENDARS_QUERY, DAY_OFF_MARKS_QUERY } from '../calendar/calendarQueries';
+import { buildDayOffView, businessDaysBetween } from '../calendar/daysOff';
+import { dayColumnBackground } from '../calendar/calendarColors';
 import MoreTimeIcon from '@mui/icons-material/MoreTime';
 import { scheduleTaskPath } from '../calendar/taskScheduling';
 import { useNavigate } from 'react-router-dom';
@@ -28,6 +34,11 @@ const ACTUAL_STRIP_HEIGHT = 7;
 const dateOnly = (d: Date): Date => new Date(d.getFullYear(), d.getMonth(), d.getDate());
 const addDays = (d: Date, n: number): Date => new Date(d.getFullYear(), d.getMonth(), d.getDate() + n);
 const diffDays = (a: Date, b: Date): number => Math.round((dateOnly(a).getTime() - dateOnly(b).getTime()) / 86400000);
+/** ローカルの日付を YYYY-MM-DD に（休みの層の API の日付）。 */
+const isoDay = (d: Date): string =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+/** 休みの理由を一度に引ける日数（サーバーの上限 800 日より少し手前） */
+const MAX_DAY_OFF_SPAN = 790;
 const parse = (s: string | null): Date | null => {
   const d = parseDate(s);
   return d ? dateOnly(d) : null;
@@ -81,6 +92,40 @@ const GanttChart: React.FC<Props> = ({ tasks, categories, showMeta = true, onTog
 
   const todayIdx = diffDays(today, rangeStart);
   const timelineWidth = days.length * DAY_WIDTH;
+
+  // 休みの 4 層（ADR-0029）: 表示中の層で日の列を塗り、タスクの期間の営業日の数を出す（数は表示に関係しない）。
+  // 範囲の外にはみ出すタスクの期間も数えるので、引く期間はタスクの期間まで広げる。
+  const calendarPalette = useTheme().palette.calendar;
+  const markRange = useMemo(() => {
+    let from = days[0];
+    let to = days[days.length - 1];
+    for (const t of tasks) {
+      const s = parse(t.start_date) ?? parse(t.due_date);
+      const e = parse(t.due_date) ?? parse(t.start_date);
+      if (s && s < from) from = s;
+      if (e && e > to) to = e;
+    }
+    if (diffDays(to, from) > MAX_DAY_OFF_SPAN) return { from: isoDay(days[0]), to: isoDay(days[days.length - 1]) };
+    return { from: isoDay(from), to: isoDay(to) };
+  }, [days, tasks]);
+  const { data: marks } = useQuery({
+    queryKey: [DAY_OFF_MARKS_QUERY, markRange.from, markRange.to],
+    queryFn: () => getDayOffMarks(markRange),
+  });
+  const { data: calendars } = useQuery({ queryKey: [CALENDARS_QUERY], queryFn: getCalendars });
+  const dayOffView = useMemo(() => buildDayOffView(marks ?? [], calendars), [marks, calendars]);
+  const holidayByDate = useMemo(() => new Map(dayOffView.holidays.map((h) => [h.date, h])), [dayOffView]);
+  const columnBackground = (d: Date): string => {
+    const key = isoDay(d);
+    return dayColumnBackground(
+      calendarPalette, d.getDay(), holidayByDate.get(key),
+      dayOffView.nonWorkdays ? dayOffView.nonWorkdays.has(key) : null,
+    );
+  };
+  const businessDaysOf = (s: Date, e: Date): number | null => {
+    if (!marks || isoDay(s) < markRange.from || isoDay(e) > markRange.to) return null;
+    return businessDaysBetween(isoDay(s), isoDay(e), dayOffView.nonBusinessDays);
+  };
 
   // 初期表示で今日が見えるようにスクロールする（今日を左から1/3の位置に置く）
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -152,10 +197,11 @@ const GanttChart: React.FC<Props> = ({ tasks, categories, showMeta = true, onTog
               const dow = d.getDay();
               const color = dow === 0 ? ds.dangerText : dow === 6 ? ds.primary : ds.textSub;
               return (
-                <Box key={i} sx={{
+                <Box key={i} title={holidayByDate.get(isoDay(d))?.name ?? undefined} sx={{
                   width: DAY_WIDTH, flexShrink: 0, textAlign: 'center', pt: '9px',
                   borderLeft: i === 0 ? 'none' : '1px solid #ECECEE',
-                  bgcolor: dow === 0 || dow === 6 ? '#F1F1F3' : 'transparent',
+                  bgcolor: columnBackground(d),
+                  borderBottom: holidayByDate.get(isoDay(d))?.color ? `3px solid ${holidayByDate.get(isoDay(d))?.color}` : 'none',
                 }}>
                   <Box sx={{ fontSize: 13, fontWeight: 700, color: ds.text }}>{d.getMonth() + 1}/{d.getDate()}</Box>
                   <Box sx={{ fontSize: 11, color }}>{weekdays[dow]}</Box>
@@ -168,16 +214,13 @@ const GanttChart: React.FC<Props> = ({ tasks, categories, showMeta = true, onTog
           <Box sx={{ position: 'relative' }}>
             {/* 縦グリッド・土日シェード */}
             <Box sx={{ position: 'absolute', inset: 0, display: 'flex', pointerEvents: 'none' }}>
-              {days.map((d, i) => {
-                const dow = d.getDay();
-                return (
-                  <Box key={i} sx={{
-                    width: DAY_WIDTH, flexShrink: 0,
-                    borderLeft: i === 0 ? 'none' : '1px solid #F2F2F3',
-                    bgcolor: dow === 0 || dow === 6 ? '#FAFAFB' : 'transparent',
-                  }} />
-                );
-              })}
+              {days.map((d, i) => (
+                <Box key={i} sx={{
+                  width: DAY_WIDTH, flexShrink: 0,
+                  borderLeft: i === 0 ? 'none' : '1px solid #F2F2F3',
+                  bgcolor: columnBackground(d),
+                }} />
+              ))}
             </Box>
 
             {tasks.map((t) => {
@@ -229,7 +272,22 @@ const GanttChart: React.FC<Props> = ({ tasks, categories, showMeta = true, onTog
                   const width = (endIdx - startIdx + 1) * DAY_WIDTH - 6;
                   const colors = barColors[st];
                   const fillPct = st === 'DONE' ? 100 : Math.max(0, Math.min(100, t.progress_percent ?? 0));
+                  const businessDays = businessDaysOf(s, e);
+                  const businessLabel = businessDays != null ? tr('gantt.businessDays', { count: businessDays }) : null;
                   bar = (
+                    <>
+                    {businessLabel && (
+                      <Box
+                        data-testid="gantt-business-days"
+                        sx={{
+                          position: 'absolute', left: left + width + 6, top: planTop, height: planHeight,
+                          display: 'flex', alignItems: 'center', fontSize: 11, color: ds.textSub, whiteSpace: 'nowrap',
+                          pointerEvents: 'none',
+                        }}
+                      >
+                        {businessLabel}
+                      </Box>
+                    )}
                     <Box
                       onClick={() => navigate(`/tasks/${t.id}`)}
                       sx={{
@@ -238,12 +296,13 @@ const GanttChart: React.FC<Props> = ({ tasks, categories, showMeta = true, onTog
                         bgcolor: colors.track,
                         border: st === 'TODO' ? `1.5px dashed ${ds.todoGray}` : 'none',
                       }}
-                      title={`${t.title}（${t.progress_percent === null ? '—' : `${t.progress_percent}%`}）`}
+                      title={`${t.title}（${t.progress_percent === null ? '—' : `${t.progress_percent}%`}${businessLabel ? `・${businessLabel}` : ''}）`}
                     >
                       {st !== 'TODO' && (
                         <Box sx={{ width: `${fillPct}%`, height: '100%', borderRadius: '6px', bgcolor: colors.fill }} />
                       )}
                     </Box>
+                    </>
                   );
                 }
               }

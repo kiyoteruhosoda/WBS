@@ -20,6 +20,7 @@ from src.application.use_cases.business_calendar_use_cases import BusinessCalend
 from src.application.use_cases.calendar_event_use_cases import CalendarEventUseCases
 from src.application.use_cases.calendar_use_cases import CalendarUseCases
 from src.application.use_cases.closing_use_cases import ClosingUseCases
+from src.application.use_cases.day_off_use_cases import DayOffUseCases
 from src.application.use_cases.task_use_cases import TaskUseCases
 from src.application.use_cases.time_entry_use_cases import TimeEntryUseCases
 from src.application.use_cases.today_use_cases import TodayUseCases
@@ -39,6 +40,7 @@ from src.infrastructure.repositories.calendar_event_repository import (
 from src.infrastructure.repositories.calendar_repository import (
     SqlAlchemyCalendarRepository,
     SqlAlchemyCalendarViewPresetRepository,
+    SqlAlchemyDayOffRepository,
 )
 from src.infrastructure.repositories.category_repository import SqlAlchemyCategoryRepository
 from src.infrastructure.repositories.closing_period_repository import (
@@ -214,6 +216,13 @@ def get_app_or_web_user(
 AppOrWebUserDep = Annotated[AuthenticatedUserDTO, Depends(get_app_or_web_user)]
 
 
+def get_day_off_use_cases(db: DbDep) -> DayOffUseCases:
+    """休みの層と営業日の判定（ADR-0029）。"""
+    return DayOffUseCases(SqlAlchemyCalendarRepository(db), SqlAlchemyDayOffRepository(db), db)
+
+DayOffUseCasesDep = Annotated[DayOffUseCases, Depends(get_day_off_use_cases)]
+
+
 def get_calendar_event_use_cases(db: DbDep) -> CalendarEventUseCases:
     """予定のユースケース。確定（``UnitOfWork``）はこのリクエストの ``Session``。"""
     return CalendarEventUseCases(
@@ -223,6 +232,7 @@ def get_calendar_event_use_cases(db: DbDep) -> CalendarEventUseCases:
         unit_of_work=db,
         completions=SqlAlchemyOccurrenceCompletionRepository(db),
         event_calendars=SqlAlchemyCalendarRepository(db),
+        day_off_layers=get_day_off_use_cases(db),
     )
 
 CalendarEventUseCasesDep = Annotated[CalendarEventUseCases, Depends(get_calendar_event_use_cases)]

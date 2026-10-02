@@ -8,6 +8,8 @@ export const OCCURRENCES_QUERY = 'calendar-occurrences';
 export const HOLIDAYS_QUERY = 'calendar-holidays';
 /** 予定のカレンダーの一覧（表示の選択を含む。ADR-0027） */
 export const CALENDARS_QUERY = 'calendars';
+/** 期間の休みの理由（休みの層。ADR-0029）。キーは `[DAY_OFF_MARKS_QUERY, from, to]` */
+export const DAY_OFF_MARKS_QUERY = 'calendar-day-off-marks';
 /** 表示の組み合わせ */
 export const CALENDAR_VIEW_PRESETS_QUERY = 'calendar-view-presets';
 

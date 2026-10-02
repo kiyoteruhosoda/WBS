@@ -286,6 +286,24 @@ class CalendarModel(Base):
     is_visible: Mapped[bool] = mapped_column(sa.Boolean, nullable=False)
     created_at: Mapped[datetime] = mapped_column(sa.DateTime, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(sa.DateTime, nullable=False)
+    # 休みの層（ADR-0029）。workdays は営業日の層の曜日（MO〜SU をカンマで）、day_off_reason は
+    # 休みの日の一覧の層の理由（NATIONAL_HOLIDAY / COMPANY / PERSONAL）。ほかの種類は NULL。
+    workdays: Mapped[str | None] = mapped_column(sa.String(32), nullable=True)
+    day_off_reason: Mapped[str | None] = mapped_column(sa.String(16), nullable=True)
+    counts_as_day_off: Mapped[bool] = mapped_column(sa.Boolean, nullable=False, server_default=sa.false())
+
+
+class CalendarDayOffModel(Base):
+    """休みの日の一覧の層の 1 日（ADR-0029）。カレンダーを消すと一緒に消える。"""
+
+    __tablename__ = "calendar_days_off"
+    __table_args__ = (
+        sa.UniqueConstraint("calendar_id", "day", name="uq_calendar_days_off_day"),
+    )
+    id: Mapped[int] = mapped_column(BigIntPK, primary_key=True, autoincrement=True)
+    calendar_id: Mapped[int] = mapped_column(sa.BigInteger().with_variant(sa.Integer(), "sqlite"), sa.ForeignKey("calendars.id", ondelete="CASCADE"), nullable=False)
+    day: Mapped[date] = mapped_column(sa.Date, nullable=False)
+    name: Mapped[str | None] = mapped_column(sa.String(200), nullable=True)
 
 
 class CalendarViewPresetModel(Base):

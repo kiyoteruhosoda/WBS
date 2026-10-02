@@ -7,6 +7,7 @@ import { occurrence, hm } from './testOccurrences';
 
 const calendar = (id: number, patch: Partial<Calendar> = {}): Calendar => ({
   id, kind: 'EVENTS', name: `c${id}`, color_key: 'DEFAULT', sort_order: id, is_default: id === 1, is_visible: true,
+  workdays: null, day_off_reason: null, counts_as_day_off: false,
   created_at: null, updated_at: null, ...patch,
 });
 
@@ -42,6 +43,10 @@ describe('表示の選択（ADR-0027）', () => {
     expect(calendarForNewEvent([calendar(1, { is_visible: false }), calendar(2)])).toBe(2);
     expect(calendarForNewEvent([calendar(1, { is_visible: false }), calendar(2, { is_visible: false })])).toBe(1);
     expect(calendarForNewEvent(undefined)).toBeNull();
+    // 休みの層には入れない（ADR-0029）
+    expect(calendarForNewEvent([
+      calendar(1, { is_visible: false }), calendar(5, { kind: 'DAYS_OFF', day_off_reason: 'PERSONAL', is_default: false }),
+    ])).toBe(1);
   });
 
   it('組み合わせが今の表示と同じなら当たっている', () => {

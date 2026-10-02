@@ -501,3 +501,77 @@ def test_0009_puts_existing_events_into_a_default_calendar_per_user(tmp_path):
             ).scalar() == 5
     finally:
         engine.dispose()
+
+
+def test_0010_makes_four_day_off_layers_and_copies_business_calendar_holidays(tmp_path):
+    # task #191 / ADR-0029: 利用者ごとに 4 層。営業日の曜日はいちばん古い営業日カレンダーのもの、
+    # 営業日カレンダーの祝日は「日本の祝日」の層へ（同じ日は 1 つ）
+    url = _url(tmp_path, "day_off_layers.db")
+    engine = sa.create_engine(url)
+    try:
+        with engine.begin() as connection:
+            command.upgrade(alembic_config(connection), "0009")
+        with engine.begin() as connection:
+            for user_id, email in ((1, "taro@example.com"), (2, "hanako@example.com")):
+                connection.exec_driver_sql(
+                    "INSERT INTO users (id, email, display_name, timezone, language, is_active, "
+                    f"created_at, updated_at) VALUES ({user_id}, '{email}', 'u', 'Asia/Tokyo', 'ja', 1, "
+                    "'2026-01-01', '2026-01-01')"
+                )
+            for calendar_id, workdays in ((1, "MO,TU,WE,TH"), (2, "MO,TU,WE,TH,FR,SA")):
+                connection.exec_driver_sql(
+                    "INSERT INTO business_calendars (id, user_id, name, time_zone, workdays, "
+                    "shift_on_holidays_only, is_enabled, created_at, updated_at) VALUES "
+                    f"({calendar_id}, 1, '暦{calendar_id}', 'Asia/Tokyo', '{workdays}', 0, 1, "
+                    "'2026-01-01', '2026-01-01')"
+                )
+            for calendar_id, day, name in (
+                (1, "2026-10-12", "スポーツの日"), (2, "2026-10-12", "別名"), (2, "2026-11-03", "文化の日"),
+            ):
+                connection.exec_driver_sql(
+                    "INSERT INTO business_calendar_holidays (calendar_id, holiday_date, name) "
+                    f"VALUES ({calendar_id}, '{day}', '{name}')"
+                )
+        with engine.begin() as connection:
+            command.upgrade(alembic_config(connection), "0010")
+        with engine.connect() as connection:
+            layers = connection.exec_driver_sql(
+                "SELECT user_id, kind, name, workdays, day_off_reason, counts_as_day_off FROM calendars "
+                "WHERE kind <> 'EVENTS' ORDER BY user_id, sort_order"
+            ).all()
+            assert [tuple(row[:5]) + (bool(row[5]),) for row in layers] == [
+                (1, "WORKWEEK", "営業日", "MO,TU,WE,TH", None, False),
+                (1, "DAYS_OFF", "会社の公休", None, "COMPANY", True),
+                (1, "DAYS_OFF", "私の休み", None, "PERSONAL", True),
+                (1, "DAYS_OFF", "日本の祝日", None, "NATIONAL_HOLIDAY", True),
+                (2, "WORKWEEK", "営業日", "MO,TU,WE,TH,FR", None, False),
+                (2, "DAYS_OFF", "会社の公休", None, "COMPANY", True),
+                (2, "DAYS_OFF", "私の休み", None, "PERSONAL", True),
+                (2, "DAYS_OFF", "日本の祝日", None, "NATIONAL_HOLIDAY", True),
+            ]
+            days = connection.exec_driver_sql(
+                "SELECT c.user_id, d.day, d.name FROM calendar_days_off d "
+                "JOIN calendars c ON c.id = d.calendar_id ORDER BY d.day"
+            ).all()
+            assert [tuple(d) for d in days] == [
+                (1, "2026-10-12", "スポーツの日"), (1, "2026-11-03", "文化の日"),
+            ]
+
+        with engine.begin() as connection:
+            command.downgrade(alembic_config(connection), "0009")
+        inspector = sa.inspect(engine)
+        assert "calendar_days_off" not in inspector.get_table_names()
+        assert {"workdays", "day_off_reason", "counts_as_day_off"}.isdisjoint(
+            {c["name"] for c in inspector.get_columns("calendars")}
+        )
+        with engine.connect() as connection:
+            assert connection.exec_driver_sql(
+                "SELECT COUNT(*) FROM calendars WHERE kind <> 'EVENTS'"
+            ).scalar() == 0
+            # 予定のカレンダー（0009 の後に来た利用者なので無い）だけが残る
+            assert connection.exec_driver_sql("SELECT COUNT(*) FROM calendars").scalar() == 0
+            assert connection.exec_driver_sql(
+                "SELECT COUNT(*) FROM business_calendar_holidays"
+            ).scalar() == 3
+    finally:
+        engine.dispose()

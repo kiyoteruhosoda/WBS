@@ -56,10 +56,15 @@ def two_users(client) -> Iterator:
     switch.me()
 
 
-def _calendars(client) -> list[dict]:
+def _all_calendars(client) -> list[dict]:
     res = client.get("/api/calendars")
     assert res.status_code == 200, res.text
     return res.json()
+
+
+def _calendars(client) -> list[dict]:
+    """予定のカレンダーだけ（休みの 4 層は後ろに並ぶ。ADR-0029）。"""
+    return [c for c in _all_calendars(client) if c["kind"] == "EVENTS"]
 
 
 def _new_calendar(client, name: str, color_key: str = "TOMATO") -> dict:
@@ -159,7 +164,10 @@ def test_deleting_moves_events_to_default_and_default_cannot_be_deleted(client) 
 def test_visibility_is_remembered_and_new_calendars_start_visible(client) -> None:
     default = _calendars(client)[0]
     work = _new_calendar(client, "仕事")
-    res = client.put("/api/calendars/visibility", json={"visible_calendar_ids": [work["id"]]})
+    layers = [c["id"] for c in _all_calendars(client) if c["kind"] != "EVENTS"]
+    res = client.put(
+        "/api/calendars/visibility", json={"visible_calendar_ids": [work["id"], *layers]}
+    )
     assert res.status_code == 200, res.text
     assert {c["id"]: c["is_visible"] for c in _calendars(client)} == {
         default["id"]: False, work["id"]: True,
@@ -179,7 +187,7 @@ def test_preset_switches_the_selection_in_one_go(client) -> None:
 
     res = client.post(f"/api/calendar-view-presets/{preset['id']}/apply")
     assert res.status_code == 200, res.text
-    assert {c["id"]: c["is_visible"] for c in res.json()} == {
+    assert {c["id"]: c["is_visible"] for c in res.json() if c["kind"] == "EVENTS"} == {
         default["id"]: False, work["id"]: True,
     }
     assert [p["name"] for p in client.get("/api/calendar-view-presets").json()] == ["仕事だけ"]

@@ -14,7 +14,7 @@ import { useI18n } from '../i18n';
 import type { TranslationKey } from '../i18n/translations';
 import type { CalendarOccurrence, Category, Task, TimeEntry, TodaySummary } from '../types';
 import { TODAY_SUMMARY_KEY, getTodaySummary } from '../api/today';
-import { getHolidays, getOccurrences } from '../api/calendar';
+import { getOccurrences } from '../api/calendar';
 import { getTasks } from '../api/tasks';
 import { getCategories } from '../api/categories';
 import { getMilestones } from '../api/milestones';
@@ -29,7 +29,9 @@ import { groupSegmentsByDate } from '../calendar/daySegments';
 import type { DaySegment } from '../calendar/daySegments';
 import type { DayBand } from '../calendar/weekLayout';
 import { buildDeadlines } from '../calendar/taskDeadlines';
-import { HOLIDAYS_QUERY, OCCURRENCES_QUERY } from '../calendar/calendarQueries';
+import { DAY_OFF_MARKS_QUERY, OCCURRENCES_QUERY } from '../calendar/calendarQueries';
+import { getDayOffMarks } from '../api/calendars';
+import { buildDayOffView } from '../calendar/daysOff';
 import { DEFAULT_DURATION_MINUTES } from '../calendar/eventForm';
 import type { LinkedTask } from '../calendar/taskScheduling';
 import { buildLinkedTasks, scheduleTaskPath } from '../calendar/taskScheduling';
@@ -520,11 +522,13 @@ const Today: React.FC = () => {
     queryFn: () => getOccurrences(range as { from: string; to: string }, timeZone),
     enabled: range != null,
   });
+  // 休みの 4 層（ADR-0029）。「今日」は全部のカレンダーを出すので、層も全部重ねる
   const holidaysQuery = useQuery({
-    queryKey: [HOLIDAYS_QUERY, date, date],
-    queryFn: () => getHolidays(range as { from: string; to: string }),
+    queryKey: [DAY_OFF_MARKS_QUERY, date, date],
+    queryFn: () => getDayOffMarks(range as { from: string; to: string }),
     enabled: range != null,
   });
+  const dayOffView = useMemo(() => buildDayOffView(holidaysQuery.data ?? [], undefined), [holidaysQuery.data]);
   const { data: tasks } = useQuery({ queryKey: ['tasks'], queryFn: () => getTasks() });
   const { data: categories } = useQuery({ queryKey: ['categories'], queryFn: getCategories });
   const { data: milestones } = useQuery({ queryKey: ['milestones'], queryFn: getMilestones });
@@ -659,7 +663,8 @@ const Today: React.FC = () => {
             dates={[date]}
             timeZone={timeZone}
             segmentsByDate={segmentsByDate}
-            holidays={holidaysQuery.data ?? []}
+            holidays={dayOffView.holidays}
+            nonWorkdays={dayOffView.nonWorkdays}
             deadlines={deadlines}
             today={now.date}
             nowMinute={now.minute}

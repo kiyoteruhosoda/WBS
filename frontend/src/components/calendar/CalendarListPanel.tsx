@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  Box, Button, Checkbox, Chip, Collapse, Dialog, DialogActions, DialogContent, DialogTitle, IconButton, TextField,
-  useMediaQuery,
+  Box, Button, Checkbox, Chip, Collapse, Dialog, DialogActions, DialogContent, DialogTitle, FormControlLabel,
+  IconButton, Switch, TextField, ToggleButton, ToggleButtonGroup, useMediaQuery,
 } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
 import AddIcon from '@mui/icons-material/Add';
@@ -11,18 +11,22 @@ import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import { useI18n } from '../../i18n';
 import type { TranslationKey } from '../../i18n/translations';
-import type { Calendar, CalendarViewPreset, EventColorKey } from '../../types';
+import type { Calendar, CalendarViewPreset, EventColorKey, WeekdayCode } from '../../types';
+import DayOffLayerDays from './DayOffLayerDays';
 import {
   applyCalendarViewPreset, createCalendar, createCalendarViewPreset, deleteCalendar, deleteCalendarViewPreset,
   getCalendarViewPresets, setVisibleCalendars, updateCalendar, updateCalendarViewPreset,
 } from '../../api/calendars';
-import { CALENDARS_QUERY, CALENDAR_VIEW_PRESETS_QUERY, OCCURRENCES_QUERY } from '../../calendar/calendarQueries';
+import {
+  CALENDARS_QUERY, CALENDAR_VIEW_PRESETS_QUERY, DAY_OFF_MARKS_QUERY, OCCURRENCES_QUERY,
+} from '../../calendar/calendarQueries';
 import {
   allVisible, presetIsActive, toggledVisibleIds, visibleCalendarIds, withVisibleIds,
 } from '../../calendar/calendarSelection';
-import { EVENT_COLOR_KEYS } from '../../calendar/eventForm';
+import { EVENT_COLOR_KEYS, WEEKDAY_CODES } from '../../calendar/eventForm';
 import { eventColor } from '../../calendar/calendarColors';
 import { errorDetailOf } from '../../calendar/calendarRequests';
+import { todayDate } from '../../utils/format';
 
 // カレンダーの一覧と表示の選択（task #191、ADR-0027）。Google カレンダーと同じく、チェックしたカレンダーの
 // 予定だけを出す。選んだ状態はサーバーに覚える（端末をまたいで同じ）。上に「表示の組み合わせ」を並べ、
@@ -34,10 +38,26 @@ interface Props {
   onError: (detail: string) => void;
 }
 
-type CalendarDraft = { id: number | null; name: string; colorKey: EventColorKey };
+type CalendarDraft = {
+  id: number | null;
+  name: string;
+  colorKey: EventColorKey;
+  /** 休みの日の一覧の層: 休みとして数える */
+  countsAsDayOff?: boolean;
+  /** 営業日の層: 稼働する曜日 */
+  workdays?: WeekdayCode[];
+};
+
+const WEEKDAYS_IN_ORDER: readonly WeekdayCode[] = ['MO', 'TU', 'WE', 'TH', 'FR', 'SA', 'SU'];
+
+const draftOf = (cal: Calendar): CalendarDraft => ({
+  id: cal.id, name: cal.name, colorKey: cal.color_key,
+  countsAsDayOff: cal.kind === 'DAYS_OFF' ? cal.counts_as_day_off : undefined,
+  workdays: cal.kind === 'WORKWEEK' ? cal.workdays ?? [] : undefined,
+});
 
 const CalendarListPanel: React.FC<Props> = ({ calendars, onError }) => {
-  const { t } = useI18n();
+  const { t, weekdays } = useI18n();
   const theme = useTheme();
   const c = theme.palette.calendar;
   const narrow = useMediaQuery(theme.breakpoints.down('md'));
@@ -103,12 +123,17 @@ const CalendarListPanel: React.FC<Props> = ({ calendars, onError }) => {
   const saveCalendar = useMutation({
     mutationFn: (d: CalendarDraft) => (d.id == null
       ? createCalendar({ name: d.name.trim(), color_key: d.colorKey })
-      : updateCalendar(d.id, { name: d.name.trim(), color_key: d.colorKey })),
+      : updateCalendar(d.id, {
+        name: d.name.trim(), color_key: d.colorKey,
+        ...(d.countsAsDayOff != null ? { counts_as_day_off: d.countsAsDayOff } : {}),
+        ...(d.workdays != null ? { workdays: d.workdays } : {}),
+      })),
     onSuccess: () => {
       setDraft(null);
-      void qc.invalidateQueries({ queryKey: [CALENDARS_QUERY] });
-      // 回の一覧はカレンダーの色を載せている
-      void qc.invalidateQueries({ queryKey: [OCCURRENCES_QUERY] });
+      // 回の一覧はカレンダーの色を載せている。休みの層を変えたら塗りと営業日シフトの回も変わる
+      for (const queryKey of [[CALENDARS_QUERY], [OCCURRENCES_QUERY], [DAY_OFF_MARKS_QUERY]]) {
+        void qc.invalidateQueries({ queryKey });
+      }
     },
     onError: failed,
   });
@@ -126,6 +151,13 @@ const CalendarListPanel: React.FC<Props> = ({ calendars, onError }) => {
   });
 
   const defaultCalendar = calendars.find((cal) => cal.is_default);
+  // 予定のカレンダーと休みの 4 層（ADR-0029）を分けて並べる
+  const sections: { key: string; title: TranslationKey; calendars: Calendar[] }[] = [
+    { key: 'events', title: 'calendar.sectionEvents' as TranslationKey, calendars: calendars.filter((cal) => cal.kind === 'EVENTS') },
+    { key: 'days-off', title: 'calendar.sectionDaysOff' as TranslationKey, calendars: calendars.filter((cal) => cal.kind !== 'EVENTS') },
+  ].filter((section) => section.calendars.length > 0);
+  const layersOnlyActive = calendars.some((cal) => cal.kind !== 'EVENTS')
+    && calendars.every((cal) => cal.is_visible === (cal.kind !== 'EVENTS'));
   const visibleCount = calendars.filter((cal) => cal.is_visible).length;
   const activePreset = (presets ?? []).find((preset) => presetIsActive(preset, calendars));
   const title = activePreset
@@ -168,9 +200,21 @@ const CalendarListPanel: React.FC<Props> = ({ calendars, onError }) => {
         >
           {t('calendar.calendarShowAll')}
         </Button>
+        <Button
+          size="small"
+          variant="outlined"
+          disabled={layersOnlyActive}
+          onClick={() => show(calendars.filter((cal) => cal.kind !== 'EVENTS').map((cal) => cal.id))}
+          data-testid="calendar-show-days-off"
+        >
+          {t('calendar.calendarShowDaysOff')}
+        </Button>
       </Box>
+      {sections.map((section) => (
+      <Box key={section.key}>
+      <Box sx={{ fontSize: 11, color: c.textSecondary, mt: '4px' }}>{t(section.title)}</Box>
       <Box component="ul" sx={{ listStyle: 'none', m: 0, p: 0, display: 'flex', flexDirection: 'column' }}>
-        {calendars.map((cal) => {
+        {section.calendars.map((cal) => {
           const color = eventColor(cal.color_key);
           return (
             <Box
@@ -199,11 +243,16 @@ const CalendarListPanel: React.FC<Props> = ({ calendars, onError }) => {
                     {t('calendar.calendarDefaultMark')}
                   </Box>
                 )}
+                {cal.kind === 'DAYS_OFF' && !cal.counts_as_day_off && (
+                  <Box component="span" sx={{ ml: '6px', fontSize: 11, color: c.textSecondary }}>
+                    {t('calendar.layerNotCounted')}
+                  </Box>
+                )}
               </Box>
               <IconButton
                 size="small"
                 aria-label={t('calendar.calendarEditOf', { name: cal.name })}
-                onClick={() => setDraft({ id: cal.id, name: cal.name, colorKey: cal.color_key })}
+                onClick={() => setDraft(draftOf(cal))}
               >
                 <EditOutlinedIcon sx={{ fontSize: 18 }} />
               </IconButton>
@@ -211,6 +260,8 @@ const CalendarListPanel: React.FC<Props> = ({ calendars, onError }) => {
           );
         })}
       </Box>
+      </Box>
+      ))}
       <Button
         size="small"
         startIcon={<AddIcon />}
@@ -224,6 +275,7 @@ const CalendarListPanel: React.FC<Props> = ({ calendars, onError }) => {
   );
 
   const editing = draft?.id != null ? calendars.find((cal) => cal.id === draft.id) ?? null : null;
+  const thisYear = todayDate().getFullYear();
 
   return (
     <Box
@@ -291,11 +343,47 @@ const CalendarListPanel: React.FC<Props> = ({ calendars, onError }) => {
                 );
               })}
             </Box>
-            <Box sx={{ fontSize: 12, color: 'text.secondary', mt: '6px' }}>{t('calendar.calendarColorHint')}</Box>
+            <Box sx={{ fontSize: 12, color: 'text.secondary', mt: '6px' }}>
+              {t(editing && editing.kind !== 'EVENTS' ? 'calendar.layerColorHint' : 'calendar.calendarColorHint')}
+            </Box>
           </Box>
+          {editing?.kind === 'WORKWEEK' && draft?.workdays && (
+            <Box>
+              <Box sx={{ fontSize: 12, color: 'text.secondary', mb: '6px' }}>{t('calendar.layerWorkdays')}</Box>
+              <ToggleButtonGroup
+                size="small"
+                value={draft.workdays}
+                onChange={(_, value: WeekdayCode[]) => setDraft((d) => (d ? { ...d, workdays: value } : d))}
+                aria-label={t('calendar.layerWorkdays')}
+                sx={{ flexWrap: 'wrap' }}
+              >
+                {WEEKDAYS_IN_ORDER.map((code) => (
+                  <ToggleButton key={code} value={code} sx={{ minWidth: 40 }}>
+                    {weekdays[WEEKDAY_CODES.indexOf(code)]}
+                  </ToggleButton>
+                ))}
+              </ToggleButtonGroup>
+              <Box sx={{ fontSize: 12, color: 'text.secondary', mt: '6px' }}>{t('calendar.layerWorkdaysHint')}</Box>
+            </Box>
+          )}
+          {editing?.kind === 'DAYS_OFF' && draft?.countsAsDayOff != null && (
+            <>
+              <FormControlLabel
+                control={(
+                  <Switch
+                    checked={draft.countsAsDayOff}
+                    onChange={(e) => setDraft((d) => (d ? { ...d, countsAsDayOff: e.target.checked } : d))}
+                  />
+                )}
+                label={t('calendar.layerCounts')}
+              />
+              <Box sx={{ fontSize: 12, color: 'text.secondary', mt: '-8px' }}>{t('calendar.layerCountsHint')}</Box>
+              <DayOffLayerDays layer={editing} initialYear={thisYear} onError={onError} />
+            </>
+          )}
         </DialogContent>
         <DialogActions>
-          {editing && !editing.is_default && (
+          {editing && !editing.is_default && editing.kind === 'EVENTS' && (
             <Button color="error" onClick={() => setDeleting(editing)} sx={{ mr: 'auto' }}>
               {t('calendar.delete')}
             </Button>

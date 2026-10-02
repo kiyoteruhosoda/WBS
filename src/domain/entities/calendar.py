@@ -6,16 +6,29 @@
 
 各利用者に **既定のカレンダー** が 1 つある（``is_default``）。移行で作り、無い利用者には
 初めて使うときに作る。既定のカレンダーは消せない（消したカレンダーの予定の行き先）。
+
+**休みの層**（task #191 の 2 本目、ADR-0029）も同じ一覧に並ぶカレンダーとして持つ（表示の選択と
+組み合わせを 1 つで扱うため）。データは層ごとに分ける:
+
+1. 営業日（``WORKWEEK``）: 稼働する曜日の規則（``workdays``）。日付の一覧ではない
+2. 会社の公休（``DAYS_OFF`` / ``COMPANY``）: 日付の一覧
+3. 私の休み（``DAYS_OFF`` / ``PERSONAL``）: 日付の一覧（終日）
+4. 日本の祝日（``DAYS_OFF`` / ``NATIONAL_HOLIDAY``）: 日付の一覧（年ごとに入れる）
+
+日付の一覧の層は「休みとして数える」（``counts_as_day_off``）を持つ。営業日の判定は表示の
+チェックに関係なくこの印で決まる。層は利用者に 1 つずつで、消せない（予定は入れられない）。
 """
 
 from __future__ import annotations
 
 import enum
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import datetime
 
 from src.domain.exceptions import ValidationError
 from src.domain.value_objects.event_color import EventColorKey
+from src.domain.value_objects.recurrence import WEEKDAYS_MON_TO_FRI, Weekday
 
 NAME_MAX_LENGTH = 200
 
@@ -24,9 +37,48 @@ DEFAULT_CALENDAR_NAME = "予定"
 
 
 class CalendarKind(enum.StrEnum):
-    """カレンダーの種類。いまは予定を入れるカレンダーだけ。"""
+    """カレンダーの種類。"""
 
     EVENTS = "EVENTS"
+    """予定を入れるカレンダー。"""
+    WORKWEEK = "WORKWEEK"
+    """休みの層 1: 営業日（稼働する曜日の規則）。"""
+    DAYS_OFF = "DAYS_OFF"
+    """休みの層 2〜4: 休みの日の一覧（理由は ``DayOffReason``）。"""
+
+
+class DayOffReason(enum.StrEnum):
+    """休みの日の一覧の層の理由（画面の塗りと印を分ける）。"""
+
+    NATIONAL_HOLIDAY = "NATIONAL_HOLIDAY"
+    """日本の祝日。"""
+    COMPANY = "COMPANY"
+    """会社の公休（年末年始など）。"""
+    PERSONAL = "PERSONAL"
+    """私の休み。"""
+
+
+LAYER_NAMES: dict[DayOffReason | None, str] = {
+    None: "営業日",
+    DayOffReason.NATIONAL_HOLIDAY: "日本の祝日",
+    DayOffReason.COMPANY: "会社の公休",
+    DayOffReason.PERSONAL: "私の休み",
+}
+"""層を作るときの名前（利用者が後から変えられる）。``None`` は営業日の層。"""
+
+LAYER_COLORS: dict[DayOffReason | None, EventColorKey] = {
+    None: EventColorKey.GRAPHITE,
+    DayOffReason.NATIONAL_HOLIDAY: EventColorKey.TOMATO,
+    DayOffReason.COMPANY: EventColorKey.TANGERINE,
+    DayOffReason.PERSONAL: EventColorKey.SAGE,
+}
+
+LAYER_SORT_BASE = 1000
+"""層の並び順の始まり（予定のカレンダーの後ろに並べる）。"""
+
+LAYER_ORDER: tuple[DayOffReason | None, ...] = (
+    None, DayOffReason.COMPANY, DayOffReason.PERSONAL, DayOffReason.NATIONAL_HOLIDAY,
+)
 
 
 def calendar_name(raw: str) -> str:
@@ -52,11 +104,57 @@ class Calendar:
     """カレンダーの画面に出すか。⚠ 出すかどうかだけで、分類・打刻の既定のタスク・「今日」・締めは
     これに関係なく全部のカレンダーを見る。"""
     kind: CalendarKind = CalendarKind.EVENTS
+    workdays: frozenset[Weekday] | None = None
+    """営業日の層の稼働する曜日（ほかの種類は ``None``）。"""
+    day_off_reason: DayOffReason | None = None
+    """休みの日の一覧の層の理由（ほかの種類は ``None``）。"""
+    counts_as_day_off: bool = False
+    """休みの日の一覧の層: 営業日の判定で休みとして数えるか。"""
     created_at: datetime | None = None
     updated_at: datetime | None = None
 
     def __post_init__(self) -> None:
         self.name = calendar_name(self.name)
+        if self.kind == CalendarKind.WORKWEEK:
+            self.workdays = frozenset(self.workdays if self.workdays is not None else WEEKDAYS_MON_TO_FRI)
+        if self.kind == CalendarKind.DAYS_OFF and self.day_off_reason is None:
+            raise ValidationError("a days-off calendar needs a reason")
+
+    @property
+    def holds_events(self) -> bool:
+        """予定を入れられるか（休みの層には入れない）。"""
+        return self.kind == CalendarKind.EVENTS
+
+    @property
+    def is_day_off_layer(self) -> bool:
+        return self.kind != CalendarKind.EVENTS
+
+    @classmethod
+    def create_layer(
+        cls, user_id: int, reason: DayOffReason | None, created_at: datetime,
+        workdays: Iterable[Weekday] | None = None,
+    ) -> Calendar:
+        """休みの層。``reason`` が ``None`` なら営業日の層。日付の一覧は最初から休みとして数える。"""
+        return cls(
+            id=None, user_id=user_id, name=LAYER_NAMES[reason], color_key=LAYER_COLORS[reason],
+            sort_order=LAYER_SORT_BASE + LAYER_ORDER.index(reason), is_visible=True,
+            kind=CalendarKind.WORKWEEK if reason is None else CalendarKind.DAYS_OFF,
+            workdays=frozenset(workdays) if workdays is not None else None,
+            day_off_reason=reason, counts_as_day_off=reason is not None,
+            created_at=created_at, updated_at=created_at,
+        )
+
+    def change_layer(
+        self, *, counts_as_day_off: bool | None, workdays: Iterable[Weekday] | None, updated_at: datetime
+    ) -> None:
+        """休みの層の設定（数えるか・稼働する曜日）。``None`` は今のまま。"""
+        if counts_as_day_off is not None and self.kind == CalendarKind.DAYS_OFF:
+            self.counts_as_day_off = counts_as_day_off
+        if workdays is not None:
+            if self.kind != CalendarKind.WORKWEEK:
+                raise ValidationError("only the workweek layer has workdays")
+            self.workdays = frozenset(workdays)
+        self.updated_at = updated_at
 
     @classmethod
     def create(
@@ -102,6 +200,11 @@ class Calendar:
 
 __all__ = [
     "DEFAULT_CALENDAR_NAME",
+    "LAYER_COLORS",
+    "LAYER_NAMES",
+    "LAYER_ORDER",
+    "LAYER_SORT_BASE",
+    "DayOffReason",
     "NAME_MAX_LENGTH",
     "Calendar",
     "CalendarKind",

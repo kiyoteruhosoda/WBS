@@ -41,6 +41,11 @@ USER = 1
 OTHER_USER = 2
 
 
+def _events_only(calendars):
+    """予定のカレンダーだけ（休みの 4 層は一覧の後ろに並ぶ。ADR-0029）。"""
+    return [c for c in calendars if c.holds_events]
+
+
 class World:
     def __init__(self) -> None:
         self.events = InMemoryCalendarEventRepository()
@@ -82,14 +87,14 @@ def w() -> World:
 def test_listing_creates_one_default_calendar_once(w: World) -> None:
     first = w.calendars.list_calendars(USER)
     again = w.calendars.list_calendars(USER)
-    assert [(c.name, c.is_default, c.is_visible) for c in first] == [("予定", True, True)]
+    assert [(c.name, c.is_default, c.is_visible) for c in _events_only(first)] == [("予定", True, True)]
     assert [c.id for c in again] == [c.id for c in first]
 
 
 def test_new_calendar_goes_last_and_starts_visible(w: World) -> None:
     w.calendars.list_calendars(USER)
     created = w.calendars.create_calendar(USER, " 仕事 ", EventColorKey.TOMATO)
-    listed = w.calendars.list_calendars(USER)
+    listed = _events_only(w.calendars.list_calendars(USER))
     assert [c.name for c in listed] == ["予定", "仕事"]
     assert (created.is_visible, created.is_default, created.color_key) == (
         True, False, EventColorKey.TOMATO,
@@ -115,7 +120,7 @@ def test_other_users_calendar_cannot_be_touched(w: World) -> None:
     with pytest.raises(NotFoundError):
         w.calendars.reorder_calendars(USER, [theirs.id])
     assert w.calendar_repo.find_by_id(theirs.id).name == "他人"
-    assert [c.name for c in w.calendars.list_calendars(USER)] == ["予定"]
+    assert [c.name for c in _events_only(w.calendars.list_calendars(USER))] == ["予定"]
 
 
 def test_deleting_moves_events_to_the_default_calendar(w: World) -> None:
@@ -144,7 +149,7 @@ def test_reorder_puts_the_given_ones_first(w: World) -> None:
     a = w.calendars.create_calendar(USER, "A", EventColorKey.DEFAULT)
     b = w.calendars.create_calendar(USER, "B", EventColorKey.DEFAULT)
     listed = w.calendars.reorder_calendars(USER, [b.id])
-    assert [c.id for c in listed] == [b.id, default_id, a.id]
+    assert [c.id for c in _events_only(listed)] == [b.id, default_id, a.id]
 
 
 # ── 表示の選択・組み合わせ ──────────────────────────────────────────────
@@ -153,10 +158,10 @@ def test_reorder_puts_the_given_ones_first(w: World) -> None:
 def test_visibility_replaces_the_whole_selection(w: World) -> None:
     default_id = w.default_id()
     work = w.calendars.create_calendar(USER, "仕事", EventColorKey.TOMATO)
-    listed = w.calendars.set_visible_calendars(USER, [work.id])
+    listed = _events_only(w.calendars.set_visible_calendars(USER, [work.id]))
     assert {c.id: c.is_visible for c in listed} == {default_id: False, work.id: True}
     # 覚えている（読み直しても同じ）
-    assert {c.id: c.is_visible for c in w.calendars.list_calendars(USER)} == {
+    assert {c.id: c.is_visible for c in _events_only(w.calendars.list_calendars(USER))} == {
         default_id: False, work.id: True,
     }
 
@@ -168,7 +173,7 @@ def test_preset_shows_only_its_calendars_and_forgets_deleted_ones(w: World) -> N
     preset = w.calendars.create_preset(USER, "仕事だけ", [work.id, work.id, home.id])
     assert preset.calendar_ids == (work.id, home.id)
 
-    applied = w.calendars.apply_preset(preset.id, USER)
+    applied = _events_only(w.calendars.apply_preset(preset.id, USER))
     assert {c.id: c.is_visible for c in applied} == {
         default_id: False, work.id: True, home.id: True,
     }
