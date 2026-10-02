@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Box } from '@mui/material';
+import { Box, ClickAwayListener } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
 import { useI18n } from '../../i18n';
 import type { CalendarHoliday, CalendarOccurrence } from '../../types';
@@ -20,6 +20,12 @@ import type { CalendarInteractions, TaskDropPreview } from './calendarInteractio
 import type { LinkedTask } from '../../calendar/taskScheduling';
 import type { CalendarDeadline } from '../../calendar/taskDeadlines';
 import { groupDeadlinesByDate } from '../../calendar/taskDeadlines';
+import type { DayTapTarget } from '../../calendar/dayPanel';
+import { nextSelectedDate } from '../../calendar/dayPanel';
+
+// 日の一覧の外を押したとき、閉じずに残す場所: 日付の見出し・月のマス（押した日へ移す・同じ日なら閉じるのは
+// そちらの仕事）と、一覧から開いたダイアログ・メニュー（MUI はポータルで body の直下に出す）。
+const KEEP_PANEL_SELECTOR = '[data-day-select], .MuiModal-root, .MuiPopover-root, .MuiPopper-root';
 
 export interface SchedulerCalendarProps extends CalendarInteractions {
   /** 表示している期間の回（API の応答をそのまま） */
@@ -70,8 +76,8 @@ const SchedulerCalendar: React.FC<SchedulerCalendarProps> = ({
   const { date: today, minute: nowMinute } = toZonedPoint(nowMs, timeZone);
 
   const [position, setPosition] = useState<CalendarPosition>(() => initialPosition(initialMode, today));
+  // 日の一覧（SelectedDayPanel）を開いている日。開くのは日付の見出し・月のマスを押したときだけ（ADR-0034）
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
-  const [selectedSegmentKey, setSelectedSegmentKey] = useState<string | null>(null);
 
   // 日付が変わったとき、今週を見ていたら新しい週へ送る（移植元 RefreshCurrentTime）。
   const previousToday = useRef(today);
@@ -91,21 +97,31 @@ const SchedulerCalendar: React.FC<SchedulerCalendarProps> = ({
   const deadlinesByDate = useMemo(() => groupDeadlinesByDate(deadlines), [deadlines]);
   const dates = useMemo(() => visibleDates(position), [position]);
 
-  const clearSelection = () => {
-    setSelectedDate(null);
-    setSelectedSegmentKey(null);
-  };
+  const clearSelection = () => setSelectedDate(null);
   const move = (next: CalendarPosition) => {
     clearSelection();
     setPosition(next);
   };
-  const selectDate = (date: string) => {
-    setSelectedDate(date);
-    setSelectedSegmentKey(null);
-  };
-  const selectSegment = (segment: DaySegment) => {
-    setSelectedDate(segment.date);
-    setSelectedSegmentKey(segment.key);
+  const tapDate = (target: DayTapTarget) => (date: string) => setSelectedDate((current) => nextSelectedDate(current, target, date));
+  // 予定・タスクのブロックは押せば編集を開く（「今日」と同じ。ADR-0022）。日の一覧は開かない
+  const openSegment = (segment: DaySegment) => interactions.onEditOccurrence?.(segment.occurrence);
+
+  // Esc で日の一覧を閉じる（一覧から開いたダイアログの Esc はダイアログだけを閉じる）
+  useEffect(() => {
+    if (!selectedDate) return undefined;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || e.defaultPrevented) return;
+      if (e.target instanceof Element && e.target.closest('.MuiModal-root')) return;
+      if (document.querySelector('.MuiModal-root')) return;
+      setSelectedDate(null);
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [selectedDate]);
+
+  const onClickAway = (e: MouseEvent | TouchEvent) => {
+    if (e.target instanceof Element && e.target.closest(KEEP_PANEL_SELECTOR)) return;
+    clearSelection();
   };
 
   return (
@@ -136,7 +152,7 @@ const SchedulerCalendar: React.FC<SchedulerCalendarProps> = ({
             cells={buildMonthCells(position.month, today, segmentsByDate, holidays, deadlinesByDate)}
             selectedDate={selectedDate}
             timeZone={timeZone}
-            onSelectDate={selectDate}
+            onSelectDate={tapDate('month-cell')}
             linkedTasks={linkedTasks}
             nonWorkdays={nonWorkdays}
           />
@@ -150,14 +166,14 @@ const SchedulerCalendar: React.FC<SchedulerCalendarProps> = ({
             today={today}
             nowMinute={nowMinute}
             selectedDate={selectedDate}
-            selectedSegmentKey={selectedSegmentKey}
-            onSelectDate={selectDate}
-            onSelectSegment={selectSegment}
+            selectedSegmentKey={null}
+            onSelectDate={tapDate('day-header')}
+            onSelectSegment={openSegment}
             onCreateRange={interactions.onCreateRange}
             onRescheduleOccurrence={interactions.onRescheduleOccurrence}
-            onEditOccurrence={interactions.onEditOccurrence}
             onCreateEvent={interactions.onCreateEvent}
             onToggleDone={interactions.onToggleDone}
+            onOpenDeadline={interactions.onOpenDeadline}
             linkedTasks={linkedTasks}
             dropPreview={dropPreview}
             nonWorkdays={nonWorkdays}
@@ -165,13 +181,14 @@ const SchedulerCalendar: React.FC<SchedulerCalendarProps> = ({
         )}
       </Box>
       {selectedDate && (
+        <ClickAwayListener onClickAway={onClickAway} touchEvent={false}>
         <SelectedDayPanel
           date={selectedDate}
           segments={segmentsByDate.get(selectedDate) ?? []}
           deadlines={deadlinesByDate.get(selectedDate) ?? []}
           holidays={holidays}
           timeZone={timeZone}
-          selectedSegmentKey={selectedSegmentKey}
+          selectedSegmentKey={null}
           onClose={clearSelection}
           onCreateEvent={interactions.onCreateEvent}
           onEditOccurrence={interactions.onEditOccurrence}
@@ -180,6 +197,7 @@ const SchedulerCalendar: React.FC<SchedulerCalendarProps> = ({
           onOpenDeadline={interactions.onOpenDeadline}
           linkedTasks={linkedTasks}
         />
+        </ClickAwayListener>
       )}
     </Box>
   );

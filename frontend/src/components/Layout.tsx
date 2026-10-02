@@ -40,6 +40,7 @@ const pageTitles: { pattern: RegExp; titleKey: TranslationKey }[] = [
   { pattern: /^\/tasks$/, titleKey: 'nav.tasks' },
   { pattern: /^\/gantt$/, titleKey: 'nav.gantt' },
   { pattern: /^\/calendar$/, titleKey: 'nav.calendar' },
+  { pattern: /^\/calendar\/settings$/, titleKey: 'calendar.settingsTitle' },
   { pattern: /^\/closing$/, titleKey: 'nav.closing' },
   { pattern: /^\/actuals(\/\w+)?$/, titleKey: 'nav.actuals' },
   { pattern: /^\/inbox$/, titleKey: 'nav.inbox' },
@@ -159,7 +160,7 @@ const ScopeBadge: React.FC = () => {
   const { t } = useI18n();
   const location = useLocation();
   const { scope, setScope, projects } = useProjectScope();
-  if (scope === 'all' || !SCOPED_PATHS.test(location.pathname) || /^\/tasks\/(new|\d+)$/.test(location.pathname)) {
+  if (scope === 'all' || !SCOPED_PATHS.test(location.pathname) || /^\/(tasks\/(new|\d+)|calendar\/settings)$/.test(location.pathname)) {
     return null;
   }
   const name = scope === 'none' ? t('scope.none') : projects.find((p) => p.id === scope)?.path;
