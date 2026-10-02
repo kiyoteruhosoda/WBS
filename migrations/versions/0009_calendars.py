@@ -58,6 +58,8 @@ def _restore_events_sequence(seq: int | None) -> None:
 
 
 def upgrade() -> None:
+    # ⚠ 作り直しの前に読む（列を足すだけの作り直しでも採番の最大は行の最大まで戻る）。
+    seq = _events_sequence()
     op.create_table(
         "calendars",
         sa.Column("id", _id(), autoincrement=True, nullable=False),
@@ -130,6 +132,7 @@ def upgrade() -> None:
 
     with op.batch_alter_table("calendar_events", table_kwargs=_EVENTS_TABLE_KWARGS) as batch:
         batch.add_column(sa.Column("calendar_id", _id(), nullable=True))
+    _restore_events_sequence(seq)
 
     events = sa.table(
         "calendar_events", sa.column("user_id", _id()), sa.column("calendar_id", _id())
@@ -142,7 +145,6 @@ def upgrade() -> None:
         )
     )
 
-    seq = _events_sequence()
     with op.batch_alter_table("calendar_events", table_kwargs=_EVENTS_TABLE_KWARGS) as batch:
         batch.alter_column("calendar_id", existing_type=_id(), nullable=False)
         batch.create_foreign_key(
