@@ -3,7 +3,7 @@ import type { TimeEntry } from '../types';
 import { fromZonedPoint } from '../calendar/zonedTime';
 import { TOKYO } from '../calendar/testOccurrences';
 import {
-  entriesInOrder, formOfEntry, newEntryForm, patchOf, problemOf, stepInstant, timeFieldOf, withTimeOfDay,
+  entriesInOrder, formOfEntry, newEntryForm, parseTimeOfDay, patchOf, problemOf, stepInstant, timeFieldOf, withTimeOfDay,
 } from './entryForm';
 
 const DAY = '2026-10-05';
@@ -136,4 +136,25 @@ it('orders entries by start', () => {
   const a = entry(1, iso(DAY, 10 * 60), iso(DAY, 11 * 60));
   const b = entry(2, iso(DAY, 9 * 60), iso(DAY, 10 * 60));
   expect(entriesInOrder([a, b]).map((e) => e.id)).toEqual([2, 1]);
+});
+
+describe('parseTimeOfDay', () => {
+  it('reads digits with or without a separator', () => {
+    expect(parseTimeOfDay('930')).toBe('09:30');
+    expect(parseTimeOfDay('0930')).toBe('09:30');
+    expect(parseTimeOfDay('2115')).toBe('21:15');
+    expect(parseTimeOfDay('9')).toBe('09:00');
+    expect(parseTimeOfDay('9:5')).toBe('09:05');
+    expect(parseTimeOfDay('21.15')).toBe('21:15');
+    expect(parseTimeOfDay(' 13:00 ')).toBe('13:00');
+    expect(parseTimeOfDay('１３：４５')).toBe('13:45');
+  });
+
+  it('rejects what is not a time of day', () => {
+    expect(parseTimeOfDay('')).toBeNull();
+    expect(parseTimeOfDay('24:00')).toBeNull();
+    expect(parseTimeOfDay('1260')).toBeNull();
+    expect(parseTimeOfDay('12345')).toBeNull();
+    expect(parseTimeOfDay('pm 3')).toBeNull();
+  });
 });

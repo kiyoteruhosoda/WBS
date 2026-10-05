@@ -4,6 +4,8 @@ import {
   Alert, Autocomplete, Box, Button, CircularProgress, MenuItem, TextField,
 } from '@mui/material';
 import { getAppInfo, getSettings, updateSettings } from '../api/settings';
+import { useTimeInputStyle } from '../preferences/timeInputStyle';
+import type { TimeInputStyle } from '../preferences/timeInputStyle';
 import { useI18n } from '../i18n';
 import { ds } from '../theme';
 import PushSettings from '../components/PushSettings';
@@ -42,6 +44,8 @@ const Settings: React.FC = () => {
   const [language, setLanguage] = useState('ja');
   const [timezone, setTimezone] = useState('Asia/Tokyo');
   const [saved, setSaved] = useState(false);
+  // 時刻の入力は端末ごと（選んだらすぐ効く。保存のボタンは要らない）
+  const timeInput = useTimeInputStyle();
 
   useEffect(() => {
     if (!settings) return;
@@ -96,6 +100,17 @@ const Settings: React.FC = () => {
               <TextField {...params} label={t('settings.timezone')} helperText={t('settings.timezoneHelp')} />
             )}
           />
+          <TextField
+            select
+            label={t('settings.timeInput')}
+            value={timeInput.style}
+            onChange={(e) => timeInput.setStyle(e.target.value as TimeInputStyle)}
+            helperText={t('settings.timeInputHelp')}
+            sx={{ maxWidth: 360 }}
+          >
+            <MenuItem value="24h">{t('settings.timeInput.24h')}</MenuItem>
+            <MenuItem value="device">{t('settings.timeInput.device')}</MenuItem>
+          </TextField>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
             <Button
               variant="contained"
