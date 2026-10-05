@@ -45,6 +45,12 @@ import {
   taskUrgencyOf,
 } from '../today/todayView';
 import { formatClockDuration, formatExactDuration, formatHours } from '../utils/format';
+import type { EntryForm } from '../today/entryForm';
+import { entriesInOrder, formOfEntry, newEntryForm, patchOf } from '../today/entryForm';
+import { createTimeEntry, deleteTimeEntry, updateTimeEntry } from '../api/timeEntries';
+import { CLOSING_BOARD_KEY } from '../api/closing';
+import { closingFailureOf } from '../closing/closingRequests';
+import TodayEntryDialog from '../components/today/TodayEntryDialog';
 
 // 「今日」の画面（task #160、ADR-0015）。朝に開いて 1 画面で済むように 3 層で並べる:
 //   1. いま（走っている打刻・いまの予定から Start）と、今日の予定のグリッド（打刻の帯を重ねる）
@@ -55,6 +61,7 @@ import { formatClockDuration, formatExactDuration, formatHours } from '../utils/
 // 予定の分類が「タスク」の今日の回（毎日の定常業務など）は「今日やること」に並べ、済みのチェックと ▶ を付ける
 // （task #190、ADR-0025）。無い日はこのカードを出さない。
 // 全体の進捗（KPI）は今日の作業に使わないので、実績の画面へ寄せた（ADR-0036）。
+// 今日の実績のカードには打刻を 1 本ずつ並べ、押して直す・「足す」で足す（task #287、ADR-0038）。
 
 const UNASSIGNED_COLOR = ds.todoGray;
 /** グリッドを開いたとき、今の何分前を上端にするか（狭い画面でも今と次の予定が見える） */
@@ -423,16 +430,30 @@ const ToScheduleList: React.FC<{
 const ActualsCard: React.FC<{
   totalSeconds: number;
   actuals: TodaySummary['actuals'];
+  entries: readonly TimeEntry[];
+  timeZone: string;
+  nowMs: number;
   colorOf: (taskId: number | null) => string;
-}> = ({ totalSeconds, actuals, colorOf }) => {
+  onOpenEntry: (entry: TimeEntry) => void;
+  onAdd: () => void;
+}> = ({ totalSeconds, actuals, entries, timeZone, nowMs, colorOf, onOpenEntry, onAdd }) => {
   const { t } = useI18n();
   const longest = actuals.reduce((m, a) => Math.max(m, a.seconds), 0);
+  const timeOf = (ms: number) => formatMinute(toZonedPoint(ms, timeZone).minute);
   return (
     <Box sx={{ ...card, gridArea: 'actuals' }} data-testid="today-actuals">
-      <Box sx={cardHeader}>
+      <Box sx={{ ...cardHeader, alignItems: 'center', py: '4px', pr: '8px' }}>
         <Box sx={sectionTitle}>{t('today.actuals')}</Box>
-        <Box sx={{ fontSize: 14, fontWeight: 700, color: ds.text, fontVariantNumeric: 'tabular-nums' }}>
-          {formatClockDuration(totalSeconds)}
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <Box sx={{ fontSize: 14, fontWeight: 700, color: ds.text, fontVariantNumeric: 'tabular-nums' }}>
+            {formatClockDuration(totalSeconds)}
+          </Box>
+          <Button
+            size="small" startIcon={<AddIcon />} onClick={onAdd} data-testid="today-add-entry"
+            sx={{ minHeight: 36, whiteSpace: 'nowrap' }}
+          >
+            {t('today.entry.add')}
+          </Button>
         </Box>
       </Box>
       {actuals.length === 0 && (
@@ -453,6 +474,41 @@ const ActualsCard: React.FC<{
           </Box>
         </Box>
       ))}
+      {entries.length > 0 && (
+        <Box sx={{ mt: '6px', borderTop: `1px solid ${ds.borderPale}` }} data-testid="today-entries">
+          {entries.map((entry) => {
+            const startedMs = Date.parse(entry.started_at);
+            const endedMs = entry.ended_at == null ? nowMs : Date.parse(entry.ended_at);
+            const label = `${timeOf(startedMs)}–${entry.ended_at == null ? '' : timeOf(endedMs)}`;
+            return (
+              <ButtonBase
+                key={entry.id}
+                onClick={() => onOpenEntry(entry)}
+                aria-label={t('today.entry.open', { time: label, title: entry.task_title ?? t('timer.unassigned') })}
+                sx={{
+                  width: '100%', minHeight: 44, px: '14px', gap: '10px', justifyContent: 'flex-start', textAlign: 'left',
+                  borderBottom: `1px solid ${ds.hairline}`, '&:last-of-type': { borderBottom: 'none' },
+                  '&:hover': { bgcolor: ds.primaryPale },
+                }}
+              >
+                <Box sx={{ width: 4, alignSelf: 'stretch', my: '8px', borderRadius: '2px', bgcolor: colorOf(entry.task_id), flexShrink: 0 }} />
+                <Box sx={{ fontSize: 13, color: ds.textSub, fontVariantNumeric: 'tabular-nums', flexShrink: 0, minWidth: 86 }}>
+                  {label}
+                  {entry.ended_at == null && (
+                    <Box component="span" sx={{ color: ds.primary, fontWeight: 700 }}>{t('today.running')}</Box>
+                  )}
+                </Box>
+                <Box sx={{ flex: 1, minWidth: 0, fontSize: 14, color: entry.task_id == null ? ds.textSub : ds.text, ...ellipsis }}>
+                  {entry.task_title ?? t('timer.unassigned')}
+                </Box>
+                <Box sx={{ fontSize: 13, color: ds.text, fontVariantNumeric: 'tabular-nums', flexShrink: 0 }}>
+                  {formatClockDuration(Math.max(0, Math.floor((endedMs - startedMs) / 1000)))}
+                </Box>
+              </ButtonBase>
+            );
+          })}
+        </Box>
+      )}
     </Box>
   );
 };
@@ -512,6 +568,10 @@ const Today: React.FC = () => {
   const writes = useTimerWrites();
   // 予定の書き込みと編集の画面はカレンダーと同じもの（task #185）
   const editing = useCalendarEditing({ occurrencesKey, timeZone, tasks: tasks ?? [] });
+  // 打刻を足す・直す（task #287）
+  const [entryDialog, setEntryDialog] = useState<{ entry: TimeEntry | null; initial: EntryForm } | null>(null);
+  const [entryBusy, setEntryBusy] = useState(false);
+  const [entryError, setEntryError] = useState<string | null>(null);
 
   const linkedTasks = useMemo(
     () => buildLinkedTasks(tasks ?? [], categories ?? [], categoryColor),
@@ -556,6 +616,60 @@ const Today: React.FC = () => {
   );
   // 予定を押したら編集（カレンダーは選んで日の一覧を出し二度押しで編集するが、ここには日の一覧が無い）
   const editSegment = (segment: DaySegment) => editing.openEdit(segment.occurrence);
+
+  const openEntry = (entry: TimeEntry | null) => {
+    setEntryError(null);
+    setEntryDialog({ entry, initial: entry ? formOfEntry(entry) : newEntryForm(summary.entries, date, timeZone, Date.now()) });
+  };
+  const writeEntry = async (write: () => Promise<unknown>) => {
+    if (entryBusy) return;
+    setEntryBusy(true);
+    setEntryError(null);
+    try {
+      await write();
+      setEntryDialog(null);
+      // 上部の打刻ボタン・締めの画面も打刻を見ている（ClosingPage の refresh と同じ）
+      void qc.invalidateQueries({ queryKey: ['time-entries'] });
+      void qc.invalidateQueries({ queryKey: TODAY_SUMMARY_KEY });
+      void qc.invalidateQueries({ queryKey: [CLOSING_BOARD_KEY] });
+    } catch (error) {
+      const failure = closingFailureOf(error);
+      setEntryError(t(failure.key, failure.params));
+    } finally {
+      setEntryBusy(false);
+    }
+  };
+  const saveEntry = (form: EntryForm) => {
+    const target = entryDialog?.entry ?? null;
+    if (target == null) {
+      void writeEntry(() => createTimeEntry({
+        started_at: new Date(form.startMs).toISOString(),
+        ended_at: new Date(form.endMs as number).toISOString(),
+        task_id: form.taskId,
+        memo: form.memo.trim() ? form.memo : null,
+      }));
+      return;
+    }
+    const patch = patchOf(target, form);
+    if (Object.keys(patch).length === 0) {
+      setEntryDialog(null);
+      return;
+    }
+    void writeEntry(() => updateTimeEntry(target.id, patch));
+  };
+  const removeEntry = () => {
+    const target = entryDialog?.entry;
+    if (target) void writeEntry(() => deleteTimeEntry(target.id));
+  };
+  // 1 押しで選べるタスク: 今日の打刻に出てきたもの（新しい順・5 件まで）
+  const quickTasks = [...summary.entries]
+    .sort((a, b) => Date.parse(b.started_at) - Date.parse(a.started_at))
+    .filter((e) => e.task_id != null)
+    .reduce<{ id: number; title: string }[]>((list, e) => (
+      list.some((q) => q.id === e.task_id) || list.length >= 5
+        ? list
+        : [...list, { id: e.task_id as number, title: e.task_title ?? taskTitle(e.task_id) ?? '' }]
+    ), []);
   const toolButton = { width: 36, height: 36, color: ds.textSub } as const;
 
   return (
@@ -678,9 +792,34 @@ const Today: React.FC = () => {
         categories={categories}
         shownFirst={wide ? 8 : TASKS_SHOWN_FIRST}
       />
-      <ActualsCard totalSeconds={live.totalSeconds} actuals={live.actuals} colorOf={colorOf} />
+      <ActualsCard
+        totalSeconds={live.totalSeconds}
+        actuals={live.actuals}
+        entries={entriesInOrder(summary.entries)}
+        timeZone={timeZone}
+        nowMs={nowMs}
+        colorOf={colorOf}
+        onOpenEntry={openEntry}
+        onAdd={() => openEntry(null)}
+      />
 
       {editing.dialogs}
+      {entryDialog && (
+        <TodayEntryDialog
+          entry={entryDialog.entry}
+          initial={entryDialog.initial}
+          today={date}
+          timeZone={timeZone}
+          nowMs={Date.now()}
+          tasks={tasks ?? []}
+          quickTasks={quickTasks}
+          busy={entryBusy}
+          error={entryError}
+          onCancel={() => setEntryDialog(null)}
+          onSave={saveEntry}
+          onDelete={removeEntry}
+        />
+      )}
     </Box>
   );
 };

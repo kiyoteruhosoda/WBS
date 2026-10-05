@@ -30,6 +30,19 @@ export const getTimeEntries = async (start: string, end: string): Promise<TimeEn
   return data;
 };
 
+export interface TimeEntryCreate {
+  started_at: string;
+  ended_at: string;
+  task_id: number | null;
+  memo: string | null;
+}
+
+/** 空き時間に止まった打刻を足す（source=manual）。 */
+export const createTimeEntry = async (payload: TimeEntryCreate): Promise<TimeEntry> => {
+  const { data } = await client.post<TimeEntry>('/time-entries', payload);
+  return data;
+};
+
 export interface TimeEntryPatch {
   started_at?: string;
   ended_at?: string;
