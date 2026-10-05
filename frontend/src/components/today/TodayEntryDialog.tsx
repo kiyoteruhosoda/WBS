@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import {
-  Alert, Box, Button, Chip, Dialog, DialogActions, DialogContent, DialogTitle, IconButton, Stack, TextField,
+  Alert, Box, Button, Chip, Dialog, DialogActions, DialogContent, DialogTitle, IconButton, MenuItem, Stack, TextField,
   useMediaQuery, useTheme,
 } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
@@ -8,11 +8,12 @@ import RemoveIcon from '@mui/icons-material/Remove';
 import { useI18n } from '../../i18n';
 import type { Task, TimeEntry } from '../../types';
 import type { EntryForm } from '../../today/entryForm';
-import { parseTimeOfDay, problemOf, stepInstant, timeFieldOf, withTimeOfDay } from '../../today/entryForm';
+import { minuteChoices, problemOf, stepInstant, timeFieldOf, withTimeOfDay } from '../../today/entryForm';
 import { useTimeInputStyle } from '../../preferences/timeInputStyle';
 import { useProjectScope } from '../../projects/useProjectScope';
 import TaskPickerField from '../TaskPickerField';
 import { formatClockDuration } from '../../utils/format';
+import { formatMinute } from '../../calendar/zonedTime';
 import { ds } from '../../theme';
 
 interface Props {
@@ -33,36 +34,39 @@ interface Props {
 }
 
 const timeInputStyle = { fontSize: 20, textAlign: 'center', padding: '10px 8px' } as const;
+const HOURS = Array.from({ length: 24 }, (_, h) => h);
 
 /**
- * 24 時間の時刻の欄（ADR-0039）。数字のキーボードで `930` と打てば 09:30。確定は欄を離れたときか Enter
- * （読めなければ元へ戻す）。端末の時刻の欄は言語・時計の設定で午前／午後になるので、既定はこちら。
+ * 24 時間の時刻の欄（ADR-0039）。時（0〜23）と分（5 分刻み）を選ぶ。端末の時刻の欄は言語・時計の設定で
+ * 午前／午後になるので、既定はこちら。
  */
 const TwentyFourHourField: React.FC<{
   label: string;
   value: string;
   disabled?: boolean;
-  onCommit: (value: string) => void;
-}> = ({ label, value, disabled, onCommit }) => {
-  // 打っている途中だけ持つ（null の間は value をそのまま見せる。± で変わった値も追える）
-  const [draft, setDraft] = useState<string | null>(null);
-  const commit = () => {
-    if (draft == null) return;
-    const parsed = parseTimeOfDay(draft);
-    if (parsed != null && parsed !== value) onCommit(parsed);
-    setDraft(null);
-  };
+  onChange: (value: string) => void;
+}> = ({ label, value, disabled, onChange }) => {
+  const { t } = useI18n();
+  const [hour, minute] = value.split(':').map(Number);
+  const pick = { flex: 1, minWidth: 0, '& .MuiSelect-select': { ...timeInputStyle, pr: '28px !important' } } as const;
   return (
-    <TextField
-      value={draft ?? value} disabled={disabled} placeholder="HH:MM"
-      onFocus={(e) => e.target.select()}
-      onChange={(e) => setDraft(e.target.value)}
-      onBlur={commit}
-      onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); commit(); } }}
-      error={draft != null && draft.trim() !== '' && parseTimeOfDay(draft) == null}
-      slotProps={{ htmlInput: { 'aria-label': label, inputMode: 'numeric', maxLength: 5, autoComplete: 'off', style: timeInputStyle } }}
-      sx={{ flex: 1, minWidth: 0 }}
-    />
+    <Box sx={{ display: 'flex', alignItems: 'center', gap: '4px', flex: 1, minWidth: 0 }}>
+      <TextField
+        select value={hour} disabled={disabled} sx={pick}
+        onChange={(e) => onChange(formatMinute(Number(e.target.value) * 60 + minute))}
+        slotProps={{ htmlInput: { 'aria-label': t('today.entry.hourOf', { label }) } }}
+      >
+        {HOURS.map((h) => <MenuItem key={h} value={h}>{String(h).padStart(2, '0')}</MenuItem>)}
+      </TextField>
+      <Box component="span" sx={{ fontSize: 20, color: ds.textSub }}>:</Box>
+      <TextField
+        select value={minute} disabled={disabled} sx={pick}
+        onChange={(e) => onChange(formatMinute(hour * 60 + Number(e.target.value)))}
+        slotProps={{ htmlInput: { 'aria-label': t('today.entry.minuteOf', { label }) } }}
+      >
+        {minuteChoices(minute).map((m) => <MenuItem key={m} value={m}>{String(m).padStart(2, '0')}</MenuItem>)}
+      </TextField>
+    </Box>
   );
 };
 
@@ -102,7 +106,7 @@ const TimeRow: React.FC<{
           <RemoveIcon />
         </IconButton>
         {style === '24h' ? (
-          <TwentyFourHourField label={label} value={field.value} disabled={disabled} onCommit={setTime} />
+          <TwentyFourHourField label={label} value={field.value} disabled={disabled} onChange={setTime} />
         ) : (
           <TextField
             type="time" value={field.value} disabled={disabled}

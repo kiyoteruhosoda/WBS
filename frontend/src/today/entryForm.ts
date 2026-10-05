@@ -85,29 +85,10 @@ export const withTimeOfDay = (instantMs: number, value: string, timeZone: string
   return fromZonedPoint(current.date, hour * 60 + minute, timeZone);
 };
 
-/**
- * 24 時間の欄に打った文字 → HH:MM（読めなければ null）。数字だけでも読む:
- * `930`・`0930` → 09:30、`9` → 09:00、`9:5` → 09:05、`21.15` → 21:15。
- */
-export const parseTimeOfDay = (text: string): string | null => {
-  const trimmed = text.trim().replace(/[：.．]/g, ':').replace(/[０-９]/g, (d) => String(d.charCodeAt(0) - 0xff10));
-  let hour: number;
-  let minute: number;
-  const sep = /^(\d{1,2}):(\d{1,2})$/.exec(trimmed);
-  if (sep) {
-    hour = Number(sep[1]);
-    minute = Number(sep[2]);
-  } else if (/^\d{1,2}$/.test(trimmed)) {
-    hour = Number(trimmed);
-    minute = 0;
-  } else if (/^\d{3,4}$/.test(trimmed)) {
-    hour = Number(trimmed.slice(0, -2));
-    minute = Number(trimmed.slice(-2));
-  } else {
-    return null;
-  }
-  if (hour > 23 || minute > 59) return null;
-  return formatMinute(hour * 60 + minute);
+/** 24 時間の欄の分の選択肢: 5 分刻み（今の分が刻みに無ければ足す。打刻の 9:07 を選び直さずに残せる）。 */
+export const minuteChoices = (current: number): number[] => {
+  const steps = Array.from({ length: 12 }, (_, i) => i * 5);
+  return steps.includes(current) ? steps : [...steps, current].sort((x, y) => x - y);
 };
 
 /** ± の 1 押し。刻みの目盛りへ寄せる（目盛りの上なら 1 刻み動かす）。 */
