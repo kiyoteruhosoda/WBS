@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import {
-  Alert, Box, Button, Chip, Dialog, DialogActions, DialogContent, DialogTitle, IconButton, MenuItem, Stack, TextField,
+  Alert, Box, Button, ButtonBase, Chip, Dialog, DialogActions, DialogContent, DialogTitle, IconButton, Stack, TextField,
   useMediaQuery, useTheme,
 } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
@@ -8,12 +8,14 @@ import RemoveIcon from '@mui/icons-material/Remove';
 import { useI18n } from '../../i18n';
 import type { Task, TimeEntry } from '../../types';
 import type { EntryForm } from '../../today/entryForm';
-import { minuteChoices, problemOf, stepInstant, timeFieldOf, withTimeOfDay } from '../../today/entryForm';
-import { useTimeInputStyle } from '../../preferences/timeInputStyle';
+import { problemOf, stepInstant, timeFieldOf, withTimeOfDay } from '../../today/entryForm';
+import { useClockStyle } from '../../preferences/clockStyle';
+import { formatClockTime } from '../../clock/clockFace';
+import ClockPicker from '../ClockPicker';
 import { useProjectScope } from '../../projects/useProjectScope';
 import TaskPickerField from '../TaskPickerField';
 import { formatClockDuration } from '../../utils/format';
-import { formatMinute } from '../../calendar/zonedTime';
+import { formatMinute, toZonedPoint } from '../../calendar/zonedTime';
 import { ds } from '../../theme';
 
 interface Props {
@@ -33,44 +35,7 @@ interface Props {
   onDelete: () => void;
 }
 
-const timeInputStyle = { fontSize: 20, textAlign: 'center', padding: '10px 8px' } as const;
-const HOURS = Array.from({ length: 24 }, (_, h) => h);
-
-/**
- * 24 時間の時刻の欄（ADR-0039）。時（0〜23）と分（5 分刻み）を選ぶ。端末の時刻の欄は言語・時計の設定で
- * 午前／午後になるので、既定はこちら。
- */
-const TwentyFourHourField: React.FC<{
-  label: string;
-  value: string;
-  disabled?: boolean;
-  onChange: (value: string) => void;
-}> = ({ label, value, disabled, onChange }) => {
-  const { t } = useI18n();
-  const [hour, minute] = value.split(':').map(Number);
-  const pick = { flex: 1, minWidth: 0, '& .MuiSelect-select': { ...timeInputStyle, pr: '28px !important' } } as const;
-  return (
-    <Box sx={{ display: 'flex', alignItems: 'center', gap: '4px', flex: 1, minWidth: 0 }}>
-      <TextField
-        select value={hour} disabled={disabled} sx={pick}
-        onChange={(e) => onChange(formatMinute(Number(e.target.value) * 60 + minute))}
-        slotProps={{ htmlInput: { 'aria-label': t('today.entry.hourOf', { label }) } }}
-      >
-        {HOURS.map((h) => <MenuItem key={h} value={h}>{String(h).padStart(2, '0')}</MenuItem>)}
-      </TextField>
-      <Box component="span" sx={{ fontSize: 20, color: ds.textSub }}>:</Box>
-      <TextField
-        select value={minute} disabled={disabled} sx={pick}
-        onChange={(e) => onChange(formatMinute(hour * 60 + Number(e.target.value)))}
-        slotProps={{ htmlInput: { 'aria-label': t('today.entry.minuteOf', { label }) } }}
-      >
-        {minuteChoices(minute).map((m) => <MenuItem key={m} value={m}>{String(m).padStart(2, '0')}</MenuItem>)}
-      </TextField>
-    </Box>
-  );
-};
-
-/** 時刻の 1 行: [−] HH:MM [+]（日をまたいだ時刻には日付を添える）。 */
+/** 時刻の 1 行: [−] 時刻 [+]（時刻を押すと時計の文字盤。日をまたいだ時刻には日付を添える）。 */
 const TimeRow: React.FC<{
   label: string;
   instantMs: number;
@@ -81,10 +46,13 @@ const TimeRow: React.FC<{
   onChange: (instantMs: number) => void;
 }> = ({ label, instantMs, today, timeZone, disabled, trailing, onChange }) => {
   const { t } = useI18n();
-  const { style } = useTimeInputStyle();
+  const { style } = useClockStyle();
+  const [picking, setPicking] = useState(false);
   const field = timeFieldOf(instantMs, timeZone);
-  const setTime = (value: string) => {
-    const next = withTimeOfDay(instantMs, value, timeZone);
+  const minuteOfDay = toZonedPoint(instantMs, timeZone).minute;
+  const choose = (minute: number) => {
+    setPicking(false);
+    const next = withTimeOfDay(instantMs, formatMinute(minute), timeZone);
     if (next != null) onChange(next);
   };
   const stepButton = { width: 48, height: 48, border: `1px solid ${ds.border}`, borderRadius: '10px', flexShrink: 0 } as const;
@@ -105,16 +73,15 @@ const TimeRow: React.FC<{
         >
           <RemoveIcon />
         </IconButton>
-        {style === '24h' ? (
-          <TwentyFourHourField label={label} value={field.value} disabled={disabled} onChange={setTime} />
-        ) : (
-          <TextField
-            type="time" value={field.value} disabled={disabled}
-            onChange={(e) => setTime(e.target.value)}
-            slotProps={{ htmlInput: { 'aria-label': label, step: 60, style: timeInputStyle } }}
-            sx={{ flex: 1, minWidth: 0 }}
-          />
-        )}
+        <ButtonBase
+          aria-label={label} disabled={disabled} onClick={() => setPicking(true)}
+          sx={{
+            flex: 1, minWidth: 0, height: 48, borderRadius: '10px', border: `1px solid ${ds.border}`,
+            fontSize: 20, fontWeight: 700, color: ds.text, fontVariantNumeric: 'tabular-nums',
+          }}
+        >
+          {formatClockTime(minuteOfDay, style, { am: t('clock.am'), pm: t('clock.pm') })}
+        </ButtonBase>
         <IconButton
           aria-label={t('today.entry.later', { label })} disabled={disabled} sx={stepButton}
           onClick={() => onChange(stepInstant(instantMs, 1, timeZone))}
@@ -123,13 +90,16 @@ const TimeRow: React.FC<{
         </IconButton>
         {trailing}
       </Box>
+      {picking && (
+        <ClockPicker value={minuteOfDay} style={style} title={label} onCancel={() => setPicking(false)} onChoose={choose} />
+      )}
     </Box>
   );
 };
 
 /**
  * 「今日」の画面から打刻を 1 本足す・直す（task #287、ADR-0038）。スマホでは全画面で、片手で直せるように
- * タスクは 1 押しの候補、時刻は時刻だけの欄と 15 分の ± にしてある。計測中の打刻は終わりを決めない（止めるのは打刻のボタン）。
+ * タスクは 1 押しの候補、時刻は時計の文字盤と 15 分の ± にしてある。計測中の打刻は終わりを決めない（止めるのは打刻のボタン）。
  */
 const TodayEntryDialog: React.FC<Props> = ({
   entry, initial, today, timeZone, nowMs, tasks, quickTasks, busy, error, onCancel, onSave, onDelete,
