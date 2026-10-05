@@ -3,7 +3,7 @@ import type { TimeEntry } from '../types';
 import { fromZonedPoint } from '../calendar/zonedTime';
 import { TOKYO } from '../calendar/testOccurrences';
 import {
-  entriesInOrder, formOfEntry, newEntryForm, minuteChoices, patchOf, problemOf, stepInstant, timeFieldOf, withTimeOfDay,
+  entriesInOrder, formOfEntry, newEntryForm, patchOf, problemOf, stepInstant, timeFieldOf, withTimeOfDay,
 } from './entryForm';
 
 const DAY = '2026-10-05';
@@ -138,9 +138,3 @@ it('orders entries by start', () => {
   expect(entriesInOrder([a, b]).map((e) => e.id)).toEqual([2, 1]);
 });
 
-describe('minuteChoices', () => {
-  it('offers 5-minute steps and keeps an odd current minute', () => {
-    expect(minuteChoices(30)).toHaveLength(12);
-    expect(minuteChoices(7)).toEqual([0, 5, 7, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55]);
-  });
-});

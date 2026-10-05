@@ -85,12 +85,6 @@ export const withTimeOfDay = (instantMs: number, value: string, timeZone: string
   return fromZonedPoint(current.date, hour * 60 + minute, timeZone);
 };
 
-/** 24 時間の欄の分の選択肢: 5 分刻み（今の分が刻みに無ければ足す。打刻の 9:07 を選び直さずに残せる）。 */
-export const minuteChoices = (current: number): number[] => {
-  const steps = Array.from({ length: 12 }, (_, i) => i * 5);
-  return steps.includes(current) ? steps : [...steps, current].sort((x, y) => x - y);
-};
-
 /** ± の 1 押し。刻みの目盛りへ寄せる（目盛りの上なら 1 刻み動かす）。 */
 export const stepInstant = (instantMs: number, direction: 1 | -1, timeZone: string): number => {
   const p = toZonedPoint(instantMs, timeZone);

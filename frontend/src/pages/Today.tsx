@@ -51,6 +51,8 @@ import { createTimeEntry, deleteTimeEntry, updateTimeEntry } from '../api/timeEn
 import { CLOSING_BOARD_KEY } from '../api/closing';
 import { closingFailureOf } from '../closing/closingRequests';
 import TodayEntryDialog from '../components/today/TodayEntryDialog';
+import { useClockStyle } from '../preferences/clockStyle';
+import { formatClockTime } from '../clock/clockFace';
 
 // 「今日」の画面（task #160、ADR-0015）。朝に開いて 1 画面で済むように 3 層で並べる:
 //   1. いま（走っている打刻・いまの予定から Start）と、今日の予定のグリッド（打刻の帯を重ねる）
@@ -439,7 +441,8 @@ const ActualsCard: React.FC<{
 }> = ({ totalSeconds, actuals, entries, timeZone, nowMs, colorOf, onOpenEntry, onAdd }) => {
   const { t } = useI18n();
   const longest = actuals.reduce((m, a) => Math.max(m, a.seconds), 0);
-  const timeOf = (ms: number) => formatMinute(toZonedPoint(ms, timeZone).minute);
+  const { style } = useClockStyle();
+  const timeOf = (ms: number) => formatClockTime(toZonedPoint(ms, timeZone).minute, style, { am: t('clock.am'), pm: t('clock.pm') });
   return (
     <Box sx={{ ...card, gridArea: 'actuals' }} data-testid="today-actuals">
       <Box sx={{ ...cardHeader, alignItems: 'center', py: '4px', pr: '8px' }}>
