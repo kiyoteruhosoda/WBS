@@ -8,7 +8,8 @@ import RemoveIcon from '@mui/icons-material/Remove';
 import { useI18n } from '../../i18n';
 import type { Task, TimeEntry } from '../../types';
 import type { EntryForm } from '../../today/entryForm';
-import { problemOf, stepInstant, timeFieldOf, withTimeOfDay } from '../../today/entryForm';
+import { parseTimeOfDay, problemOf, stepInstant, timeFieldOf, withTimeOfDay } from '../../today/entryForm';
+import { useTimeInputStyle } from '../../preferences/timeInputStyle';
 import { useProjectScope } from '../../projects/useProjectScope';
 import TaskPickerField from '../TaskPickerField';
 import { formatClockDuration } from '../../utils/format';
@@ -31,6 +32,40 @@ interface Props {
   onDelete: () => void;
 }
 
+const timeInputStyle = { fontSize: 20, textAlign: 'center', padding: '10px 8px' } as const;
+
+/**
+ * 24 時間の時刻の欄（ADR-0039）。数字のキーボードで `930` と打てば 09:30。確定は欄を離れたときか Enter
+ * （読めなければ元へ戻す）。端末の時刻の欄は言語・時計の設定で午前／午後になるので、既定はこちら。
+ */
+const TwentyFourHourField: React.FC<{
+  label: string;
+  value: string;
+  disabled?: boolean;
+  onCommit: (value: string) => void;
+}> = ({ label, value, disabled, onCommit }) => {
+  // 打っている途中だけ持つ（null の間は value をそのまま見せる。± で変わった値も追える）
+  const [draft, setDraft] = useState<string | null>(null);
+  const commit = () => {
+    if (draft == null) return;
+    const parsed = parseTimeOfDay(draft);
+    if (parsed != null && parsed !== value) onCommit(parsed);
+    setDraft(null);
+  };
+  return (
+    <TextField
+      value={draft ?? value} disabled={disabled} placeholder="HH:MM"
+      onFocus={(e) => e.target.select()}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); commit(); } }}
+      error={draft != null && draft.trim() !== '' && parseTimeOfDay(draft) == null}
+      slotProps={{ htmlInput: { 'aria-label': label, inputMode: 'numeric', maxLength: 5, autoComplete: 'off', style: timeInputStyle } }}
+      sx={{ flex: 1, minWidth: 0 }}
+    />
+  );
+};
+
 /** 時刻の 1 行: [−] HH:MM [+]（日をまたいだ時刻には日付を添える）。 */
 const TimeRow: React.FC<{
   label: string;
@@ -42,7 +77,12 @@ const TimeRow: React.FC<{
   onChange: (instantMs: number) => void;
 }> = ({ label, instantMs, today, timeZone, disabled, trailing, onChange }) => {
   const { t } = useI18n();
+  const { style } = useTimeInputStyle();
   const field = timeFieldOf(instantMs, timeZone);
+  const setTime = (value: string) => {
+    const next = withTimeOfDay(instantMs, value, timeZone);
+    if (next != null) onChange(next);
+  };
   const stepButton = { width: 48, height: 48, border: `1px solid ${ds.border}`, borderRadius: '10px', flexShrink: 0 } as const;
   return (
     <Box>
@@ -61,15 +101,16 @@ const TimeRow: React.FC<{
         >
           <RemoveIcon />
         </IconButton>
-        <TextField
-          type="time" value={field.value} disabled={disabled}
-          onChange={(e) => {
-            const next = withTimeOfDay(instantMs, e.target.value, timeZone);
-            if (next != null) onChange(next);
-          }}
-          slotProps={{ htmlInput: { 'aria-label': label, step: 60, style: { fontSize: 20, textAlign: 'center', padding: '10px 8px' } } }}
-          sx={{ flex: 1, minWidth: 0 }}
-        />
+        {style === '24h' ? (
+          <TwentyFourHourField label={label} value={field.value} disabled={disabled} onCommit={setTime} />
+        ) : (
+          <TextField
+            type="time" value={field.value} disabled={disabled}
+            onChange={(e) => setTime(e.target.value)}
+            slotProps={{ htmlInput: { 'aria-label': label, step: 60, style: timeInputStyle } }}
+            sx={{ flex: 1, minWidth: 0 }}
+          />
+        )}
         <IconButton
           aria-label={t('today.entry.later', { label })} disabled={disabled} sx={stepButton}
           onClick={() => onChange(stepInstant(instantMs, 1, timeZone))}
