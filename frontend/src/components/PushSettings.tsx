@@ -16,6 +16,8 @@ import { useI18n } from '../i18n';
 import type { TranslationKey } from '../i18n/translations';
 import { ds } from '../theme';
 import { formatDate } from '../utils/format';
+import { useInPageAlarmSetting } from '../preferences/inPageAlarm';
+import { usePushCoversAlarms } from '../alarms/usePushCoversAlarms';
 
 const card = {
   bgcolor: ds.paper,
@@ -41,6 +43,8 @@ const HOURS = Array.from({ length: 24 }, (_, i) => i + 1);
 
 const PREFERENCES_KEY = ['push', 'preferences'] as const;
 const DEVICES_KEY = ['push', 'devices'] as const;
+/** この端末の購読の送り先（画面の中で知らせるかの判断が読む。InPageAlarm） */
+const THIS_DEVICE_KEY = ['push', 'thisDevice'] as const;
 
 const dateTime = (iso: string | null): string => {
   if (!iso) return '—';
@@ -61,6 +65,8 @@ const PushSettings: React.FC = () => {
   const { t } = useI18n();
   const qc = useQueryClient();
   const [env] = useState(browserPushEnvironment);
+  const inPageAlarm = useInPageAlarmSetting();
+  const pushCoversAlarms = usePushCoversAlarms();
 
   const config = useQuery({ queryKey: ['push', 'config'], queryFn: getPushConfig });
   const preferences = useQuery({ queryKey: PREFERENCES_KEY, queryFn: getPushPreferences });
@@ -95,6 +101,7 @@ const PushSettings: React.FC = () => {
     onSettled: async () => {
       await refreshDevice();
       await qc.invalidateQueries({ queryKey: DEVICES_KEY });
+      await qc.invalidateQueries({ queryKey: THIS_DEVICE_KEY });
     },
   });
 
@@ -124,6 +131,7 @@ const PushSettings: React.FC = () => {
     onSettled: async () => {
       await refreshDevice();
       await qc.invalidateQueries({ queryKey: DEVICES_KEY });
+      await qc.invalidateQueries({ queryKey: THIS_DEVICE_KEY });
     },
   });
 
@@ -176,6 +184,23 @@ const PushSettings: React.FC = () => {
         )}
 
         {notGranted && <Alert severity="warning" onClose={() => setNotGranted(false)}>{t('push.notGranted')}</Alert>}
+
+        <Box>
+          <FormControlLabel
+            sx={{ mr: 0 }}
+            control={(
+              <Switch
+                checked={inPageAlarm.enabled}
+                onChange={(e) => inPageAlarm.setEnabled(e.target.checked)}
+              />
+            )}
+            label={<Box sx={{ fontSize: 14 }}>{t('inPageAlarm.setting')}</Box>}
+          />
+          <Box sx={help}>
+            {t(pushCoversAlarms && inPageAlarm.enabled ? 'inPageAlarm.settingCovered' : 'inPageAlarm.settingHelp')}
+          </Box>
+        </Box>
+
         {error && <Alert severity="error" onClose={() => setError(null)}>{t('push.error', { detail: error })}</Alert>}
 
         {prefs && (

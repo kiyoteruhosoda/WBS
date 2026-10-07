@@ -523,6 +523,15 @@ const ja = {
   'push.receivesCalendarHelp': '打刻アプリで予定の通知を鳴らしている端末では切ってください（二重に鳴りません）。止め忘れ・締めの時期は届きます',
   'push.remove': '外す',
 
+  'inPageAlarm.setting': '画面の中で知らせる',
+  'inPageAlarm.settingHelp': 'WBS を開いている間、予定の通知の時刻に画面の上の表示と音で知らせます（ブラウザの通知が使えない PC 向け）。この端末だけに覚えます',
+  'inPageAlarm.settingCovered': 'この端末は通知で受け取っているので、画面の中では知らせません',
+  'inPageAlarm.startsIn': '{minutes} 分後に開始',
+  'inPageAlarm.startsNow': '開始時刻です',
+  'inPageAlarm.startsAt': '{time} から',
+  'inPageAlarm.soundBlocked': '音を出すには、画面を一度押してください',
+  'inPageAlarm.dismiss': '閉じる',
+
   'category.new': '新規カテゴリ',
   'category.newTitle': 'カテゴリの登録',
   'category.editTitle': 'カテゴリの編集',
@@ -1294,6 +1303,15 @@ const en: Record<TranslationKey, string> = {
   'push.receivesCalendar': 'Plan alarms on this device too',
   'push.receivesCalendarHelp': 'Turn off on devices where the timer app rings plan alarms (so they do not ring twice). Timer and closing notices still arrive',
   'push.remove': 'Remove',
+
+  'inPageAlarm.setting': 'Alert inside the page',
+  'inPageAlarm.settingHelp': 'While WBS is open, show a banner and play a sound at plan alarm times (for PCs where browser notifications are blocked). Saved on this device only',
+  'inPageAlarm.settingCovered': 'This device receives notifications, so alerts inside the page are skipped',
+  'inPageAlarm.startsIn': 'Starts in {minutes} min',
+  'inPageAlarm.startsNow': 'Starting now',
+  'inPageAlarm.startsAt': 'From {time}',
+  'inPageAlarm.soundBlocked': 'Click anywhere on the page once to allow sound',
+  'inPageAlarm.dismiss': 'Close',
 
   'category.new': 'New Category',
   'category.newTitle': 'New Category',
