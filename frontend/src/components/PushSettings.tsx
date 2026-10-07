@@ -68,6 +68,8 @@ const PushSettings: React.FC = () => {
 
   const [device, setDevice] = useState<{ state: ThisDeviceState; endpoint: string | null } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // 押したのに許可が下りなかった（確認が出なかった・閉じた・拒否した）ことを知らせる。黙って戻ると押しても効かないように見える
+  const [notGranted, setNotGranted] = useState(false);
   const enabledOnServer = config.data?.enabled ?? false;
 
   const refreshDevice = useCallback(async () => {
@@ -79,11 +81,16 @@ const PushSettings: React.FC = () => {
   }, [config.data, refreshDevice]);
 
   const toggleThisDevice = useMutation({
-    mutationFn: async (on: boolean) => {
-      if (on) await enableOnThisDevice(env, pushApi, thisDeviceLabel());
-      else await disableOnThisDevice(env, pushApi, devices.data ?? []);
+    mutationFn: async (on: boolean): Promise<ThisDeviceState | null> => {
+      if (on) return (await enableOnThisDevice(env, pushApi, thisDeviceLabel())).state;
+      await disableOnThisDevice(env, pushApi, devices.data ?? []);
+      return null;
     },
-    onMutate: () => setError(null),
+    onMutate: () => {
+      setError(null);
+      setNotGranted(false);
+    },
+    onSuccess: (result) => setNotGranted(result === 'off' || result === 'denied'),
     onError: (e) => setError(errorDetail(e)),
     onSettled: async () => {
       await refreshDevice();
@@ -168,6 +175,7 @@ const PushSettings: React.FC = () => {
           </Box>
         )}
 
+        {notGranted && <Alert severity="warning" onClose={() => setNotGranted(false)}>{t('push.notGranted')}</Alert>}
         {error && <Alert severity="error" onClose={() => setError(null)}>{t('push.error', { detail: error })}</Alert>}
 
         {prefs && (
