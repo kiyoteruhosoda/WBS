@@ -15,8 +15,9 @@ Web Push（ADR-0031）は購読できず、Notification API も使えない。�
 ## 決定
 
 1. **サーバーは変えない。** 画面（`frontend/src/components/InPageAlarm.tsx`、ログインの内側の `Layout` に置く）が
-   既存の `GET /api/calendar/alarms`（Cookie で読める。ADR-0021 §4）を 5 分ごとに「今 − 1 分」〜「今 + 20 分」で引く。
+   既存の `GET /api/calendar/alarms`（Cookie で読める。ADR-0021 §4）を 1 分ごとに「今 − 1 分」〜「今 + 20 分」で引く。
    表に戻ったとき・設定を入れたときもすぐ引く。引けなければ前の一覧のまま（先の 20 分を持っている）。
+   間隔を 1 分の猶予と同じにしたのは、作ったばかりの予定・別の端末で直した予定でも、知らせる時刻が 1 分より先なら間に合うため。
 2. **鳴らす規則は ADR-0021 と同じ**（`frontend/src/alarms/inPageAlarm.ts`）: `notify_at` より早くは鳴らさない、
    1 分までの遅れは鳴らす、それより遅れたものは鳴らさない。
 3. **確かめるのは 1 秒ごと、拍は専用の Worker が打つ**（`frontend/src/alarms/browserAlarm.ts` の `startTicker`）。
@@ -58,4 +59,4 @@ Web Push（ADR-0031）は購読できず、Notification API も使えない。�
 - 画面を 1 度も押していないタブ（開き直した直後など）は音が出ない。表示と題名の点滅は出る。
 - Chrome の省電力の設定などでタブが凍結される（Worker も止まる）と遅れる。表に戻れば、1 分の猶予の内なら鳴る。
 - Web Push を受け取っている端末で、購読・設定を変えた直後は判断が古いことがある（設定画面の操作で引き直す）。
-- WBS を開いている間は 5 分に 1 回 `/api/calendar/alarms` を引く。
+- WBS を開いている間は、タブごとに 1 分に 1 回 `/api/calendar/alarms`（先の 20 分。数件の小さな応答）を引く。

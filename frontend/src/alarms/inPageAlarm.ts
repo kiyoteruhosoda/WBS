@@ -8,8 +8,11 @@ import type { PushDevice } from '../api/push';
 
 /** 遅れてもこの間は鳴らす（ADR-0021 の「1 分以内」） */
 export const DUE_GRACE_MS = 60_000;
-/** 通知の一覧を引き直す間隔 */
-export const FETCH_EVERY_MS = 5 * 60_000;
+/**
+ * 通知の一覧を引き直す間隔。1 分の猶予と同じにして、作ったばかりの・別の端末で直した予定も、
+ * 知らせる時刻が 1 分より先なら間に合わせる
+ */
+export const FETCH_EVERY_MS = 60_000;
 /** 1 回に引く先の長さ。引き直す間隔より長くして、1 回引けなくても次の分まで持たせる */
 export const LOOKAHEAD_MS = 20 * 60_000;
 /** 鳴らした印を覚えておく長さ（それより古い印は捨てる） */
