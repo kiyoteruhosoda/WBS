@@ -2,7 +2,7 @@ import React from 'react';
 import { Alert, Box, Button, Paper, Typography } from '@mui/material';
 import { ds } from '../theme';
 import { translate } from '../i18n';
-import { CheckIcon } from '../components/icons';
+import AppMark from '../components/AppMark';
 
 interface Props {
   providerName: string | null;
@@ -35,11 +35,8 @@ const LoginPage: React.FC<Props> = ({ providerName, sessionExpired, onSignIn }) 
           border: `1px solid ${ds.border}`, textAlign: 'center',
         }}
       >
-        <Box sx={{
-          width: 44, height: 44, borderRadius: '10px', bgcolor: ds.primary, color: '#fff',
-          display: 'inline-flex', alignItems: 'center', justifyContent: 'center', mb: '16px',
-        }}>
-          <CheckIcon size={24} />
+        <Box sx={{ display: 'flex', justifyContent: 'center', mb: '16px' }}>
+          <AppMark size={44} />
         </Box>
         <Typography sx={{ fontSize: 18, fontWeight: 700, color: ds.text }}>
           {translate('app.name')}

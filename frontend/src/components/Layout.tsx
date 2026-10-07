@@ -5,6 +5,7 @@ import MenuIcon from '@mui/icons-material/Menu';
 import { ds } from '../theme';
 import { useI18n } from '../i18n';
 import { useAuth } from '../auth/AuthProvider';
+import AppMark from './AppMark';
 import TimerButton from './TimerButton';
 import ClosingNotice from './closing/ClosingNotice';
 import OfflineNotice from './OfflineNotice';
@@ -13,7 +14,7 @@ import { useProjectScope } from '../projects/useProjectScope';
 import type { TranslationKey } from '../i18n/translations';
 import {
   CheckListIcon, BarsIcon, CalendarIcon, InboxIcon,
-  CheckIcon, PlusIcon, TodayIcon, SlidersIcon, FolderIcon, FlagIcon, ClosingIcon, GridIcon, TreeIcon,
+  PlusIcon, TodayIcon, SlidersIcon, FolderIcon, FlagIcon, ClosingIcon, GridIcon, TreeIcon,
 } from './icons';
 
 const SIDEBAR_WIDTH = 224;
@@ -83,12 +84,7 @@ const Sidebar: React.FC<{ onNavigate?: () => void }> = ({ onNavigate }) => {
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%', bgcolor: ds.paper }}>
       <Box sx={{ display: 'flex', alignItems: 'center', gap: '10px', height: TOPBAR_HEIGHT, px: '18px', flexShrink: 0 }}>
-        <Box sx={{
-          width: 30, height: 30, borderRadius: '8px', bgcolor: ds.primary, color: '#fff',
-          display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-        }}>
-          <CheckIcon size={18} />
-        </Box>
+        <AppMark size={30} />
         <Box sx={{ fontSize: 15, fontWeight: 700, color: ds.text }}>{t('app.name')}</Box>
       </Box>
       {/* 表示するプロジェクト（task #187）。タスク・ガント・カレンダーの期限・実績・マイルストーンが従う */}
