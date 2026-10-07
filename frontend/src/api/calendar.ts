@@ -35,4 +35,29 @@ export const sendCalendarRequests = async (requests: readonly CalendarRequest[])
   return last;
 };
 
+/** 予定の通知 1 件（`GET /api/calendar/alarms`。形は ADR-0021 §4） */
+export interface CalendarAlarm {
+  /** `<event_id>:<starts_at>:<minutes_before>`。鳴らした印の鍵 */
+  id: string;
+  /** `<event_id>:<starts_at>`。同じ回の 15/5/1/0 分前をまとめる */
+  occurrence_id: string;
+  event_id: number;
+  title: string;
+  location: string | null;
+  task_id: number | null;
+  task_title: string | null;
+  starts_at: string;
+  duration_minutes: number;
+  notify_at: string;
+  /** 15 / 5 / 1 / 0（0 は開始時刻） */
+  minutes_before: number;
+  is_recurring: boolean;
+}
+
+/** `from ≤ notify_at < to` の通知（ADR-0021。期間は 7 日まで） */
+export const getAlarms = async (range: { from: string; to: string }): Promise<CalendarAlarm[]> => {
+  const { data } = await client.get('/calendar/alarms', { params: { from: range.from, to: range.to } });
+  return data.alarms;
+};
+
 // ── 営業日カレンダー ────────────────────────────────────────────────────────

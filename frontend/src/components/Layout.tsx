@@ -9,6 +9,7 @@ import AppMark from './AppMark';
 import TimerButton from './TimerButton';
 import ClosingNotice from './closing/ClosingNotice';
 import OfflineNotice from './OfflineNotice';
+import InPageAlarm from './InPageAlarm';
 import ProjectScopeSelect from './ProjectScopeSelect';
 import { useProjectScope } from '../projects/useProjectScope';
 import type { TranslationKey } from '../i18n/translations';
@@ -255,6 +256,7 @@ const Layout: React.FC = () => {
         <Box component="main" sx={{ flex: 1, p: { xs: '16px', md: '24px' } }}>
           {/* つながっていない（task #192 / ADR-0028）。殻は出ているがデータは読めない */}
           <OfflineNotice />
+          <InPageAlarm />
           {/* 未確定の締めの期間の知らせ（task #161 / ADR-0012） */}
           <ClosingNotice />
           <Outlet />
