@@ -707,6 +707,42 @@ def test_0014_calendars_are_work_until_made_private(tmp_path):
         engine.dispose()
 
 
+def test_0016_renames_day_off_layers_only_when_they_keep_the_initial_name(tmp_path):
+    # task #310: 「会社の公休」→「会社の休日」・「私の休み」→「個人の休日」。付け直した名前は変えない。下げると戻る
+    url = _url(tmp_path, "day_off_layer_names.db")
+    engine = sa.create_engine(url)
+    try:
+        with engine.begin() as connection:
+            command.upgrade(alembic_config(connection), "0015")
+        with engine.begin() as connection:
+            connection.exec_driver_sql(
+                "INSERT INTO users (id, email, display_name, timezone, language, is_active, "
+                "created_at, updated_at) VALUES (1, 'taro@example.com', 'u', 'Asia/Tokyo', 'ja', 1, "
+                "'2026-01-01', '2026-01-01')"
+            )
+            for calendar_id, name, reason in (
+                (1, "会社の公休", "COMPANY"), (2, "私の休み", "PERSONAL"), (3, "夏休み", "PERSONAL"),
+            ):
+                connection.exec_driver_sql(
+                    "INSERT INTO calendars (id, user_id, kind, name, color_key, sort_order, is_default, "
+                    "is_visible, day_off_reason, counts_as_day_off, scope, created_at, updated_at) VALUES "
+                    f"({calendar_id}, 1, 'DAYS_OFF', '{name}', 'SAGE', {1000 + calendar_id}, 0, 1, "
+                    f"'{reason}', 1, 'WORK', '2026-01-01', '2026-01-01')"
+                )
+
+        def names() -> list[str]:
+            with engine.connect() as connection:
+                return [r[0] for r in connection.exec_driver_sql("SELECT name FROM calendars ORDER BY id")]
+
+        with engine.begin() as connection:
+            command.upgrade(alembic_config(connection), "0016")
+        assert names() == ["会社の休日", "個人の休日", "夏休み"]
+        with engine.begin() as connection:
+            command.downgrade(alembic_config(connection), "0015")
+        assert names() == ["会社の公休", "私の休み", "夏休み"]
+    finally:
+        engine.dispose()
+
 def test_project_code_migration_leaves_existing_projects_without_a_code(tmp_path):
     # task #187: projects.code は任意。既存のプロジェクトは NULL。下げると列が消える
     # （番号はマージ順で付け直すことがあるので、ファイル名で引く）

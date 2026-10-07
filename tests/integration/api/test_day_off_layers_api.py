@@ -72,8 +72,8 @@ def test_four_layers_are_listed_and_cannot_be_deleted_or_hold_events(client) -> 
     layers = _layers(client)
     assert {k: (v["name"], v["kind"], v["counts_as_day_off"]) for k, v in layers.items()} == {
         "WORKWEEK": ("営業日", "WORKWEEK", False),
-        "COMPANY": ("会社の公休", "DAYS_OFF", True),
-        "PERSONAL": ("私の休み", "DAYS_OFF", True),
+        "COMPANY": ("会社の休日", "DAYS_OFF", True),
+        "PERSONAL": ("個人の休日", "DAYS_OFF", True),
         "NATIONAL_HOLIDAY": ("日本の祝日", "DAYS_OFF", True),
     }
     assert layers["WORKWEEK"]["workdays"] == ["MO", "TU", "WE", "TH", "FR"]
