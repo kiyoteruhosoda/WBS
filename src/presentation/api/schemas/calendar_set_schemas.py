@@ -216,7 +216,7 @@ class DayOffMarkResponse(BaseModel):
 
     date: dt.date
     reason: str = Field(
-        description="WEEKLY = 曜日の休み / NATIONAL_HOLIDAY = 日本の祝日 / COMPANY = 会社の公休 / PERSONAL = 私の休み"
+        description="WEEKLY = 曜日の休み / NATIONAL_HOLIDAY = 日本の祝日 / COMPANY = 会社の休日 / PERSONAL = 個人の休日"
     )
     calendar_id: int | None = Field(description="理由の層（表示の選択で塗るかを決める）")
     name: str | None = Field(description="祝日名など（無ければ null）")

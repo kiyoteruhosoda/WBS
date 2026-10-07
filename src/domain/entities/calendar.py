@@ -11,8 +11,8 @@
 組み合わせを 1 つで扱うため）。データは層ごとに分ける:
 
 1. 営業日（``WORKWEEK``）: 稼働する曜日の規則（``workdays``）。日付の一覧ではない
-2. 会社の公休（``DAYS_OFF`` / ``COMPANY``）: 日付の一覧
-3. 私の休み（``DAYS_OFF`` / ``PERSONAL``）: 日付の一覧（終日）
+2. 会社の休日（``DAYS_OFF`` / ``COMPANY``）: 日付の一覧
+3. 個人の休日（``DAYS_OFF`` / ``PERSONAL``）: 日付の一覧（終日）
 4. 日本の祝日（``DAYS_OFF`` / ``NATIONAL_HOLIDAY``）: 日付の一覧（年ごとに入れる）
 
 日付の一覧の層は「休みとして数える」（``counts_as_day_off``）を持つ。営業日の判定は表示の
@@ -72,16 +72,16 @@ class DayOffReason(enum.StrEnum):
     NATIONAL_HOLIDAY = "NATIONAL_HOLIDAY"
     """日本の祝日。"""
     COMPANY = "COMPANY"
-    """会社の公休（年末年始など）。"""
+    """会社の休日（年末年始など）。"""
     PERSONAL = "PERSONAL"
-    """私の休み。"""
+    """個人の休日。"""
 
 
 LAYER_NAMES: dict[DayOffReason | None, str] = {
     None: "営業日",
     DayOffReason.NATIONAL_HOLIDAY: "日本の祝日",
-    DayOffReason.COMPANY: "会社の公休",
-    DayOffReason.PERSONAL: "私の休み",
+    DayOffReason.COMPANY: "会社の休日",
+    DayOffReason.PERSONAL: "個人の休日",
 }
 """層を作るときの名前（利用者が後から変えられる）。``None`` は営業日の層。"""
 
