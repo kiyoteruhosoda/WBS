@@ -10,7 +10,12 @@ from sqlalchemy.exc import IntegrityError
 
 from src.application.dto.auth_dto import AuthenticatedUserDTO
 from src.infrastructure.auth.auth_settings import SINGLE_USER_ID
-from src.infrastructure.database.models import TimeEntryModel, UserModel
+from src.infrastructure.database.models import (
+    AutoTimeEntryReceiptModel,
+    TimeEntryCarvingModel,
+    TimeEntryModel,
+    UserModel,
+)
 from src.presentation.api.dependencies import get_app_or_web_user, get_current_user, get_db
 from src.shared.clock import utcnow
 
@@ -286,7 +291,7 @@ def test_a_pressed_time_needs_an_offset_and_must_not_be_in_the_future(client) ->
     assert client.post("/api/time-entries/stop", json={"at": "2100-01-01T00:00:00Z"}).status_code == 422
 
 
-# ── PC の自動記録（WinTrack、task #379 / ADR-0042） ─────────────────────────
+# ── PC の自動記録（WinTrack、task #379 / ADR-0042・Working が正: task #386 / ADR-0045） ──
 
 
 def _auto(client, *items):
@@ -295,67 +300,146 @@ def _auto(client, *items):
     return res.json()["results"]
 
 
-def _span(ref: str, start: datetime, minutes: int, task_id: int) -> dict:
+def _span(ref: str, start: datetime, minutes: int, task_id: int, mode: str | None = None) -> dict:
     # 送り手は +09:00 で送る。応答は Z 付きの UTC
     jst = timedelta(hours=9)
-    return {
+    span = {
         "client_ref": ref,
         "started_at": f"{(start + jst).isoformat()}+09:00",
         "ended_at": f"{(start + timedelta(minutes=minutes) + jst).isoformat()}+09:00",
         "task_id": task_id,
     }
+    if mode is not None:
+        span["mode"] = mode
+    return span
 
 
-def test_auto_entries_are_created_once_and_marked_auto(client, db) -> None:
+def _z(value: datetime) -> str:
+    return f"{value.isoformat()}Z"
+
+
+def _manual_entry(client, start: datetime, minutes: int, task_id: int) -> dict:
+    res = client.post(
+        "/api/time-entries",
+        json={"started_at": _z(start), "ended_at": _z(start + timedelta(minutes=minutes)), "task_id": task_id},
+    )
+    assert res.status_code == 201, res.text
+    return res.json()
+
+
+def test_fill_entries_are_created_once_and_marked_auto(client, db) -> None:
     task = _task(client, "見積書を作る")
     start = (utcnow() - timedelta(hours=3)).replace(microsecond=0)
     first = _auto(client, _span("3f2b-a", start, 40, task))
     assert [(r["client_ref"], r["status"], r["error"]) for r in first] == [("3f2b-a", "created", None)]
-    entry = first[0]["entry"]
-    assert entry["source"] == "auto"
-    assert entry["started_at"] == f"{start.isoformat()}Z"
+    [entry] = first[0]["entries"]
+    assert (entry["source"], entry["auto_mode"]) == ("auto", "fill")
+    assert entry["started_at"] == _z(start)
     assert entry["duration_seconds"] == 40 * 60
     assert entry["task_title"] == "見積書を作る"
 
     # 送り直しは同じ打刻を返し、中身が違っても上書きしない
-    again = _auto(client, _span("3f2b-a", start, 90, task))
+    again = _auto(client, _span("3f2b-a", start, 90, task, mode="override"))
     assert again[0]["status"] == "duplicate"
-    assert again[0]["entry"]["id"] == entry["id"]
-    assert again[0]["entry"]["duration_seconds"] == 40 * 60
+    assert [e["id"] for e in again[0]["entries"]] == [entry["id"]]
+    assert again[0]["entries"][0]["duration_seconds"] == 40 * 60
     assert db.query(TimeEntryModel).filter(TimeEntryModel.client_ref == "3f2b-a").count() == 1
+
+
+def test_fill_takes_only_the_free_parts_around_working(client) -> None:
+    project = _task(client, "ProjectA")
+    working = _task(client, "Working")
+    start = (utcnow() - timedelta(hours=4)).replace(microsecond=0)
+    _manual_entry(client, start + timedelta(minutes=20), 20, working)
+    [result] = _auto(client, _span("gap", start, 60, project, mode="fill"))
+    assert result["status"] == "created"
+    assert [(e["started_at"], e["ended_at"]) for e in result["entries"]] == [
+        (_z(start), _z(start + timedelta(minutes=20))),
+        (_z(start + timedelta(minutes=40)), _z(start + timedelta(minutes=60))),
+    ]
+    # 送り直しは 2 本とも返す
+    [again] = _auto(client, _span("gap", start, 60, project))
+    assert again["status"] == "duplicate" and len(again["entries"]) == 2
+    # 全部覆われていれば covered（エラーではない）
+    [covered] = _auto(client, _span("covered", start + timedelta(minutes=20), 20, project))
+    assert (covered["status"], covered["entries"], covered["error"]) == ("covered", [], None)
+
+
+def test_override_carves_working_and_keeps_what_it_was(client, db) -> None:
+    working = _task(client, "Working")
+    exception = _task(client, "ProjectB")
+    start = (utcnow() - timedelta(hours=4)).replace(microsecond=0)
+    manual = _manual_entry(client, start, 180, working)
+    [result] = _auto(client, _span("ex", start + timedelta(minutes=60), 30, exception, mode="override"))
+    assert result["status"] == "created"
+    assert [e["auto_mode"] for e in result["entries"]] == ["override"]
+
+    listed = client.get(
+        "/api/time-entries", params={"start": _z(start - timedelta(hours=1)), "end": _z(utcnow())}
+    ).json()
+    assert [(e["started_at"], e["ended_at"], e["source"]) for e in listed] == [
+        (_z(start), _z(start + timedelta(minutes=60)), "manual"),
+        (_z(start + timedelta(minutes=60)), _z(start + timedelta(minutes=90)), "auto"),
+        (_z(start + timedelta(minutes=90)), _z(start + timedelta(minutes=180)), "split"),
+    ]
+    [carving] = db.query(TimeEntryCarvingModel).all()
+    assert (carving.time_entry_id, carving.action, carving.client_ref) == (manual["id"], "split", "ex")
+    assert (carving.started_at, carving.ended_at) == (start, start + timedelta(minutes=180))
+
+    # ほかの自動の打刻とは重ねない
+    [overlap] = _auto(client, _span("ex2", start + timedelta(minutes=80), 30, exception, mode="override"))
+    assert (overlap["status"], overlap["error"]) == ("overlap", "overlaps_automatic_entry")
 
 
 def test_auto_results_are_per_entry(client) -> None:
     task = _task(client, "設計")
-    _start(client, task_id=task)  # 走っている打刻（終わりが無いものとして重なる）
     start = (utcnow() - timedelta(hours=5)).replace(microsecond=0)
     results = _auto(
         client,
         _span("ok", start, 30, task),
-        _span("overlap", start + timedelta(minutes=10), 30, task),
         _span("zero-length", start + timedelta(hours=3), 0, task),
         _span("reversed", start + timedelta(hours=1), -10, task),
         _span("old", utcnow() - timedelta(days=8), 30, task),
         _span("future", utcnow() + timedelta(hours=1), 30, task),
         _span("no-task", start + timedelta(hours=2), 30, 999_999),
+        _span("mode", start + timedelta(hours=2), 30, task, mode="replace"),
     )
-    assert [(r["client_ref"], r["status"]) for r in results] == [
-        ("ok", "created"),
-        ("overlap", "overlap"),
-        ("zero-length", "invalid"),
-        ("reversed", "invalid"),
-        ("old", "invalid"),
-        ("future", "invalid"),
-        ("no-task", "invalid"),
+    assert [(r["client_ref"], r["status"], r["error"]) for r in results] == [
+        ("ok", "created", None),
+        ("zero-length", "invalid", "ended_not_after_started"),
+        ("reversed", "invalid", "ended_not_after_started"),
+        ("old", "invalid", "too_old"),
+        ("future", "invalid", "in_future"),
+        ("no-task", "invalid", "task_not_found"),
+        ("mode", "invalid", "unknown_mode"),
     ]
-    assert all(r["entry"] is None and r["error"] for r in results[1:])
+    assert all(r["entries"] == [] for r in results[1:])
 
 
-def test_an_auto_entry_after_the_running_timer_started_overlaps_it(client) -> None:
-    task = _task(client, "設計")
-    _start(client, task_id=task, at=f"{(utcnow() - timedelta(hours=1)).replace(microsecond=0).isoformat()}Z")
-    start = (utcnow() - timedelta(minutes=30)).replace(microsecond=0)
-    assert _auto(client, _span("x", start, 10, task))[0]["status"] == "overlap"
+def test_start_replaces_fill_but_not_override(client) -> None:
+    project = _task(client, "ProjectA")
+    working = _task(client, "Working")
+    start = (utcnow() - timedelta(hours=3)).replace(microsecond=0)
+    _auto(client, _span("fill", start, 60, project))
+    res = client.post(
+        "/api/time-entries/start", json={"task_id": working, "at": _z(start + timedelta(minutes=30))}
+    )
+    assert res.status_code == 201, res.text
+    listed = client.get(
+        "/api/time-entries", params={"start": _z(start - timedelta(hours=1)), "end": _z(utcnow())}
+    ).json()
+    assert [(e["started_at"], e["ended_at"], e["source"]) for e in listed] == [
+        (_z(start), _z(start + timedelta(minutes=30)), "auto"),
+        (_z(start + timedelta(minutes=30)), None, "timer"),
+    ]
+
+    # override（例外作業）が at 以降にあれば始めない
+    client.post("/api/time-entries/stop", json={"at": _z(start + timedelta(minutes=40))})
+    _auto(client, _span("ex", start + timedelta(minutes=60), 30, project, mode="override"))
+    res = client.post(
+        "/api/time-entries/start", json={"task_id": working, "at": _z(start + timedelta(minutes=50))}
+    )
+    assert res.status_code == 409
 
 
 def test_auto_entries_need_a_task_and_at_most_two_hundred(client) -> None:
@@ -382,13 +466,11 @@ def test_the_same_client_ref_of_another_user_is_their_own(client, two_users) -> 
     assert _auto(client, _span("same", start, 10, theirs))[0]["status"] == "created"
 
 
-def test_the_table_refuses_a_second_row_with_the_same_client_ref(client, db) -> None:
-    started_at = utcnow() - timedelta(hours=2)
-    db.add(TimeEntryModel(user_id=SINGLE_USER_ID, started_at=started_at,
-                          ended_at=started_at + timedelta(minutes=5), source="auto", client_ref="r"))
+def test_the_receipts_table_refuses_a_second_row_with_the_same_client_ref(client, db) -> None:
+    received = utcnow()
+    db.add(AutoTimeEntryReceiptModel(user_id=SINGLE_USER_ID, client_ref="r", mode="fill", received_at=received))
     db.commit()
-    db.add(TimeEntryModel(user_id=SINGLE_USER_ID, started_at=started_at + timedelta(minutes=10),
-                          ended_at=started_at + timedelta(minutes=15), source="auto", client_ref="r"))
+    db.add(AutoTimeEntryReceiptModel(user_id=SINGLE_USER_ID, client_ref="r", mode="override", received_at=received))
     with pytest.raises(IntegrityError):
         db.commit()
     db.rollback()

@@ -3,7 +3,7 @@
 普段は ``POST /start`` と ``POST /stop`` だけ。画面の上部は ``GET /current`` を見る。
 この 3 つは打刻アプリ（task #167）からも叩ける ——assay のアクセストークンを
 ``Authorization: Bearer`` で受け取る（``AppOrWebUserDep``、ADR-0018）。
-``POST /auto`` は PC の自動記録（WinTrack、task #379 / ADR-0042）が区間をまとめて送る口で、同じく Bearer を通す。
+``POST /auto`` は PC の自動記録（WinTrack、task #379 / ADR-0042・ADR-0045）が区間をまとめて送る口で、同じく Bearer を通す。
 期間の一覧・1 件の修正・削除と、補正（手で足す・分割・結合・まとめてタスクを振る・
 予定の回から作る）は締めの画面（#161 / ADR-0012）のため。
 確定済みの締めの期間に掛かる打刻は書き換えられない（409）。
@@ -28,6 +28,7 @@ from src.application.dto.unset import UNSET
 from src.domain.exceptions import ValidationError
 from src.presentation.api.dependencies import (
     AppOrWebUserDep,
+    AutomaticTimeEntryUseCasesDep,
     CurrentUserDep,
     TimeEntryUseCasesDep,
 )
@@ -103,19 +104,23 @@ def stop_time_entry(
 
 @router.post("/auto", response_model=AutoTimeEntriesResponse)
 def record_automatic_time_entries(
-    body: AutoTimeEntriesRequest, uc: TimeEntryUseCasesDep, current_user: AppOrWebUserDep
+    body: AutoTimeEntriesRequest, uc: AutomaticTimeEntryUseCasesDep, current_user: AppOrWebUserDep
 ) -> AutoTimeEntriesResponse:
-    """PC の自動記録の区間をまとめて打刻にする（``source=auto``）。結果は 1 区間ずつ。"""
+    """PC の自動記録の区間をまとめて打刻にする（``source=auto``）。結果は 1 区間ずつ。
+
+    ``fill`` は空いている部分だけ、``override`` は手の打刻を切り抜いて作る（Working が正。ADR-0045）。
+    """
     items = [
         AutoTimeEntryItem(
             client_ref=e.client_ref,
             started_at=to_naive_utc(e.started_at),
             ended_at=to_naive_utc(e.ended_at),
             task_id=e.task_id,
+            mode=e.mode,
         )
         for e in body.entries
     ]
-    outcomes = uc.record_automatic(current_user.user_id, items)
+    outcomes = uc.record(current_user.user_id, items)
     return AutoTimeEntriesResponse(results=[AutoTimeEntryResult.from_outcome(o) for o in outcomes])
 
 

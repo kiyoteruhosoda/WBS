@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from enum import StrEnum
 
@@ -100,27 +100,32 @@ class AutoTimeEntryItem:
     started_at: datetime
     ended_at: datetime
     task_id: int
+    mode: str = "fill"
+    """``fill`` / ``override``（AutoEntryMode）。ほかの値は invalid として断る。"""
 
 
 class AutoTimeEntryStatus(StrEnum):
     """1 区間ごとの結果（API の ``status`` の文字列）。"""
 
     CREATED = "created"
+    """作った（fill は空きの数だけ）。"""
+    COVERED = "covered"
+    """fill で、全部ほかの打刻に覆われていて作らなかった（エラーではない）。"""
     DUPLICATE = "duplicate"
-    """同じ ``client_ref`` が既にある（送り直し）。既にある打刻を返し、上書きしない。"""
+    """同じ ``client_ref`` を既に受け取った（送り直し）。そのとき作った打刻を返し、上書きしない。"""
     OVERLAP = "overlap"
-    """ほかの打刻（走っている打刻を含む）と重なる。"""
+    """override が、ほかの自動の打刻と重なる。"""
     CLOSED = "closed"
     """確定済みの締めの期間に掛かる。"""
     INVALID = "invalid"
-    """時刻の逆転・遠い過去・未来・自分のでないタスク。"""
+    """時刻の逆転・遠い過去・未来・自分のでないタスク・知らない mode。"""
 
 
 @dataclass(frozen=True)
 class AutoTimeEntryOutcome:
     client_ref: str
     status: AutoTimeEntryStatus
-    # created と duplicate のときだけ
-    view: TimeEntryView | None = None
-    # created と duplicate 以外のときの理由（機械が見分けるための短い語）
+    # created と duplicate のときの打刻（始まりの順。duplicate は今残っているもの）
+    views: list[TimeEntryView] = field(default_factory=list)
+    # created・covered・duplicate 以外のときの理由（機械が見分けるための短い語）
     error: str | None = None

@@ -205,7 +205,7 @@ const ClosingGrid: React.FC<Props> = ({
         title={[
           label, formatEntryRange({ startMs: Date.parse(entry.started_at), endMs: entry.ended_at ? Date.parse(entry.ended_at) : nowMs }, timeZone),
           entry.memo ?? '', longRunning ? t('closing.findingLongRunning') : '', overlapping ? t('closing.findingOverlap') : '',
-          entry.is_running ? t('closing.running') : '', entry.source === 'auto' ? t('timeEntry.autoHint') : '',
+          entry.is_running ? t('closing.running') : '', entry.source === 'auto' ? t(entry.auto_mode === 'override' ? 'timeEntry.autoOverrideHint' : 'timeEntry.autoHint') : '',
         ].filter(Boolean).join('\n')}
         onPointerDown={readOnly || splitMode ? undefined : (e) => { e.stopPropagation(); drag.onEntryPointerDown(e, block, edgeOf(e, segment)); }}
         onPointerMove={(e) => {

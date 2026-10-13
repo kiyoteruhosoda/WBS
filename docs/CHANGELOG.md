@@ -4,6 +4,12 @@
 
 ## 2026-10-13
 
+- **WinTrack の自動の打刻を「Working（手の打刻）が正」に合わせた**（task #386、ADR-0045）。規則にアプリも表題の語も空の
+  「それ以外すべて」を 1 つ置けるようにした（いつも一番下）。`POST /api/time-entries/auto` に `mode` を足し、`fill` は打刻の無い
+  時間だけを埋め（全部覆われていれば `covered`）、`override`（例外作業）は手の打刻のその時間を切り抜く（切り抜く前の姿は
+  `time_entry_carvings` に残す）。応答は `entry` から `entries`（配列）に変わった。送り直しの見分けは受け取りの控えの表に移した。
+  Start の `at` 以降にある `fill` の打刻は Working に置き換える（`override` があれば 409）。移行 0019。
+
 - **WinTrack の更新を WBS が中継するようにした**（task #384、ADR-0044）。`GET /api/wintrack/releases/{file}` が
   配布面（Garage の `artifacts` の `wintrack/`）から `releases.win.json`・`RELEASES`・`*.nupkg` だけを読んで返す（Bearer で通す）。
   設定は `WINTRACK_RELEASES_S3_*`（秘密はファイルの場所で持つ）。設定が空・読めないときは 404。依存に boto3 を足した。

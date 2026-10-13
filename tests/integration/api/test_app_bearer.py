@@ -156,7 +156,7 @@ def test_the_pc_recorder_sends_auto_entries_with_its_token(app_client) -> None:
     res = app_client.post("/api/time-entries/auto", json={"entries": [span]}, headers=bearer("taro-app"))
     assert res.status_code == 200, res.text
     [result] = res.json()["results"]
-    assert (result["status"], result["entry"]["source"]) == ("created", "auto")
+    assert (result["status"], [e["source"] for e in result["entries"]]) == ("created", ["auto"])
     # 他人のトークンでは、その人のタスクとして扱われない
     hanako = app_client.post(
         "/api/time-entries/auto", json={"entries": [span]}, headers=bearer("hanako-app")

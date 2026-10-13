@@ -17,6 +17,7 @@ from src.application.use_cases.authentication_use_cases import (
     SessionAuthenticationUseCases,
     SsoLoginUseCases,
 )
+from src.application.use_cases.automatic_time_entry_use_cases import AutomaticTimeEntryUseCases
 from src.application.use_cases.backchannel_logout_use_cases import ReceiveBackchannelLogout
 from src.application.use_cases.calendar_event_use_cases import CalendarEventUseCases
 from src.application.use_cases.calendar_import_use_cases import CalendarImportUseCases
@@ -35,6 +36,9 @@ from src.infrastructure.calendar_feed.ics_parser import IcsCalendarParser
 from src.infrastructure.database.session import get_db_session
 from src.infrastructure.repositories.auth_session_repository import (
     SqlAlchemyAuthSessionRepository,
+)
+from src.infrastructure.repositories.auto_time_entry_receipt_repository import (
+    SqlAlchemyAutoTimeEntryReceiptRepository,
 )
 from src.infrastructure.repositories.calendar_event_repository import (
     SqlAlchemyCalendarEventRepository,
@@ -64,6 +68,9 @@ from src.infrastructure.repositories.occurrence_completion_repository import (
 )
 from src.infrastructure.repositories.project_repository import SqlAlchemyProjectRepository
 from src.infrastructure.repositories.task_repository import SqlAlchemyTaskRepository
+from src.infrastructure.repositories.time_entry_carving_repository import (
+    SqlAlchemyTimeEntryCarvingRepository,
+)
 from src.infrastructure.repositories.time_entry_repository import SqlAlchemyTimeEntryRepository
 from src.infrastructure.repositories.tracking_rule_repository import (
     SqlAlchemyTrackingRuleRepository,
@@ -168,6 +175,22 @@ def get_time_entry_use_cases(db: DbDep) -> TimeEntryUseCases:
     )
 
 TimeEntryUseCasesDep = Annotated[TimeEntryUseCases, Depends(get_time_entry_use_cases)]
+
+
+def get_automatic_time_entry_use_cases(db: DbDep) -> AutomaticTimeEntryUseCases:
+    """PC の自動記録（WinTrack）の打刻（ADR-0042・ADR-0045）。"""
+    return AutomaticTimeEntryUseCases(
+        entries=SqlAlchemyTimeEntryRepository(db),
+        receipts=SqlAlchemyAutoTimeEntryReceiptRepository(db),
+        carvings=SqlAlchemyTimeEntryCarvingRepository(db),
+        tasks=SqlAlchemyTaskRepository(db),
+        closing_periods=SqlAlchemyClosingPeriodRepository(db),
+        unit_of_work=db,
+    )
+
+AutomaticTimeEntryUseCasesDep = Annotated[
+    AutomaticTimeEntryUseCases, Depends(get_automatic_time_entry_use_cases)
+]
 
 
 def get_tracking_rule_use_cases(db: DbDep) -> TrackingRuleUseCases:

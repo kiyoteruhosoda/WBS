@@ -3,6 +3,8 @@
 編集（作る・直す・消す・並べ替え）は WBS の画面から。PC の係は使える規則を上からの順に取っていき、
 自分の中で照合する（WBS は表題を受け取らない）。
 
+両方空の規則は「それ以外すべて」（ADR-0045）: 利用者ごとに 1 つまで、いつも最後に当てる。
+
 **タスクを消した・完了や中止にしたときも規則は消さない。** PC へ渡す一覧から外し（その区間は未分類に
 なる）、画面では「タスクが使えない」と出して付け替えられるようにする。タスクを開き直せば戻る。
 """
@@ -23,7 +25,7 @@ from src.application.dto.unset import UnsetType
 from src.application.ports.unit_of_work import UnitOfWork
 from src.application.use_cases.ownership import owned_by
 from src.domain.entities.task import Task
-from src.domain.entities.tracking_rule import TrackingRule
+from src.domain.entities.tracking_rule import TrackingRule, in_matching_order
 from src.domain.exceptions import NotFoundError, ValidationError
 from src.domain.repositories.project_repository import ProjectRepository
 from src.domain.repositories.task_repository import TaskRepository
@@ -58,7 +60,7 @@ class TrackingRuleUseCases:
     def list_rules(self, user_id: int) -> list[TrackingRuleView]:
         """編集の画面の一覧（使えない規則も含めて、上からの順）。"""
         tasks = self._tasks_by_id(user_id)
-        return [_view(rule, tasks) for rule in self._rules.find_all(user_id)]
+        return [_view(rule, tasks) for rule in in_matching_order(self._rules.find_all(user_id))]
 
     def feed(self, user_id: int) -> TrackingRuleFeed:
         """PC の係へ渡す規則。使えるものだけを上からの順に。
@@ -67,7 +69,7 @@ class TrackingRuleUseCases:
         （名前が変わった・完了にした・消した）の遅いほう。PC はこれが変わったら取り直せばよい。
         """
         tasks = self._tasks_by_id(user_id)
-        rules = self._rules.find_all(user_id)
+        rules = in_matching_order(self._rules.find_all(user_id))
         stamps = [
             self._rules.last_changed_at(user_id) or NEVER_CHANGED,
             self._rules.last_task_change_at(user_id) or NEVER_CHANGED,
@@ -109,6 +111,7 @@ class TrackingRuleUseCases:
             app=command.app,
             title_contains=command.title_contains,
         )
+        _ensure_one_everything_else(rule, existing)
         saved = self._rules.save(rule)
         self._changed(user_id)
         return _view(saved, {command.task_id: task})
@@ -131,6 +134,7 @@ class TrackingRuleUseCases:
                     else command.title_contains
                 ),
             )
+            _ensure_one_everything_else(rule, self._rules.find_all(user_id))
         saved = self._rules.save(rule)
         self._changed(user_id)
         return _view(saved, self._tasks_by_id(user_id))
@@ -141,15 +145,17 @@ class TrackingRuleUseCases:
         self._changed(user_id)
 
     def reorder(self, user_id: int, rule_ids: Sequence[int]) -> list[TrackingRuleView]:
-        """渡した順に並べる。渡さなかったものはその後ろに、今の順のまま。"""
-        current = self._rules.find_all(user_id)
+        """渡した順に並べる。渡さなかったものはその後ろに、今の順のまま。「それ以外すべて」はいつも最後。"""
+        current = in_matching_order(self._rules.find_all(user_id))
         by_id = {r.id: r for r in current}
         ordered = list(dict.fromkeys(rule_ids))
         for rule_id in ordered:
             if rule_id not in by_id:
                 raise NotFoundError("TrackingRule", rule_id)
         rest = [r.id for r in current if r.id not in set(ordered)]
-        for position, rule_id in enumerate([*ordered, *rest]):
+        last = [r.id for r in current if r.is_everything_else]
+        sequence = [i for i in [*ordered, *rest] if i not in last] + last
+        for position, rule_id in enumerate(sequence):
             rule = by_id[rule_id]
             if rule.position != position:
                 rule.position = position
@@ -178,6 +184,16 @@ class TrackingRuleUseCases:
 
     def _tasks_by_id(self, user_id: int) -> dict[int, Task]:
         return {t.id: t for t in self._tasks.find_all(user_id, {}) if t.id is not None}
+
+
+def _ensure_one_everything_else(rule: TrackingRule, existing: list[TrackingRule]) -> None:
+    """「それ以外すべて」（両方空）は利用者ごとに 1 つまで。"""
+    if rule.is_everything_else and any(
+        r.is_everything_else and r.id != rule.id for r in existing
+    ):
+        raise ValidationError(
+            "there is already an 'everything else' rule (both app and title_contains empty)"
+        )
 
 
 def _view(rule: TrackingRule, tasks: dict[int, Task]) -> TrackingRuleView:

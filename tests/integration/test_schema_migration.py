@@ -779,3 +779,42 @@ def test_project_code_migration_leaves_existing_projects_without_a_code(tmp_path
             assert connection.exec_driver_sql("SELECT COUNT(*) FROM projects").scalar() == 1
     finally:
         engine.dispose()
+
+
+def test_0019_keeps_existing_auto_entries_as_fill_and_receives_their_client_refs(tmp_path):
+    # task #386 / ADR-0045: 送り直しの見分けを控えの表へ移す。いまある自動の打刻は fill とみなし、控えを作る。
+    # 同じ client_ref の自動の打刻が 2 本あってもよくなる
+    url = _url(tmp_path, "auto_entry_modes.db")
+    engine = sa.create_engine(url)
+    try:
+        with engine.begin() as connection:
+            command.upgrade(alembic_config(connection), "0018")
+        with engine.begin() as connection:
+            connection.exec_driver_sql(
+                "INSERT INTO users (id, email, display_name, timezone, language, is_active, "
+                "created_at, updated_at) VALUES (1, 'taro@example.com', 'u', 'Asia/Tokyo', 'ja', 1, "
+                "'2026-01-01', '2026-01-01')"
+            )
+            for entry_id, source, client_ref in ((1, "auto", "'r1'"), (2, "timer", "NULL")):
+                connection.exec_driver_sql(
+                    "INSERT INTO time_entries (id, user_id, started_at, ended_at, source, client_ref, "
+                    f"created_at, updated_at) VALUES ({entry_id}, 1, '2026-10-13 0{entry_id}:00:00', "
+                    f"'2026-10-13 0{entry_id}:30:00', '{source}', {client_ref}, '2026-10-13', '2026-10-13')"
+                )
+        with engine.begin() as connection:
+            command.upgrade(alembic_config(connection), "0019")
+        with engine.begin() as connection:
+            modes = connection.exec_driver_sql("SELECT id, auto_mode FROM time_entries ORDER BY id").all()
+            assert [tuple(r) for r in modes] == [(1, "fill"), (2, None)]
+            receipts = connection.exec_driver_sql(
+                "SELECT user_id, client_ref, mode FROM auto_time_entry_receipts"
+            ).all()
+            assert [tuple(r) for r in receipts] == [(1, "r1", "fill")]
+            # fill の断片: 同じ client_ref の 2 本目が入る
+            connection.exec_driver_sql(
+                "INSERT INTO time_entries (id, user_id, started_at, ended_at, source, client_ref, "
+                "auto_mode, created_at, updated_at) VALUES (3, 1, '2026-10-13 05:00:00', "
+                "'2026-10-13 05:30:00', 'auto', 'r1', 'fill', '2026-10-13', '2026-10-13')"
+            )
+    finally:
+        engine.dispose()

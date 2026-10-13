@@ -52,6 +52,8 @@ class TimeEntryResponse(BaseModel):
     ended_at: UtcDatetime | None
     memo: str | None
     source: str
+    # 自動の打刻の送り方（fill / override）。自動の打刻でなければ null（ADR-0045）
+    auto_mode: str | None = None
     is_running: bool
     duration_seconds: int
     is_long_running: bool
@@ -71,6 +73,7 @@ class TimeEntryResponse(BaseModel):
             ended_at=e.ended_at,
             memo=e.memo,
             source=e.source.value,
+            auto_mode=e.auto_mode.value if e.auto_mode is not None else None,
             is_running=e.is_running,
             duration_seconds=view.duration_seconds,
             is_long_running=view.is_long_running,
@@ -148,16 +151,21 @@ class TimeEntryFromOccurrenceRequest(BaseModel):
 
 
 class AutoTimeEntryRequestItem(BaseModel):
-    """PC の自動記録の 1 区間。時刻はオフセット付き。``task_id`` は必須（未分類は送らない）。"""
+    """PC の自動記録の 1 区間。時刻はオフセット付き。``task_id`` は必須（未分類は送らない）。
+
+    ``mode`` は ``fill``（既定。空いている部分だけ）か ``override``（例外作業。手の打刻を切り抜く）。
+    ほかの値は 422 ではなく、その区間だけ ``invalid``（ADR-0045）。
+    """
 
     client_ref: str = Field(min_length=1, max_length=64, description="送り手が付けた ID（UUID）")
     started_at: AwareDatetime
     ended_at: AwareDatetime
     task_id: int
+    mode: str = Field(default="fill", max_length=32)
 
 
 class AutoTimeEntriesRequest(BaseModel):
-    """PC の自動記録（WinTrack）がまとめて送る区間（1 回に 1〜200 件。ADR-0042）。
+    """PC の自動記録（WinTrack）がまとめて送る区間（1 回に 1〜200 件。ADR-0042・ADR-0045）。
 
     表題やアプリ名は受け取らない。
     """
@@ -166,18 +174,19 @@ class AutoTimeEntriesRequest(BaseModel):
 
 
 class AutoTimeEntryResult(BaseModel):
-    """1 区間の結果。``entry`` は created と duplicate のときだけ、``error`` はそれ以外のときだけ。
+    """1 区間の結果。``entries`` は作った（送り直しなら、そのとき作った）打刻で、作らなかったときは ``[]``。
 
-    - ``created``: 作った（``source = "auto"``）
-    - ``duplicate``: 同じ ``client_ref`` が既にある（送り直し。中身が違っても上書きしない）
-    - ``overlap``: ほかの打刻（走っている打刻を含む）と重なる
+    - ``created``: 作った（``source = "auto"``。``fill`` は空きの数だけ）
+    - ``covered``: ``fill`` で、全部ほかの打刻に覆われていて作らなかった（エラーではない）
+    - ``duplicate``: 同じ ``client_ref`` を既に受け取った（送り直し。中身が違っても上書きしない）
+    - ``overlap``: ``override`` が、ほかの自動の打刻と重なる
     - ``closed``: 確定済みの締めの期間に掛かる
-    - ``invalid``: 時刻の逆転・7 日より前・未来（60 秒の遊びは Start と同じ）・自分のでないタスク
+    - ``invalid``: 時刻の逆転・7 日より前・未来（60 秒の遊びは Start と同じ）・自分のでないタスク・知らない ``mode``
     """
 
     client_ref: str
-    status: Literal["created", "duplicate", "overlap", "closed", "invalid"]
-    entry: TimeEntryResponse | None
+    status: Literal["created", "covered", "duplicate", "overlap", "closed", "invalid"]
+    entries: list[TimeEntryResponse]
     error: str | None
 
     @classmethod
@@ -185,7 +194,7 @@ class AutoTimeEntryResult(BaseModel):
         return cls(
             client_ref=outcome.client_ref,
             status=outcome.status.value,
-            entry=TimeEntryResponse.from_view(outcome.view) if outcome.view is not None else None,
+            entries=[TimeEntryResponse.from_view(v) for v in outcome.views],
             error=outcome.error,
         )
 

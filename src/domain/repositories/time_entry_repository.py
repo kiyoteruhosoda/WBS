@@ -11,8 +11,8 @@ class TimeEntryRepository(ABC):
     def find_by_id(self, entry_id: int) -> TimeEntry | None: ...
 
     @abstractmethod
-    def find_by_client_ref(self, user_id: int, client_ref: str) -> TimeEntry | None:
-        """送り手が付けた ID の打刻（自動の打刻の送り直しを見分ける。ADR-0042）。"""
+    def find_by_client_ref(self, user_id: int, client_ref: str) -> list[TimeEntry]:
+        """送り手が付けた ID の打刻を始まりの順に（``fill`` は 1 つの ID から何本もできる。ADR-0045）。"""
 
     @abstractmethod
     def find_running(self, user_id: int) -> TimeEntry | None:
@@ -32,8 +32,7 @@ class TimeEntryRepository(ABC):
 
     @abstractmethod
     def save(self, entry: TimeEntry) -> TimeEntry:
-        """⚠ 確定（commit）はしない。走っている打刻が既にある・同じ ``client_ref`` が既にあれば
-        ``ConflictError``。"""
+        """⚠ 確定（commit）はしない。走っている打刻が既にあれば ``ConflictError``。"""
 
     @abstractmethod
     def delete(self, entry_id: int) -> None: ...
