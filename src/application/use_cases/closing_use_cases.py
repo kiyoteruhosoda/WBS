@@ -32,10 +32,12 @@ from src.application.ports.unit_of_work import UnitOfWork
 from src.application.use_cases.time_entry_use_cases import build_time_entry_view
 from src.domain.entities.closing_period import ClosingPeriod
 from src.domain.entities.time_entry import TimeEntry
+from src.domain.entities.work_break import WorkBreak
 from src.domain.entities.work_log import WorkLog
 from src.domain.exceptions import ConflictError, ValidationError
 from src.domain.repositories.closing_period_repository import ClosingPeriodRepository
 from src.domain.repositories.time_entry_repository import TimeEntryRepository
+from src.domain.repositories.work_break_repository import WorkBreakRepository
 from src.domain.repositories.work_log_repository import WorkLogRepository
 from src.domain.services.closing_review import find_overlaps, is_uncovered
 from src.domain.services.daily_time_allocation import allocate_by_local_day, whole_seconds
@@ -61,9 +63,12 @@ class ClosingUseCases:
         unit_of_work: UnitOfWork,
         *,
         occurrences: OccurrenceSource | None = None,
+        breaks: WorkBreakRepository | None = None,
         now: Callable[[], datetime] = utcnow,
     ) -> None:
         self._periods = periods
+        # None は「休みを繋がない」（打刻だけを見る試験）。API では必ず繋ぐ（ADR-0048）
+        self._breaks = breaks
         self._entries = entries
         self._work_logs = work_logs
         self._tasks = tasks
@@ -90,7 +95,10 @@ class ClosingUseCases:
         titles: dict[int, str | None] = {}
         projects: dict[int, int | None] = {}
         views = [build_time_entry_view(e, now, self._tasks, titles) for e in entries]
-        totals = allocate_by_local_day(entries, state.starts_at, state.ends_at, zone.zone, now)
+        breaks = self._breaks_in(user_id, state.starts_at, state.ends_at)
+        totals = allocate_by_local_day(
+            entries, state.starts_at, state.ends_at, zone.zone, now, breaks
+        )
         daily = [
             DailyTaskTotal(
                 work_date=day,
@@ -127,6 +135,7 @@ class ClosingUseCases:
             occurrences=occurrences,
             daily_totals=daily,
             findings=findings,
+            breaks=breaks,
         )
 
     def pending(self, user_id: int, time_zone: str) -> PendingClosings:
@@ -178,7 +187,11 @@ class ClosingUseCases:
 
         saved_period = self._periods.save(closing)
         assert saved_period.id is not None
-        totals = allocate_by_local_day(entries, closing.starts_at, closing.ends_at, zone.zone, now)
+        # 実績の長さは、打刻の長さから重なる休みを引いたもの（ADR-0048）
+        totals = allocate_by_local_day(
+            entries, closing.starts_at, closing.ends_at, zone.zone, now,
+            self._breaks_in(user_id, closing.starts_at, closing.ends_at),
+        )
         created: list[WorkLog] = []
         for (task_id, day), length in sorted(
             totals.items(), key=lambda kv: (kv[0][1], kv[0][0] or 0)
@@ -244,6 +257,11 @@ class ClosingUseCases:
             ends_at=closed.ends_at,
             closed=closed,
         )
+
+    def _breaks_in(self, user_id: int, start: datetime, end: datetime) -> list[WorkBreak]:
+        if self._breaks is None:
+            return []
+        return self._breaks.find_overlapping(user_id, start, end)
 
     def _unassigned_ids(self, entries: list[TimeEntry], user_id: int) -> list[int]:
         owned: dict[int, bool] = {}

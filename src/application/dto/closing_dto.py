@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, datetime
 
 from src.application.dto.calendar_event_dto import OccurrenceView
 from src.application.dto.time_entry_dto import TimeEntryView
 from src.domain.entities.closing_period import ClosingPeriod
+from src.domain.entities.work_break import WorkBreak
 from src.domain.entities.work_log import WorkLog
 from src.domain.value_objects.half_month_period import HalfMonthPeriod
 
@@ -64,6 +65,8 @@ class ClosingBoard:
     occurrences: list[OccurrenceView]
     daily_totals: list[DailyTaskTotal]
     findings: ClosingFindings
+    # 期間に掛かる休み（task #392 / ADR-0048）。日ごとの合計はこれと重なる時間を引いてある
+    breaks: list[WorkBreak] = field(default_factory=list)
 
 
 @dataclass(frozen=True)

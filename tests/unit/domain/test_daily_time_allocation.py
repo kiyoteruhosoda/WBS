@@ -89,3 +89,55 @@ def test_zero_length_entries_add_nothing() -> None:
         [entry], datetime(2026, 9, 30, 15), datetime(2026, 10, 15, 15), TOKYO, NOW
     )
     assert totals == {}
+
+
+# ── 休み（task #392 / ADR-0048）: 実績の長さ = 打刻の長さ − その打刻と重なる休み ──
+
+
+def _break(start: datetime, end: datetime):
+    from src.domain.entities.work_break import WorkBreak
+
+    return WorkBreak(id=None, user_id=1, started_at=start, ended_at=end)
+
+
+WINDOW = (datetime(2026, 9, 30, 15), datetime(2026, 10, 15, 15))
+
+
+def test_breaks_overlapping_an_entry_are_not_counted() -> None:
+    # JST 10/2 9:00〜18:00 の打刻、12:00〜12:45 と 15:00〜15:10 の休み
+    entry = _entry(datetime(2026, 10, 2, 0), datetime(2026, 10, 2, 9))
+    breaks = [
+        _break(datetime(2026, 10, 2, 3), datetime(2026, 10, 2, 3, 45)),
+        _break(datetime(2026, 10, 2, 6), datetime(2026, 10, 2, 6, 10)),
+    ]
+    totals = allocate_by_local_day([entry], *WINDOW, TOKYO, NOW, breaks)
+    assert totals == {(1, date(2026, 10, 2)): timedelta(hours=9) - timedelta(minutes=55)}
+
+
+def test_a_break_outside_entries_takes_nothing_and_overlapping_entries_each_lose_it() -> None:
+    a = _entry(datetime(2026, 10, 2, 0), datetime(2026, 10, 2, 2), task_id=1, id=1)
+    b = _entry(datetime(2026, 10, 2, 1), datetime(2026, 10, 2, 3), task_id=2, id=2)
+    breaks = [
+        _break(datetime(2026, 10, 2, 1, 30), datetime(2026, 10, 2, 2, 30)),  # a と b に掛かる
+        _break(datetime(2026, 10, 2, 5), datetime(2026, 10, 2, 6)),  # 打刻の無い時間
+    ]
+    totals = allocate_by_local_day([a, b], *WINDOW, TOKYO, NOW, breaks)
+    assert totals == {
+        (1, date(2026, 10, 2)): timedelta(minutes=90),
+        (2, date(2026, 10, 2)): timedelta(minutes=60),
+    }
+
+
+def test_a_break_covering_a_whole_entry_leaves_nothing() -> None:
+    entry = _entry(datetime(2026, 10, 2, 1), datetime(2026, 10, 2, 2))
+    breaks = [_break(datetime(2026, 10, 2, 0), datetime(2026, 10, 2, 3))]
+    assert allocate_by_local_day([entry], *WINDOW, TOKYO, NOW, breaks) == {}
+
+
+def test_breaks_are_taken_from_a_running_entry_too() -> None:
+    entry = _entry(datetime(2026, 10, 19, 23), None)  # NOW は 10/20 0:00 UTC
+    breaks = [_break(datetime(2026, 10, 19, 23, 30), datetime(2026, 10, 19, 23, 40))]
+    totals = allocate_by_local_day(
+        [entry], datetime(2026, 10, 15, 15), datetime(2026, 10, 31, 15), TOKYO, NOW, breaks
+    )
+    assert totals == {(1, date(2026, 10, 20)): timedelta(minutes=50)}

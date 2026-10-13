@@ -48,6 +48,7 @@ from src.domain.repositories.milestone_repository import MilestoneRepository
 from src.domain.repositories.project_repository import ProjectRepository
 from src.domain.repositories.task_repository import TaskRepository
 from src.domain.repositories.time_entry_repository import TimeEntryRepository
+from src.domain.repositories.work_break_repository import WorkBreakRepository
 from src.domain.repositories.work_log_repository import WorkLogRepository
 from src.domain.services.daily_ledger import DailyLedger
 from src.domain.services.daily_time_allocation import allocate_by_local_day, whole_seconds
@@ -83,9 +84,12 @@ class ActualsUseCases:
         milestones: MilestoneRepository,
         projects: ProjectRepository,
         occurrences: OccurrenceSource,
+        breaks: WorkBreakRepository | None = None,
         now: Callable[[], datetime] | None = None,
     ) -> None:
         self._clock = clock
+        # 休み（ADR-0048）。打刻の時間から重なる分を引く。None は「休みを繋がない」（試験）
+        self._breaks = breaks
         self._tasks = tasks
         self._task_repo = task_repository
         self._work_logs = work_logs
@@ -422,11 +426,13 @@ class ActualsUseCases:
                 task_id = occurrence.task_id if occurrence.task_id in owned else None
                 ledger.add(task_id, occurrence.date, occurrence.duration_minutes * 60)
             return ledger
-        # 打刻: 日をまたぐ打刻は利用者の 0:00 で割る（締めと同じ割り方）。タスクが空・消えた・他人のものはタスク外
+        # 打刻: 日をまたぐ打刻は利用者の 0:00 で割る（締めと同じ割り方）。タスクが空・消えた・他人のものはタスク外。
+        # 重なる休みの時間は引く（締めの確定と同じ計算。ADR-0048）
         start, end = self._clock.utc_window(user_id, first_day, last_day)
         entries = self._time_entries.find_overlapping(user_id, start, end)
+        breaks = self._breaks.find_overlapping(user_id, start, end) if self._breaks else []
         allocated = allocate_by_local_day(
-            entries, start, end, self._clock.zone(user_id), self._now()
+            entries, start, end, self._clock.zone(user_id), self._now(), breaks
         )
         for (task_id, day), length in allocated.items():
             ledger.add(task_id if task_id in owned else None, day, whole_seconds(length))

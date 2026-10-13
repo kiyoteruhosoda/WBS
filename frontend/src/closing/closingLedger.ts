@@ -1,7 +1,8 @@
 // 締めの工数表（task #389、ADR-0047）。行はプロジェクト（タスクの合計）、列は日。
 // いちばん上に、その日の業務の開始（最初の打刻の始まり）と終了（最後の打刻の終わり）。休憩は差し引かない。
 // 時間は 0.5 時間単位で丸めて見せる（中身は秒のまま。合計は丸める前に足す）。自動の打刻を含むセルに印。
-import type { DailyTaskTotal, Project, TimeEntry } from '../types';
+import type { DailyTaskTotal, Project, TimeEntry, WorkBreak } from '../types';
+import { toZonedPoint } from '../calendar/zonedTime';
 import type { ProjectScope } from '../projects/projectScope';
 import type { EntrySegment, ProjectRowHead } from './closingBoard';
 import { projectRowClassifier, projectRowRank } from './closingBoard';
@@ -117,3 +118,34 @@ export const ledgerCellSegments = (
 
 /** 0.5 時間単位に丸めた時間（`6.0`・`0.5`）。中身は秒のまま持ち、見せるときだけ丸める。 */
 export const formatHalfHours = (seconds: number): string => (Math.round(seconds / 1800) / 2).toFixed(1);
+
+/** その日の休み（task #392 / ADR-0048）。区間は利用者のローカル日の 0:00 からの分。 */
+export interface DayBreaks {
+  seconds: number;
+  spans: { startMinute: number; endMinute: number }[];
+}
+
+/**
+ * 休みを日ごとに（日の計はサーバーが休みを引いてある。ここは見せるだけ）。休みは送り手がその日の中に
+ * 収めて送るので、始まりの日に入れる（翌 0:00 ちょうどの終わりは 24:00）。休みの無い日は入れない。
+ */
+export const breaksByDate = (
+  breaks: readonly WorkBreak[],
+  dates: readonly string[],
+  timeZone: string,
+): Record<string, DayBreaks> => {
+  const days = new Set(dates);
+  const byDate: Record<string, DayBreaks> = {};
+  for (const b of [...breaks].sort((x, y) => Date.parse(x.started_at) - Date.parse(y.started_at))) {
+    const startMs = Date.parse(b.started_at);
+    const endMs = Date.parse(b.ended_at);
+    const start = toZonedPoint(startMs, timeZone);
+    if (!days.has(start.date) || endMs <= startMs) continue;
+    const end = toZonedPoint(endMs, timeZone);
+    const endMinute = end.date === start.date ? end.minute : 24 * 60;
+    const day = (byDate[start.date] ??= { seconds: 0, spans: [] });
+    day.seconds += Math.round((endMs - startMs) / 1000);
+    day.spans.push({ startMinute: start.minute, endMinute });
+  }
+  return byDate;
+};

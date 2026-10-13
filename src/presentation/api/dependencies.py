@@ -30,6 +30,7 @@ from src.application.use_cases.time_entry_use_cases import TimeEntryUseCases
 from src.application.use_cases.today_use_cases import TodayUseCases
 from src.application.use_cases.tracking_rule_use_cases import TrackingRuleUseCases
 from src.application.use_cases.wintrack_release_use_cases import WinTrackReleases
+from src.application.use_cases.work_break_use_cases import WorkBreakUseCases
 from src.application.user_clock import UserClock
 from src.domain.exceptions import AuthenticationError
 from src.infrastructure.auth.auth_settings import SINGLE_USER_ID, AuthSettings
@@ -79,6 +80,7 @@ from src.infrastructure.repositories.tracking_rule_repository import (
 from src.infrastructure.repositories.user_account_repository import (
     SqlAlchemyUserAccountRepository,
 )
+from src.infrastructure.repositories.work_break_repository import SqlAlchemyWorkBreakRepository
 from src.infrastructure.repositories.work_log_repository import SqlAlchemyWorkLogRepository
 from src.infrastructure.wintrack_release.s3_release_file_store import S3ReleaseFileStore
 from src.infrastructure.wintrack_release.wintrack_release_settings import (
@@ -348,6 +350,7 @@ def get_closing_use_cases(db: DbDep) -> ClosingUseCases:
         tasks=SqlAlchemyTaskRepository(db),
         unit_of_work=db,
         occurrences=get_calendar_event_use_cases(db),
+        breaks=SqlAlchemyWorkBreakRepository(db),
     )
 
 ClosingUseCasesDep = Annotated[ClosingUseCases, Depends(get_closing_use_cases)]
@@ -368,9 +371,19 @@ def get_actuals_use_cases(db: DbDep) -> ActualsUseCases:
         milestones=SqlAlchemyMilestoneRepository(db),
         projects=SqlAlchemyProjectRepository(db),
         occurrences=calendar,
+        breaks=SqlAlchemyWorkBreakRepository(db),
     )
 
 ActualsUseCasesDep = Annotated[ActualsUseCases, Depends(get_actuals_use_cases)]
+
+
+def get_work_break_use_cases(db: DbDep) -> WorkBreakUseCases:
+    """休み（WinTrack、ADR-0048）。確定済みの締めの期間の日は置き換えない。"""
+    return WorkBreakUseCases(
+        SqlAlchemyWorkBreakRepository(db), SqlAlchemyClosingPeriodRepository(db), db
+    )
+
+WorkBreakUseCasesDep = Annotated[WorkBreakUseCases, Depends(get_work_break_use_cases)]
 
 
 def build_calendar_import_use_cases(
