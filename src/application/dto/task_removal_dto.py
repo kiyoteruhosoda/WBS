@@ -8,7 +8,7 @@ class TaskRemovalAction(StrEnum):
     DELETE = "delete"
     """打刻も実績も無い: 消す。"""
     ARCHIVE = "archive"
-    """打刻か実績がある: 消さずにしまう。"""
+    """打刻か実績がある: 消さずにアーカイブする。"""
 
 
 @dataclass(frozen=True)
@@ -23,8 +23,8 @@ class TaskRemovalPreview:
     tracked_seconds: int
     # 確定した実績（work_logs）の合計
     work_log_hours: float
-    # このタスクを指す WinTrack の規則（しまうと止まる）
+    # このタスクを指す WinTrack の規則（アーカイブすると止まる）
     tracking_rules: int
-    # 消すこともしまうこともできない理由（running = 計測中）。できれば None
+    # 消すこともアーカイブすることもできない理由（running = 計測中）。できれば None
     blocked_by: str | None
     archived: bool

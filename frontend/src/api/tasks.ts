@@ -33,18 +33,18 @@ export const moveTasksToProject = async (request: MoveToProjectRequest): Promise
   return data;
 };
 
-/** 消す。打刻か実績があれば 409（`archiveTask` でしまう。ADR-0046）。 */
+/** 消す。打刻か実績があれば 409（`archiveTask` でアーカイブする。ADR-0046）。 */
 export const deleteTask = async (id: number): Promise<void> => {
   await client.delete(`/tasks/${id}`);
 };
 
-/** 消すとどうなるか（打刻・実績・WinTrack の規則の数と、消すかしまうか）。 */
+/** 消すとどうなるか（打刻・実績・WinTrack の規則の数と、消すかアーカイブするか）。 */
 export const getTaskRemoval = async (id: number): Promise<TaskRemoval> => {
   const { data } = await client.get<TaskRemoval>(`/tasks/${id}/removal`);
   return data;
 };
 
-/** しまう（一覧と付け替え先に出なくなる。実績と締めの表には残る）。 */
+/** アーカイブする（一覧と付け替え先に出なくなる。実績と締めの表には残る）。 */
 export const archiveTask = async (id: number): Promise<void> => {
   await client.post(`/tasks/${id}/archive`);
 };

@@ -304,7 +304,7 @@ TaskUseCasesDep = Annotated[TaskUseCases, Depends(get_task_use_cases)]
 
 
 def get_task_removal_use_cases(db: DbDep) -> TaskRemovalUseCases:
-    """タスクを消す・しまう（ADR-0046）。"""
+    """タスクを消す・アーカイブする（ADR-0046）。"""
     return TaskRemovalUseCases(
         SqlAlchemyTaskRepository(db),
         SqlAlchemyTimeEntryRepository(db),

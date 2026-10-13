@@ -123,7 +123,7 @@ def patch_task(task_id: int, body: TaskUpdateRequest, uc: TaskUseCasesDep, curre
 def preview_task_removal(
     task_id: int, uc: TaskRemovalUseCasesDep, current_user: CurrentUserDep
 ) -> TaskRemovalResponse:
-    """消すとどうなるか（打刻・実績・WinTrack の規則の数と、消すかしまうか）。ADR-0046。"""
+    """消すとどうなるか（打刻・実績・WinTrack の規則の数と、消すかアーカイブするか）。ADR-0046。"""
     preview = uc.preview(task_id, current_user.user_id)
     return TaskRemovalResponse(
         task_id=preview.task_id,
@@ -140,11 +140,11 @@ def preview_task_removal(
 
 @router.post("/{task_id}/archive", status_code=status.HTTP_204_NO_CONTENT)
 def archive_task(task_id: int, uc: TaskRemovalUseCasesDep, current_user: CurrentUserDep) -> None:
-    """しまう（一覧と付け替え先に出なくなる。実績と締めの表には残る）。計測中なら 409。"""
+    """アーカイブする（一覧と付け替え先に出なくなる。実績と締めの表には残る）。計測中なら 409。"""
     uc.archive(task_id, current_user.user_id)
 
 
 @router.delete("/{task_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_task(task_id: int, uc: TaskRemovalUseCasesDep, current_user: CurrentUserDep) -> None:
-    """消す。打刻か実績があれば 409（しまう）。計測中なら 409。"""
+    """消す。打刻か実績があれば 409（アーカイブする）。計測中なら 409。"""
     uc.delete(task_id, current_user.user_id)

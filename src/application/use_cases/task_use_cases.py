@@ -48,7 +48,7 @@ class TaskUseCases:
     def list_tasks(self, user_id: int, filters: dict) -> list[dict]:
         """``filters`` の ``project_id`` は**子孫のプロジェクトも含めて**絞る（ADR-0024）。
 
-        しまったタスク（ADR-0046）は出さない。
+        アーカイブしたタスク（ADR-0046）は出さない。
         """
         filters = self.resolve_project_filter(user_id, filters)
         tasks = [t for t in self._repo.find_all(user_id, filters) if not t.is_archived]

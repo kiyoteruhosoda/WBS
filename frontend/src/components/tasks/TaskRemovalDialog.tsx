@@ -1,6 +1,6 @@
-// タスクを消す・しまう確認の窓（task #388、ADR-0046）。
-// 打刻も実績も無ければ消す。あれば消さずに「しまう」（一覧と付け替え先に出ない。実績と締めの表には残る）。
-// 打刻の件数・時間と、そのタスクを指す WinTrack の規則の件数（しまうと止まる）を出す。
+// タスクを消す・アーカイブする確認の窓（task #388・#394、ADR-0046）。
+// 打刻も実績も無ければ消す。あれば消さずにアーカイブする（一覧と付け替え先に出ない。実績と締めの表には残る）。
+// 打刻の件数・時間と、そのタスクを指す WinTrack の規則の件数（アーカイブすると止まる）を出す。
 import React from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Alert, Box, Button, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle } from '@mui/material';

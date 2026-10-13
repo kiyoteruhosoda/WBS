@@ -36,7 +36,7 @@ export interface Task {
   project_path: string | null;
   completed_at: string | null;
   deleted_at: string | null;
-  // しまった時刻（打刻や実績のあるタスクは消さずにしまう。ADR-0046）
+  // アーカイブした時刻（打刻や実績のあるタスクは消さずにアーカイブする。ADR-0046）
   archived_at?: string | null;
   created_at: string;
   updated_at: string;
@@ -627,7 +627,7 @@ export interface TrackingRuleWrite {
   task_id: number;
 }
 
-// タスクを消すとどうなるか（ADR-0046）。delete = 消す / archive = 打刻か実績があるので消さずにしまう
+// タスクを消すとどうなるか（ADR-0046）。delete = 消す / archive = 打刻か実績があるので消さずにアーカイブする
 export interface TaskRemoval {
   task_id: number;
   title: string;
@@ -636,7 +636,7 @@ export interface TaskRemoval {
   tracked_seconds: number;
   work_log_hours: number;
   tracking_rules: number;
-  // 消すこともしまうこともできない理由（running = 計測中）
+  // 消すこともアーカイブすることもできない理由（running = 計測中）
   blocked_by: 'running' | null;
   archived: boolean;
 }
