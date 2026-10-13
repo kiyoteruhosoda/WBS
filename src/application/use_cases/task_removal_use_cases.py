@@ -1,8 +1,8 @@
-"""タスクを消す・しまう（task #388 / ADR-0046）。
+"""タスクを消す・アーカイブする（task #388 / ADR-0046。画面の言葉は #394 で「アーカイブ」）。
 
 打刻や確定した実績（``work_logs``）のあるタスクを消すと、締めた期間の数字や実績の表から名前が消える。
-なので**打刻も実績も無いタスクだけを消し**、あるタスクは消さずに**しまう**（一覧と付け替え先に出ない。
-実績と締めの表には名前ごと残る）。しまったタスクを指す WinTrack の規則は止まる（PC へ渡さない。ADR-0043）。
+なので**打刻も実績も無いタスクだけを消し**、あるタスクは消さずに**アーカイブする**（一覧と付け替え先に出ない。
+実績と締めの表には名前ごと残る）。アーカイブしたタスクを指す WinTrack の規則は止まる（PC へ渡さない。ADR-0043）。
 
 どちらも、いま計測中のタスクには行わない（409）。子タスクは今までどおり残る（親を消しても子は消えない）。
 """
@@ -65,7 +65,7 @@ class TaskRemovalUseCases:
         )
 
     def delete(self, task_id: int, user_id: int) -> None:
-        """打刻も実績も無いタスクを消す。あれば 409（しまう）。"""
+        """打刻も実績も無いタスクを消す。あれば 409（アーカイブする）。"""
         preview = self._removable(task_id, user_id)
         if preview.action is not TaskRemovalAction.DELETE:
             raise ConflictError(
@@ -75,7 +75,7 @@ class TaskRemovalUseCases:
         self._uow.commit()
 
     def archive(self, task_id: int, user_id: int) -> None:
-        """しまう（冪等）。打刻や実績が無いタスクもしまえる。"""
+        """アーカイブする（冪等）。打刻や実績が無いタスクもアーカイブできる。"""
         self._removable(task_id, user_id)
         task = self._owned(task_id, user_id)
         task.archive(self._now())

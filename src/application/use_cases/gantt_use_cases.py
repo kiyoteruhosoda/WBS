@@ -21,7 +21,7 @@ class GanttUseCases:
         self._projects = projects
 
     def get_gantt_data(self, user_id: int, project_id: int | None = None) -> list[dict]:
-        """``project_id`` を指すと、そのプロジェクトと子孫のタスクだけ（ADR-0024）。しまったタスクは出さない（ADR-0046）。"""
+        """``project_id`` を指すと、そのプロジェクトと子孫のタスクだけ（ADR-0024）。アーカイブしたタスクは出さない（ADR-0046）。"""
         all_tasks = [t for t in self._tasks.find_all(user_id, {}) if not t.is_archived]
         tasks = all_tasks
         if project_id is not None:
