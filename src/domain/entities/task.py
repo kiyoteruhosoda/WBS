@@ -49,6 +49,11 @@ class Task:
 
         self.status = new_status
 
+    @property
+    def is_open(self) -> bool:
+        """まだ作業できるか（完了・中止でない）。"""
+        return self.status not in (TaskStatus.DONE, TaskStatus.CANCELLED)
+
     def progress_percent(self, actual_hours: float) -> float | None:
         # 進捗率 = 実績 ÷（実績 ＋ 残）。子を持つタスクの積み上げは TaskProgressBoard が出す
         return self.work_figures(actual_hours).progress_percent(done=self.status == TaskStatus.DONE)

@@ -15,6 +15,7 @@ import CalendarSettingsPage from './pages/CalendarSettingsPage';
 import ClosingPage from './pages/ClosingPage';
 import Inbox from './pages/Inbox';
 import CategoriesPage from './pages/CategoriesPage';
+import TrackingRulesPage from './pages/TrackingRulesPage';
 import MilestonesPage from './pages/MilestonesPage';
 import ProjectsPage from './pages/ProjectsPage';
 import Settings from './pages/Settings';
@@ -60,6 +61,9 @@ const SignedInApp: React.FC = () => (
           <Route path="inbox" element={<Inbox />} />
           <Route path="projects" element={<ProjectsPage />} />
           <Route path="categories" element={<CategoriesPage />} />
+          {/* PC の自動記録の規則（ADR-0043）。new は WinTrack が欄を埋めて開く。key で作り直して欄を読み直す */}
+          <Route path="tracking-rules" element={<TrackingRulesPage key="list" />} />
+          <Route path="tracking-rules/new" element={<TrackingRulesPage key="new" />} />
           <Route path="milestones" element={<MilestonesPage />} />
           <Route path="settings" element={<Settings />} />
           {/* ログイン済みで /login に来た場合（コールバック後の戻り先など）は最初の画面へ */}

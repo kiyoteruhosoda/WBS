@@ -541,3 +541,35 @@ class PushDispatchModel(Base):
     kind: Mapped[str] = mapped_column(sa.String(32), nullable=False)
     notice_key: Mapped[str] = mapped_column(sa.String(200), nullable=False)
     sent_at: Mapped[datetime] = mapped_column(sa.DateTime, nullable=False)
+
+
+class TrackingRuleModel(Base):
+    """PC の自動記録の規則（WinTrack、task #381 / ADR-0043）。``position`` の順に上から当てる。
+
+    ``app`` / ``title_contains`` はどちらかが必ず入る（アプリ側で守る）。照合は PC の中で行う。
+    """
+
+    __tablename__ = "tracking_rules"
+    __table_args__ = (
+        sa.Index("ix_tracking_rules_user_id_position", "user_id", "position"),
+        {"sqlite_autoincrement": True},
+    )
+    id: Mapped[int] = mapped_column(BigIntPK, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(sa.BigInteger().with_variant(sa.Integer(), "sqlite"), sa.ForeignKey("users.id"), nullable=False)
+    position: Mapped[int] = mapped_column(sa.Integer, nullable=False)
+    app: Mapped[str | None] = mapped_column(sa.String(260), nullable=True)
+    title_contains: Mapped[str | None] = mapped_column(sa.String(200), nullable=True)
+    task_id: Mapped[int] = mapped_column(sa.BigInteger().with_variant(sa.Integer(), "sqlite"), sa.ForeignKey("tasks.id"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(sa.DateTime, default=utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(sa.DateTime, default=utcnow, onupdate=utcnow, nullable=False)
+
+
+class TrackingRuleBookModel(Base):
+    """利用者ごとに、規則を最後に変えた時刻（ADR-0043）。行が無い = 一度も変えていない。
+
+    規則を消すと行が無くなるので、規則の ``updated_at`` だけでは「消した」が PC へ伝わらない。そのための 1 行。
+    """
+
+    __tablename__ = "tracking_rule_books"
+    user_id: Mapped[int] = mapped_column(sa.BigInteger().with_variant(sa.Integer(), "sqlite"), sa.ForeignKey("users.id"), primary_key=True, autoincrement=False)
+    changed_at: Mapped[datetime] = mapped_column(sa.DateTime, nullable=False)

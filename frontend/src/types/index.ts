@@ -591,3 +591,24 @@ export interface PendingClosings {
   current: ClosingPeriodRange;
   pending: ClosingPeriodRange[];
 }
+
+// PC の自動記録の規則（WinTrack、task #381 / ADR-0043）。編集の画面の 1 行
+export interface EditableTrackingRule {
+  id: number;
+  position: number;
+  app: string | null;
+  title_contains: string | null;
+  task_id: number;
+  // タスクが消されていれば null
+  task_title: string | null;
+  // 偽なら PC へは渡らない（タスクが消された・完了・中止）
+  task_available: boolean;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+export interface TrackingRuleWrite {
+  app: string | null;
+  title_contains: string | null;
+  task_id: number;
+}
