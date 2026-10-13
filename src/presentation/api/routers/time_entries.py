@@ -1,8 +1,9 @@
 """打刻（task #154 / ADR-0008）。
 
 普段は ``POST /start`` と ``POST /stop`` だけ。画面の上部は ``GET /current`` を見る。
-この 3 つだけは打刻アプリ（task #167）からも叩ける ——assay のアクセストークンを
+この 3 つは打刻アプリ（task #167）からも叩ける ——assay のアクセストークンを
 ``Authorization: Bearer`` で受け取る（``AppOrWebUserDep``、ADR-0018）。
+``POST /auto`` は PC の自動記録（WinTrack、task #379 / ADR-0042）が区間をまとめて送る口で、同じく Bearer を通す。
 期間の一覧・1 件の修正・削除と、補正（手で足す・分割・結合・まとめてタスクを振る・
 予定の回から作る）は締めの画面（#161 / ADR-0012）のため。
 確定済みの締めの期間に掛かる打刻は書き換えられない（409）。
@@ -16,6 +17,7 @@ from fastapi import APIRouter, Query, status
 from pydantic import AwareDatetime
 
 from src.application.dto.time_entry_dto import (
+    AutoTimeEntryItem,
     CreateTimeEntryCommand,
     EntryFromOccurrenceCommand,
     MergeTimeEntriesCommand,
@@ -30,6 +32,9 @@ from src.presentation.api.dependencies import (
     TimeEntryUseCasesDep,
 )
 from src.presentation.api.schemas.time_entry_schemas import (
+    AutoTimeEntriesRequest,
+    AutoTimeEntriesResponse,
+    AutoTimeEntryResult,
     CurrentTimeEntryResponse,
     StartTimeEntryRequest,
     StartTimeEntryResponse,
@@ -94,6 +99,24 @@ def stop_time_entry(
         stopped=TimeEntryResponse.from_view(view) if view is not None else None,
         server_now=utcnow(),
     )
+
+
+@router.post("/auto", response_model=AutoTimeEntriesResponse)
+def record_automatic_time_entries(
+    body: AutoTimeEntriesRequest, uc: TimeEntryUseCasesDep, current_user: AppOrWebUserDep
+) -> AutoTimeEntriesResponse:
+    """PC の自動記録の区間をまとめて打刻にする（``source=auto``）。結果は 1 区間ずつ。"""
+    items = [
+        AutoTimeEntryItem(
+            client_ref=e.client_ref,
+            started_at=to_naive_utc(e.started_at),
+            ended_at=to_naive_utc(e.ended_at),
+            task_id=e.task_id,
+        )
+        for e in body.entries
+    ]
+    outcomes = uc.record_automatic(current_user.user_id, items)
+    return AutoTimeEntriesResponse(results=[AutoTimeEntryResult.from_outcome(o) for o in outcomes])
 
 
 @router.get("", response_model=list[TimeEntryResponse])

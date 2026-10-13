@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import AwareDatetime, BaseModel, Field
 
-from src.application.dto.time_entry_dto import TimeEntryView
+from src.application.dto.time_entry_dto import AutoTimeEntryOutcome, TimeEntryView
 from src.presentation.api.schemas.types import UtcDatetime
 
 
@@ -143,3 +145,52 @@ class TimeEntryFromOccurrenceRequest(BaseModel):
     event_id: int
     start: AwareDatetime
     task_id: int | None = None
+
+
+class AutoTimeEntryRequestItem(BaseModel):
+    """PC の自動記録の 1 区間。時刻はオフセット付き。``task_id`` は必須（未分類は送らない）。"""
+
+    client_ref: str = Field(min_length=1, max_length=64, description="送り手が付けた ID（UUID）")
+    started_at: AwareDatetime
+    ended_at: AwareDatetime
+    task_id: int
+
+
+class AutoTimeEntriesRequest(BaseModel):
+    """PC の自動記録（WinTrack）がまとめて送る区間（1 回に 1〜200 件。ADR-0042）。
+
+    表題やアプリ名は受け取らない。
+    """
+
+    entries: list[AutoTimeEntryRequestItem] = Field(min_length=1, max_length=200)
+
+
+class AutoTimeEntryResult(BaseModel):
+    """1 区間の結果。``entry`` は created と duplicate のときだけ、``error`` はそれ以外のときだけ。
+
+    - ``created``: 作った（``source = "auto"``）
+    - ``duplicate``: 同じ ``client_ref`` が既にある（送り直し。中身が違っても上書きしない）
+    - ``overlap``: ほかの打刻（走っている打刻を含む）と重なる
+    - ``closed``: 確定済みの締めの期間に掛かる
+    - ``invalid``: 時刻の逆転・7 日より前・未来（60 秒の遊びは Start と同じ）・自分のでないタスク
+    """
+
+    client_ref: str
+    status: Literal["created", "duplicate", "overlap", "closed", "invalid"]
+    entry: TimeEntryResponse | None
+    error: str | None
+
+    @classmethod
+    def from_outcome(cls, outcome: AutoTimeEntryOutcome) -> AutoTimeEntryResult:
+        return cls(
+            client_ref=outcome.client_ref,
+            status=outcome.status.value,
+            entry=TimeEntryResponse.from_view(outcome.view) if outcome.view is not None else None,
+            error=outcome.error,
+        )
+
+
+class AutoTimeEntriesResponse(BaseModel):
+    """送った順に 1 区間ずつの結果。1 件を断っても全体は 200。"""
+
+    results: list[AutoTimeEntryResult]

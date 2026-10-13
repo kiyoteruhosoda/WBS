@@ -231,6 +231,8 @@ class TimeEntryModel(Base):
             postgresql_where=sa.text("ended_at IS NULL"),
         ),
         sa.Index("ix_time_entries_user_id_started_at", "user_id", "started_at"),
+        # 自動の打刻の送り直しを見分ける（ADR-0042）。手の打刻は NULL で、NULL どうしはぶつからない
+        sa.Index("uq_time_entries_client_ref_per_user", "user_id", "client_ref", unique=True),
     )
     id: Mapped[int] = mapped_column(BigIntPK, primary_key=True, autoincrement=True)
     user_id: Mapped[int] = mapped_column(sa.BigInteger().with_variant(sa.Integer(), "sqlite"), sa.ForeignKey("users.id"), nullable=False)
@@ -238,10 +240,12 @@ class TimeEntryModel(Base):
     started_at: Mapped[datetime] = mapped_column(sa.DateTime, nullable=False)
     ended_at: Mapped[datetime | None] = mapped_column(sa.DateTime, nullable=True)
     memo: Mapped[str | None] = mapped_column(sa.Text, nullable=True)
-    # TimeEntrySource の値（timer / manual / split）。ネイティブ ENUM にしない
+    # TimeEntrySource の値（timer / manual / split / schedule / auto）。ネイティブ ENUM にしない
     source: Mapped[str] = mapped_column(sa.String(16), default="timer", nullable=False)
     created_at: Mapped[datetime] = mapped_column(sa.DateTime, default=utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(sa.DateTime, default=utcnow, onupdate=utcnow, nullable=False)
+    # 送り手（WinTrack）が付けた ID。自動の打刻だけが持つ（ADR-0042）
+    client_ref: Mapped[str | None] = mapped_column(sa.String(64), nullable=True)
 
 
 class ClosingPeriodModel(Base):

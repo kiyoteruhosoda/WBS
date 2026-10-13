@@ -473,7 +473,8 @@ export interface CalendarViewPreset {
 }
 
 // 打刻（task #154）。時刻は Z 付きの UTC
-export type TimeEntrySource = 'timer' | 'manual' | 'split' | 'schedule';
+// auto は PC の自動記録（WinTrack、task #379 / ADR-0042）が送った区間
+export type TimeEntrySource = 'timer' | 'manual' | 'split' | 'schedule' | 'auto';
 
 export interface TimeEntry {
   id: number;

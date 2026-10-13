@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
+from enum import StrEnum
 
 from src.application.dto.unset import UNSET, UnsetType
 from src.domain.entities.time_entry import TimeEntry
@@ -88,3 +89,38 @@ class SplitTimeEntryResult:
     """元の打刻（分けた時刻で終わる）。"""
     second: TimeEntryView
     """分けた時刻から始まる新しい打刻（``source=split``）。"""
+
+
+@dataclass
+class AutoTimeEntryItem:
+    """PC の自動記録（WinTrack）が送る 1 区間。時刻は naive な UTC（秒未満は使わない）。"""
+
+    client_ref: str
+    """送り手が付けた ID（UUID）。送り直しを見分ける。"""
+    started_at: datetime
+    ended_at: datetime
+    task_id: int
+
+
+class AutoTimeEntryStatus(StrEnum):
+    """1 区間ごとの結果（API の ``status`` の文字列）。"""
+
+    CREATED = "created"
+    DUPLICATE = "duplicate"
+    """同じ ``client_ref`` が既にある（送り直し）。既にある打刻を返し、上書きしない。"""
+    OVERLAP = "overlap"
+    """ほかの打刻（走っている打刻を含む）と重なる。"""
+    CLOSED = "closed"
+    """確定済みの締めの期間に掛かる。"""
+    INVALID = "invalid"
+    """時刻の逆転・遠い過去・未来・自分のでないタスク。"""
+
+
+@dataclass(frozen=True)
+class AutoTimeEntryOutcome:
+    client_ref: str
+    status: AutoTimeEntryStatus
+    # created と duplicate のときだけ
+    view: TimeEntryView | None = None
+    # created と duplicate 以外のときの理由（機械が見分けるための短い語）
+    error: str | None = None

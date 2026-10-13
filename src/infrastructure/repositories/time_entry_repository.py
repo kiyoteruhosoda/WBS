@@ -27,6 +27,14 @@ class SqlAlchemyTimeEntryRepository(TimeEntryRepository):
         model = self._session.get(TimeEntryModel, entry_id)
         return self._to_entity(model) if model is not None else None
 
+    def find_by_client_ref(self, user_id: int, client_ref: str) -> TimeEntry | None:
+        stmt = select(TimeEntryModel).where(
+            TimeEntryModel.user_id == user_id,
+            TimeEntryModel.client_ref == client_ref,
+        )
+        model = self._session.scalar(stmt)
+        return self._to_entity(model) if model is not None else None
+
     def find_running(self, user_id: int) -> TimeEntry | None:
         stmt = select(TimeEntryModel).where(
             TimeEntryModel.user_id == user_id,
@@ -74,6 +82,7 @@ class SqlAlchemyTimeEntryRepository(TimeEntryRepository):
                 ended_at=entry.ended_at,
                 memo=entry.memo,
                 source=entry.source.value,
+                client_ref=entry.client_ref,
             )
             self._session.add(model)
         else:
@@ -91,6 +100,11 @@ class SqlAlchemyTimeEntryRepository(TimeEntryRepository):
             self._session.flush()
         except IntegrityError as exc:
             self._session.rollback()
+            # client_ref の索引も user_id を含むので、先に見分ける（SQLite の文言は両方 time_entries.user_id を含む）
+            if _is_client_ref_collision(exc):
+                raise ConflictError(
+                    "A time entry with this client_ref already exists for this user"
+                ) from exc
             if not _is_running_entry_collision(exc):
                 raise
             raise ConflictError("A time entry is already running for this user") from exc
@@ -111,9 +125,19 @@ class SqlAlchemyTimeEntryRepository(TimeEntryRepository):
             ended_at=model.ended_at,
             memo=model.memo,
             source=TimeEntrySource(model.source),
+            client_ref=model.client_ref,
             created_at=model.created_at,
             updated_at=model.updated_at,
         )
+
+
+def _is_client_ref_collision(exc: IntegrityError) -> bool:
+    """一意索引 ``uq_time_entries_client_ref_per_user`` に当たったか（同じ打刻を同時に送り直した）。
+
+    SQLite の文言は ``UNIQUE constraint failed: time_entries.user_id, time_entries.client_ref``。
+    """
+    message = str(exc.orig)
+    return "uq_time_entries_client_ref_per_user" in message or "time_entries.client_ref" in message
 
 
 def _is_running_entry_collision(exc: IntegrityError) -> bool:
