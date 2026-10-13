@@ -92,6 +92,34 @@ ADR-0018・ADR-0021。アプリは assay に直接ログインし、打刻の 3 
    curl -s https://<ホスト>/.well-known/assetlinks.json                                                              # 200 と JSON（text/html なら nginx が裏へ渡していない）
    ```
 
+## PC の自動記録（WinTrack）を通したいとき
+
+ADR-0042（自動の打刻）・ADR-0043（規則）・ADR-0044（更新の中継）。WinTrack は assay に直接ログインし、
+`POST /api/time-entries/auto`・`GET /api/tracking-rules`・`GET /api/tracking-rules/tasks`・`GET /api/wintrack/releases/*`
+を assay のアクセストークンで叩く。
+
+1. `APP_CLIENT_IDS` に WinTrack の client_id を足す（上の「打刻アプリ」と同じ。カンマ区切り）
+2. 更新の中継を使うなら、配布面（Garage）の `artifacts` を**読むだけ**の鍵を用意し、秘密を api のコンテナから
+   読めるファイルに置いて、環境変数を足して配り直す（⚠ 1 つでも空なら中継しない。`/api/wintrack/releases/*` は 404）:
+
+   ```bash
+   WINTRACK_RELEASES_S3_ENDPOINT_URL=http://garage.blob-prod.svc.cluster.local:3900
+   WINTRACK_RELEASES_S3_REGION=garage
+   WINTRACK_RELEASES_S3_BUCKET=artifacts
+   WINTRACK_RELEASES_S3_PREFIX=wintrack/                 # 省略すると wintrack/
+   WINTRACK_RELEASES_S3_ACCESS_KEY_ID=<読み取りの鍵の ID>
+   WINTRACK_RELEASES_S3_SECRET_ACCESS_KEY_FILE=/run/wintrack-releases/secret-access-key   # 秘密は値ではなく場所で
+   ```
+
+3. 確かめる:
+
+   ```bash
+   curl -s -o /dev/null -w '%{http_code}\n' -H 'Authorization: Bearer x' https://<ホスト>/api/tracking-rules                      # 401
+   curl -s -o /dev/null -w '%{http_code}\n' -H 'Authorization: Bearer x' https://<ホスト>/api/wintrack/releases/releases.win.json  # 401
+   ```
+
+   読めないときはログに `wintrack.releases.unavailable`（理由に置き場・鍵のファイルのどちらか）。
+
 ## SSO を後から入れて、既に居る利用者を引き継ぎたいとき
 
 ⚠ **既定では、メールアドレスが同じでも既存の利用者へ寄せない**（ADR-0004）。移行のあいだ

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Generator
+from functools import cache
 from typing import Annotated
 
 from fastapi import Depends, HTTPException, Request, status
@@ -26,6 +27,7 @@ from src.application.use_cases.task_use_cases import TaskUseCases
 from src.application.use_cases.time_entry_use_cases import TimeEntryUseCases
 from src.application.use_cases.today_use_cases import TodayUseCases
 from src.application.use_cases.tracking_rule_use_cases import TrackingRuleUseCases
+from src.application.use_cases.wintrack_release_use_cases import WinTrackReleases
 from src.application.user_clock import UserClock
 from src.domain.exceptions import AuthenticationError
 from src.infrastructure.auth.auth_settings import SINGLE_USER_ID, AuthSettings
@@ -70,6 +72,10 @@ from src.infrastructure.repositories.user_account_repository import (
     SqlAlchemyUserAccountRepository,
 )
 from src.infrastructure.repositories.work_log_repository import SqlAlchemyWorkLogRepository
+from src.infrastructure.wintrack_release.s3_release_file_store import S3ReleaseFileStore
+from src.infrastructure.wintrack_release.wintrack_release_settings import (
+    load_wintrack_release_settings,
+)
 from src.shared.clock import utcnow
 
 
@@ -174,6 +180,14 @@ def get_tracking_rule_use_cases(db: DbDep) -> TrackingRuleUseCases:
     )
 
 TrackingRuleUseCasesDep = Annotated[TrackingRuleUseCases, Depends(get_tracking_rule_use_cases)]
+
+
+@cache
+def get_wintrack_releases() -> WinTrackReleases:
+    """WinTrack の更新の置き場の中継（ADR-0044）。覚えた版の一覧を使い回すため、プロセスで 1 つ。"""
+    return WinTrackReleases(S3ReleaseFileStore(load_wintrack_release_settings()))
+
+WinTrackReleasesDep = Annotated[WinTrackReleases, Depends(get_wintrack_releases)]
 
 
 def get_current_user(

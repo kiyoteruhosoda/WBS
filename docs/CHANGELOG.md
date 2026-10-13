@@ -4,6 +4,10 @@
 
 ## 2026-10-13
 
+- **WinTrack の更新を WBS が中継するようにした**（task #384、ADR-0044）。`GET /api/wintrack/releases/{file}` が
+  配布面（Garage の `artifacts` の `wintrack/`）から `releases.win.json`・`RELEASES`・`*.nupkg` だけを読んで返す（Bearer で通す）。
+  設定は `WINTRACK_RELEASES_S3_*`（秘密はファイルの場所で持つ）。設定が空・読めないときは 404。依存に boto3 を足した。
+
 - **PC の自動記録（WinTrack）の規則を WBS で編集できるようにした**（task #381、ADR-0043）。画面「自動記録の規則」
   （`/tracking-rules`）で「アプリが〜」「表題に〜を含む」→ タスク、を上から並べる。WinTrack は `GET /api/tracking-rules` で
   使える規則を取り、PC の中で照合する（表題は WBS へ送らない）。付け替え先は `GET /api/tracking-rules/tasks`。
