@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { DailyTaskTotal, Project } from '../types';
 import { groupEntrySegmentsByDate } from './closingBoard';
-import { buildLedger, formatHalfHours, ledgerCellSegments, ledgerRowOfEntry } from './closingLedger';
+import { breaksByDate, buildLedger, formatHalfHours, ledgerCellSegments, ledgerRowOfEntry } from './closingLedger';
 import { entry } from './testClosingBoard';
 import { TOKYO } from '../calendar/testOccurrences';
 
@@ -73,5 +73,20 @@ describe('ledgerCellSegments', () => {
 describe('formatHalfHours', () => {
   it('rounds to half hours for display', () => {
     expect([0, 899, 900, 2700, 3600 * 6 + 600, 3600 * 7.75].map(formatHalfHours)).toEqual(['0.0', '0.0', '0.5', '1.0', '6.0', '8.0']);
+  });
+});
+
+describe('breaksByDate', () => {
+  it('sums the breaks of each day and keeps their spans in local time', () => {
+    const breaks = [
+      { id: 2, started_at: '2026-09-01T06:00:00Z', ended_at: '2026-09-01T06:10:00Z', source: 'auto' as const },
+      { id: 1, started_at: '2026-09-01T03:00:00Z', ended_at: '2026-09-01T03:45:00Z', source: 'auto' as const },
+      { id: 3, started_at: '2026-09-02T14:30:00Z', ended_at: '2026-09-02T15:00:00Z', source: 'auto' as const },
+      { id: 4, started_at: '2026-09-20T03:00:00Z', ended_at: '2026-09-20T04:00:00Z', source: 'auto' as const },
+    ];
+    expect(breaksByDate(breaks, [D1, D2], TOKYO)).toEqual({
+      [D1]: { seconds: 55 * 60, spans: [{ startMinute: 12 * 60, endMinute: 12 * 60 + 45 }, { startMinute: 15 * 60, endMinute: 15 * 60 + 10 }] },
+      [D2]: { seconds: 30 * 60, spans: [{ startMinute: 23 * 60 + 30, endMinute: 24 * 60 }] },
+    });
   });
 });

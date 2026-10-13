@@ -620,3 +620,22 @@ class TimeEntryCarvingModel(Base):
     window_started_at: Mapped[datetime] = mapped_column(sa.DateTime, nullable=False)
     window_ended_at: Mapped[datetime] = mapped_column(sa.DateTime, nullable=False)
     carved_at: Mapped[datetime] = mapped_column(sa.DateTime, nullable=False)
+
+
+class WorkBreakModel(Base):
+    """休み（WinTrack、task #392 / ADR-0048）。打刻とは別に持ち、実績の長さから重なる分を引く。
+
+    ``source`` は ``WorkBreakSource`` の値（いまは auto だけ）。ネイティブ ENUM にしない。
+    """
+
+    __tablename__ = "work_breaks"
+    __table_args__ = (
+        sa.Index("ix_work_breaks_user_id_started_at", "user_id", "started_at"),
+        {"sqlite_autoincrement": True},
+    )
+    id: Mapped[int] = mapped_column(BigIntPK, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(sa.BigInteger().with_variant(sa.Integer(), "sqlite"), sa.ForeignKey("users.id"), nullable=False)
+    started_at: Mapped[datetime] = mapped_column(sa.DateTime, nullable=False)
+    ended_at: Mapped[datetime] = mapped_column(sa.DateTime, nullable=False)
+    source: Mapped[str] = mapped_column(sa.String(16), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(sa.DateTime, default=utcnow, nullable=False)

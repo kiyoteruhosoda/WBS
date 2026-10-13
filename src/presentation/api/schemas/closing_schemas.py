@@ -18,6 +18,7 @@ from src.domain.value_objects.half_month_period import HalfMonthPeriod
 from src.presentation.api.schemas.calendar_schemas import CalendarOccurrenceResponse
 from src.presentation.api.schemas.time_entry_schemas import TimeEntryResponse
 from src.presentation.api.schemas.types import UtcDatetime
+from src.presentation.api.schemas.work_break_schemas import WorkBreakResponse
 from src.presentation.api.schemas.work_log_schemas import WorkLogResponse
 
 
@@ -105,6 +106,10 @@ class ClosingBoardResponse(BaseModel):
         description="日ごと・タスクごとの合計（確定で作る work_logs と同じ割り方。走っている打刻は今まで）"
     )
     findings: ClosingFindingsResponse
+    breaks: list[WorkBreakResponse] = Field(
+        default_factory=list,
+        description="期間に掛かる休み（ADR-0048）。日ごとの合計は、これと重なる時間を引いてある",
+    )
 
     @classmethod
     def from_board(cls, board: ClosingBoard) -> ClosingBoardResponse:
@@ -128,6 +133,7 @@ class ClosingBoardResponse(BaseModel):
                     + len(f.missed_occurrences)
                 ),
             ),
+            breaks=[WorkBreakResponse.from_break(b) for b in board.breaks],
         )
 
 

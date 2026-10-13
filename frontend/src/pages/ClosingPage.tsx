@@ -37,7 +37,7 @@ import ClosingGrid from '../components/closing/ClosingGrid';
 import LedgerTable from '../components/closing/LedgerTable';
 import LedgerCellDialog from '../components/closing/LedgerCellDialog';
 import type { LedgerRow } from '../closing/closingLedger';
-import { buildLedger, ledgerCellSegments, ledgerRowOfEntry } from '../closing/closingLedger';
+import { breaksByDate, buildLedger, ledgerCellSegments, ledgerRowOfEntry } from '../closing/closingLedger';
 import FindingsPanel, { NoFindings } from '../components/closing/FindingsPanel';
 import ClosingHelp from '../components/closing/ClosingHelp';
 import TotalsTable from '../components/closing/TotalsTable';
@@ -128,6 +128,10 @@ const ClosingPage: React.FC = () => {
   const ledger = useMemo(
     () => buildLedger(board?.daily_totals ?? [], entrySegments, dates, projects, scope),
     [board, entrySegments, dates, projects, scope],
+  );
+  const ledgerBreaks = useMemo(
+    () => breaksByDate(board?.breaks ?? [], dates, timeZone),
+    [board, dates, timeZone],
   );
   const ledgerRowOf = useMemo(
     () => ledgerRowOfEntry(board?.daily_totals ?? [], projects, scope),
@@ -483,7 +487,7 @@ const ClosingPage: React.FC = () => {
       {view === 'ledger' && (
         <Box sx={{ display: 'flex', flexDirection: { xs: 'column', lg: 'row' }, gap: '12px', alignItems: 'flex-start' }}>
           <Box sx={{ flex: 1, minWidth: 0, width: '100%' }}>
-            {board ? <LedgerTable ledger={ledger} onOpenCell={(date, row) => setLedgerCell({ date, row })} />
+            {board ? <LedgerTable ledger={ledger} breaks={ledgerBreaks} onOpenCell={(date, row) => setLedgerCell({ date, row })} />
               : <Box sx={{ p: '16px', color: ds.textMuted, fontSize: 13 }}>{t('closing.loading')}</Box>}
           </Box>
           {findings.length > 0 && (

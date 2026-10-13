@@ -588,6 +588,16 @@ export interface ClosingBoard {
   occurrences: CalendarOccurrence[];
   daily_totals: DailyTaskTotal[];
   findings: ClosingFindings;
+  // 期間に掛かる休み（task #392 / ADR-0048）。daily_totals は、これと重なる時間を引いてある
+  breaks?: WorkBreak[];
+}
+
+// 休み（WinTrack が送る。打刻とは別に持ち、実績から重なる時間を引く。ADR-0048）
+export interface WorkBreak {
+  id: number;
+  started_at: string;
+  ended_at: string;
+  source: 'auto';
 }
 
 export interface PendingClosings {

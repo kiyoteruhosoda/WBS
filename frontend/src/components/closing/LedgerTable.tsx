@@ -4,7 +4,7 @@
 import React from 'react';
 import { Box, ButtonBase } from '@mui/material';
 import { useI18n } from '../../i18n';
-import type { Ledger, LedgerRow } from '../../closing/closingLedger';
+import type { DayBreaks, Ledger, LedgerRow } from '../../closing/closingLedger';
 import { formatHalfHours } from '../../closing/closingLedger';
 import { dayOfWeek, formatMinute } from '../../calendar/zonedTime';
 import { formatExactDuration } from '../../utils/format';
@@ -12,6 +12,8 @@ import { ds } from '../../theme';
 
 interface Props {
   ledger: Ledger;
+  /** 日ごとの休み（task #392）。日の計は休みを引いたあと。休みが 1 つも無ければ行を出さない */
+  breaks: Record<string, DayBreaks>;
   onOpenCell: (date: string, row: LedgerRow) => void;
 }
 
@@ -21,7 +23,7 @@ const numeric = { fontVariantNumeric: 'tabular-nums', textAlign: 'right' } as co
 /** 自動の打刻の印（WinTrack の青緑） */
 const AUTO_COLOR = '#0d7377';
 
-const LedgerTable: React.FC<Props> = ({ ledger, onOpenCell }) => {
+const LedgerTable: React.FC<Props> = ({ ledger, breaks, onOpenCell }) => {
   const { t, weekdays } = useI18n();
   const labelOf = (row: LedgerRow): string => {
     switch (row.kind) {
@@ -85,7 +87,32 @@ const LedgerTable: React.FC<Props> = ({ ledger, onOpenCell }) => {
               })}
               <Box component="td" sx={{ ...cell, borderBottom: `1px dashed ${ds.border}` }} />
             </tr>
-            {/* 休みの行は task #392 でここに入る（日ごとの休みの合計と区間） */}
+            {/* 休み（task #392 / ADR-0048）: 日ごとの合計と区間。日の計はこれと重なる打刻の時間を引いてある */}
+            {Object.keys(breaks).length > 0 && (
+              <tr data-testid="closing-ledger-breaks">
+                <Box component="td" sx={{ ...cell, ...sticky, fontSize: 12, color: ds.textSub }}>{t('closing.ledgerBreaks')}</Box>
+                {ledger.dates.map((d) => {
+                  const day = breaks[d];
+                  return (
+                    <Box component="td" key={d} sx={{ ...cell, ...numeric, lineHeight: 1.25, color: ds.textSub }}>
+                      {day ? (
+                        <>
+                          <Box component="span" sx={{ display: 'block', fontWeight: 700 }}>{formatExactDuration(day.seconds)}</Box>
+                          {day.spans.map((span) => (
+                            <Box component="span" key={span.startMinute} sx={{ display: 'block', fontSize: 11 }}>
+                              {`${clock(span.startMinute)}–${clock(span.endMinute)}`}
+                            </Box>
+                          ))}
+                        </>
+                      ) : <Box component="span" sx={{ color: ds.textMuted }}>—</Box>}
+                    </Box>
+                  );
+                })}
+                <Box component="td" sx={{ ...cell, ...numeric, color: ds.textSub }}>
+                  {formatExactDuration(Object.values(breaks).reduce((sum, day) => sum + day.seconds, 0))}
+                </Box>
+              </tr>
+            )}
             {ledger.rows.map((row) => (
               <tr key={row.key}>
                 <Box component="td" title={labelOf(row)} sx={{
