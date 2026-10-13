@@ -504,6 +504,17 @@ const ActualsCard: React.FC<{
                 <Box sx={{ flex: 1, minWidth: 0, fontSize: 14, color: entry.task_id == null ? ds.textSub : ds.text, ...ellipsis }}>
                   {entry.task_title ?? t('timer.unassigned')}
                 </Box>
+                {entry.source === 'auto' && (
+                  <Box
+                    component="span" title={t('timeEntry.autoHint')} data-testid="today-entry-auto"
+                    sx={{
+                      fontSize: 11, lineHeight: '18px', px: '6px', borderRadius: '9px', flexShrink: 0,
+                      color: ds.textSub, border: `1px solid ${ds.border}`,
+                    }}
+                  >
+                    {t('timeEntry.auto')}
+                  </Box>
+                )}
                 <Box sx={{ fontSize: 13, color: ds.text, fontVariantNumeric: 'tabular-nums', flexShrink: 0 }}>
                   {formatClockDuration(Math.max(0, Math.floor((endedMs - startedMs) / 1000)))}
                 </Box>

@@ -4,11 +4,14 @@ IdP は差し替える（署名の検証はインフラ層の試験で見る）�
 **どのトークンを誰として通すか**と、**どの口が受け取るか**である。
 """
 
+from datetime import timedelta
+
 import pytest
 from fastapi.testclient import TestClient
 
 from src.infrastructure.database.models import UserModel
 from src.presentation.api.dependencies import get_db, get_identity_provider
+from src.shared.clock import utcnow
 from tests.integration.api.test_auth import (  # noqa: F401 - fixture を借りる
     ISSUER,
     OIDC_ENV,
@@ -136,6 +139,33 @@ def test_only_the_timer_routes_take_the_app_token(app_client) -> None:
         headers=bearer("taro-app"),
     )
     assert listed.status_code == 401
+
+
+def test_the_pc_recorder_sends_auto_entries_with_its_token(app_client) -> None:
+    """PC の自動記録（WinTrack、task #379 / ADR-0042）も同じ Bearer の口で区間をまとめて送る。"""
+    sign_in(app_client, "taro-code")
+    task = app_client.post("/api/tasks", json={"title": "見積書を作る"}).json()["id"]
+    app_client.cookies.clear()
+    start = (utcnow() - timedelta(hours=2)).replace(microsecond=0)
+    span = {
+        "client_ref": "3f2b0000-0000-4000-8000-000000000001",
+        "started_at": f"{start.isoformat()}Z",
+        "ended_at": f"{(start + timedelta(minutes=40)).isoformat()}Z",
+        "task_id": task,
+    }
+    res = app_client.post("/api/time-entries/auto", json={"entries": [span]}, headers=bearer("taro-app"))
+    assert res.status_code == 200, res.text
+    [result] = res.json()["results"]
+    assert (result["status"], result["entry"]["source"]) == ("created", "auto")
+    # 他人のトークンでは、その人のタスクとして扱われない
+    hanako = app_client.post(
+        "/api/time-entries/auto", json={"entries": [span]}, headers=bearer("hanako-app")
+    )
+    assert hanako.json()["results"][0]["status"] == "invalid"
+    unknown = app_client.post(
+        "/api/time-entries/auto", json={"entries": [span]}, headers=bearer("unknown-token")
+    )
+    assert unknown.status_code == 401
 
 
 def test_without_app_client_ids_no_token_is_taken(database_path, monkeypatch, sso_provider) -> None:  # noqa: F811

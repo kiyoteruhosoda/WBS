@@ -1,6 +1,7 @@
 """打刻のインメモリのリポジトリ（DB を使わない試験用）。
 
-走っている打刻の「1 人 1 本」は、表の部分一意索引と同じく ``save`` で ``ConflictError`` にする。
+走っている打刻の「1 人 1 本」と ``(user_id, client_ref)`` の一意は、表の索引と同じく ``save`` で
+``ConflictError`` にする。
 """
 
 from __future__ import annotations
@@ -25,6 +26,12 @@ class InMemoryTimeEntryRepository(TimeEntryRepository):
     def find_by_id(self, entry_id: int) -> TimeEntry | None:
         found = self._rows.get(entry_id)
         return copy.deepcopy(found) if found is not None else None
+
+    def find_by_client_ref(self, user_id: int, client_ref: str) -> TimeEntry | None:
+        for e in self._rows.values():
+            if e.user_id == user_id and e.client_ref == client_ref:
+                return copy.deepcopy(e)
+        return None
 
     def find_running(self, user_id: int) -> TimeEntry | None:
         for e in self._rows.values():
@@ -54,6 +61,14 @@ class InMemoryTimeEntryRepository(TimeEntryRepository):
             for other in self._rows.values():
                 if other.user_id == entry.user_id and other.is_running and other.id != entry.id:
                     raise ConflictError("A time entry is already running for this user")
+        if entry.client_ref is not None:
+            for other in self._rows.values():
+                if (
+                    other.user_id == entry.user_id
+                    and other.client_ref == entry.client_ref
+                    and other.id != entry.id
+                ):
+                    raise ConflictError("A time entry with this client_ref already exists")
         if entry.id is None:
             entry.id = self._next_id
             self._next_id += 1

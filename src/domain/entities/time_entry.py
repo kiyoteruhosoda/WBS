@@ -28,6 +28,8 @@ class TimeEntry:
     task_id: int | None = None
     memo: str | None = None
     source: TimeEntrySource = TimeEntrySource.TIMER
+    # 送り手が付けた ID（自動の打刻だけ。``(user_id, client_ref)`` で一意。ADR-0042）
+    client_ref: str | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None
 

@@ -205,7 +205,7 @@ const ClosingGrid: React.FC<Props> = ({
         title={[
           label, formatEntryRange({ startMs: Date.parse(entry.started_at), endMs: entry.ended_at ? Date.parse(entry.ended_at) : nowMs }, timeZone),
           entry.memo ?? '', longRunning ? t('closing.findingLongRunning') : '', overlapping ? t('closing.findingOverlap') : '',
-          entry.is_running ? t('closing.running') : '',
+          entry.is_running ? t('closing.running') : '', entry.source === 'auto' ? t('timeEntry.autoHint') : '',
         ].filter(Boolean).join('\n')}
         onPointerDown={readOnly || splitMode ? undefined : (e) => { e.stopPropagation(); drag.onEntryPointerDown(e, block, edgeOf(e, segment)); }}
         onPointerMove={(e) => {
@@ -246,7 +246,16 @@ const ClosingGrid: React.FC<Props> = ({
           display: 'flex', flexDirection: 'column', justifyContent: block.height < 26 ? 'center' : 'flex-start',
         }}
       >
-        <Box sx={{ ...chipText, fontWeight: 600 }}>{longRunning ? '⚠ ' : ''}{label}</Box>
+        <Box sx={{ ...chipText, fontWeight: 600 }}>
+          {longRunning ? '⚠ ' : ''}
+          {/* PC の自動記録の区間（ADR-0042） */}
+          {entry.source === 'auto' && (
+            <Box component="span" data-testid="closing-entry-auto" sx={{ fontWeight: 400, opacity: 0.85 }}>
+              {`${t('timeEntry.auto')}・`}
+            </Box>
+          )}
+          {label}
+        </Box>
         {block.height >= 26 && <Box sx={{ ...chipText, fontSize: 9 }}>{range}</Box>}
         {hover && (
           <Box sx={{
