@@ -192,6 +192,28 @@ def test_the_pc_recorder_reads_rules_and_tasks_with_its_token(app_client) -> Non
     assert app_client.delete(f"/api/tracking-rules/{rule}", headers=bearer("taro-app")).status_code == 401
 
 
+def test_the_pc_recorder_reads_its_updates_with_its_token(app_client) -> None:
+    """WinTrack（Velopack）は更新の置き場を Bearer で読む（task #384 / ADR-0044）。"""
+    from src.application.ports.release_file_store import ReleaseFileStream
+    from src.application.use_cases.wintrack_release_use_cases import WinTrackReleases
+    from src.presentation.api.dependencies import get_wintrack_releases
+
+    class Store:
+        configured = True
+
+        def read(self, name: str, max_bytes: int) -> bytes:
+            return b"{}"
+
+        def open(self, name: str) -> ReleaseFileStream:
+            return ReleaseFileStream(size=1, chunks=iter([b"x"]))
+
+    app_client.app.dependency_overrides[get_wintrack_releases] = lambda: WinTrackReleases(Store())
+    url = "/api/wintrack/releases/releases.win.json"
+    assert app_client.get(url, headers=bearer("taro-app")).status_code == 200
+    assert app_client.get(url, headers=bearer("unknown-token")).status_code == 401
+    assert app_client.get(url).status_code == 401
+
+
 def test_without_app_client_ids_no_token_is_taken(database_path, monkeypatch, sso_provider) -> None:  # noqa: F811
     sso_provider.access_tokens["taro-app"] = _claims()
     app = _make_client(database_path, monkeypatch, sso_provider, app_client_ids=None)
