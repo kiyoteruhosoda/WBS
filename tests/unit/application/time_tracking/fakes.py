@@ -40,6 +40,13 @@ class InMemoryTimeEntryRepository(TimeEntryRepository):
         ]
         return sorted(found, key=lambda e: (e.started_at, e.id or 0))
 
+    def find_by_task(self, user_id: int, task_id: int) -> list[TimeEntry]:
+        found = [
+            copy.deepcopy(e) for e in self._rows.values()
+            if e.user_id == user_id and e.task_id == task_id
+        ]
+        return sorted(found, key=lambda e: (e.started_at, e.id or 0))
+
     def find_running(self, user_id: int) -> TimeEntry | None:
         for e in self._rows.values():
             if e.user_id == user_id and e.is_running:

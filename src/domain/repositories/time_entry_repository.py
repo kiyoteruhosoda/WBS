@@ -15,6 +15,10 @@ class TimeEntryRepository(ABC):
         """送り手が付けた ID の打刻を始まりの順に（``fill`` は 1 つの ID から何本もできる。ADR-0045）。"""
 
     @abstractmethod
+    def find_by_task(self, user_id: int, task_id: int) -> list[TimeEntry]:
+        """そのタスクに付いた打刻を始まりの順に（タスクを消す前に数える。ADR-0046）。"""
+
+    @abstractmethod
     def find_running(self, user_id: int) -> TimeEntry | None:
         """走っている打刻（1 人 1 本）。"""
 

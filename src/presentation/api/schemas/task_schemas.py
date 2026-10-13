@@ -95,7 +95,27 @@ class TaskResponse(BaseModel):
     project_path: str | None = None
     completed_at: UtcDatetime | None = None
     deleted_at: UtcDatetime | None = None
+    # しまった時刻（ADR-0046）。しまったタスクは一覧に出ないが、1 件の取得では返る
+    archived_at: UtcDatetime | None = None
     created_at: UtcDatetime | None = None
     updated_at: UtcDatetime | None = None
 
     model_config = {"from_attributes": True}
+
+
+class TaskRemovalResponse(BaseModel):
+    """タスクを消すとどうなるか（確認の窓に出す。ADR-0046）。
+
+    ``action`` は ``delete``（打刻も実績も無い）か ``archive``（ある。消さずにしまう）。
+    ``blocked_by`` が null でなければ、どちらもできない（``running`` = 計測中）。
+    """
+
+    task_id: int
+    title: str
+    action: str
+    time_entries: int
+    tracked_seconds: int
+    work_log_hours: float
+    tracking_rules: int
+    blocked_by: str | None
+    archived: bool

@@ -31,6 +31,8 @@ class Task:
     project_id: int | None = None
     completed_at: datetime | None = None
     deleted_at: datetime | None = None
+    # しまった時刻（打刻や実績のあるタスクは消さずにしまう。ADR-0046）。一覧・付け替え先に出ない
+    archived_at: datetime | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None
 
@@ -51,8 +53,17 @@ class Task:
 
     @property
     def is_open(self) -> bool:
-        """まだ作業できるか（完了・中止でない）。"""
-        return self.status not in (TaskStatus.DONE, TaskStatus.CANCELLED)
+        """まだ作業できるか（完了・中止でなく、しまってもいない）。"""
+        return self.status not in (TaskStatus.DONE, TaskStatus.CANCELLED) and not self.is_archived
+
+    @property
+    def is_archived(self) -> bool:
+        return self.archived_at is not None
+
+    def archive(self, at: datetime) -> None:
+        """しまう（冪等）。"""
+        if self.archived_at is None:
+            self.archived_at = at
 
     def progress_percent(self, actual_hours: float) -> float | None:
         # 進捗率 = 実績 ÷（実績 ＋ 残）。子を持つタスクの積み上げは TaskProgressBoard が出す

@@ -106,6 +106,8 @@ class TaskModel(Base):
     deleted_at: Mapped[datetime | None] = mapped_column(sa.DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(sa.DateTime, default=utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(sa.DateTime, default=utcnow, onupdate=utcnow, nullable=False)
+    # しまった時刻（打刻や実績のあるタスクは消さずにしまう。ADR-0046）
+    archived_at: Mapped[datetime | None] = mapped_column(sa.DateTime, nullable=True)
     # 属するプロジェクト（空 = 未分類。task #187 / ADR-0024）。⚠ 子タスクは親と同じ値を持つ
     # （アプリ側で揃える。親を移すと子孫も移る）
     project_id: Mapped[int | None] = mapped_column(

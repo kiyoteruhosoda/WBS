@@ -1,6 +1,6 @@
 import client from './client';
 import type { MoveToProjectRequest } from '../projects/taskListView';
-import type { Task, TaskMoveToProjectResult, TaskListParams, TaskDependency, TaskDependenciesResponse, DependencyType, TaskStatus } from '../types';
+import type { Task, TaskMoveToProjectResult, TaskRemoval, TaskListParams, TaskDependency, TaskDependenciesResponse, DependencyType, TaskStatus } from '../types';
 
 export const getTasks = async (params: TaskListParams = {}): Promise<Task[]> => {
   const { data } = await client.get('/tasks', { params });
@@ -33,8 +33,20 @@ export const moveTasksToProject = async (request: MoveToProjectRequest): Promise
   return data;
 };
 
+/** 消す。打刻か実績があれば 409（`archiveTask` でしまう。ADR-0046）。 */
 export const deleteTask = async (id: number): Promise<void> => {
   await client.delete(`/tasks/${id}`);
+};
+
+/** 消すとどうなるか（打刻・実績・WinTrack の規則の数と、消すかしまうか）。 */
+export const getTaskRemoval = async (id: number): Promise<TaskRemoval> => {
+  const { data } = await client.get<TaskRemoval>(`/tasks/${id}/removal`);
+  return data;
+};
+
+/** しまう（一覧と付け替え先に出なくなる。実績と締めの表には残る）。 */
+export const archiveTask = async (id: number): Promise<void> => {
+  await client.post(`/tasks/${id}/archive`);
 };
 
 // バックエンドのステータス状態機械（TODO→DOING→DONE 等）に沿った DONE までの遷移経路

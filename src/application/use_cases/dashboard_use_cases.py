@@ -25,12 +25,13 @@ class DashboardUseCases:
         # 週の区切りは利用者の日付。保存値は UTC なので UTC の半開区間へ直す。
         week_from, week_until = self._clock.utc_window(user_id, week_start, week_end)
         total = self._session.execute(
-            select(func.count()).where(TaskModel.user_id == user_id, TaskModel.deleted_at.is_(None))
+            select(func.count()).where(TaskModel.user_id == user_id, TaskModel.deleted_at.is_(None), TaskModel.archived_at.is_(None))
         ).scalar() or 0
         incomplete = self._session.execute(
             select(func.count()).where(
                 TaskModel.user_id == user_id,
                 TaskModel.deleted_at.is_(None),
+                TaskModel.archived_at.is_(None),
                 TaskModel.status.notin_([TaskStatus.DONE.value, TaskStatus.CANCELLED.value]),
             )
         ).scalar() or 0
@@ -38,6 +39,7 @@ class DashboardUseCases:
             select(func.count()).where(
                 TaskModel.user_id == user_id,
                 TaskModel.deleted_at.is_(None),
+                TaskModel.archived_at.is_(None),
                 TaskModel.status.notin_([TaskStatus.DONE.value, TaskStatus.CANCELLED.value]),
                 TaskModel.due_date < today,
             )

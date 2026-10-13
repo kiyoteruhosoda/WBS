@@ -19,6 +19,7 @@ import { ds } from '../theme';
 import { PlusIcon, TrashIcon } from '../components/icons';
 import MoreTimeIcon from '@mui/icons-material/MoreTime';
 import { scheduleTaskPath } from '../calendar/taskScheduling';
+import TaskRemovalDialog from '../components/tasks/TaskRemovalDialog';
 import { milestoneReachable, parseScope, pickableProjects } from '../projects/projectScope';
 import { useProjectScope } from '../projects/useProjectScope';
 import { useDayOffReason } from '../calendar/useDayOffReason';
@@ -149,6 +150,7 @@ const TaskEdit: React.FC = () => {
   const [depPredId, setDepPredId] = useState('');
   const [depType, setDepType] = useState<DependencyType>('FS');
   const [milestoneCleared, setMilestoneCleared] = useState(false);
+  const [removing, setRemoving] = useState(false);
   const { scope, projects } = useProjectScope();
 
   const { data: task, isLoading: taskLoading } = useQuery({
@@ -268,6 +270,12 @@ const TaskEdit: React.FC = () => {
 
   return (
     <Box sx={{ maxWidth: 640, mx: 'auto' }}>
+      {!isNew && removing && (
+        <TaskRemovalDialog
+          taskId={Number(id)} open={removing} onClose={() => setRemoving(false)}
+          onDone={() => { setRemoving(false); navigate('/tasks'); }}
+        />
+      )}
       {!isNew && (
         <Tabs value={tab} onChange={(_, v) => setTab(v)} sx={{ mb: '14px', minHeight: 40 }}>
           <Tab label={t('taskEdit.tabBasic')} sx={{ minHeight: 40 }} />
@@ -276,6 +284,7 @@ const TaskEdit: React.FC = () => {
         </Tabs>
       )}
       {save.isError && <Alert severity="error" sx={{ mb: '14px' }}>{t('taskEdit.saveError')}</Alert>}
+      {task?.archived_at && <Alert severity="info" sx={{ mb: '14px' }}>{t('taskRemoval.archivedNotice')}</Alert>}
 
       {tab === 0 && (
         <Box sx={{
@@ -497,6 +506,14 @@ const TaskEdit: React.FC = () => {
             display: 'flex', justifyContent: 'flex-end', gap: '12px',
             pt: '14px', borderTop: `1px solid ${ds.borderPale}`,
           }}>
+            {!isNew && task && !task.archived_at && (
+              <Button
+                onClick={() => setRemoving(true)} startIcon={<TrashIcon size={14} />}
+                sx={{ color: ds.dangerText, mr: 'auto' }} data-testid="task-remove"
+              >
+                {t('taskRemoval.open')}
+              </Button>
+            )}
             <Button
               onClick={() => navigate(-1)}
               sx={{

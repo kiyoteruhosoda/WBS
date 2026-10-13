@@ -24,6 +24,7 @@ from src.application.use_cases.calendar_import_use_cases import CalendarImportUs
 from src.application.use_cases.calendar_use_cases import CalendarUseCases
 from src.application.use_cases.closing_use_cases import ClosingUseCases
 from src.application.use_cases.day_off_use_cases import DayOffUseCases
+from src.application.use_cases.task_removal_use_cases import TaskRemovalUseCases
 from src.application.use_cases.task_use_cases import TaskUseCases
 from src.application.use_cases.time_entry_use_cases import TimeEntryUseCases
 from src.application.use_cases.today_use_cases import TodayUseCases
@@ -298,6 +299,18 @@ def get_task_use_cases(db: DbDep) -> TaskUseCases:
     return TaskUseCases(db, scheduled_time=get_calendar_event_use_cases(db))
 
 TaskUseCasesDep = Annotated[TaskUseCases, Depends(get_task_use_cases)]
+
+
+def get_task_removal_use_cases(db: DbDep) -> TaskRemovalUseCases:
+    """タスクを消す・しまう（ADR-0046）。"""
+    return TaskRemovalUseCases(
+        SqlAlchemyTaskRepository(db),
+        SqlAlchemyTimeEntryRepository(db),
+        SqlAlchemyTrackingRuleRepository(db),
+        db,
+    )
+
+TaskRemovalUseCasesDep = Annotated[TaskRemovalUseCases, Depends(get_task_removal_use_cases)]
 
 
 def get_today_use_cases(db: DbDep) -> TodayUseCases:
