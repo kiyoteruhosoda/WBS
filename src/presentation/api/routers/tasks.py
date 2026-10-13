@@ -5,11 +5,16 @@ from typing import Annotated
 from fastapi import APIRouter, Query, status
 
 from src.application.dto.task_dto import CreateTaskDTO, UpdateTaskDTO
-from src.presentation.api.dependencies import CurrentUserDep, TaskUseCasesDep
+from src.presentation.api.dependencies import (
+    CurrentUserDep,
+    TaskRemovalUseCasesDep,
+    TaskUseCasesDep,
+)
 from src.presentation.api.schemas.task_schemas import (
     TaskCreateRequest,
     TaskMoveToProjectRequest,
     TaskMoveToProjectResponse,
+    TaskRemovalResponse,
     TaskResponse,
     TaskUpdateRequest,
 )
@@ -114,6 +119,32 @@ def patch_task(task_id: int, body: TaskUpdateRequest, uc: TaskUseCasesDep, curre
     return update_task(task_id, body, uc, current_user)
 
 
+@router.get("/{task_id}/removal", response_model=TaskRemovalResponse)
+def preview_task_removal(
+    task_id: int, uc: TaskRemovalUseCasesDep, current_user: CurrentUserDep
+) -> TaskRemovalResponse:
+    """消すとどうなるか（打刻・実績・WinTrack の規則の数と、消すかしまうか）。ADR-0046。"""
+    preview = uc.preview(task_id, current_user.user_id)
+    return TaskRemovalResponse(
+        task_id=preview.task_id,
+        title=preview.title,
+        action=preview.action.value,
+        time_entries=preview.time_entries,
+        tracked_seconds=preview.tracked_seconds,
+        work_log_hours=preview.work_log_hours,
+        tracking_rules=preview.tracking_rules,
+        blocked_by=preview.blocked_by,
+        archived=preview.archived,
+    )
+
+
+@router.post("/{task_id}/archive", status_code=status.HTTP_204_NO_CONTENT)
+def archive_task(task_id: int, uc: TaskRemovalUseCasesDep, current_user: CurrentUserDep) -> None:
+    """しまう（一覧と付け替え先に出なくなる。実績と締めの表には残る）。計測中なら 409。"""
+    uc.archive(task_id, current_user.user_id)
+
+
 @router.delete("/{task_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_task(task_id: int, uc: TaskUseCasesDep, current_user: CurrentUserDep) -> None:
-    uc.delete_task(task_id, current_user.user_id)
+def delete_task(task_id: int, uc: TaskRemovalUseCasesDep, current_user: CurrentUserDep) -> None:
+    """消す。打刻か実績があれば 409（しまう）。計測中なら 409。"""
+    uc.delete(task_id, current_user.user_id)

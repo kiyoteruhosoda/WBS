@@ -46,9 +46,12 @@ class TaskUseCases:
         self._scheduled_time = scheduled_time
 
     def list_tasks(self, user_id: int, filters: dict) -> list[dict]:
-        """``filters`` の ``project_id`` は**子孫のプロジェクトも含めて**絞る（ADR-0024）。"""
+        """``filters`` の ``project_id`` は**子孫のプロジェクトも含めて**絞る（ADR-0024）。
+
+        しまったタスク（ADR-0046）は出さない。
+        """
         filters = self.resolve_project_filter(user_id, filters)
-        tasks = self._repo.find_all(user_id, filters)
+        tasks = [t for t in self._repo.find_all(user_id, filters) if not t.is_archived]
         board = self.progress_board(user_id)
         scheduled = self.scheduled_minutes(user_id)
         tree = self._membership.tree(user_id)
@@ -247,13 +250,6 @@ class TaskUseCases:
                 "the milestone belongs to a project this task is not in (or under)"
             )
 
-    def delete_task(self, task_id: int, user_id: int) -> None:
-        task = self._repo.find_by_id_for_user(task_id, user_id)
-        if task is None:
-            raise NotFoundError("Task", task_id)
-        self._repo.soft_delete(task_id, user_id)
-        self._session.commit()
-
     def _enrich(
         self,
         task: Task,
@@ -313,6 +309,7 @@ class TaskUseCases:
             # 表示用の道筋（「親 / 子」）。未分類は null
             "project_path": tree.path(task.project_id),
             "completed_at": task.completed_at,
+            "archived_at": task.archived_at,
             "deleted_at": task.deleted_at,
             "created_at": task.created_at,
             "updated_at": task.updated_at,

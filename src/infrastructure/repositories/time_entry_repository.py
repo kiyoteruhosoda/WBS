@@ -36,6 +36,14 @@ class SqlAlchemyTimeEntryRepository(TimeEntryRepository):
         )
         return [self._to_entity(m) for m in self._session.scalars(stmt)]
 
+    def find_by_task(self, user_id: int, task_id: int) -> list[TimeEntry]:
+        stmt = (
+            select(TimeEntryModel)
+            .where(TimeEntryModel.user_id == user_id, TimeEntryModel.task_id == task_id)
+            .order_by(TimeEntryModel.started_at, TimeEntryModel.id)
+        )
+        return [self._to_entity(m) for m in self._session.scalars(stmt)]
+
     def find_running(self, user_id: int) -> TimeEntry | None:
         stmt = select(TimeEntryModel).where(
             TimeEntryModel.user_id == user_id,

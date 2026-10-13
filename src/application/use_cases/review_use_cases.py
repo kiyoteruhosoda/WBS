@@ -59,6 +59,7 @@ class ReviewUseCases:
             select(func.count()).where(
                 TaskModel.user_id == user_id,
                 TaskModel.deleted_at.is_(None),
+                TaskModel.archived_at.is_(None),
                 TaskModel.status.notin_([TaskStatus.DONE.value, TaskStatus.CANCELLED.value]),
                 TaskModel.due_date < today,
             )

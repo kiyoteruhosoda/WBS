@@ -77,6 +77,7 @@ class SqlAlchemyTaskRepository(TaskRepository):
             model.milestone_id = task.milestone_id
             model.project_id = task.project_id
             model.completed_at = task.completed_at
+            model.archived_at = task.archived_at
             model.updated_at = utcnow()
             self._session.flush()
             return self._to_entity(model)
@@ -165,6 +166,7 @@ class SqlAlchemyTaskRepository(TaskRepository):
             project_id=model.project_id,
             completed_at=model.completed_at,
             deleted_at=model.deleted_at,
+            archived_at=model.archived_at,
             created_at=model.created_at,
             updated_at=model.updated_at,
         )
@@ -186,4 +188,5 @@ class SqlAlchemyTaskRepository(TaskRepository):
             milestone_id=task.milestone_id,
             project_id=task.project_id,
             completed_at=task.completed_at,
+            archived_at=task.archived_at,
         )
