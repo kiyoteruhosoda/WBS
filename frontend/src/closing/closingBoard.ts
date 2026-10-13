@@ -265,7 +265,7 @@ const accumulate = (
 const UNASSIGNED: RowHead = { key: 'unassigned', kind: 'unassigned', taskId: null, projectId: null, title: null, color: null };
 
 /** 消えたタスクの分は、タスクの表と同じく未割当に入れる（確定の前に振り直すもの）。 */
-const isUnassigned = (t: DailyTaskTotal): boolean => t.task_id == null || t.task_title == null;
+const isUnassigned = (t: Pick<DailyTaskTotal, 'task_id' | 'task_title'>): boolean => t.task_id == null || t.task_title == null;
 
 /** 日ごと・タスクごとの合計 → 行がタスク、列が日の表。行は合計の多い順、未割当は最後。 */
 export const buildTotalsTable = (totals: readonly DailyTaskTotal[], dates: readonly string[]): TotalsTable => {
@@ -297,16 +297,27 @@ export const buildProjectTotalsTable = (
   projects: readonly Project[],
   scope: ProjectScope,
 ): TotalsTable => {
+  const rank = projectRowRank(projects);
+  const { rows, dayTotals, grandTotal } = accumulate(totals, dates, projectRowClassifier(projects, scope));
+  return { dates: [...dates], rows: rows.sort((a, b) => rank(a) - rank(b)), dayTotals, grandTotal };
+};
+
+/**
+ * タスクの分を、どのプロジェクトの行へ積むか（`buildProjectTotalsTable` と締めの工数表で同じ。範囲の扱いは
+ * `buildProjectTotalsTable` の説明のとおり）。未割当・消えたタスクの分は未割当の行へ。
+ */
+export const projectRowClassifier = (
+  projects: readonly Project[],
+  scope: ProjectScope,
+): ((total: Pick<DailyTaskTotal, 'task_id' | 'task_title' | 'project_id'>) => RowHead) => {
   const byId = new Map(projects.map((p) => [p.id, p]));
-  const treeOrder = new Map(flattenTree(toTree(projects)).map((n, i) => [n.project.id, i]));
   const projectRow = (id: number): RowHead => ({
     key: `project:${id}`, kind: 'project', taskId: null, projectId: id,
     title: byId.get(id)?.name ?? `#${id}`, color: byId.get(id)?.color ?? null,
   });
   const unclassified: RowHead = { key: 'unclassified', kind: 'unclassified', taskId: null, projectId: null, title: null, color: null };
   const outside: RowHead = { key: 'outside', kind: 'outside', taskId: null, projectId: null, title: null, color: null };
-
-  const classify = (t: DailyTaskTotal): RowHead => {
+  return (t) => {
     if (isUnassigned(t)) return UNASSIGNED;
     const projectId = t.project_id ?? null;
     if (scope === 'none') return projectId === null ? unclassified : outside;
@@ -319,8 +330,15 @@ export const buildProjectTotalsTable = (
     if (at === 0) return { ...projectRow(scope), key: `direct:${scope}`, kind: 'direct' };
     return projectRow(chain[at - 1]);
   };
+};
 
-  const rank = (row: TotalsRow): number => {
+/** 工数表の行の頭（プロジェクトの行・未分類・範囲の外・未割当）。 */
+export type ProjectRowHead = RowHead;
+
+/** 行の並び（プロジェクトの木の順。直の分が先、未分類・範囲の外・未割当は後）。 */
+export const projectRowRank = (projects: readonly Project[]): ((row: RowHead) => number) => {
+  const treeOrder = new Map(flattenTree(toTree(projects)).map((n, i) => [n.project.id, i]));
+  return (row) => {
     switch (row.kind) {
       case 'direct': return -1;
       case 'project': return treeOrder.get(row.projectId as number) ?? 1_000_000 + (row.projectId as number);
@@ -329,8 +347,6 @@ export const buildProjectTotalsTable = (
       default: return 4_000_000;
     }
   };
-  const { rows, dayTotals, grandTotal } = accumulate(totals, dates, classify);
-  return { dates: [...dates], rows: rows.sort((a, b) => rank(a) - rank(b)), dayTotals, grandTotal };
 };
 
 const pad2 = (n: number): string => String(n).padStart(2, '0');

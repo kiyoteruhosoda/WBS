@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Alert, Box, Button, Chip, Dialog, DialogActions, DialogContent, DialogTitle, IconButton, MenuItem, Popover, Select,
-  Snackbar, ToggleButton, Tooltip,
+  Snackbar, ToggleButton, ToggleButtonGroup, Tooltip,
 } from '@mui/material';
 import { Link as RouterLink, useSearchParams } from 'react-router-dom';
 import { useI18n } from '../i18n';
@@ -34,6 +34,10 @@ import {
 } from '../closing/closingRequests';
 import { splitInstantAt } from '../closing/entryGestures';
 import ClosingGrid from '../components/closing/ClosingGrid';
+import LedgerTable from '../components/closing/LedgerTable';
+import LedgerCellDialog from '../components/closing/LedgerCellDialog';
+import type { LedgerRow } from '../closing/closingLedger';
+import { buildLedger, ledgerCellSegments, ledgerRowOfEntry } from '../closing/closingLedger';
 import FindingsPanel, { NoFindings } from '../components/closing/FindingsPanel';
 import ClosingHelp from '../components/closing/ClosingHelp';
 import TotalsTable from '../components/closing/TotalsTable';
@@ -50,6 +54,17 @@ interface Notice {
 
 /** 一覧から飛んだ打刻・回を目立たせておく長さ。 */
 const FOCUS_MS = 2500;
+
+/** 工数表（既定。task #389 / ADR-0047）か、打刻の時間の表か。端末に覚える（失われても困らない）。 */
+type ClosingView = 'ledger' | 'grid';
+const VIEW_KEY = 'wbs.closingView';
+const readView = (): ClosingView => {
+  try {
+    return window.localStorage.getItem(VIEW_KEY) === 'grid' ? 'grid' : 'ledger';
+  } catch {
+    return 'ledger';
+  }
+};
 
 /**
  * 締め（task #161 / ADR-0012・ADR-0016）。普段は Start / Stop しかさせない代わりに、ここで打刻を楽に直して
@@ -108,6 +123,29 @@ const ClosingPage: React.FC = () => {
   const projectTotals = useMemo(
     () => buildProjectTotalsTable(board?.daily_totals ?? [], dates, projects, scope),
     [board, dates, projects, scope],
+  );
+  // 工数表（行はプロジェクト、列は日。task #389）。セルを押すと、その日・その行の打刻の一覧
+  const ledger = useMemo(
+    () => buildLedger(board?.daily_totals ?? [], entrySegments, dates, projects, scope),
+    [board, entrySegments, dates, projects, scope],
+  );
+  const ledgerRowOf = useMemo(
+    () => ledgerRowOfEntry(board?.daily_totals ?? [], projects, scope),
+    [board, projects, scope],
+  );
+  const [view, setViewState] = useState<ClosingView>(readView);
+  const setView = (next: ClosingView) => {
+    setViewState(next);
+    try {
+      window.localStorage.setItem(VIEW_KEY, next);
+    } catch {
+      // 覚えられないだけで、表は切り替わる
+    }
+  };
+  const [ledgerCell, setLedgerCell] = useState<{ date: string; row: LedgerRow } | null>(null);
+  const ledgerCellEntries = useMemo(
+    () => (ledgerCell ? ledgerCellSegments(entrySegments, ledgerCell.date, ledgerCell.row.key, ledgerRowOf) : []),
+    [ledgerCell, entrySegments, ledgerRowOf],
   );
 
   // ── 選択・目立たせ ─────────────────────────────────────────────────────
@@ -254,6 +292,8 @@ const ClosingPage: React.FC = () => {
   };
 
   const jump = (item: FindingItem) => {
+    // 気付かせる物は時間の表の上で見せる
+    setView('grid');
     if (item.entryIds.length > 0) {
       setSelected(new Set(item.entryIds));
       focus(item.entryIds, null);
@@ -389,7 +429,7 @@ const ClosingPage: React.FC = () => {
       {board && (
         <Box sx={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '8px' }}>
           {!readOnly && unassignedIds.length > 0 && (
-            <Button size="small" variant="outlined" color="error" onClick={() => setSelected(new Set(unassignedIds))}>
+            <Button size="small" variant="outlined" color="error" onClick={() => { setView('grid'); setSelected(new Set(unassignedIds)); }}>
               {t('closing.selectUnassigned', { count: unassignedIds.length })}
             </Button>
           )}
@@ -415,7 +455,15 @@ const ClosingPage: React.FC = () => {
           )}
           <Box sx={{ ml: 'auto', display: 'flex', alignItems: 'center', gap: '8px' }}>
             {findings.length === 0 && <NoFindings />}
-            {!readOnly && (
+            <ToggleButtonGroup
+              exclusive size="small" value={view}
+              onChange={(_, v: ClosingView | null) => { if (v) setView(v); }}
+              aria-label={t('closing.viewLabel')}
+            >
+              <ToggleButton value="ledger" sx={{ px: '12px' }} data-testid="closing-view-ledger">{t('closing.viewLedger')}</ToggleButton>
+              <ToggleButton value="grid" sx={{ px: '12px' }} data-testid="closing-view-grid">{t('closing.viewGrid')}</ToggleButton>
+            </ToggleButtonGroup>
+            {!readOnly && view === 'grid' && (
               <ToggleButton
                 size="small" value="split" selected={splitMode} onChange={() => setSplitMode((v) => !v)}
                 sx={{ px: '12px' }} data-testid="closing-split-mode"
@@ -426,12 +474,27 @@ const ClosingPage: React.FC = () => {
             {!readOnly && <ClosingHelp />}
           </Box>
           {/* 分けるの最中だけ、次に何を押すかを出す（その間は要る説明） */}
-          {!readOnly && splitMode && (
+          {!readOnly && view === 'grid' && splitMode && (
             <Box sx={{ flexBasis: '100%', fontSize: 12, color: ds.primary }} data-testid="closing-split-hint">{t('closing.splitHint')}</Box>
           )}
         </Box>
       )}
 
+      {view === 'ledger' && (
+        <Box sx={{ display: 'flex', flexDirection: { xs: 'column', lg: 'row' }, gap: '12px', alignItems: 'flex-start' }}>
+          <Box sx={{ flex: 1, minWidth: 0, width: '100%' }}>
+            {board ? <LedgerTable ledger={ledger} onOpenCell={(date, row) => setLedgerCell({ date, row })} />
+              : <Box sx={{ p: '16px', color: ds.textMuted, fontSize: 13 }}>{t('closing.loading')}</Box>}
+          </Box>
+          {findings.length > 0 && (
+            <Box sx={{ width: { xs: '100%', lg: 320 }, flexShrink: 0 }}>
+              <FindingsPanel items={findings} timeZone={timeZone} onJump={jump} />
+            </Box>
+          )}
+        </Box>
+      )}
+
+      {view === 'grid' && (
       <Box sx={{ display: 'flex', flexDirection: { xs: 'column', lg: 'row' }, gap: '12px', alignItems: 'stretch' }}>
         {/* 縦に積む幅（lg 未満）で flex: 1 にすると、高さの指定より中身の高さ（1 日 1440px）が勝って
             グリッドが内側でスクロールしなくなる（8:00 へ送れず、見出しも上へ流れる）。横に並べるときだけ伸ばす。 */}
@@ -472,8 +535,28 @@ const ClosingPage: React.FC = () => {
           </Box>
         )}
       </Box>
+      )}
 
-      {board && <TotalsTable byTask={totals} byProject={projectTotals} />}
+      {view === 'grid' && board && <TotalsTable byTask={totals} byProject={projectTotals} />}
+
+      {ledgerCell && (
+        <LedgerCellDialog
+          title={t('closing.ledgerCellTitle', {
+            date: `${Number(ledgerCell.date.slice(5, 7))}/${Number(ledgerCell.date.slice(8, 10))}`,
+            name: ledgerCell.row.title ?? t(ledgerCell.row.kind === 'unassigned' ? 'closing.unassigned' : ledgerCell.row.kind === 'outside' ? 'closing.totalsOutside' : 'closing.totalsUnclassified'),
+          })}
+          segments={ledgerCellEntries}
+          readOnly={readOnly}
+          onClose={() => setLedgerCell(null)}
+          onOpenEntry={(entry) => { setLedgerCell(null); setEditEntry(entry); }}
+          onShowInGrid={() => {
+            const ids = ledgerCellEntries.map((s) => s.entry.id);
+            setLedgerCell(null);
+            setView('grid');
+            if (ids.length > 0) focus(ids, null);
+          }}
+        />
+      )}
 
       {/* 予定の回のメニュー */}
       <Popover
