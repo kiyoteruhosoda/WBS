@@ -4,6 +4,12 @@
 
 ## 2026-10-13
 
+- **PC の自動記録（WinTrack）の規則を WBS で編集できるようにした**（task #381、ADR-0043）。画面「自動記録の規則」
+  （`/tracking-rules`）で「アプリが〜」「表題に〜を含む」→ タスク、を上から並べる。WinTrack は `GET /api/tracking-rules` で
+  使える規則を取り、PC の中で照合する（表題は WBS へ送らない）。付け替え先は `GET /api/tracking-rules/tasks`。
+  `/tracking-rules/new?app=&title=` は欄を埋めた作成の画面を開く。タスクを消した・完了にした規則は残して PC へは渡さず、
+  画面で付け替えを促す（移行 0018）。
+
 - **PC の自動記録（WinTrack）から打刻を受け取れるようにした**（task #379、ADR-0042）。`POST /api/time-entries/auto` に
   区間を 1〜200 件まとめて送ると、1 区間ずつ「作った・送り直し・重なり・締め済み・不正」を返す（1 件の失敗で全体を落とさない）。
   送り手が付けた ID（`time_entries.client_ref`、移行 0017）で送り直しを見分け、二重にしない。出どころは `auto` で、

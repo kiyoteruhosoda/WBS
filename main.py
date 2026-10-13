@@ -49,6 +49,7 @@ from src.presentation.api.routers import (
     tasks,
     time_entries,
     today,
+    tracking_rules,
     worklogs,
 )
 from src.presentation.api.routers import dependencies as dep_router
@@ -150,6 +151,7 @@ def create_app(database_url: str | None = None, db_path: str | None = None) -> F
     app.include_router(tasks.router, prefix="/api")
     app.include_router(worklogs.router, prefix="/api")
     app.include_router(time_entries.router, prefix="/api")
+    app.include_router(tracking_rules.router, prefix="/api")
     app.include_router(closing_periods.router, prefix="/api")
     app.include_router(milestones.router, prefix="/api")
     app.include_router(categories.router, prefix="/api")

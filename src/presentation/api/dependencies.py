@@ -25,6 +25,7 @@ from src.application.use_cases.day_off_use_cases import DayOffUseCases
 from src.application.use_cases.task_use_cases import TaskUseCases
 from src.application.use_cases.time_entry_use_cases import TimeEntryUseCases
 from src.application.use_cases.today_use_cases import TodayUseCases
+from src.application.use_cases.tracking_rule_use_cases import TrackingRuleUseCases
 from src.application.user_clock import UserClock
 from src.domain.exceptions import AuthenticationError
 from src.infrastructure.auth.auth_settings import SINGLE_USER_ID, AuthSettings
@@ -62,6 +63,9 @@ from src.infrastructure.repositories.occurrence_completion_repository import (
 from src.infrastructure.repositories.project_repository import SqlAlchemyProjectRepository
 from src.infrastructure.repositories.task_repository import SqlAlchemyTaskRepository
 from src.infrastructure.repositories.time_entry_repository import SqlAlchemyTimeEntryRepository
+from src.infrastructure.repositories.tracking_rule_repository import (
+    SqlAlchemyTrackingRuleRepository,
+)
 from src.infrastructure.repositories.user_account_repository import (
     SqlAlchemyUserAccountRepository,
 )
@@ -158,6 +162,18 @@ def get_time_entry_use_cases(db: DbDep) -> TimeEntryUseCases:
     )
 
 TimeEntryUseCasesDep = Annotated[TimeEntryUseCases, Depends(get_time_entry_use_cases)]
+
+
+def get_tracking_rule_use_cases(db: DbDep) -> TrackingRuleUseCases:
+    """PC の自動記録の規則（WinTrack、ADR-0043）。"""
+    return TrackingRuleUseCases(
+        SqlAlchemyTrackingRuleRepository(db),
+        SqlAlchemyTaskRepository(db),
+        SqlAlchemyProjectRepository(db),
+        db,
+    )
+
+TrackingRuleUseCasesDep = Annotated[TrackingRuleUseCases, Depends(get_tracking_rule_use_cases)]
 
 
 def get_current_user(

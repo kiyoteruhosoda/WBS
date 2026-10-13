@@ -168,6 +168,30 @@ def test_the_pc_recorder_sends_auto_entries_with_its_token(app_client) -> None:
     assert unknown.status_code == 401
 
 
+def test_the_pc_recorder_reads_rules_and_tasks_with_its_token(app_client) -> None:
+    """PC の自動記録（WinTrack、task #381 / ADR-0043）は規則と付け替え先のタスクを Bearer で読む。編集は Cookie だけ。"""
+    sign_in(app_client, "taro-code")
+    task = app_client.post("/api/tasks", json={"title": "見積書を作る"}).json()["id"]
+    rule = app_client.post(
+        "/api/tracking-rules", json={"app": "EXCEL.EXE", "task_id": task}
+    ).json()["id"]
+    app_client.cookies.clear()
+
+    rules = app_client.get("/api/tracking-rules", headers=bearer("taro-app"))
+    assert rules.status_code == 200, rules.text
+    assert [r["id"] for r in rules.json()["rules"]] == [rule]
+    tasks = app_client.get("/api/tracking-rules/tasks", headers=bearer("taro-app"))
+    assert [t["id"] for t in tasks.json()["tasks"]] == [task]
+    assert app_client.get("/api/tracking-rules", headers=bearer("hanako-app")).json()["rules"] == []
+
+    assert app_client.get("/api/tracking-rules/editor", headers=bearer("taro-app")).status_code == 401
+    created = app_client.post(
+        "/api/tracking-rules", json={"app": "x.exe", "task_id": task}, headers=bearer("taro-app")
+    )
+    assert created.status_code == 401
+    assert app_client.delete(f"/api/tracking-rules/{rule}", headers=bearer("taro-app")).status_code == 401
+
+
 def test_without_app_client_ids_no_token_is_taken(database_path, monkeypatch, sso_provider) -> None:  # noqa: F811
     sso_provider.access_tokens["taro-app"] = _claims()
     app = _make_client(database_path, monkeypatch, sso_provider, app_client_ids=None)

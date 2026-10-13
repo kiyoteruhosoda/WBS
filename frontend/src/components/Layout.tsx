@@ -15,7 +15,7 @@ import { useProjectScope } from '../projects/useProjectScope';
 import type { TranslationKey } from '../i18n/translations';
 import {
   CheckListIcon, BarsIcon, CalendarIcon, InboxIcon,
-  PlusIcon, TodayIcon, SlidersIcon, FolderIcon, FlagIcon, ClosingIcon, GridIcon, TreeIcon,
+  PlusIcon, TodayIcon, SlidersIcon, FolderIcon, FlagIcon, ClosingIcon, GridIcon, TreeIcon, SwapIcon,
 } from './icons';
 
 const SIDEBAR_WIDTH = 224;
@@ -32,6 +32,7 @@ const navItems: { labelKey: TranslationKey; path: string; icon: React.FC<{ size?
   { labelKey: 'nav.projects', path: '/projects', icon: TreeIcon },
   { labelKey: 'nav.categories', path: '/categories', icon: FolderIcon },
   { labelKey: 'nav.milestones', path: '/milestones', icon: FlagIcon },
+  { labelKey: 'nav.trackingRules', path: '/tracking-rules', icon: SwapIcon },
   { labelKey: 'nav.settings', path: '/settings', icon: SlidersIcon },
 ];
 
@@ -49,6 +50,7 @@ const pageTitles: { pattern: RegExp; titleKey: TranslationKey }[] = [
   { pattern: /^\/projects$/, titleKey: 'nav.projects' },
   { pattern: /^\/categories$/, titleKey: 'nav.categories' },
   { pattern: /^\/milestones$/, titleKey: 'nav.milestones' },
+  { pattern: /^\/tracking-rules(\/new)?$/, titleKey: 'nav.trackingRules' },
   { pattern: /^\/settings$/, titleKey: 'settings.title' },
 ];
 
