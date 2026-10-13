@@ -21,4 +21,4 @@ class TimeEntrySource(StrEnum):
     """締めの画面で予定の回をそのまま打刻にした（#161）。"""
 
     AUTO = "auto"
-    """PC の自動記録（WinTrack、#379）がまとめて送ってきた。``client_ref`` を持つ。"""
+    """PC の自動記録（WinTrack、#379）がまとめて送ってきた。``client_ref`` と ``auto_mode`` を持つ。"""

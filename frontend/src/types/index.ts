@@ -485,6 +485,8 @@ export interface TimeEntry {
   ended_at: string | null;
   memo: string | null;
   source: TimeEntrySource;
+  // 自動の打刻の送り方（fill = 空いた時間を埋めた / override = 例外作業で上書きした）。ADR-0045
+  auto_mode?: 'fill' | 'override' | null;
   is_running: boolean;
   duration_seconds: number;
   is_long_running: boolean;

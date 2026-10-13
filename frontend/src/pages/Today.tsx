@@ -506,7 +506,7 @@ const ActualsCard: React.FC<{
                 </Box>
                 {entry.source === 'auto' && (
                   <Box
-                    component="span" title={t('timeEntry.autoHint')} data-testid="today-entry-auto"
+                    component="span" title={t(entry.auto_mode === 'override' ? 'timeEntry.autoOverrideHint' : 'timeEntry.autoHint')} data-testid="today-entry-auto"
                     sx={{
                       fontSize: 11, lineHeight: '18px', px: '6px', borderRadius: '9px', flexShrink: 0,
                       color: ds.textSub, border: `1px solid ${ds.border}`,

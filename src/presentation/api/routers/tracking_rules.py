@@ -38,7 +38,7 @@ router = APIRouter(prefix="/tracking-rules", tags=["tracking-rules"])
 def get_tracking_rules(
     uc: TrackingRuleUseCasesDep, current_user: AppOrWebUserDep
 ) -> TrackingRuleFeedResponse:
-    """自分の規則のうち使えるもの（タスクがあって開いている）を上からの順に。"""
+    """自分の規則のうち使えるもの（タスクがあって開いている）を上からの順に。「それ以外すべて」は最後。"""
     feed = uc.feed(current_user.user_id)
     return TrackingRuleFeedResponse(
         rules=[TrackingRuleResponse.from_view(v) for v in feed.rules],

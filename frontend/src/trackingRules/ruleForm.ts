@@ -26,11 +26,22 @@ export const ruleFormOf = (rule: EditableTrackingRule): RuleForm => ({
   taskId: rule.task_available ? rule.task_id : null,
 });
 
-export type RuleFormProblem = 'needsCondition' | 'needsTask';
+export type RuleFormProblem = 'everythingElseExists' | 'needsTask';
 
-/** 送れない理由（送れるなら null）。アプリと表題の両方が空の規則は何にでも当たるので作らせない。 */
-export const ruleFormProblem = (form: RuleForm): RuleFormProblem | null => {
-  if (!form.app.trim() && !form.titleContains.trim()) return 'needsCondition';
+/** アプリと表題の両方が空の規則（「それ以外すべて」。ADR-0045）。いつも最後に当たる。 */
+export const isEverythingElse = (rule: Pick<EditableTrackingRule, 'app' | 'title_contains'>): boolean =>
+  !rule.app && !rule.title_contains;
+
+/** 入力が「それ以外すべて」になるか（両方の欄が空）。 */
+export const formIsEverythingElse = (form: RuleForm): boolean =>
+  !form.app.trim() && !form.titleContains.trim();
+
+/**
+ * 送れない理由（送れるなら null）。両方空の規則は「それ以外すべて」で、1 人 1 つまで
+ * （`otherEverythingElse` は、直している規則のほかに既にあるか）。
+ */
+export const ruleFormProblem = (form: RuleForm, otherEverythingElse: boolean): RuleFormProblem | null => {
+  if (formIsEverythingElse(form) && otherEverythingElse) return 'everythingElseExists';
   if (form.taskId == null) return 'needsTask';
   return null;
 };

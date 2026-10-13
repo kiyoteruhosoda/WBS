@@ -33,6 +33,7 @@ class TrackingRuleResponse(BaseModel):
 
 class TrackingRuleFeedResponse(BaseModel):
     """自分の規則（使えるものだけ）を ``position`` の昇順に。PC は上から最初に当たったものを使う。
+    「それ以外すべて」（両方空）はいつも最後。
 
     ``updated_at`` は規則か、規則の行き先のタスクが最後に変わった時刻。
     """
@@ -73,7 +74,10 @@ class EditableTrackingRuleResponse(BaseModel):
 
 
 class TrackingRuleCreateRequest(BaseModel):
-    """規則を足す（いちばん下に入る）。``app`` と ``title_contains`` の両方が空なら 422。"""
+    """規則を足す（「それ以外すべて」の上に入る）。
+
+    ``app`` と ``title_contains`` の両方が空なら「それ以外すべて」（1 人 1 つまで。2 つ目は 422。ADR-0045）。
+    """
 
     app: str | None = Field(default=None, max_length=APP_MAX_LENGTH)
     title_contains: str | None = Field(default=None, max_length=TITLE_CONTAINS_MAX_LENGTH)
@@ -81,7 +85,8 @@ class TrackingRuleCreateRequest(BaseModel):
 
 
 class TrackingRuleUpdateRequest(BaseModel):
-    """送った欄だけを変える。``app`` / ``title_contains`` の null は「空にする」（両方空は 422）。"""
+    """送った欄だけを変える。``app`` / ``title_contains`` の null は「空にする」
+    （両方空にすると「それ以外すべて」。既にほかにあれば 422）。"""
 
     app: str | None = Field(default=None, max_length=APP_MAX_LENGTH)
     title_contains: str | None = Field(default=None, max_length=TITLE_CONTAINS_MAX_LENGTH)

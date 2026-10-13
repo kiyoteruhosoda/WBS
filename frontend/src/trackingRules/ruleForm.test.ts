@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import type { EditableTrackingRule } from '../types';
-import { movedOrder, ruleFormFromQuery, ruleFormOf, ruleFormProblem, ruleWriteOf } from './ruleForm';
+import {
+  formIsEverythingElse, isEverythingElse, movedOrder, ruleFormFromQuery, ruleFormOf, ruleFormProblem, ruleWriteOf,
+} from './ruleForm';
 
 const rule = (overrides: Partial<EditableTrackingRule> = {}): EditableTrackingRule => ({
   id: 1,
@@ -36,10 +38,23 @@ describe('ruleFormOf', () => {
 });
 
 describe('ruleFormProblem', () => {
-  it('needs an app or a title, and a task', () => {
-    expect(ruleFormProblem({ app: ' ', titleContains: '', taskId: 1 })).toBe('needsCondition');
-    expect(ruleFormProblem({ app: 'code.exe', titleContains: '', taskId: null })).toBe('needsTask');
-    expect(ruleFormProblem({ app: '', titleContains: 'WBS', taskId: 1 })).toBeNull();
+  it('needs a task', () => {
+    expect(ruleFormProblem({ app: 'code.exe', titleContains: '', taskId: null }, false)).toBe('needsTask');
+    expect(ruleFormProblem({ app: '', titleContains: 'WBS', taskId: 1 }, true)).toBeNull();
+  });
+
+  it('allows one everything-else rule (both fields empty)', () => {
+    expect(ruleFormProblem({ app: ' ', titleContains: '', taskId: 1 }, false)).toBeNull();
+    expect(ruleFormProblem({ app: ' ', titleContains: '', taskId: 1 }, true)).toBe('everythingElseExists');
+  });
+});
+
+describe('isEverythingElse', () => {
+  it('is a rule or a form with both fields empty', () => {
+    expect(isEverythingElse(rule({ app: null, title_contains: null }))).toBe(true);
+    expect(isEverythingElse(rule())).toBe(false);
+    expect(formIsEverythingElse({ app: ' ', titleContains: '', taskId: null })).toBe(true);
+    expect(formIsEverythingElse({ app: '', titleContains: '見積', taskId: null })).toBe(false);
   });
 });
 

@@ -5,7 +5,10 @@
 WBS は表題を受け取らない（規則だけを持つ）。
 
 - ``app`` は大小文字を区別しない完全一致、``title_contains`` は大小文字を区別しない部分一致（照合は PC 側）
-- どちらも空なら「問わない」。**両方空の規則は作れない**（何にでも当たる規則は、下の規則を全部殺す）
+- 片方が空なら、その条件は問わない
+- **両方空の規則は「それ以外すべて」**（ADR-0045）。何にでも当たるので、``position`` に関係なく**いつも最後**に
+  当てる。利用者ごとに 1 つまで（ユースケースが守る）。WinTrack はこれに当たった作業を「既定」、ほかの規則に
+  当たった作業を「例外」として扱う
 """
 
 from __future__ import annotations
@@ -72,9 +75,16 @@ class TrackingRule:
         rule.change_condition(app=app, title_contains=title_contains)
         return rule
 
+    @property
+    def is_everything_else(self) -> bool:
+        """「それ以外すべて」（両方空）の規則か。"""
+        return self.app is None and self.title_contains is None
+
     def change_condition(self, *, app: str | None, title_contains: str | None) -> None:
-        app, title_contains = rule_app(app), rule_title_contains(title_contains)
-        if app is None and title_contains is None:
-            raise ValidationError("a rule needs app or title_contains (or both)")
-        self.app = app
-        self.title_contains = title_contains
+        self.app = rule_app(app)
+        self.title_contains = rule_title_contains(title_contains)
+
+
+def in_matching_order(rules: list[TrackingRule]) -> list[TrackingRule]:
+    """当てる順（``position`` → id の順に、「それ以外すべて」をいつも最後へ）。"""
+    return sorted(rules, key=lambda r: (r.is_everything_else, r.position, r.id or 0))

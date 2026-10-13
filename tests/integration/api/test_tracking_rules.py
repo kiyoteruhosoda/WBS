@@ -98,17 +98,30 @@ def test_rules_are_listed_top_down_for_the_pc(client) -> None:
     }
 
 
-def test_a_rule_needs_app_or_title(client) -> None:
-    task = _task(client, "設計")
-    for body in (
-        {"task_id": task},
-        {"task_id": task, "app": "  ", "title_contains": ""},
-    ):
-        assert client.post("/api/tracking-rules", json=body).status_code == 422
-    rule = _rule(client, task, app="code.exe")
-    # 直して両方空にもできない
+def test_one_everything_else_rule_is_always_last(client) -> None:
+    """両方空の規則は「それ以外すべて」。1 人 1 つまで、いつも最後（ADR-0045）。"""
+    default = _task(client, "ProjectA の作業")
+    quote = _task(client, "見積")
+    fallback = client.post("/api/tracking-rules", json={"task_id": default, "app": "  ", "title_contains": ""})
+    assert fallback.status_code == 201, fallback.text
+    assert (fallback.json()["app"], fallback.json()["title_contains"]) == (None, None)
+    rule = _rule(client, quote, app="EXCEL.EXE")
+
+    # 先に作っても最後に来る。並べ替えで先頭へ送っても最後のまま
+    assert [r["id"] for r in _feed(client)["rules"]] == [rule["id"], fallback.json()["id"]]
+    res = client.put("/api/tracking-rules/order", json={"rule_ids": [fallback.json()["id"], rule["id"]]})
+    assert [r["id"] for r in res.json()] == [rule["id"], fallback.json()["id"]]
+    assert [r["id"] for r in client.get("/api/tracking-rules/editor").json()] == [
+        rule["id"], fallback.json()["id"],
+    ]
+
+    # 2 つ目は作れないし、直して 2 つ目にもできない
+    assert client.post("/api/tracking-rules", json={"task_id": quote}).status_code == 422
     res = client.patch(f"/api/tracking-rules/{rule['id']}", json={"app": None})
     assert res.status_code == 422
+    # 自分自身を直すのはよい
+    res = client.patch(f"/api/tracking-rules/{fallback.json()['id']}", json={"task_id": quote})
+    assert res.status_code == 200, res.text
     res = client.patch(f"/api/tracking-rules/{rule['id']}", json={"app": None, "title_contains": "WBS"})
     assert res.status_code == 200, res.text
     assert (res.json()["app"], res.json()["title_contains"]) == (None, "WBS")

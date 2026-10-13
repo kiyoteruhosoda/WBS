@@ -19,7 +19,8 @@ import { useI18n } from '../i18n';
 import { ds } from '../theme';
 import type { EditableTrackingRule } from '../types';
 import {
-  emptyRuleForm, movedOrder, ruleFormFromQuery, ruleFormOf, ruleFormProblem, ruleWriteOf,
+  emptyRuleForm, formIsEverythingElse, isEverythingElse, movedOrder, ruleFormFromQuery, ruleFormOf, ruleFormProblem,
+  ruleWriteOf,
   type RuleForm,
 } from '../trackingRules/ruleForm';
 
@@ -82,17 +83,20 @@ const TrackingRulesPage: React.FC = () => {
     setShowProblem(false);
     setDialogOpen(true);
   };
+  // 「それ以外すべて」はいつも最後で、並べ替えの外（ADR-0045）
+  const movableIds = (rules ?? []).filter((r) => !isEverythingElse(r)).map((r) => r.id);
   const move = (rule: EditableTrackingRule, step: -1 | 1) => {
-    const next = movedOrder((rules ?? []).map((r) => r.id), rule.id, step);
+    const next = movedOrder(movableIds, rule.id, step);
     if (next) reorder.mutate(next);
   };
+  const otherEverythingElse = (rules ?? []).some((r) => isEverythingElse(r) && r.id !== editing?.id);
   const submit = () => {
-    if (ruleFormProblem(form)) { setShowProblem(true); return; }
+    if (ruleFormProblem(form, otherEverythingElse)) { setShowProblem(true); return; }
     save.mutate(form);
   };
 
-  const problem = showProblem ? ruleFormProblem(form) : null;
-  const conditionOf = (rule: EditableTrackingRule): string => [
+  const problem = showProblem ? ruleFormProblem(form, otherEverythingElse) : null;
+  const conditionOf = (rule: EditableTrackingRule): string => isEverythingElse(rule) ? t('trackingRules.everythingElse') : [
     rule.app ? t('trackingRules.conditionApp', { app: rule.app }) : t('trackingRules.anyApp'),
     rule.title_contains ? t('trackingRules.conditionTitle', { title: rule.title_contains }) : t('trackingRules.anyTitle'),
   ].join(' ・ ');
@@ -125,20 +129,27 @@ const TrackingRulesPage: React.FC = () => {
                 borderBottom: `1px solid ${ds.hairline}`, '&:last-of-type': { borderBottom: 'none' },
               }}
             >
-              <Box sx={{ display: 'flex', flexDirection: 'column', flexShrink: 0 }}>
-                <IconButton
-                  size="small" aria-label={t('trackingRules.moveUp')} disabled={index === 0 || reorder.isPending}
-                  onClick={() => move(rule, -1)} sx={{ color: ds.textSub, p: '4px' }}
-                >
-                  <Box component="span" sx={{ display: 'inline-flex', transform: 'rotate(180deg)' }}><ChevronDownIcon size={16} /></Box>
-                </IconButton>
-                <IconButton
-                  size="small" aria-label={t('trackingRules.moveDown')} disabled={index === rules.length - 1 || reorder.isPending}
-                  onClick={() => move(rule, 1)} sx={{ color: ds.textSub, p: '4px' }}
-                >
-                  <ChevronDownIcon size={16} />
-                </IconButton>
-              </Box>
+              {isEverythingElse(rule) ? (
+                // 並べ替えない（いつも最後）。上下のボタンの幅だけ空ける
+                <Box sx={{ width: 32, flexShrink: 0 }} />
+              ) : (
+                <Box sx={{ display: 'flex', flexDirection: 'column', flexShrink: 0 }}>
+                  <IconButton
+                    size="small" aria-label={t('trackingRules.moveUp')}
+                    disabled={movableIds.indexOf(rule.id) === 0 || reorder.isPending}
+                    onClick={() => move(rule, -1)} sx={{ color: ds.textSub, p: '4px' }}
+                  >
+                    <Box component="span" sx={{ display: 'inline-flex', transform: 'rotate(180deg)' }}><ChevronDownIcon size={16} /></Box>
+                  </IconButton>
+                  <IconButton
+                    size="small" aria-label={t('trackingRules.moveDown')}
+                    disabled={movableIds.indexOf(rule.id) === movableIds.length - 1 || reorder.isPending}
+                    onClick={() => move(rule, 1)} sx={{ color: ds.textSub, p: '4px' }}
+                  >
+                    <ChevronDownIcon size={16} />
+                  </IconButton>
+                </Box>
+              )}
               <ButtonBase
                 onClick={() => openEdit(rule)}
                 aria-label={t('trackingRules.editTitle')}
@@ -149,8 +160,12 @@ const TrackingRulesPage: React.FC = () => {
                 }}
               >
                 <Box sx={{ fontSize: 13, color: ds.textSub, overflowWrap: 'anywhere' }}>
-                  <Box component="span" sx={{ color: ds.textMuted, mr: '6px', fontVariantNumeric: 'tabular-nums' }}>{index + 1}</Box>
-                  {conditionOf(rule)}
+                  {!isEverythingElse(rule) && (
+                    <Box component="span" sx={{ color: ds.textMuted, mr: '6px', fontVariantNumeric: 'tabular-nums' }}>{index + 1}</Box>
+                  )}
+                  <Box component="span" sx={isEverythingElse(rule) ? { fontWeight: 700, color: ds.text } : undefined}>
+                    {conditionOf(rule)}
+                  </Box>
                 </Box>
                 <Box sx={{ fontSize: 14, color: rule.task_available ? ds.text : ds.textMuted, overflowWrap: 'anywhere' }}>
                   → {rule.task_title ?? t('trackingRules.taskDeleted')}
@@ -183,22 +198,25 @@ const TrackingRulesPage: React.FC = () => {
           <TextField
             fullWidth size="small" label={t('trackingRules.app')} helperText={t('trackingRules.appHelp')}
             value={form.app} onChange={(e) => setForm({ ...form, app: e.target.value })}
-            error={problem === 'needsCondition'}
+            error={problem === 'everythingElseExists'}
             slotProps={{ htmlInput: { maxLength: 260, 'data-testid': 'tracking-rule-app' } }}
           />
           <TextField
             fullWidth size="small" label={t('trackingRules.title')} helperText={t('trackingRules.titleHelp')}
             value={form.titleContains} onChange={(e) => setForm({ ...form, titleContains: e.target.value })}
-            error={problem === 'needsCondition'}
+            error={problem === 'everythingElseExists'}
             slotProps={{ htmlInput: { maxLength: 200, 'data-testid': 'tracking-rule-title' } }}
           />
           <TaskPickerField
             label={t('trackingRules.task')} tasks={openTasks} projects={projects ?? []}
             value={form.taskId} onChange={(taskId) => setForm({ ...form, taskId })}
           />
+          {formIsEverythingElse(form) && !problem && (
+            <Alert severity="info">{t('trackingRules.everythingElseHint')}</Alert>
+          )}
           {problem && (
             <Alert severity="warning">
-              {t(problem === 'needsCondition' ? 'trackingRules.needsCondition' : 'trackingRules.needsTask')}
+              {t(problem === 'everythingElseExists' ? 'trackingRules.everythingElseExists' : 'trackingRules.needsTask')}
             </Alert>
           )}
         </DialogContent>

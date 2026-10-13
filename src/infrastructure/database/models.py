@@ -231,8 +231,8 @@ class TimeEntryModel(Base):
             postgresql_where=sa.text("ended_at IS NULL"),
         ),
         sa.Index("ix_time_entries_user_id_started_at", "user_id", "started_at"),
-        # 自動の打刻の送り直しを見分ける（ADR-0042）。手の打刻は NULL で、NULL どうしはぶつからない
-        sa.Index("uq_time_entries_client_ref_per_user", "user_id", "client_ref", unique=True),
+        # 自動の打刻を送り手の ID で引く（ADR-0042）。一意は控えの表が守る（fill は 1 つの ID から何本もできる。ADR-0045）
+        sa.Index("ix_time_entries_user_id_client_ref", "user_id", "client_ref"),
     )
     id: Mapped[int] = mapped_column(BigIntPK, primary_key=True, autoincrement=True)
     user_id: Mapped[int] = mapped_column(sa.BigInteger().with_variant(sa.Integer(), "sqlite"), sa.ForeignKey("users.id"), nullable=False)
@@ -246,6 +246,8 @@ class TimeEntryModel(Base):
     updated_at: Mapped[datetime] = mapped_column(sa.DateTime, default=utcnow, onupdate=utcnow, nullable=False)
     # 送り手（WinTrack）が付けた ID。自動の打刻だけが持つ（ADR-0042）
     client_ref: Mapped[str | None] = mapped_column(sa.String(64), nullable=True)
+    # 自動の打刻の送り方（AutoEntryMode の値: fill / override）。自動の打刻だけが持つ（ADR-0045）
+    auto_mode: Mapped[str | None] = mapped_column(sa.String(16), nullable=True)
 
 
 class ClosingPeriodModel(Base):
@@ -573,3 +575,46 @@ class TrackingRuleBookModel(Base):
     __tablename__ = "tracking_rule_books"
     user_id: Mapped[int] = mapped_column(sa.BigInteger().with_variant(sa.Integer(), "sqlite"), sa.ForeignKey("users.id"), primary_key=True, autoincrement=False)
     changed_at: Mapped[datetime] = mapped_column(sa.DateTime, nullable=False)
+
+
+class AutoTimeEntryReceiptModel(Base):
+    """自動の打刻を受け取った控え（ADR-0045）。送り直しの見分けはこの一意で守る。"""
+
+    __tablename__ = "auto_time_entry_receipts"
+    __table_args__ = (
+        sa.UniqueConstraint("user_id", "client_ref", name="uq_auto_time_entry_receipts_client_ref"),
+        {"sqlite_autoincrement": True},
+    )
+    id: Mapped[int] = mapped_column(BigIntPK, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(sa.BigInteger().with_variant(sa.Integer(), "sqlite"), sa.ForeignKey("users.id"), nullable=False)
+    client_ref: Mapped[str] = mapped_column(sa.String(64), nullable=False)
+    # AutoEntryMode の値（fill / override）
+    mode: Mapped[str] = mapped_column(sa.String(16), nullable=False)
+    received_at: Mapped[datetime] = mapped_column(sa.DateTime, nullable=False)
+
+
+class TimeEntryCarvingModel(Base):
+    """例外作業（override）で切り抜いた手の打刻の、切り抜く前の姿（ADR-0045）。
+
+    ``time_entry_id`` は外部キーにしない（消した打刻の id も残すため）。
+    """
+
+    __tablename__ = "time_entry_carvings"
+    __table_args__ = (
+        sa.Index("ix_time_entry_carvings_user_id_window", "user_id", "window_started_at"),
+        {"sqlite_autoincrement": True},
+    )
+    id: Mapped[int] = mapped_column(BigIntPK, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(sa.BigInteger().with_variant(sa.Integer(), "sqlite"), sa.ForeignKey("users.id"), nullable=False)
+    client_ref: Mapped[str] = mapped_column(sa.String(64), nullable=False)
+    time_entry_id: Mapped[int] = mapped_column(sa.BigInteger().with_variant(sa.Integer(), "sqlite"), nullable=False)
+    # CarvingAction の値
+    action: Mapped[str] = mapped_column(sa.String(16), nullable=False)
+    task_id: Mapped[int | None] = mapped_column(sa.BigInteger().with_variant(sa.Integer(), "sqlite"), nullable=True)
+    source: Mapped[str] = mapped_column(sa.String(16), nullable=False)
+    memo: Mapped[str | None] = mapped_column(sa.Text, nullable=True)
+    started_at: Mapped[datetime] = mapped_column(sa.DateTime, nullable=False)
+    ended_at: Mapped[datetime | None] = mapped_column(sa.DateTime, nullable=True)
+    window_started_at: Mapped[datetime] = mapped_column(sa.DateTime, nullable=False)
+    window_ended_at: Mapped[datetime] = mapped_column(sa.DateTime, nullable=False)
+    carved_at: Mapped[datetime] = mapped_column(sa.DateTime, nullable=False)

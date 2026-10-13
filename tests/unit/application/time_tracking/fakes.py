@@ -1,7 +1,7 @@
 """打刻のインメモリのリポジトリ（DB を使わない試験用）。
 
-走っている打刻の「1 人 1 本」と ``(user_id, client_ref)`` の一意は、表の索引と同じく ``save`` で
-``ConflictError`` にする。
+走っている打刻の「1 人 1 本」は、表の部分一意索引と同じく ``save`` で ``ConflictError`` にする。
+自動の打刻の受け取りの控えは ``(user_id, client_ref)`` で一意（ADR-0045）。
 """
 
 from __future__ import annotations
@@ -9,11 +9,17 @@ from __future__ import annotations
 import copy
 from datetime import date, datetime
 
+from src.domain.entities.auto_time_entry_receipt import AutoTimeEntryReceipt
 from src.domain.entities.closing_period import ClosingPeriod
 from src.domain.entities.time_entry import TimeEntry
+from src.domain.entities.time_entry_carving import TimeEntryCarving
 from src.domain.entities.work_log import WorkLog
 from src.domain.exceptions import ConflictError
+from src.domain.repositories.auto_time_entry_receipt_repository import (
+    AutoTimeEntryReceiptRepository,
+)
 from src.domain.repositories.closing_period_repository import ClosingPeriodRepository
+from src.domain.repositories.time_entry_carving_repository import TimeEntryCarvingRepository
 from src.domain.repositories.time_entry_repository import TimeEntryRepository
 from src.domain.repositories.work_log_repository import WorkLogRepository
 
@@ -27,11 +33,12 @@ class InMemoryTimeEntryRepository(TimeEntryRepository):
         found = self._rows.get(entry_id)
         return copy.deepcopy(found) if found is not None else None
 
-    def find_by_client_ref(self, user_id: int, client_ref: str) -> TimeEntry | None:
-        for e in self._rows.values():
-            if e.user_id == user_id and e.client_ref == client_ref:
-                return copy.deepcopy(e)
-        return None
+    def find_by_client_ref(self, user_id: int, client_ref: str) -> list[TimeEntry]:
+        found = [
+            copy.deepcopy(e) for e in self._rows.values()
+            if e.user_id == user_id and e.client_ref == client_ref
+        ]
+        return sorted(found, key=lambda e: (e.started_at, e.id or 0))
 
     def find_running(self, user_id: int) -> TimeEntry | None:
         for e in self._rows.values():
@@ -61,14 +68,6 @@ class InMemoryTimeEntryRepository(TimeEntryRepository):
             for other in self._rows.values():
                 if other.user_id == entry.user_id and other.is_running and other.id != entry.id:
                     raise ConflictError("A time entry is already running for this user")
-        if entry.client_ref is not None:
-            for other in self._rows.values():
-                if (
-                    other.user_id == entry.user_id
-                    and other.client_ref == entry.client_ref
-                    and other.id != entry.id
-                ):
-                    raise ConflictError("A time entry with this client_ref already exists")
         if entry.id is None:
             entry.id = self._next_id
             self._next_id += 1
@@ -177,3 +176,35 @@ class InMemoryWorkLogRepository(WorkLogRepository):
 
     def all(self) -> list[WorkLog]:
         return [copy.deepcopy(w) for w in self._rows.values()]
+
+
+class InMemoryAutoTimeEntryReceiptRepository(AutoTimeEntryReceiptRepository):
+    def __init__(self) -> None:
+        self.rows: dict[tuple[int, str], AutoTimeEntryReceipt] = {}
+
+    def find(self, user_id: int, client_ref: str) -> AutoTimeEntryReceipt | None:
+        return self.rows.get((user_id, client_ref))
+
+    def add(self, receipt: AutoTimeEntryReceipt) -> None:
+        key = (receipt.user_id, receipt.client_ref)
+        if key in self.rows:
+            raise ConflictError("this client_ref has already been received")
+        self.rows[key] = receipt
+
+
+class InMemoryTimeEntryCarvingRepository(TimeEntryCarvingRepository):
+    def __init__(self) -> None:
+        self.rows: list[TimeEntryCarving] = []
+
+    def add(self, carving: TimeEntryCarving) -> TimeEntryCarving:
+        carving.id = len(self.rows) + 1
+        self.rows.append(copy.deepcopy(carving))
+        return copy.deepcopy(carving)
+
+    def find_overlapping(
+        self, user_id: int, start: datetime, end: datetime
+    ) -> list[TimeEntryCarving]:
+        return [
+            copy.deepcopy(c) for c in self.rows
+            if c.user_id == user_id and c.window_started_at < end and c.window_ended_at > start
+        ]

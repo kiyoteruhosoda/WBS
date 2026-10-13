@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 
 from src.domain.exceptions import ValidationError
+from src.domain.value_objects.auto_entry_mode import AutoEntryMode
 from src.domain.value_objects.time_entry_source import TimeEntrySource
 
 LONG_RUNNING_THRESHOLD = timedelta(hours=12)
@@ -28,8 +29,10 @@ class TimeEntry:
     task_id: int | None = None
     memo: str | None = None
     source: TimeEntrySource = TimeEntrySource.TIMER
-    # 送り手が付けた ID（自動の打刻だけ。``(user_id, client_ref)`` で一意。ADR-0042）
+    # 送り手が付けた ID（自動の打刻だけ。``fill`` は 1 つの ID から何本もできる。ADR-0042・ADR-0045）
     client_ref: str | None = None
+    # 自動の打刻の送り方（自動の打刻だけ。ADR-0045）
+    auto_mode: AutoEntryMode | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None
 
@@ -80,6 +83,10 @@ class TimeEntry:
                 raise ValidationError("ended_at must be after started_at")
         self.started_at = started_at
         self.ended_at = ended_at
+
+    @property
+    def is_automatic(self) -> bool:
+        return self.source is TimeEntrySource.AUTO
 
     def overlaps(self, start: datetime, end: datetime) -> bool:
         """``[start, end)`` に掛かるか。走っている打刻は終わりが無いものとして扱う。

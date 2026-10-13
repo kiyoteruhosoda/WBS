@@ -17,9 +17,6 @@ from collections.abc import Callable, Iterable
 from datetime import datetime, timedelta
 
 from src.application.dto.time_entry_dto import (
-    AutoTimeEntryItem,
-    AutoTimeEntryOutcome,
-    AutoTimeEntryStatus,
     CreateTimeEntryCommand,
     EntryFromOccurrenceCommand,
     MergeTimeEntriesCommand,
@@ -40,29 +37,13 @@ from src.domain.entities.time_entry import TimeEntry
 from src.domain.exceptions import ConflictError, NotFoundError, ValidationError
 from src.domain.repositories.closing_period_repository import ClosingPeriodRepository
 from src.domain.repositories.time_entry_repository import TimeEntryRepository
-from src.domain.value_objects.press_time import (
-    CLOCK_SKEW_ALLOWANCE,
-    MAX_PRESS_AGE,
-    effective_press_time,
-)
+from src.domain.value_objects.auto_entry_mode import AutoEntryMode
+from src.domain.value_objects.press_time import effective_press_time
 from src.domain.value_objects.time_entry_source import TimeEntrySource
 from src.shared.clock import utcnow
 
 MAX_ENTRIES_PER_OPERATION = 500
 """まとめて扱う打刻の上限（結合・まとめてタスクを振る）。"""
-
-MAX_AUTO_ENTRIES_PER_REQUEST = 200
-"""自動の打刻を 1 回に受け取る上限（WinTrack、ADR-0042）。"""
-
-
-class _AutoEntryRejected(Exception):
-    """自動の打刻の 1 区間を作らない理由（``record_automatic`` の中だけで使う）。"""
-
-    def __init__(self, status: AutoTimeEntryStatus, error: str) -> None:
-        super().__init__(error)
-        self.status = status
-        self.error = error
-
 
 class TimeEntryUseCases:
     def __init__(
@@ -93,6 +74,10 @@ class TimeEntryUseCases:
         ``command.at``（押した時刻、ADR-0018）があればその時刻で切り替える。走っている打刻と
         同じ時刻の Start は**送り直し**とみなして何もしない（アプリが応答を受け取り損ねて
         もう一度送ったとき、長さ 0 の打刻を作らない）。
+
+        ``at`` 以降に WinTrack の ``fill`` の自動の打刻があれば、Working が正なので**置き換える**
+        （``at`` 以降に始まるものは消し、``at`` より前に始まるものは ``at`` で縮める。ADR-0045）。
+        ``override`` の自動の打刻・手の打刻があれば始めない（409）。
         """
         now = self._now()
         at = effective_press_time(command.at, now)
@@ -104,13 +89,24 @@ class TimeEntryUseCases:
                 return StartTimerResult(started=self._view(running, now), stopped=None)
             if at < running.started_at:
                 raise ValidationError("at must not be before the running time entry started")
+        replaced_fills: list[TimeEntry] = []
         if at < now:
-            self._ensure_no_overlap(user_id, at, now, running)
+            replaced_fills = self._fills_in_the_way(user_id, at, now, running)
 
         task_id = self._task_for_start(user_id, command.task_id, at)
         if running is not None:
             self._ensure_open(user_id, running.started_at, at)
         self._ensure_open(user_id, at, at)
+
+        for fill in replaced_fills:
+            self._ensure_entry_open(fill)
+        for fill in replaced_fills:
+            assert fill.id is not None
+            if fill.started_at < at:
+                fill.ended_at = at
+                self._entries.save(fill)
+            else:
+                self._entries.delete(fill.id)
 
         stopped: TimeEntry | None = None
         if running is not None:
@@ -356,97 +352,29 @@ class TimeEntryUseCases:
         self._uow.commit()
         return self._view(saved, now)
 
-    # ── PC の自動記録（WinTrack、task #379 / ADR-0042） ──────────────────────
-
-    def record_automatic(
-        self, user_id: int, items: list[AutoTimeEntryItem]
-    ) -> list[AutoTimeEntryOutcome]:
-        """PC が記録した区間をまとめて打刻にする（``source=auto``）。**1 区間ずつ**結果を返す。
-
-        1 区間を断っても残りは作る（1 件ずつ確定する）。同じ ``client_ref`` が既にあれば送り直しと
-        みなし、中身が違っても上書きせずに既にある打刻を返す。重なり・締めた期間・範囲の外は作らない。
-        判定の順は「送り直し → 範囲とタスク → 締め → 重なり」。同じ回の中で先に作った区間とも重ならない。
-        """
-        if len(items) > MAX_AUTO_ENTRIES_PER_REQUEST:
-            raise ValidationError(
-                f"too many entries (at most {MAX_AUTO_ENTRIES_PER_REQUEST} at once)"
-            )
-        now = self._now()
-        titles: dict[int, str | None] = {}
-        return [self._record_one_automatic(user_id, item, now, titles) for item in items]
-
-    def _record_one_automatic(
-        self,
-        user_id: int,
-        item: AutoTimeEntryItem,
-        now: datetime,
-        titles: dict[int, str | None],
-    ) -> AutoTimeEntryOutcome:
-        existing = self._entries.find_by_client_ref(user_id, item.client_ref)
-        if existing is not None:
-            return self._duplicate(existing, item, now, titles)
-        try:
-            started_at, ended_at = _automatic_window(item, now)
-            if self._tasks.find_by_id_for_user(item.task_id, user_id) is None:
-                raise _AutoEntryRejected(AutoTimeEntryStatus.INVALID, "task_not_found")
-            if self._closed_period(user_id, started_at, ended_at) is not None:
-                raise _AutoEntryRejected(AutoTimeEntryStatus.CLOSED, "period_closed")
-            if self._entries.find_overlapping(user_id, started_at, ended_at):
-                raise _AutoEntryRejected(AutoTimeEntryStatus.OVERLAP, "overlaps_time_entry")
-        except _AutoEntryRejected as rejected:
-            return AutoTimeEntryOutcome(
-                client_ref=item.client_ref, status=rejected.status, error=rejected.error
-            )
-        entry = TimeEntry(
-            id=None,
-            user_id=user_id,
-            started_at=started_at,
-            ended_at=ended_at,
-            task_id=item.task_id,
-            source=TimeEntrySource.AUTO,
-            client_ref=item.client_ref,
-        )
-        try:
-            saved = self._entries.save(entry)
-        except ConflictError:
-            # 同じ区間を同時に送り直した（一意索引に当たった）。先に入った方を返す
-            existing = self._entries.find_by_client_ref(user_id, item.client_ref)
-            if existing is None:
-                raise
-            return self._duplicate(existing, item, now, titles)
-        self._uow.commit()
-        return AutoTimeEntryOutcome(
-            client_ref=item.client_ref,
-            status=AutoTimeEntryStatus.CREATED,
-            view=self._view(saved, now, titles),
-        )
-
-    def _duplicate(
-        self,
-        existing: TimeEntry,
-        item: AutoTimeEntryItem,
-        now: datetime,
-        titles: dict[int, str | None],
-    ) -> AutoTimeEntryOutcome:
-        return AutoTimeEntryOutcome(
-            client_ref=item.client_ref,
-            status=AutoTimeEntryStatus.DUPLICATE,
-            view=self._view(existing, now, titles),
-        )
-
     # ── 内側 ────────────────────────────────────────────────────────────
 
-    def _ensure_no_overlap(
+    def _fills_in_the_way(
         self, user_id: int, start: datetime, now: datetime, running: TimeEntry | None
-    ) -> None:
-        """過去の時刻から始める打刻が、ほかの打刻と重ならないか（走っている打刻は除く）。
+    ) -> list[TimeEntry]:
+        """過去の時刻から始める打刻と重なる、置き換えてよい ``fill`` の自動の打刻（走っている打刻は除く）。
 
-        溜めた Start を送ったら、その間に締めの画面で手で足した打刻があった、という場合に
-        重なった 2 本を作らない。
+        ほかの打刻と重なれば ``ConflictError``: 溜めた Start を送ったら、その間に締めの画面で手で足した
+        打刻があった（重なった 2 本を作らない）、または WinTrack の例外作業（``override``）があった
+        （Working より例外作業が正。WinTrack は ``at`` を最後の ``override`` の終わりより前にしない）。
         """
         running_id = running.id if running is not None else None
-        if any(e.id != running_id for e in self._entries.find_overlapping(user_id, start, now)):
-            raise ConflictError("at overlaps another time entry")
+        fills: list[TimeEntry] = []
+        for entry in self._entries.find_overlapping(user_id, start, now):
+            if entry.id == running_id:
+                continue
+            if entry.is_automatic and entry.auto_mode is AutoEntryMode.FILL:
+                fills.append(entry)
+            elif entry.is_automatic:
+                raise ConflictError("at overlaps an exceptional (override) automatic time entry")
+            else:
+                raise ConflictError("at overlaps another time entry")
+        return fills
 
     def _ensure_entry_open(self, entry: TimeEntry) -> None:
         self._ensure_open(entry.user_id, entry.started_at, entry.ended_at)
@@ -547,27 +475,6 @@ def build_time_entry_view(
         duration_seconds=int(entry.duration(now).total_seconds()),
         is_long_running=entry.is_long_running(now),
     )
-
-
-def _automatic_window(item: AutoTimeEntryItem, now: datetime) -> tuple[datetime, datetime]:
-    """自動の区間の始まりと終わり（naive な UTC）。範囲の外は ``_AutoEntryRejected``（invalid）。
-
-    範囲は押した時刻（ADR-0018）と同じ: 未来は ``CLOCK_SKEW_ALLOWANCE`` まで「今」に寄せ、
-    それより先は断る。``MAX_PRESS_AGE`` より前に始まる区間も断る。秒未満は落とす。
-    """
-    started_at = item.started_at.replace(microsecond=0)
-    ended_at = item.ended_at.replace(microsecond=0)
-    if ended_at <= started_at:
-        raise _AutoEntryRejected(AutoTimeEntryStatus.INVALID, "ended_not_after_started")
-    if started_at > now + CLOCK_SKEW_ALLOWANCE or ended_at > now + CLOCK_SKEW_ALLOWANCE:
-        raise _AutoEntryRejected(AutoTimeEntryStatus.INVALID, "in_future")
-    if started_at < now - MAX_PRESS_AGE:
-        raise _AutoEntryRejected(AutoTimeEntryStatus.INVALID, "too_old")
-    started_at, ended_at = min(started_at, now), min(ended_at, now)
-    if ended_at <= started_at:
-        # 寄せたら長さが無くなった（ほぼ今に始まって、時計のずれの分だけ先で終わる区間）
-        raise _AutoEntryRejected(AutoTimeEntryStatus.INVALID, "ended_not_after_started")
-    return started_at, ended_at
 
 
 def _entry_order(entry: TimeEntry) -> tuple[datetime, int]:
