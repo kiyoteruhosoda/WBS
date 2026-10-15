@@ -86,6 +86,12 @@ describe('断られた理由 → 日本語', () => {
     expect(closingFailureOf(apiError(422, 'an all-day occurrence cannot be turned into a time entry')).key).toBe('closing.error.allDayOccurrence');
   });
 
+  it('ほかの打刻と重なる時刻への修正', () => {
+    const failure = closingFailureOf(apiError(409, 'the time entry would overlap another time entry (ids=3,8)'));
+    expect(failure.key).toBe('closing.error.overlap');
+    expect(failure.entryIds).toEqual([3, 8]);
+  });
+
   it('知らない理由はそのまま添える', () => {
     expect(closingFailureOf(apiError(409, 'something else'))).toEqual({
       key: 'closing.error.conflict', params: { count: 0, detail: 'something else' }, entryIds: [],

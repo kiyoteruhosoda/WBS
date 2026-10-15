@@ -182,6 +182,7 @@ class TimeEntryUseCases:
                 now=now,
             )
             self._ensure_entry_open(entry)
+            self._ensure_no_overlap(entry, now)
         if not isinstance(command.task_id, UnsetType):
             if command.task_id is not None:
                 self._owned_task(command.task_id, user_id)
@@ -434,6 +435,23 @@ class TimeEntryUseCases:
     ) -> TimeEntryView:
         return build_time_entry_view(entry, now, self._tasks, titles)
 
+    def _ensure_no_overlap(self, entry: TimeEntry, now: datetime) -> None:
+        """時刻を直した打刻が、ほかの自分の打刻と重なれば断る（409、task #397 / ADR-0049）。
+
+        走っている打刻は今まで続いているものとして見る。接しているだけ（終わり＝次の始まり）は重なりではない。
+        """
+        end = entry.ended_at if entry.ended_at is not None else max(now, entry.started_at)
+        others = [
+            e.id
+            for e in self._entries.find_overlapping(entry.user_id, entry.started_at, end)
+            if e.id != entry.id and _overlaps_by_time(e, entry.started_at, end, now)
+        ]
+        if others:
+            raise ConflictError(
+                "the time entry would overlap another time entry "
+                f"(ids={','.join(str(i) for i in sorted(others))})"
+            )
+
     def _owned(self, entry_id: int, user_id: int) -> TimeEntry:
         return owned_by(
             self._entries.find_by_id(entry_id), user_id,
@@ -479,3 +497,9 @@ def build_time_entry_view(
 
 def _entry_order(entry: TimeEntry) -> tuple[datetime, int]:
     return (entry.started_at, entry.id or 0)
+
+
+def _overlaps_by_time(other: TimeEntry, start: datetime, end: datetime, now: datetime) -> bool:
+    """``other`` が ``[start, end)`` と正の長さで重なるか（走っている打刻は今まで続いているものとして）。"""
+    other_end = other.ended_at if other.ended_at is not None else now
+    return other.started_at < end and other_end > start
