@@ -42,6 +42,7 @@ from src.presentation.api.routers import (
     inbox,
     milestones,
     ops,
+    pc_activity,
     projects,
     push,
     reviews,
@@ -156,6 +157,7 @@ def create_app(database_url: str | None = None, db_path: str | None = None) -> F
     app.include_router(tracking_rules.router, prefix="/api")
     app.include_router(wintrack_releases.router, prefix="/api")
     app.include_router(work_breaks.router, prefix="/api")
+    app.include_router(pc_activity.router, prefix="/api")
     app.include_router(closing_periods.router, prefix="/api")
     app.include_router(milestones.router, prefix="/api")
     app.include_router(categories.router, prefix="/api")

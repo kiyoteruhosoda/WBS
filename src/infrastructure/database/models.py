@@ -639,3 +639,39 @@ class WorkBreakModel(Base):
     ended_at: Mapped[datetime] = mapped_column(sa.DateTime, nullable=False)
     source: Mapped[str] = mapped_column(sa.String(16), nullable=False)
     created_at: Mapped[datetime] = mapped_column(sa.DateTime, default=utcnow, nullable=False)
+
+
+class PcActivityDayModel(Base):
+    """PC を使っていた時間の 1 日（WinTrack、task #397 / ADR-0049）。送り手のタイムゾーンでの日付ごとに 1 行。
+
+    ``updated_at`` は WBS が最後にその日を受けた時刻。区間は ``pc_activity_spans``。35 日より前の日は書くときに消す。
+    """
+
+    __tablename__ = "pc_activity_days"
+    __table_args__ = (
+        sa.UniqueConstraint("user_id", "local_date", name="uq_pc_activity_days_user_date"),
+        {"sqlite_autoincrement": True},
+    )
+    id: Mapped[int] = mapped_column(BigIntPK, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(sa.BigInteger().with_variant(sa.Integer(), "sqlite"), sa.ForeignKey("users.id"), nullable=False)
+    local_date: Mapped[date] = mapped_column(sa.Date, nullable=False)
+    time_zone: Mapped[str] = mapped_column(sa.String(64), nullable=False)
+    starts_at: Mapped[datetime] = mapped_column(sa.DateTime, nullable=False)
+    ends_at: Mapped[datetime] = mapped_column(sa.DateTime, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(sa.DateTime, nullable=False)
+
+
+class PcActivitySpanModel(Base):
+    """PC を使っていた区間（WinTrack、task #397 / ADR-0049）。表題やアプリ名は持たない。打刻・実績には使わない。"""
+
+    __tablename__ = "pc_activity_spans"
+    __table_args__ = (
+        sa.Index("ix_pc_activity_spans_user_id_started_at", "user_id", "started_at"),
+        sa.Index("ix_pc_activity_spans_day_id", "day_id"),
+        {"sqlite_autoincrement": True},
+    )
+    id: Mapped[int] = mapped_column(BigIntPK, primary_key=True, autoincrement=True)
+    day_id: Mapped[int] = mapped_column(sa.BigInteger().with_variant(sa.Integer(), "sqlite"), sa.ForeignKey("pc_activity_days.id"), nullable=False)
+    user_id: Mapped[int] = mapped_column(sa.BigInteger().with_variant(sa.Integer(), "sqlite"), sa.ForeignKey("users.id"), nullable=False)
+    started_at: Mapped[datetime] = mapped_column(sa.DateTime, nullable=False)
+    ended_at: Mapped[datetime] = mapped_column(sa.DateTime, nullable=False)

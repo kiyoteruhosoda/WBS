@@ -12,7 +12,7 @@ import pytest
 
 from src.application.dto.auth_dto import AuthenticatedUserDTO
 from src.infrastructure.database.models import ClosingPeriodModel, UserModel, WorkLogModel
-from src.presentation.api.dependencies import get_current_user, get_db
+from src.presentation.api.dependencies import get_app_or_web_user, get_current_user, get_db
 
 OTHER_EMAIL = "other-closing@example.com"
 PERIOD = "2026-09-01"
@@ -45,11 +45,15 @@ def two_users(client, db):
     db.commit()
 
     class Switch:
+        # 打刻の一覧と 1 件の修正はアプリからも叩ける別の依存関数（ADR-0018・ADR-0049）なので両方を差し替える
         def me(self) -> None:
             client.app.dependency_overrides.pop(get_current_user, None)
+            client.app.dependency_overrides.pop(get_app_or_web_user, None)
 
         def other(self) -> None:
-            client.app.dependency_overrides[get_current_user] = _as_user(other_id, OTHER_EMAIL)
+            as_other = _as_user(other_id, OTHER_EMAIL)
+            client.app.dependency_overrides[get_current_user] = as_other
+            client.app.dependency_overrides[get_app_or_web_user] = as_other
 
     switch = Switch()
     yield switch
