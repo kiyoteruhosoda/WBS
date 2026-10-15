@@ -133,12 +133,14 @@ def test_only_the_timer_routes_take_the_app_token(app_client) -> None:
     # ほかの口はこれまでどおり Cookie だけ
     assert app_client.get("/api/tasks", headers=bearer("taro-app")).status_code == 401
     assert app_client.get("/api/auth/me", headers=bearer("taro-app")).status_code == 401
-    listed = app_client.get(
+    # 打刻の一覧と 1 件の修正は通す（ADR-0049）が、足す・消す・分割などの補正は Cookie だけ
+    created = app_client.post(
         "/api/time-entries",
-        params={"start": "2000-01-01T00:00:00Z", "end": "2100-01-01T00:00:00Z"},
+        json={"started_at": "2026-01-01T00:00:00Z", "ended_at": "2026-01-01T01:00:00Z"},
         headers=bearer("taro-app"),
     )
-    assert listed.status_code == 401
+    assert created.status_code == 401
+    assert app_client.delete("/api/time-entries/1", headers=bearer("taro-app")).status_code == 401
 
 
 def test_the_pc_recorder_sends_auto_entries_with_its_token(app_client) -> None:
@@ -212,6 +214,79 @@ def test_the_pc_recorder_reads_its_updates_with_its_token(app_client) -> None:
     assert app_client.get(url, headers=bearer("taro-app")).status_code == 200
     assert app_client.get(url, headers=bearer("unknown-token")).status_code == 401
     assert app_client.get(url).status_code == 401
+
+
+def _z(value) -> str:
+    return f"{value.isoformat()}Z"
+
+
+def test_the_timer_lists_and_corrects_entries_with_its_token(app_client) -> None:
+    """wbstimer は今日の打刻を Bearer で一覧し、始まり・終わりを直す（task #397 / ADR-0049）。"""
+    sign_in(app_client, "taro-code")
+    task = app_client.post("/api/tasks", json={"title": "見積書を作る"}).json()["id"]
+    base = (utcnow() - timedelta(hours=5)).replace(microsecond=0)
+    for offset in (0, 2):
+        res = app_client.post(
+            "/api/time-entries",
+            json={
+                "started_at": _z(base + timedelta(hours=offset)),
+                "ended_at": _z(base + timedelta(hours=offset + 1)),
+                "task_id": task,
+            },
+        )
+        assert res.status_code == 201, res.text
+    app_client.cookies.clear()
+
+    period = {"start": _z(base - timedelta(hours=1)), "end": _z(base + timedelta(hours=4))}
+    listed = app_client.get("/api/time-entries", params=period, headers=bearer("taro-app"))
+    assert listed.status_code == 200, listed.text
+    first, second = listed.json()
+    assert app_client.get("/api/time-entries", params=period, headers=bearer("hanako-app")).json() == []
+
+    patched = app_client.patch(
+        f"/api/time-entries/{first['id']}",
+        json={
+            "started_at": _z(base + timedelta(minutes=10)),
+            "ended_at": _z(base + timedelta(minutes=50)),
+        },
+        headers=bearer("taro-app"),
+    )
+    assert patched.status_code == 200, patched.text
+    assert (patched.json()["started_at"], patched.json()["ended_at"]) == (
+        _z(base + timedelta(minutes=10)),
+        _z(base + timedelta(minutes=50)),
+    )
+    # 他人の打刻は直せない
+    theirs = app_client.patch(
+        f"/api/time-entries/{second['id']}",
+        json={"ended_at": _z(base + timedelta(hours=2, minutes=30))},
+        headers=bearer("hanako-app"),
+    )
+    assert theirs.status_code == 404
+    assert app_client.patch(
+        f"/api/time-entries/{first['id']}", json={"ended_at": _z(base)}, headers=bearer("unknown-token")
+    ).status_code == 401
+
+
+def test_the_pc_recorder_sends_and_the_timer_reads_pc_activity_with_tokens(app_client) -> None:
+    """PC を使っていた時間（task #397 / ADR-0049）。送るのも読むのも Bearer。他人の区間は出ない。"""
+    yesterday = (utcnow() + timedelta(hours=9)).date() - timedelta(days=1)
+    body = {
+        "time_zone": "Asia/Tokyo",
+        "spans": [
+            {"started_at": f"{yesterday}T09:02:00+09:00", "ended_at": f"{yesterday}T12:01:00+09:00"}
+        ],
+    }
+    url = f"/api/pc-activity/{yesterday}"
+    res = app_client.put(url, json=body, headers=bearer("taro-app"))
+    assert res.status_code == 200, res.text
+    assert app_client.put(url, json=body, headers=bearer("unknown-token")).status_code == 401
+
+    period = {"start": f"{yesterday}T00:00:00+09:00", "end": f"{yesterday}T23:59:59+09:00"}
+    mine = app_client.get("/api/pc-activity", params=period, headers=bearer("taro-app")).json()
+    assert [s["started_at"] for s in mine["spans"]] == [f"{yesterday}T00:02:00Z"]
+    theirs = app_client.get("/api/pc-activity", params=period, headers=bearer("hanako-app")).json()
+    assert theirs == {"spans": [], "updated_at": None}
 
 
 def test_without_app_client_ids_no_token_is_taken(database_path, monkeypatch, sso_provider) -> None:  # noqa: F811

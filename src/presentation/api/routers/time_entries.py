@@ -4,6 +4,7 @@
 この 3 つは打刻アプリ（task #167）からも叩ける ——assay のアクセストークンを
 ``Authorization: Bearer`` で受け取る（``AppOrWebUserDep``、ADR-0018）。
 ``POST /auto`` は PC の自動記録（WinTrack、task #379 / ADR-0042・ADR-0045）が区間をまとめて送る口で、同じく Bearer を通す。
+期間の一覧（``GET ""``）と 1 件の修正（``PATCH /{id}``）も、wbstimer が今日の打刻を直すために Bearer を通す（task #397 / ADR-0049）。
 期間の一覧・1 件の修正・削除と、補正（手で足す・分割・結合・まとめてタスクを振る・
 予定の回から作る）は締めの画面（#161 / ADR-0012）のため。
 確定済みの締めの期間に掛かる打刻は書き換えられない（409）。
@@ -127,7 +128,7 @@ def record_automatic_time_entries(
 @router.get("", response_model=list[TimeEntryResponse])
 def list_time_entries(
     uc: TimeEntryUseCasesDep,
-    current_user: CurrentUserDep,
+    current_user: AppOrWebUserDep,
     start: Annotated[AwareDatetime, Query(description="区間の始まり（含む）。オフセット付き")],
     end: Annotated[AwareDatetime, Query(description="区間の終わり（含まない）。オフセット付き")],
 ) -> list[TimeEntryResponse]:
@@ -216,7 +217,7 @@ def update_time_entry(
     entry_id: int,
     body: TimeEntryUpdateRequest,
     uc: TimeEntryUseCasesDep,
-    current_user: CurrentUserDep,
+    current_user: AppOrWebUserDep,
 ) -> TimeEntryResponse:
     sent = body.model_fields_set
     if "started_at" in sent and body.started_at is None:

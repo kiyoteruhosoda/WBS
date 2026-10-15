@@ -24,6 +24,7 @@ from src.application.use_cases.calendar_import_use_cases import CalendarImportUs
 from src.application.use_cases.calendar_use_cases import CalendarUseCases
 from src.application.use_cases.closing_use_cases import ClosingUseCases
 from src.application.use_cases.day_off_use_cases import DayOffUseCases
+from src.application.use_cases.pc_activity_use_cases import PcActivityUseCases
 from src.application.use_cases.task_removal_use_cases import TaskRemovalUseCases
 from src.application.use_cases.task_use_cases import TaskUseCases
 from src.application.use_cases.time_entry_use_cases import TimeEntryUseCases
@@ -68,6 +69,7 @@ from src.infrastructure.repositories.milestone_repository import SqlAlchemyMiles
 from src.infrastructure.repositories.occurrence_completion_repository import (
     SqlAlchemyOccurrenceCompletionRepository,
 )
+from src.infrastructure.repositories.pc_activity_repository import SqlAlchemyPcActivityRepository
 from src.infrastructure.repositories.project_repository import SqlAlchemyProjectRepository
 from src.infrastructure.repositories.task_repository import SqlAlchemyTaskRepository
 from src.infrastructure.repositories.time_entry_carving_repository import (
@@ -249,7 +251,8 @@ def get_app_or_web_user(
     """アプリ（Android の打刻アプリ）からも叩いてよい口の利用者（ADR-0018）。
 
     ⚠ **これを付けた口だけが assay のアクセストークンを受け取る**（打刻の Start / Stop /
-    現在、ADR-0018。この先の通知の読み取り ``GET /calendar/alarms``、ADR-0021）。ほかの口は
+    現在、ADR-0018。この先の通知の読み取り ``GET /calendar/alarms``、ADR-0021。WinTrack の口。
+    wbstimer が今日の打刻を直す期間の一覧と 1 件の修正、PC を使っていた時間、ADR-0049）。ほかの口は
     :func:`get_current_user`（Web のセッション Cookie だけ）のまま。
 
     - ``Authorization`` ヘッダーが**無ければ** :func:`get_current_user` と同じ
@@ -384,6 +387,13 @@ def get_work_break_use_cases(db: DbDep) -> WorkBreakUseCases:
     )
 
 WorkBreakUseCasesDep = Annotated[WorkBreakUseCases, Depends(get_work_break_use_cases)]
+
+
+def get_pc_activity_use_cases(db: DbDep) -> PcActivityUseCases:
+    """PC を使っていた時間（WinTrack → wbstimer、ADR-0049）。締めには関係しない。"""
+    return PcActivityUseCases(SqlAlchemyPcActivityRepository(db), db)
+
+PcActivityUseCasesDep = Annotated[PcActivityUseCases, Depends(get_pc_activity_use_cases)]
 
 
 def build_calendar_import_use_cases(
