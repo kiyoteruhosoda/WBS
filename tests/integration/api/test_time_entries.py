@@ -474,3 +474,49 @@ def test_the_receipts_table_refuses_a_second_row_with_the_same_client_ref(client
     with pytest.raises(IntegrityError):
         db.commit()
     db.rollback()
+
+
+def test_moving_an_entry_onto_another_is_refused(client) -> None:
+    """時刻を直してほかの打刻と重なれば 409（task #397 / ADR-0049）。接するだけ・時刻を変えない修正は通す。"""
+    task = _task(client, "設計")
+    base = (utcnow() - timedelta(hours=5)).replace(microsecond=0)
+    first = _manual_entry(client, base, 60, task)
+    second = _manual_entry(client, base + timedelta(hours=2), 60, task)
+    url = f"/api/time-entries/{first['id']}"
+
+    res = client.patch(url, json={"ended_at": _z(base + timedelta(hours=2, minutes=10))})
+    assert res.status_code == 409
+    assert res.json()["detail"] == f"the time entry would overlap another time entry (ids={second['id']})"
+    # 包むように動かしても同じ
+    wrapped = client.patch(
+        url, json={"started_at": _z(base + timedelta(hours=1)), "ended_at": _z(base + timedelta(hours=4))}
+    )
+    assert wrapped.status_code == 409
+    assert client.get(url).json()["ended_at"] == _z(base + timedelta(hours=1))
+
+    # 次の打刻の始まりにちょうど接するのは重なりではない
+    touching = client.patch(url, json={"ended_at": _z(base + timedelta(hours=2))})
+    assert touching.status_code == 200, touching.text
+
+
+def test_an_entry_that_already_overlaps_can_still_get_a_memo(client) -> None:
+    """足す口は重なりを断らない（締めの画面で知らせる。ADR-0012）。時刻を変えない修正は重なっていても通す。"""
+    task = _task(client, "設計")
+    base = (utcnow() - timedelta(hours=5)).replace(microsecond=0)
+    first = _manual_entry(client, base, 60, task)
+    _manual_entry(client, base + timedelta(minutes=30), 60, task)
+    url = f"/api/time-entries/{first['id']}"
+    assert client.patch(url, json={"memo": "重なっている"}).status_code == 200
+    # 重なりを解く方向の修正は通る
+    assert client.patch(url, json={"ended_at": _z(base + timedelta(minutes=30))}).status_code == 200
+
+
+def test_the_running_entry_cannot_start_over_a_stopped_one(client) -> None:
+    task = _task(client, "設計")
+    earlier = _manual_entry(client, (utcnow() - timedelta(hours=3)).replace(microsecond=0), 60, task)
+    running = _start(client, task_id=task)["started"]
+    url = f"/api/time-entries/{running['id']}"
+    res = client.patch(url, json={"started_at": earlier["started_at"]})
+    assert res.status_code == 409
+    assert res.json()["detail"].endswith(f"(ids={earlier['id']})")
+    assert client.patch(url, json={"started_at": earlier["ended_at"]}).status_code == 200

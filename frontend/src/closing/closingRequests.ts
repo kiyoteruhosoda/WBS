@@ -113,6 +113,7 @@ export const closingFailureOf = (error: unknown): ClosingFailure => {
   if (/must be after start/i.test(detail)) return failure('closing.error.endBeforeStart');
   if (/strictly inside/i.test(detail)) return failure('closing.error.splitOutside');
   if (/running time entry cannot be merged/i.test(detail)) return failure('closing.error.mergeRunning');
+  if (/would overlap another time entry/i.test(detail)) return failure('closing.error.overlap', idsIn(detail));
   if (status === 404) return failure('closing.error.notFound');
   if (status === 409) return failure('closing.error.conflict', [], { detail });
   return failure('closing.error.generic', [], { detail });

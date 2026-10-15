@@ -256,6 +256,14 @@ def test_the_timer_lists_and_corrects_entries_with_its_token(app_client) -> None
         _z(base + timedelta(minutes=10)),
         _z(base + timedelta(minutes=50)),
     )
+    # 次の打刻に重なる時刻へは直せない（409）
+    overlapping = app_client.patch(
+        f"/api/time-entries/{first['id']}",
+        json={"ended_at": _z(base + timedelta(hours=2, minutes=30))},
+        headers=bearer("taro-app"),
+    )
+    assert overlapping.status_code == 409
+    assert overlapping.json()["detail"].startswith("the time entry would overlap another time entry")
     # 他人の打刻は直せない
     theirs = app_client.patch(
         f"/api/time-entries/{second['id']}",
