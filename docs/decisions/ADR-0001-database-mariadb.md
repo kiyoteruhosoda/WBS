@@ -3,6 +3,12 @@
 - 状態: 承認
 - 日付: 2026-07-13
 
+> **注記（2026-10-16）: 本番は SQLite で動いています。** ADR-0008（2026-10-01）は
+> 「SQLite（本番）」を前提に書かれ、部分一意索引も SQLite と PostgreSQL の書き方で宣言しています。
+> 本番の設定（deploy-repo の `k8s/wbs-prod/20-config.yaml`）も `sqlite:////app/data/app.db` です。
+> この ADR の「MariaDB を採用する」は実態と合っていません。MariaDB へ移すときは、
+> ADR-0008 の部分索引を作り直す必要があります（task #437）。
+
 ## 背景
 
 リポジトリの初期状態は FastAPI + SQLite の雛形だった。一方、設計書
