@@ -11,6 +11,10 @@
 1 区間ずつ確定し、1 区間を断っても残りは作る。送り直し（同じ ``client_ref``）は受け取りの控えで見分け、
 そのとき作った打刻を返す（中身が違っても上書きしない）。作らなかった区間は控えない。
 判定の順は「送り直し → 範囲・タスク・mode（invalid）→ 締め（closed）→ 重なり（overlap）/ 覆われ（covered）→ 作る」。
+
+**伸ばす（ADR-0050）。** 同じ ``client_ref`` で始まり・タスク・``mode`` が同じまま終わりだけ遅くなって届いたら、
+控えの終わりから新しい終わりまで（増えた分）だけを同じ規則で受ける。その ``client_ref`` の最後の打刻が控えの終わりで
+終わっていれば、それを伸ばす（つながらなければ足す）。WinTrack は同じタスクが続く間、終わった時間帯ごとに伸ばして送る。
 """
 
 from __future__ import annotations
@@ -94,7 +98,10 @@ class AutomaticTimeEntryUseCases:
     def _record_one(
         self, user_id: int, item: AutoTimeEntryItem, now: datetime, titles: dict[int, str | None]
     ) -> AutoTimeEntryOutcome:
-        if self._receipts.find(user_id, item.client_ref) is not None:
+        receipt = self._receipts.find(user_id, item.client_ref)
+        if receipt is not None:
+            if _extends(receipt, item):
+                return self._extend(user_id, item, receipt, now, titles)
             return self._duplicate(user_id, item, now, titles)
         try:
             mode = _mode(item.mode)
@@ -119,7 +126,13 @@ class AutomaticTimeEntryUseCases:
         try:
             self._receipts.add(
                 AutoTimeEntryReceipt(
-                    user_id=user_id, client_ref=item.client_ref, mode=mode, received_at=now
+                    user_id=user_id,
+                    client_ref=item.client_ref,
+                    mode=mode,
+                    received_at=now,
+                    started_at=start,
+                    ended_at=end,
+                    task_id=item.task_id,
                 )
             )
         except ConflictError:
@@ -136,6 +149,80 @@ class AutomaticTimeEntryUseCases:
             client_ref=item.client_ref,
             status=AutoTimeEntryStatus.CREATED,
             views=[_view(e, now, self._tasks, titles) for e in created],
+        )
+
+    def _extend(
+        self,
+        user_id: int,
+        item: AutoTimeEntryItem,
+        receipt: AutoTimeEntryReceipt,
+        now: datetime,
+        titles: dict[int, str | None],
+    ) -> AutoTimeEntryOutcome:
+        """控えの終わりから新しい終わりまで（増えた分）を受け、同じ ``client_ref`` の打刻を伸ばす・足す。"""
+        assert receipt.ended_at is not None
+        mine = self._entries.find_by_client_ref(user_id, item.client_ref)
+        try:
+            _, end = _window(item, now)
+            start = receipt.ended_at
+            if end <= start:
+                # 今に寄せたら伸びなかった（時計のずれ）。送り直しと同じ
+                return self._duplicate(user_id, item, now, titles)
+            if self._is_closed(user_id, start, end):
+                raise _Rejected(AutoTimeEntryStatus.CLOSED, "period_closed")
+            in_the_way = [
+                e
+                for e in self._entries.find_overlapping(user_id, start, end)
+                if e.client_ref != item.client_ref or not e.is_automatic
+            ]
+            if receipt.mode is AutoEntryMode.FILL:
+                spans = free_spans(start, end, in_the_way)
+            else:
+                # 例外の続きは、ほかの自動の打刻（その間に送った既定の打刻など）を避けて伸ばし、手の打刻だけを切り抜く
+                manual = [e for e in in_the_way if not e.is_automatic]
+                if any(self._is_closed(user_id, e.started_at, e.ended_at) for e in manual):
+                    raise _Rejected(AutoTimeEntryStatus.CLOSED, "period_closed")
+                spans = free_spans(start, end, [e for e in in_the_way if e.is_automatic])
+        except _Rejected as rejected:
+            return AutoTimeEntryOutcome(
+                client_ref=item.client_ref, status=rejected.status, error=rejected.error
+            )
+
+        if receipt.mode is AutoEntryMode.OVERRIDE:
+            for span_start, span_end in spans:
+                manual = [
+                    e
+                    for e in self._entries.find_overlapping(user_id, span_start, span_end)
+                    if not e.is_automatic
+                ]
+                self._carve_manual(user_id, item, span_start, span_end, manual, now)
+        last = mine[-1] if mine else None
+        for span_start, span_end in spans:
+            if last is not None and last.ended_at == span_start:
+                last.ended_at = span_end
+                last = self._entries.save(last)
+            else:
+                last = self._entries.save(
+                    _automatic(user_id, item, span_start, span_end, receipt.mode)
+                )
+        self._receipts.extend(user_id, item.client_ref, end)
+        self._uow.commit()
+        logger.info(
+            "自動の打刻を伸ばしました",
+            extra={
+                "event": "time_entries.auto.extended",
+                "user_id": user_id,
+                "client_ref": item.client_ref,
+                "mode": receipt.mode.value,
+            },
+        )
+        return AutoTimeEntryOutcome(
+            client_ref=item.client_ref,
+            status=AutoTimeEntryStatus.EXTENDED,
+            views=[
+                _view(e, now, self._tasks, titles)
+                for e in self._entries.find_by_client_ref(user_id, item.client_ref)
+            ],
         )
 
     def _ensure_can_override(self, user_id: int, in_the_way: list[TimeEntry]) -> None:
@@ -155,6 +242,19 @@ class AutomaticTimeEntryUseCases:
         now: datetime,
     ) -> list[TimeEntry]:
         """手の打刻のその時間を切り抜いて作る。切り抜く前の手の打刻は記録に残す。"""
+        self._carve_manual(user_id, item, start, end, in_the_way, now)
+        return [self._entries.save(_automatic(user_id, item, start, end, AutoEntryMode.OVERRIDE))]
+
+    def _carve_manual(
+        self,
+        user_id: int,
+        item: AutoTimeEntryItem,
+        start: datetime,
+        end: datetime,
+        in_the_way: list[TimeEntry],
+        now: datetime,
+    ) -> None:
+        """``[start, end)`` に掛かる手の打刻を切り抜く。切り抜く前の手の打刻は記録に残す。"""
         for manual in in_the_way:
             assert manual.id is not None
             carving = carve(manual, start, end)
@@ -192,7 +292,6 @@ class AutomaticTimeEntryUseCases:
                     "client_ref": item.client_ref,
                 },
             )
-        return [self._entries.save(_automatic(user_id, item, start, end, AutoEntryMode.OVERRIDE))]
 
     def _duplicate(
         self, user_id: int, item: AutoTimeEntryItem, now: datetime, titles: dict[int, str | None]
@@ -229,6 +328,18 @@ def _automatic(
         source=TimeEntrySource.AUTO,
         client_ref=item.client_ref,
         auto_mode=mode,
+    )
+
+
+def _extends(receipt: AutoTimeEntryReceipt, item: AutoTimeEntryItem) -> bool:
+    """同じ区間の続き（始まり・タスク・mode が同じで、終わりだけ遅い）か。区間を持たない古い控えは伸ばさない。"""
+    return (
+        receipt.started_at is not None
+        and receipt.ended_at is not None
+        and item.started_at.replace(microsecond=0) == receipt.started_at
+        and item.task_id == receipt.task_id
+        and item.mode == receipt.mode.value
+        and item.ended_at.replace(microsecond=0) > receipt.ended_at
     )
 
 

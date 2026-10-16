@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from sqlalchemy import select
+from datetime import datetime
+
+from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -33,6 +35,9 @@ class SqlAlchemyAutoTimeEntryReceiptRepository(AutoTimeEntryReceiptRepository):
             client_ref=model.client_ref,
             mode=AutoEntryMode(model.mode),
             received_at=model.received_at,
+            started_at=model.started_at,
+            ended_at=model.ended_at,
+            task_id=model.task_id,
         )
 
     def add(self, receipt: AutoTimeEntryReceipt) -> None:
@@ -42,6 +47,9 @@ class SqlAlchemyAutoTimeEntryReceiptRepository(AutoTimeEntryReceiptRepository):
                 client_ref=receipt.client_ref,
                 mode=receipt.mode.value,
                 received_at=receipt.received_at,
+                started_at=receipt.started_at,
+                ended_at=receipt.ended_at,
+                task_id=receipt.task_id,
             )
         )
         try:
@@ -49,3 +57,14 @@ class SqlAlchemyAutoTimeEntryReceiptRepository(AutoTimeEntryReceiptRepository):
         except IntegrityError as exc:
             self._session.rollback()
             raise ConflictError("this client_ref has already been received") from exc
+
+    def extend(self, user_id: int, client_ref: str, ended_at: datetime) -> None:
+        self._session.execute(
+            update(AutoTimeEntryReceiptModel)
+            .where(
+                AutoTimeEntryReceiptModel.user_id == user_id,
+                AutoTimeEntryReceiptModel.client_ref == client_ref,
+            )
+            .values(ended_at=ended_at)
+        )
+        self._session.flush()

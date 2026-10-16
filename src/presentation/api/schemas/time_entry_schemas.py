@@ -178,14 +178,16 @@ class AutoTimeEntryResult(BaseModel):
 
     - ``created``: 作った（``source = "auto"``。``fill`` は空きの数だけ）
     - ``covered``: ``fill`` で、全部ほかの打刻に覆われていて作らなかった（エラーではない）
-    - ``duplicate``: 同じ ``client_ref`` を既に受け取った（送り直し。中身が違っても上書きしない）
+    - ``extended``: 同じ ``client_ref`` で、始まりとタスクと ``mode`` が同じまま終わりだけ遅くなった。増えた分だけ
+      打刻を伸ばした（伸ばせなければ足した。``fill`` で増えた分が全部覆われていれば何もしない）。ADR-0050
+    - ``duplicate``: 同じ ``client_ref`` を既に受け取った（送り直し。終わりを遅くする以外の違いは上書きしない）
     - ``overlap``: ``override`` が、ほかの自動の打刻と重なる
     - ``closed``: 確定済みの締めの期間に掛かる
     - ``invalid``: 時刻の逆転・7 日より前・未来（60 秒の遊びは Start と同じ）・自分のでないタスク・知らない ``mode``
     """
 
     client_ref: str
-    status: Literal["created", "covered", "duplicate", "overlap", "closed", "invalid"]
+    status: Literal["created", "covered", "extended", "duplicate", "overlap", "closed", "invalid"]
     entries: list[TimeEntryResponse]
     error: str | None
 

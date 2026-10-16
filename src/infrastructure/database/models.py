@@ -593,6 +593,10 @@ class AutoTimeEntryReceiptModel(Base):
     # AutoEntryMode の値（fill / override）
     mode: Mapped[str] = mapped_column(sa.String(16), nullable=False)
     received_at: Mapped[datetime] = mapped_column(sa.DateTime, nullable=False)
+    # 受け取った区間（ADR-0050。同じ client_ref で終わりが遅くなったら伸ばす）。0023 より前の控えは空
+    started_at: Mapped[datetime | None] = mapped_column(sa.DateTime, nullable=True)
+    ended_at: Mapped[datetime | None] = mapped_column(sa.DateTime, nullable=True)
+    task_id: Mapped[int | None] = mapped_column(sa.BigInteger().with_variant(sa.Integer(), "sqlite"), nullable=True)
 
 
 class TimeEntryCarvingModel(Base):
