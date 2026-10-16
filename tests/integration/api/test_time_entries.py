@@ -520,3 +520,97 @@ def test_the_running_entry_cannot_start_over_a_stopped_one(client) -> None:
     assert res.status_code == 409
     assert res.json()["detail"].endswith(f"(ids={earlier['id']})")
     assert client.patch(url, json={"started_at": earlier["ended_at"]}).status_code == 200
+
+
+def test_fill_is_extended_when_the_same_run_goes_on(client, db) -> None:
+    """同じ client_ref で終わりだけ遅くなったら、増えた分だけ伸ばす（ADR-0050）。"""
+    task = _task(client, "問い合わせ対応")
+    start = (utcnow() - timedelta(hours=4)).replace(microsecond=0)
+    [first] = _auto(client, _span("run", start, 30, task))
+    assert first["status"] == "created"
+
+    [longer] = _auto(client, _span("run", start, 70, task))
+    assert longer["status"] == "extended"
+    assert [(e["id"], e["started_at"], e["ended_at"]) for e in longer["entries"]] == [
+        (first["entries"][0]["id"], _z(start), _z(start + timedelta(minutes=70)))
+    ]
+    # 同じ終わりの送り直しは、伸ばさずにそのまま返す
+    [again] = _auto(client, _span("run", start, 70, task))
+    assert again["status"] == "duplicate"
+    assert again["entries"][0]["ended_at"] == _z(start + timedelta(minutes=70))
+    assert db.query(TimeEntryModel).filter(TimeEntryModel.client_ref == "run").count() == 1
+
+
+def test_an_extension_fills_around_working_in_the_new_part(client) -> None:
+    project = _task(client, "ProjectA")
+    working = _task(client, "Working")
+    start = (utcnow() - timedelta(hours=4)).replace(microsecond=0)
+    _auto(client, _span("run", start, 30, project))
+    _manual_entry(client, start + timedelta(minutes=40), 10, working)
+
+    [longer] = _auto(client, _span("run", start, 60, project))
+    assert longer["status"] == "extended"
+    assert [(e["started_at"], e["ended_at"]) for e in longer["entries"]] == [
+        (_z(start), _z(start + timedelta(minutes=40))),
+        (_z(start + timedelta(minutes=50)), _z(start + timedelta(minutes=60))),
+    ]
+
+
+@pytest.mark.parametrize(
+    "changed",
+    [{"task": "other"}, {"minutes_from": 5}, {"mode": "override"}, {"minutes": 20}],
+    ids=["another-task", "another-start", "another-mode", "earlier-end"],
+)
+def test_other_differences_are_not_extensions(client, changed) -> None:
+    task = _task(client, "設計")
+    other = _task(client, "別のタスク")
+    start = (utcnow() - timedelta(hours=4)).replace(microsecond=0)
+    _auto(client, _span("run", start, 30, task))
+    [result] = _auto(
+        client,
+        _span(
+            "run",
+            start + timedelta(minutes=changed.get("minutes_from", 0)),
+            changed.get("minutes", 60),
+            other if "task" in changed else task,
+            mode=changed.get("mode"),
+        ),
+    )
+    assert result["status"] == "duplicate"
+    assert [(e["started_at"], e["ended_at"]) for e in result["entries"]] == [
+        (_z(start), _z(start + timedelta(minutes=30)))
+    ]
+
+
+def test_override_is_extended_by_carving_working_further(client) -> None:
+    working = _task(client, "Working")
+    exception = _task(client, "ProjectB")
+    start = (utcnow() - timedelta(hours=4)).replace(microsecond=0)
+    _manual_entry(client, start, 180, working)
+    _auto(client, _span("ex", start + timedelta(minutes=60), 30, exception, mode="override"))
+
+    [longer] = _auto(client, _span("ex", start + timedelta(minutes=60), 50, exception, mode="override"))
+    assert longer["status"] == "extended"
+    listed = client.get(
+        "/api/time-entries", params={"start": _z(start - timedelta(hours=1)), "end": _z(utcnow())}
+    ).json()
+    assert [(e["started_at"], e["ended_at"], e["source"]) for e in listed] == [
+        (_z(start), _z(start + timedelta(minutes=60)), "manual"),
+        (_z(start + timedelta(minutes=60)), _z(start + timedelta(minutes=110)), "auto"),
+        (_z(start + timedelta(minutes=110)), _z(start + timedelta(minutes=180)), "split"),
+    ]
+
+
+def test_an_override_extension_steps_around_other_automatic_entries(client) -> None:
+    project = _task(client, "ProjectA")
+    exception = _task(client, "ProjectB")
+    start = (utcnow() - timedelta(hours=4)).replace(microsecond=0)
+    _auto(client, _span("ex", start, 30, exception, mode="override"))
+    _auto(client, _span("fill", start + timedelta(minutes=30), 10, project))
+
+    [longer] = _auto(client, _span("ex", start, 60, exception, mode="override"))
+    assert longer["status"] == "extended"
+    assert [(e["started_at"], e["ended_at"]) for e in longer["entries"]] == [
+        (_z(start), _z(start + timedelta(minutes=30))),
+        (_z(start + timedelta(minutes=40)), _z(start + timedelta(minutes=60))),
+    ]

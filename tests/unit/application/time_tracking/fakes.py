@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import copy
+import dataclasses
 from datetime import date, datetime
 
 from src.domain.entities.auto_time_entry_receipt import AutoTimeEntryReceipt
@@ -197,6 +198,10 @@ class InMemoryAutoTimeEntryReceiptRepository(AutoTimeEntryReceiptRepository):
         if key in self.rows:
             raise ConflictError("this client_ref has already been received")
         self.rows[key] = receipt
+
+    def extend(self, user_id: int, client_ref: str, ended_at: datetime) -> None:
+        key = (user_id, client_ref)
+        self.rows[key] = dataclasses.replace(self.rows[key], ended_at=ended_at)
 
 
 class InMemoryTimeEntryCarvingRepository(TimeEntryCarvingRepository):

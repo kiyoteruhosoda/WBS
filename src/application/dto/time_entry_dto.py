@@ -111,6 +111,8 @@ class AutoTimeEntryStatus(StrEnum):
     """作った（fill は空きの数だけ）。"""
     COVERED = "covered"
     """fill で、全部ほかの打刻に覆われていて作らなかった（エラーではない）。"""
+    EXTENDED = "extended"
+    """同じ ``client_ref`` で終わりだけ遅くなった区間を受け、増えた分だけ伸ばした（足した）。ADR-0050。"""
     DUPLICATE = "duplicate"
     """同じ ``client_ref`` を既に受け取った（送り直し）。そのとき作った打刻を返し、上書きしない。"""
     OVERLAP = "overlap"
