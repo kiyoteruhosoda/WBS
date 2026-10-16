@@ -32,7 +32,9 @@ docker compose up --build
 
 - Web: <http://127.0.0.1:8100>
 - API: <http://127.0.0.1:8000/docs>
-- DB: MariaDB 10.11（UTC）
+- DB: SQLite 1 ファイル（API コンテナの `/app/data/app.db`。本番も同じ）
+  - compose の `db`（MariaDB 10.11）は起動しますが、既定の `DATABASE_URL` では使いません
+    （経緯は ADR-0001 の注記）
 
 全サービスに `restart: unless-stopped` と healthcheck を設定しているため、ホスト再起動やコンテナ異常終了後も自動で復帰します。
 
