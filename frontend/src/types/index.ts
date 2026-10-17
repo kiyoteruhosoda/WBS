@@ -23,7 +23,8 @@ export interface Task {
   rollup_remaining_hours: number | null;
   // 実績 ÷（実績 ＋ 残）× 100。分母 0・残が決まらないときは null（「—」と出す）
   progress_percent: number | null;
-  // 予定済みの時間: 今日以降に始まる、このタスクに結んだ予定の回の合計（終日の回は数えない。ADR-0014）
+  // 予定済みの時間: 今日以降に始まる、このタスクに結んだ予定の回の合計（終日の回は数えない。ADR-0014）。
+  // 終わりの無い繰り返しは、見ている期間の終わり（無ければ今月末）まで（ADR-0051）
   scheduled_hours: number | null;
   // 残のうち、まだ予定に取っていない分（残 − 予定済み、0 未満は 0）。残が決まらないときは null
   unscheduled_hours: number | null;
@@ -151,6 +152,8 @@ export interface TaskListParams {
   // このプロジェクトと子孫のもの（ADR-0024）/ 未分類のものだけ
   project_id?: number;
   unclassified?: boolean;
+  // 終わりの無い繰り返しを予定済みに数える終わりの日（YYYY-MM-DD）。省くと今月末（ADR-0051）
+  scheduled_until?: string;
 }
 
 export interface UserSettings {

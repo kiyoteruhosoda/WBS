@@ -94,7 +94,12 @@ const CalendarPage: React.FC = () => {
     enabled: range != null,
     placeholderData: keepPreviousData,
   });
-  const { data: tasks } = useQuery({ queryKey: ['tasks'], queryFn: () => getTasks() });
+  // 予定済みの時間は、終わりの無い繰り返しを見ている期間の終わりまで数える（ADR-0051）
+  const { data: tasks } = useQuery({
+    queryKey: ['tasks', { scheduled_until: range?.to }],
+    queryFn: () => getTasks(range ? { scheduled_until: range.to } : {}),
+    placeholderData: keepPreviousData,
+  });
   const { data: milestones } = useQuery({ queryKey: ['milestones'], queryFn: getMilestones });
   const { data: categories } = useQuery({ queryKey: ['categories'], queryFn: getCategories });
 

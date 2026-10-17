@@ -22,7 +22,16 @@ from src.infrastructure.repositories.project_repository import SqlAlchemyProject
 from src.infrastructure.repositories.task_repository import SqlAlchemyTaskRepository
 
 SCHEDULED_TIME_HORIZON_DAYS = 365
-"""「予定済みの時間」に数える先の長さ（今日から何日先まで）。終わりの無い繰り返しを数え切るため。"""
+"""「予定済みの時間」に数える先の長さ（今日から何日先まで）。終わりのある予定はここまで数える。
+
+終わりの無い繰り返しは、ここまで数えると 1 年分が積まれて残を大きく超える（15 分 × 毎平日で 65h）。
+そちらは画面の期間の終わり（無ければ今月末）までにする（ADR-0051）。
+"""
+
+
+def _end_of_month(day: date) -> date:
+    first_of_next = (day.replace(day=28) + timedelta(days=4)).replace(day=1)
+    return first_of_next - timedelta(days=1)
 
 
 class TaskUseCases:
@@ -45,15 +54,18 @@ class TaskUseCases:
         # 予定の口が無ければ「予定済みの時間」は出さない（null）。
         self._scheduled_time = scheduled_time
 
-    def list_tasks(self, user_id: int, filters: dict) -> list[dict]:
+    def list_tasks(
+        self, user_id: int, filters: dict, *, scheduled_until: date | None = None
+    ) -> list[dict]:
         """``filters`` の ``project_id`` は**子孫のプロジェクトも含めて**絞る（ADR-0024）。
 
-        アーカイブしたタスク（ADR-0046）は出さない。
+        アーカイブしたタスク（ADR-0046）は出さない。``scheduled_until`` は画面で選んでいる期間の
+        終わりで、終わりの無い繰り返しをそこまで数える（無ければ今月末。ADR-0051）。
         """
         filters = self.resolve_project_filter(user_id, filters)
         tasks = [t for t in self._repo.find_all(user_id, filters) if not t.is_archived]
         board = self.progress_board(user_id)
-        scheduled = self.scheduled_minutes(user_id)
+        scheduled = self.scheduled_minutes(user_id, scheduled_until)
         tree = self._membership.tree(user_id)
         return [self._enrich(t, board, scheduled, tree) for t in tasks]
 
@@ -65,11 +77,14 @@ class TaskUseCases:
         resolved["project_ids"] = self._membership.scope_ids(user_id, filters["project_id"])
         return resolved
 
-    def scheduled_minutes(self, user_id: int) -> dict[int, int] | None:
+    def scheduled_minutes(
+        self, user_id: int, until: date | None = None
+    ) -> dict[int, int] | None:
         """タスクごとの「予定済みの時間」（分）。予定の口が無ければ None。
 
         今日（利用者の日付）以降に始まる、そのタスクに結ばれた回の長さの合計（ADR-0014）。
         今日の回は、もう過ぎたものも数える。先は ``SCHEDULED_TIME_HORIZON_DAYS`` 日まで。
+        終わりの無い繰り返しだけは ``until``（無ければ今月末）までにする（ADR-0051）。
         """
         if self._scheduled_time is None:
             return None
@@ -79,7 +94,11 @@ class TaskUseCases:
         except OverflowError:
             horizon = date.max
         return self._scheduled_time.scheduled_minutes_by_task(
-            user_id, today, horizon, self._clock.zone_name(user_id)
+            user_id,
+            today,
+            horizon,
+            self._clock.zone_name(user_id),
+            endless_until=until if until is not None else _end_of_month(today),
         )
 
     def progress_board(self, user_id: int) -> TaskProgressBoard:

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import date
 from typing import Annotated
 
 from fastapi import APIRouter, Query, status
@@ -36,6 +37,13 @@ def list_tasks(
     unclassified: Annotated[
         bool, Query(description="true ならプロジェクトの無い（未分類の）タスクだけ")
     ] = False,
+    scheduled_until: Annotated[
+        date | None,
+        Query(
+            description="画面で選んでいる期間の終わり（利用者の日付）。終わりの無い繰り返しの予定は、"
+            "予定済みの時間にこの日まで数える。省くと今月末まで（ADR-0051）"
+        ),
+    ] = None,
 ) -> list[TaskResponse]:
     filters: dict = {}
     if status_filter:
@@ -50,7 +58,10 @@ def list_tasks(
         filters["project_id"] = project_id
     if unclassified:
         filters["unclassified"] = True
-    return [TaskResponse(**t) for t in uc.list_tasks(current_user.user_id, filters)]
+    return [
+        TaskResponse(**t)
+        for t in uc.list_tasks(current_user.user_id, filters, scheduled_until=scheduled_until)
+    ]
 
 
 @router.post("", response_model=TaskResponse, status_code=status.HTTP_201_CREATED)
