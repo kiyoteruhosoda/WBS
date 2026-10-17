@@ -4,6 +4,7 @@ import { Box } from '@mui/material';
 import { useI18n } from '../../i18n';
 import { getDashboardKpi } from '../../api/dashboard';
 import { ds } from '../../theme';
+import { overallProgressView } from './overallProgress';
 
 /**
  * 全体の進捗（完了の割合・今週完了・期限超過）。前は「今日」の右の列のいちばん下のカードだったが、
@@ -12,10 +13,9 @@ import { ds } from '../../theme';
 const OverallProgress: React.FC = () => {
   const { t } = useI18n();
   const { data: kpi } = useQuery({ queryKey: ['kpi'], queryFn: getDashboardKpi });
-  if (!kpi) return null;
-  const total = kpi.total_tasks;
-  const done = total - kpi.incomplete_tasks;
-  const donePct = total > 0 ? Math.round((done / total) * 100) : 0;
+  const view = overallProgressView(kpi);
+  if (!view) return null;
+  const { total, done, donePct, thisWeekDone, overdue } = view;
   return (
     <Box
       sx={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', fontSize: 13, color: ds.textSub }}
@@ -32,11 +32,11 @@ const OverallProgress: React.FC = () => {
       <Box component="span" sx={{ fontWeight: 700, color: ds.text }}>{t('dashboard.overall')} {donePct}%</Box>
       <Box component="span">{t('dashboard.completedOfTotal', { done, total })}</Box>
       <Box component="span">
-        {t('dashboard.thisWeekDone')} <Box component="span" sx={{ fontWeight: 700, color: ds.primary }}>{kpi.this_week_completed}</Box>
+        {t('dashboard.thisWeekDone')} <Box component="span" sx={{ fontWeight: 700, color: ds.primary }}>{thisWeekDone}</Box>
       </Box>
       <Box component="span">
         {t('dashboard.overdueCount')}{' '}
-        <Box component="span" sx={{ fontWeight: 700, color: kpi.overdue_tasks > 0 ? ds.dangerText : ds.text }}>{kpi.overdue_tasks}</Box>
+        <Box component="span" sx={{ fontWeight: 700, color: overdue > 0 ? ds.dangerText : ds.text }}>{overdue}</Box>
       </Box>
     </Box>
   );
