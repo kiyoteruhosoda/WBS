@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import {
   Alert, Box, Button, Checkbox, CircularProgress, FormControlLabel, Snackbar, Table, TableBody,
-  TableCell, TableContainer, TableHead, TableRow, TextField,
+  TableCell, TableContainer, TableHead, TableRow, TextField, useMediaQuery, useTheme,
 } from '@mui/material';
 import { ACTUALS_KEY, getTaskActuals } from '../../api/actuals';
 import { scopeParams } from '../../projects/projectScope';
@@ -64,9 +64,82 @@ const RemainingEditor: React.FC<{ row: TaskActualsRow; onSaved: (ok: boolean) =>
   );
 };
 
+// 見直しの理由と、残を入れ直す欄（表の最後の列・狭い画面のカードの下）
+const ReviewCell: React.FC<{ row: TaskActualsRow; onSaved: (ok: boolean) => void }> = ({ row, onSaved }) => {
+  const { t } = useI18n();
+  if (row.review_reasons.length === 0) return null;
+  return (
+    <Box sx={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+      {row.review_reasons.map((r) => (
+        <Box key={r} sx={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: 12, color: ds.warnText }}>
+          <WarningTriangleIcon size={14} />
+          {t(`actuals.reason.${r}`)}
+        </Box>
+      ))}
+      <RemainingEditor row={row} onSaved={onSaved} />
+    </Box>
+  );
+};
+
+// 狭い画面（sm 未満）は 9 列の表を横に送らないと見直しの欄が見えないので、1 タスク 1 枚のカードにする（task #435）
+const TaskActualsCards: React.FC<{ rows: TaskActualsRow[]; onSaved: (ok: boolean) => void }> = ({ rows, onSaved }) => {
+  const { t } = useI18n();
+  const navigate = useNavigate();
+  return (
+    <Box sx={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+      {rows.map((row) => {
+        const task = row.task;
+        const actual = task.has_subtasks ? task.rollup_actual_hours : task.actual_hours;
+        const remaining = task.has_subtasks ? task.rollup_remaining_hours : task.remaining_hours;
+        const figures: [string, string][] = [
+          [t('actuals.colEstimate'), formatHours(task.estimated_hours)],
+          [t('actuals.colScheduled'), formatHours(task.scheduled_hours)],
+          [t('actuals.colActual'), formatHours(actual)],
+          [t('actuals.colRemaining'), formatHours(remaining)],
+          [t('actuals.colProgress'), task.progress_percent === null ? '—' : `${task.progress_percent}%`],
+          [t('actuals.colLatestClosed'), row.latest_closed_hours > 0 ? formatHours(row.latest_closed_hours) : '—'],
+        ];
+        return (
+          <Box
+            key={task.id}
+            data-testid="actuals-card"
+            sx={{
+              bgcolor: row.review_reasons.length > 0 ? ds.warnPale : ds.paper,
+              border: `1px solid ${ds.border}`, borderRadius: '10px', p: '10px 12px',
+              display: 'flex', flexDirection: 'column', gap: '8px',
+            }}
+          >
+            <Box
+              onClick={() => navigate(`/tasks/${task.id}`)}
+              sx={{ fontSize: 14, fontWeight: 700, cursor: 'pointer', overflowWrap: 'anywhere', '&:hover': { color: ds.primary } }}
+            >
+              {task.title}
+            </Box>
+            <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: '6px 10px' }}>
+              {figures.map(([label, value]) => (
+                <Box key={label} sx={{ minWidth: 0 }}>
+                  <Box sx={{ fontSize: 11, color: ds.textMuted, whiteSpace: 'nowrap' }}>{label}</Box>
+                  <Box sx={{ fontSize: 13 }}>{value}</Box>
+                </Box>
+              ))}
+            </Box>
+            {row.actual_first_date && (
+              <Box sx={{ fontSize: 12, color: ds.textSub }}>
+                {t('actuals.colActualSpan')}: {t('common.dateRange', dateRangeParts(row.actual_first_date, row.actual_last_date))}
+              </Box>
+            )}
+            <ReviewCell row={row} onSaved={onSaved} />
+          </Box>
+        );
+      })}
+    </Box>
+  );
+};
+
 const TaskActualsPanel: React.FC<Props> = ({ reviewOnly, onReviewOnlyChange }) => {
   const { t } = useI18n();
   const navigate = useNavigate();
+  const narrow = useMediaQuery(useTheme().breakpoints.down('sm'));
   const [notice, setNotice] = useState<{ ok: boolean } | null>(null);
   const { scope } = useProjectScope();
   const { data, isLoading, error } = useQuery({
@@ -97,7 +170,10 @@ const TaskActualsPanel: React.FC<Props> = ({ reviewOnly, onReviewOnlyChange }) =
           {reviewOnly ? t('actuals.reviewEmpty') : t('actuals.tasksEmpty')}
         </Box>
       )}
-      {data && data.rows.length > 0 && (
+      {data && data.rows.length > 0 && narrow && (
+        <TaskActualsCards rows={data.rows} onSaved={(ok) => setNotice({ ok })} />
+      )}
+      {data && data.rows.length > 0 && !narrow && (
         <TableContainer sx={{ bgcolor: ds.paper, border: `1px solid ${ds.border}`, borderRadius: '10px' }}>
           <Table size="small">
             <TableHead>
@@ -138,17 +214,7 @@ const TaskActualsPanel: React.FC<Props> = ({ reviewOnly, onReviewOnlyChange }) =
                       {row.actual_first_date ? t('common.dateRange', dateRangeParts(row.actual_first_date, row.actual_last_date)) : '—'}
                     </TableCell>
                     <TableCell>
-                      {row.review_reasons.length > 0 && (
-                        <Box sx={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                          {row.review_reasons.map((r) => (
-                            <Box key={r} sx={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: 12, color: ds.warnText }}>
-                              <WarningTriangleIcon size={14} />
-                              {t(`actuals.reason.${r}`)}
-                            </Box>
-                          ))}
-                          <RemainingEditor row={row} onSaved={(ok) => setNotice({ ok })} />
-                        </Box>
-                      )}
+                      <ReviewCell row={row} onSaved={(ok) => setNotice({ ok })} />
                     </TableCell>
                   </TableRow>
                 );

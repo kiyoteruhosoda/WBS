@@ -116,8 +116,15 @@ export const ledgerCellSegments = (
   rowOf: (entry: TimeEntry) => ProjectRowHead,
 ): EntrySegment[] => (segmentsByDate.get(date) ?? []).filter((s) => rowOf(s.entry).key === rowKey);
 
-/** 0.5 時間単位に丸めた時間（`6.0`・`0.5`）。中身は秒のまま持ち、見せるときだけ丸める。 */
-export const formatHalfHours = (seconds: number): string => (Math.round(seconds / 1800) / 2).toFixed(1);
+/**
+ * 0.5 時間単位に丸めた時間（`6.0`・`0.5`）。中身は秒のまま持ち、見せるときだけ丸める。
+ * 0 ではないのに丸めると 0 になる時間（15 分未満）は `<0.5` と出す。`0.0` だと「何も無い」と読めて、
+ * 20 分の未割当の行が 0.0 なのに「未割当を選択（1）」が出ていた（task #436）。
+ */
+export const formatHalfHours = (seconds: number): string => {
+  const rounded = Math.round(seconds / 1800) / 2;
+  return rounded === 0 && seconds > 0 ? '<0.5' : rounded.toFixed(1);
+};
 
 /** その日の休み（task #392 / ADR-0048）。区間は利用者のローカル日の 0:00 からの分。 */
 export interface DayBreaks {

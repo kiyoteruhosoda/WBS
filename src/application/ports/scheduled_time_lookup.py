@@ -12,12 +12,19 @@ from typing import Protocol
 
 class ScheduledTimeLookup(Protocol):
     def scheduled_minutes_by_task(
-        self, user_id: int, from_date: date, to_date: date, time_zone: str
+        self,
+        user_id: int,
+        from_date: date,
+        to_date: date,
+        time_zone: str,
+        *,
+        endless_until: date | None = None,
     ) -> dict[int, int]:
         """``[from_date, to_date]``（``time_zone`` のローカル日、両端を含む）に始まる回の長さを、
         結ばれたタスクごとに足した分。
 
         ⚠ 数えるのは**その利用者の予定**だけ。終日の回とタスクに結ばれていない回は数えない。
+        ``endless_until`` を渡すと、終わりの無い繰り返しの回はその日までしか数えない（ADR-0051）。
         """
         ...
 

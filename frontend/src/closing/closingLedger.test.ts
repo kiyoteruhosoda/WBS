@@ -72,7 +72,11 @@ describe('ledgerCellSegments', () => {
 
 describe('formatHalfHours', () => {
   it('rounds to half hours for display', () => {
-    expect([0, 899, 900, 2700, 3600 * 6 + 600, 3600 * 7.75].map(formatHalfHours)).toEqual(['0.0', '0.0', '0.5', '1.0', '6.0', '8.0']);
+    expect([0, 900, 2700, 3600 * 6 + 600, 3600 * 7.75].map(formatHalfHours)).toEqual(['0.0', '0.5', '1.0', '6.0', '8.0']);
+  });
+
+  it('does not show a short time that rounds to zero as 0.0', () => {
+    expect([1, 600, 899].map(formatHalfHours)).toEqual(['<0.5', '<0.5', '<0.5']);
   });
 });
 

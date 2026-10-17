@@ -27,6 +27,7 @@ from src.domain.value_objects.event_schedule import (
     SingleEventSchedule,
 )
 from src.domain.value_objects.local_schedule_point import local_date_of, local_time_of
+from src.domain.value_objects.recurrence import NO_END_DATE
 from src.domain.value_objects.time_zone import TimeZoneId
 
 PERIOD_OVERLAP_MARGIN_DAYS = 31
@@ -211,6 +212,12 @@ class CalendarEvent:
 
     def is_recurring(self) -> bool:
         return self.kind == EventKind.RECURRING
+
+    def has_no_end(self) -> bool:
+        """終わりの無い繰り返し（終了日を決めていない）か。単発は False。"""
+        if not self.is_recurring():
+            return False
+        return self._require_recurring().recurrence_rule.end_date == NO_END_DATE
 
     def is_task(self) -> bool:
         """分類がタスク（回ごとに済みを付けられる）か。"""

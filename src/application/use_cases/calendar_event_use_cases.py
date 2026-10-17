@@ -284,13 +284,20 @@ class CalendarEventUseCases:
         return None
 
     def scheduled_minutes_by_task(
-        self, user_id: int, from_date: date, to_date: date, time_zone: str
+        self,
+        user_id: int,
+        from_date: date,
+        to_date: date,
+        time_zone: str,
+        *,
+        endless_until: date | None = None,
     ) -> dict[int, int]:
         """``[from_date, to_date]``（``time_zone`` のローカル日）の回の長さを、結ばれたタスクごとに足す。
 
         ``ScheduledTimeLookup`` の実装（タスクの「予定済みの時間」、ADR-0014）。数えるのは
         その利用者の予定だけ（引く段で ``user_id`` で絞る）。終日の回は「その日に充てる」印で
         作業の時間ではないので数えない。回の日付は ``time_zone`` へ投影したもので見る。
+        終わりの無い繰り返しは ``endless_until`` の日までしか数えない（ADR-0051）。
         """
         totals: dict[int, int] = {}
         private = self._private_calendar_ids(user_id)
@@ -298,6 +305,8 @@ class CalendarEventUseCases:
             user_id, from_date, to_date, time_zone, linked_to_tasks_only=True
         ):
             if occurrence.task_id is None or occurrence.is_all_day or event.calendar_id in private:
+                continue
+            if endless_until is not None and occurrence.date > endless_until and event.has_no_end():
                 continue
             totals[occurrence.task_id] = (
                 totals.get(occurrence.task_id, 0) + occurrence.duration_minutes

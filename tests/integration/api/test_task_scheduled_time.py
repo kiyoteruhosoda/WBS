@@ -5,6 +5,7 @@
 - 繰り返しは回ごとに数える（移した回は移した先で）
 - 他人の予定は、たとえ自分のタスクの id を持っていても数えない
 - まだ取っていない分 = 残 − 予定済み（0 未満は 0）
+- 終わりの無い繰り返しは、画面の期間の終わり（``scheduled_until``、無ければ今月末）までしか数えない（ADR-0051）
 
 「今」は 2026-10-05 00:00 UTC（東京の月曜 9:00）に止める。既定の利用者は Asia/Tokyo。
 """
@@ -166,3 +167,63 @@ def test_occurrences_beyond_the_horizon_are_not_counted(client, frozen_now) -> N
     task = _task(client, estimated_hours=4)
     _event(client, task_id=task["id"], start="2027-12-01T00:00:00Z", duration_minutes=60)
     assert _get(client, task["id"])["scheduled_hours"] == 0.0
+
+
+WEEKDAYS_WITHOUT_END = {
+    "type": "WEEKLY",
+    "interval": 1,
+    "end_date": None,
+    "weekly": {"weekdays": ["MO", "TU", "WE", "TH", "FR"]},
+}
+
+
+def test_an_endless_recurrence_counts_until_the_end_of_this_month(client, frozen_now) -> None:
+    task = _task(client, estimated_hours=10)
+    # 毎平日 9:00 から 15 分、終わり無し。10/5（月）〜10/31 の平日は 20 回
+    _event(
+        client,
+        task_id=task["id"],
+        start="2026-10-05T00:00:00Z",
+        duration_minutes=15,
+        recurrence=WEEKDAYS_WITHOUT_END,
+    )
+    for seen in (_get(client, task["id"]), _listed(client, task["id"])):
+        assert seen["scheduled_hours"] == 5.0
+        assert seen["unscheduled_hours"] == 5.0
+
+
+def test_an_endless_recurrence_counts_until_the_period_on_screen(client, frozen_now) -> None:
+    task = _task(client, estimated_hours=10)
+    _event(
+        client,
+        task_id=task["id"],
+        start="2026-10-05T00:00:00Z",
+        duration_minutes=15,
+        recurrence=WEEKDAYS_WITHOUT_END,
+    )
+    # 見ている週（10/5〜10/11）なら平日 5 回、11 月末までなら 20 + 21 回
+    for until, hours in (("2026-10-11", 1.25), ("2026-11-30", 10.25), ("2026-10-04", 0.0)):
+        res = client.get("/api/tasks", params={"scheduled_until": until})
+        assert res.status_code == 200, res.text
+        [seen] = [t for t in res.json() if t["id"] == task["id"]]
+        assert seen["scheduled_hours"] == hours, until
+
+
+def test_a_recurrence_with_an_end_still_counts_to_its_end(client, frozen_now) -> None:
+    task = _task(client, estimated_hours=20)
+    # 月曜 9:00 から 1 時間、12/31 まで → 10/5〜12/28 の月曜 13 回（今月末で切らない）
+    _event(
+        client,
+        task_id=task["id"],
+        start="2026-10-05T00:00:00Z",
+        recurrence={
+            "type": "WEEKLY",
+            "interval": 1,
+            "end_date": "2026-12-31",
+            "weekly": {"weekdays": ["MO"]},
+        },
+    )
+    assert _get(client, task["id"])["scheduled_hours"] == 13.0
+    res = client.get("/api/tasks", params={"scheduled_until": "2026-10-11"})
+    [seen] = [t for t in res.json() if t["id"] == task["id"]]
+    assert seen["scheduled_hours"] == 13.0
