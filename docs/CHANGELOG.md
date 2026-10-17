@@ -4,6 +4,8 @@
 
 ## 2026-10-17
 
+- **CI の Python を本番のイメージと同じ 3.14 にした**（task #461）。CI は 3.12 のまま、本番のイメージだけ Renovate が 3.14 に上げていた。
+  試験は `.python-version` の版で走り、最初の段で Dockerfile の `FROM python:X.Y` と揃っているかを確かめる（ずれたら落ちる）。
 - **実績の画面の「全体の進捗」で、応答の項目が欠けたときに「完了 NaN / 全 undefined タスク」と出さないようにした**（task #463）。
   `GET /api/dashboard/kpi` が `total_tasks` か `incomplete_tasks` を欠いた（見本の `{}`・配列・HTML など）ときは行ごと出さない。本番の API は全項目を必ず返す。
 - **リポジトリの直下にあった `=1.13` と `=2.0` を消した**（task #462）。`pip install x>=1.13` を引用符なしで打った跡（uv の出力がファイルに入っていた）。

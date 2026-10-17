@@ -86,7 +86,7 @@ MVPのゴールは「タスクを登録すること」ではなく、**「今日
             │ REST API (JSON)
 ┌───────────▼─────────────┐
 │  FastAPI Backend        │
-│  Python 3.12            │
+│  Python 3.14            │
 │  SQLAlchemy + Alembic   │
 └───────────┬─────────────┘
             │ SQL (mariadb-connector)
@@ -137,7 +137,7 @@ MVPのゴールは「タスクを登録すること」ではなく、**「今日
 
 | 項目          | 採用技術           |
 | ----------- | -------------- |
-| 言語          | Python 3.12    |
+| 言語          | Python 3.14    |
 | Web フレームワーク | FastAPI        |
 | ORM         | SQLAlchemy 2.x |
 | マイグレーション    | Alembic        |
