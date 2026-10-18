@@ -40,6 +40,6 @@ describe('断られた理由の読み分け（time_entry_use_cases.py の文）'
     const text = translations.ja['timer.reason.periodClosed'];
     expect(text).toContain('{first}');
     expect(text).toContain('{last}');
-    expect(text).not.toMatch(/[A-Za-z]{4,}/);
+    expect(text.replace(/\{\w+\}/g, '')).not.toMatch(/[A-Za-z]{4,}/);
   });
 });
