@@ -30,8 +30,8 @@ const PressNoticeView: React.FC<{ notice: PressNotice | null; onClose: () => voi
     >
       <Alert severity={notice?.kind === 'failure' ? 'error' : severity} onClose={onClose} sx={{ width: '100%' }}>
         {text}
-        {notice?.kind === 'dropped' && notice.detail && (
-          <Box component="span" sx={{ display: 'block', mt: '4px', fontSize: 12, opacity: 0.85 }}>{notice.detail}</Box>
+        {notice?.kind === 'dropped' && notice.reason && (
+          <Box component="span" sx={{ display: 'block', mt: '4px', fontSize: 12, opacity: 0.85 }}>{t(notice.reason.key, notice.reason.params)}</Box>
         )}
       </Alert>
     </Snackbar>

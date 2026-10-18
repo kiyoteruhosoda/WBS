@@ -9,7 +9,7 @@ import type { PendingPress, PressAction, SendOutcome } from './pendingPresses';
 import { timerPressQueue } from './timerPressQueue';
 import { CURRENT_TIME_ENTRY_KEY } from './timerState';
 import type { CurrentSnapshot, TimerFailure } from './timerState';
-import { timerFailureOf } from './timerState';
+import { timerFailureOf, type TimerReason } from './timerState';
 import { TODAY_SUMMARY_KEY } from '../api/today';
 import { CLOSING_BOARD_KEY } from '../api/closing';
 
@@ -61,7 +61,7 @@ export type PressNotice =
   /** 送れずに残した（つながっているのに 5xx・403 等）。もう一度押さなくてよい */
   | { kind: 'kept' }
   /** 捨てた（サーバが二度と受け取らない・7 日より前） */
-  | { kind: 'dropped'; count: number; detail: string | null };
+  | { kind: 'dropped'; count: number; reason: TimerReason | null };
 
 let notice: PressNotice | null = null;
 const noticeListeners = new Set<() => void>();
@@ -134,7 +134,10 @@ export const useTimerWrites = () => {
       // 捨てた分は画面の控えと食い違う。読み直す
       void qc.invalidateQueries({ queryKey: CURRENT_TIME_ENTRY_KEY });
       const last = outcome.dropped[outcome.dropped.length - 1];
-      setNotice({ kind: 'dropped', count: outcome.dropped.length, detail: last.error ? timerFailureOf(last.error).detail : null });
+      const reason: TimerReason | null = last.reason === 'tooOld'
+        ? { key: 'timer.reason.tooOld' }
+        : timerFailureOf(last.error).reason;
+      setNotice({ kind: 'dropped', count: outcome.dropped.length, reason });
     } else if (outcome.stoppedBy != null && !isNetworkFailure(outcome.stoppedBy) && !isUnauthorized(outcome.stoppedBy)) {
       setNotice({ kind: 'kept' });
     }
@@ -152,7 +155,7 @@ export const useTimerWrites = () => {
         ...(action === 'start' && task !== undefined ? { taskId: task.id, taskTitle: task.title ?? null } : {}),
       });
     } catch {
-      setNotice({ kind: 'failure', failure: { conflict: false, detail: null } });
+      setNotice({ kind: 'failure', failure: { conflict: false, reason: null } });
       return;
     }
     await sendPending();

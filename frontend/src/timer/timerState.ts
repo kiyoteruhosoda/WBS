@@ -3,6 +3,7 @@
 
 import type { CurrentTimeEntry, TimeEntry } from '../types';
 import { errorDetailOf } from '../calendar/calendarRequests';
+import type { TranslationKey } from '../i18n/translations';
 
 export const CURRENT_TIME_ENTRY_KEY = ['time-entries', 'current'] as const;
 
@@ -20,17 +21,40 @@ export interface CurrentSnapshot {
 export const elapsedOf = (snapshot: CurrentSnapshot, entry: TimeEntry, nowMs: number): number =>
   Date.parse(snapshot.current.server_now) - Date.parse(entry.started_at) + (nowMs - snapshot.receivedAt);
 
+/** 打刻が断られた理由（画面の言葉）。 */
+export interface TimerReason {
+  key: TranslationKey;
+  params?: Record<string, string | number>;
+}
+
 /** 打刻の書き込みの失敗。 */
 export interface TimerFailure {
   /**
    * 409: いまの状態では書き込めない（確定済みの締めの期間に掛かるなど）。押し直しても通らないので、
-   * 「もう一度押して」とは言わない。理由はサーバの文言（detail）をそのまま添える
+   * 「もう一度押して」とは言わない
    */
   conflict: boolean;
-  detail: string | null;
+  /** 断られた理由。読み分けられない理由は null（サーバの英語の文はそのまま出さない。task #499） */
+  reason: TimerReason | null;
 }
+
+/**
+ * サーバの `detail`（英語の固定文）→ 理由。文で見分ける
+ * （`src/application/use_cases/time_entry_use_cases.py` の start / stop / 打刻の書き換え）。
+ */
+export const timerReasonOf = (detail: string | null): TimerReason | null => {
+  if (!detail) return null;
+  const closed = /closing period (\d{4}-\d{2}-\d{2})\.\.(\d{4}-\d{2}-\d{2}) is closed/i.exec(detail);
+  if (closed) return { key: 'timer.reason.periodClosed', params: { first: closed[1], last: closed[2] } };
+  if (/is closed; reopen/i.test(detail)) return { key: 'timer.reason.periodClosedNoDates' };
+  if (/overlaps an exceptional/i.test(detail)) return { key: 'timer.reason.overlapOverride' };
+  if (/overlaps? another time entry/i.test(detail)) return { key: 'timer.reason.overlap' };
+  if (/before the running time entry started/i.test(detail)) return { key: 'timer.reason.beforeRunning' };
+  if (/already running/i.test(detail)) return { key: 'timer.reason.alreadyRunning' };
+  return null;
+};
 
 export const timerFailureOf = (error: unknown): TimerFailure => {
   const status = (error as { response?: { status?: number } } | null)?.response?.status;
-  return { conflict: status === 409, detail: errorDetailOf(error) };
+  return { conflict: status === 409, reason: timerReasonOf(errorDetailOf(error)) };
 };
