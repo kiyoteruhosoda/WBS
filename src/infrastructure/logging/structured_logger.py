@@ -8,6 +8,11 @@ from typing import Any
 
 from src.shared.clock import isoformat_utc, utcnow
 
+#: 通信の道具の標準の行（httpx の ``HTTP Request: GET <URL> ...``・httpcore の接続の行）は URL を丸ごと載せる。
+#: 取り込んだカレンダーの URL（Google の非公開アドレス・Outlook の公開 URL）はそれだけで中身が読めるので、
+#: INFO 以下は出さない（task #495・ADR-0037）。誤りの行（WARNING 以上）は残す。
+QUIET_URL_LOGGERS = ("httpx", "httpcore")
+
 _STDLIB_ATTRS = frozenset(
     {
         "name",
@@ -87,6 +92,9 @@ def setup_logging(level: str = "INFO", log_dir: str = "logs") -> None:
     access.handlers.clear()
     access.addHandler(_make_rotating_handler(os.path.join(log_dir, "access.log")))
     access.propagate = False
+
+    for name in QUIET_URL_LOGGERS:
+        logging.getLogger(name).setLevel(logging.WARNING)
 
     # Suppress uvicorn's built-in access log (we handle it via middleware)
     logging.getLogger("uvicorn.access").handlers = []

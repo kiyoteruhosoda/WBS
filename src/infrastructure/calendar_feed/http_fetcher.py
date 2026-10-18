@@ -10,6 +10,7 @@
 ⚠ 名前を引いてから接続するまでの間に答えが変わる（DNS の付け替え）ことまでは防がない。
 
 ⚠ URL そのものはログに出さない（Google の非公開アドレス・Outlook の公開 URL は、それだけで中身が読める）。
+  httpx の標準の行（INFO の ``HTTP Request: GET <URL>``）は ``setup_logging`` が止める（task #495）。
 """
 
 from __future__ import annotations
