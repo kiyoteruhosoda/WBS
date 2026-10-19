@@ -1,6 +1,8 @@
-# Task Scheduler
+# WBS
 
-個人・小規模プロジェクト向けの WBS / タスク管理 MVP です。DDD を意識し、Domain 層に状態遷移・スコア算出などの業務ルールを寄せ、Presentation 層は REST API として公開します。
+チームでプロジェクトを進めるための WBS（作業の分解）とタスク管理の道具です。プロジェクトの視点で、自分以外の人のタスク・担当・工数をまとめて見ます。
+工数はここでは計らず、個人の工数を計る NolumiaTracker から締めた時間を受け取ります（個人の予定は NolumiaScheduler）。
+DDD を意識し、Domain 層に状態遷移・スコア算出などの業務ルールを寄せ、Presentation 層は REST API として公開します。
 
 ## 実装済み
 

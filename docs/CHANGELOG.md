@@ -4,6 +4,7 @@
 
 ## 2026-10-19
 
+- **名前を「WBS」に揃えた**（task #545）。画面の上部・ログイン画面・ブラウザのタブの題を「WBS」にし、ホーム画面に置いたときの説明を「プロジェクトのタスク・担当・工数」にした。README の題と説明をチームのプロジェクトの道具に書き直した（個人の工数は NolumiaTracker、個人の予定は NolumiaScheduler）。
 - **予定まわりを Scheduler へ移すための関所を足した**（task #535、ADR-0054。Scheduler の ADR-0054 の段 0・1）。設定が無ければ何も変わらない。
   `SCHEDULER_CUTOVER_HOLD=true` で予定・カレンダー・休み・取り込み・表示の組み合わせの書き込みを 503 で待たせ、取り込みの読み込み直しも止める。
   `SCHEDULER_FORWARD_URL` を入れると移転モード: wbstimer の予定のアラームの口（Bearer）は Scheduler へそのまま中継し（1 件ごとに `scheduler.relay` のログ）、
