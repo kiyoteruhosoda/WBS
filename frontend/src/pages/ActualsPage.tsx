@@ -8,6 +8,8 @@ import TaskActualsPanel from '../components/actuals/TaskActualsPanel';
 import PeriodsPanel from '../components/actuals/PeriodsPanel';
 import BreakdownPanel from '../components/actuals/BreakdownPanel';
 import ExportPanel from '../components/actuals/ExportPanel';
+import { TrackerMovedNotice } from '../components/TrackerMovedNotice';
+import { useTrackerMove } from '../tracker/useTrackerMove';
 
 type View = 'tasks' | 'review' | 'periods' | 'breakdown' | 'export';
 const VIEWS: View[] = ['tasks', 'review', 'periods', 'breakdown', 'export'];
@@ -20,9 +22,12 @@ const ActualsPage: React.FC = () => {
   // 「残を見直す」はタスクの表を見直しが要るものに絞った形
   const tab = view === 'review' ? 'tasks' : view;
   const go = (next: View) => navigate(next === 'tasks' ? '/actuals' : `/actuals/${next}`);
+  // 打刻を Tracker へ移した後は、打刻から数える時間をサーバが出さない（task #526 / ADR-0053）
+  const trackerMove = useTrackerMove();
 
   return (
     <Box>
+      {trackerMove.moved && <TrackerMovedNotice url={trackerMove.url} bodyKey="tracker.actualsBody" sx={{ mb: '14px' }} />}
       <Tabs value={tab} onChange={(_, v: View) => go(v)} sx={{ mb: '14px', minHeight: 40 }}>
         <Tab value="tasks" label={t('actuals.tabTasks')} />
         <Tab value="periods" label={t('actuals.tabPeriods')} />

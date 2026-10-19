@@ -169,6 +169,14 @@ export interface AppInfo {
   environment: string;
 }
 
+/** 打刻まわりを Tracker へ移したか（task #526 / ADR-0053。`GET /api/tracker-move`） */
+export interface TrackerMove {
+  /** off: WBS に記録 / hold: 切り替え中（書き込みはあとで送り直す） / moved: Tracker に記録 */
+  mode: 'off' | 'hold' | 'moved';
+  /** Tracker の番地 */
+  url: string;
+}
+
 // ── 認証（SSO）─────────────────────────────────────────────────────────────
 export interface AuthConfig {
   mode: 'single_user' | 'oidc';

@@ -84,6 +84,7 @@ from src.infrastructure.repositories.user_account_repository import (
 )
 from src.infrastructure.repositories.work_break_repository import SqlAlchemyWorkBreakRepository
 from src.infrastructure.repositories.work_log_repository import SqlAlchemyWorkLogRepository
+from src.infrastructure.tracker_move.tracker_move_settings import TrackerMoveSettings
 from src.infrastructure.wintrack_release.s3_release_file_store import S3ReleaseFileStore
 from src.infrastructure.wintrack_release.wintrack_release_settings import (
     load_wintrack_release_settings,
@@ -105,6 +106,13 @@ def get_auth_settings(request: Request) -> AuthSettings:
     return request.app.state.auth_settings
 
 AuthSettingsDep = Annotated[AuthSettings, Depends(get_auth_settings)]
+
+
+def get_tracker_move_settings(request: Request) -> TrackerMoveSettings:
+    """打刻まわりを Tracker へ移したか（task #526 / ADR-0053。``create_app`` が置く）。"""
+    return request.app.state.tracker_move_settings
+
+TrackerMoveSettingsDep = Annotated[TrackerMoveSettings, Depends(get_tracker_move_settings)]
 
 
 def get_identity_provider(request: Request) -> IdentityProvider:
@@ -318,13 +326,14 @@ def get_task_removal_use_cases(db: DbDep) -> TaskRemovalUseCases:
 TaskRemovalUseCasesDep = Annotated[TaskRemovalUseCases, Depends(get_task_removal_use_cases)]
 
 
-def get_today_use_cases(db: DbDep) -> TodayUseCases:
+def get_today_use_cases(db: DbDep, tracker_move: TrackerMoveSettingsDep) -> TodayUseCases:
     """「今日」の画面の要約。時計は 1 つを共有する（タスクの期限の近さと今日の区切りを揃える）。"""
     clock = UserClock(db)
     return TodayUseCases(
         clock,
         time_entries=get_time_entry_use_cases(db),
         tasks=TaskUseCases(db, clock, scheduled_time=get_calendar_event_use_cases(db)),
+        tracked_time_moved=tracker_move.moved,
     )
 
 TodayUseCasesDep = Annotated[TodayUseCases, Depends(get_today_use_cases)]
@@ -359,7 +368,7 @@ def get_closing_use_cases(db: DbDep) -> ClosingUseCases:
 ClosingUseCasesDep = Annotated[ClosingUseCases, Depends(get_closing_use_cases)]
 
 
-def get_actuals_use_cases(db: DbDep) -> ActualsUseCases:
+def get_actuals_use_cases(db: DbDep, tracker_move: TrackerMoveSettingsDep) -> ActualsUseCases:
     """実績の見える化（ADR-0017）。時計は 1 つを共有する（タスクの予定済みと期間の区切りを揃える）。"""
     clock = UserClock(db)
     calendar = get_calendar_event_use_cases(db)
@@ -375,6 +384,7 @@ def get_actuals_use_cases(db: DbDep) -> ActualsUseCases:
         projects=SqlAlchemyProjectRepository(db),
         occurrences=calendar,
         breaks=SqlAlchemyWorkBreakRepository(db),
+        tracked_time_moved=tracker_move.moved,
     )
 
 ActualsUseCasesDep = Annotated[ActualsUseCases, Depends(get_actuals_use_cases)]

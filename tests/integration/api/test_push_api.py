@@ -303,6 +303,24 @@ def test_a_timer_left_running_is_sent_even_to_devices_left_to_the_timer_app(push
     assert push_service.received == [MY_ENDPOINT]
 
 
+def test_after_the_move_to_tracker_only_calendar_notices_are_sent(push_client, sender, push_service, db, monkeypatch) -> None:
+    """打刻を Tracker へ移したら、打刻の止め忘れ（と締めの時期）は WBS から送らない（task #526 / ADR-0053）。"""
+    _subscribe(push_client)
+    started = utcnow() - timedelta(hours=5)
+    res = push_client.post("/api/time-entries/start", json={"at": started.isoformat() + "Z"})
+    assert res.status_code in (200, 201), res.text
+
+    now = utcnow()
+    monkeypatch.setattr(push_dispatch, "utcnow", lambda: now)
+    assert push_dispatch.dispatch_once(sender, tracked_time_moved=True).notices == 0
+    assert push_service.received == []
+
+    # 予定の通知は段 2 まで WBS から送る
+    _event(push_client)
+    monkeypatch.setattr(push_dispatch, "utcnow", lambda: FIFTEEN_BEFORE)
+    assert push_dispatch.dispatch_once(sender, tracked_time_moved=True).notices == 1
+
+
 def test_a_gone_subscription_is_removed(push_client, sender, push_service, db, dispatch) -> None:
     _event(push_client)
     _subscribe(push_client)

@@ -8,6 +8,7 @@ import {
   setDeviceReceivesCalendar, updatePushPreferences,
 } from '../api/push';
 import type { PushDevice, PushPreferences } from '../api/push';
+import { useTrackerMove } from '../tracker/useTrackerMove';
 import {
   browserPushEnvironment, disableOnThisDevice, enableOnThisDevice, thisDeviceLabel, thisDeviceOf, thisDeviceState,
 } from '../pwa/webPush';
@@ -34,6 +35,8 @@ const help = { fontSize: 12, color: ds.textSub, lineHeight: 1.6 } as const;
 
 type KindKey = 'event_alarm' | 'routine_start' | 'timer_left_running' | 'closing_due';
 const KINDS: KindKey[] = ['event_alarm', 'routine_start', 'timer_left_running', 'closing_due'];
+/** 打刻まわりの通知。Tracker へ移した後は WBS からは送らない（Tracker が送る。task #526 / ADR-0053） */
+const TRACKING_KINDS: readonly KindKey[] = ['timer_left_running', 'closing_due'];
 const kindPatch = (kind: KindKey, on: boolean): Partial<PushPreferences> => {
   const patch: Partial<PushPreferences> = {};
   patch[kind] = on;
@@ -67,6 +70,8 @@ const PushSettings: React.FC = () => {
   const [env] = useState(browserPushEnvironment);
   const inPageAlarm = useInPageAlarmSetting();
   const pushCoversAlarms = usePushCoversAlarms();
+  const trackerMove = useTrackerMove();
+  const kinds = trackerMove.moved ? KINDS.filter((kind) => !TRACKING_KINDS.includes(kind)) : KINDS;
 
   const config = useQuery({ queryKey: ['push', 'config'], queryFn: getPushConfig });
   const preferences = useQuery({ queryKey: PREFERENCES_KEY, queryFn: getPushPreferences });
@@ -207,7 +212,7 @@ const PushSettings: React.FC = () => {
           <Box>
             <Box sx={{ fontSize: 13, fontWeight: 700, color: ds.text, mb: '6px' }}>{t('push.kinds')}</Box>
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              {KINDS.map((kind) => (
+              {kinds.map((kind) => (
                 <Box key={kind} sx={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
                   <FormControlLabel
                     sx={{ mr: 0, minWidth: 180 }}

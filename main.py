@@ -24,6 +24,8 @@ from src.infrastructure.database.session import init_engine
 from src.infrastructure.logging.structured_logger import setup_logging
 from src.infrastructure.push.push_settings import load_push_settings
 from src.infrastructure.push.web_push_sender import WebPushSender
+from src.infrastructure.tracker_move.http_tracker_relay import HttpTrackerRelay
+from src.infrastructure.tracker_move.tracker_move_settings import load_tracker_move_settings
 from src.presentation.api.calendar_feed_refresh import start_calendar_feed_refresh_worker
 from src.presentation.api.push_dispatch import start_push_dispatch_worker
 from src.presentation.api.reconciliation import start_reconciliation_worker
@@ -50,6 +52,7 @@ from src.presentation.api.routers import (
     tasks,
     time_entries,
     today,
+    tracker_move,
     tracking_rules,
     wintrack_releases,
     work_breaks,
@@ -57,6 +60,7 @@ from src.presentation.api.routers import (
 )
 from src.presentation.api.routers import dependencies as dep_router
 from src.presentation.middleware.logging_middleware import RequestLoggingMiddleware
+from src.presentation.middleware.tracker_move_middleware import TrackerMoveMiddleware
 from src.shared.clock import utcnow
 
 
@@ -69,6 +73,8 @@ def create_app(database_url: str | None = None, db_path: str | None = None) -> F
     # カレンダーの取り込み（ADR-0037）。⚠ 購読の URL を封じる鍵が無ければ購読できない（既定は閉じる）
     calendar_feed_fetcher = HttpCalendarFeedFetcher()
     calendar_feed_cipher = load_feed_url_cipher()
+    # 打刻まわりを Tracker へ移す（task #526 / ADR-0053）。⚠ 設定が無ければ今までどおり（既定は切）
+    tracker_move_settings = load_tracker_move_settings()
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
@@ -80,7 +86,9 @@ def create_app(database_url: str | None = None, db_path: str | None = None) -> F
         #   埋めるための 2 段目で、`MACHINE_CLIENT_ID` が無ければ何も起こさない。
         worker = start_reconciliation_worker(auth_settings)
         # 時刻の来た通知を 60 秒ごとに送る係。鍵が無ければ何も起こさない
-        push_worker = start_push_dispatch_worker(push_sender)
+        push_worker = start_push_dispatch_worker(
+            push_sender, tracked_time_moved=tracker_move_settings.moved
+        )
         # 購読しているカレンダーを読み込み直す係。鍵が無ければ何も起こさない
         feed_worker = start_calendar_feed_refresh_worker(
             app.state.calendar_feed_fetcher, app.state.calendar_feed_cipher
@@ -94,6 +102,8 @@ def create_app(database_url: str | None = None, db_path: str | None = None) -> F
                 worker.stop()
             if push_worker is not None:
                 push_worker.stop()
+            if app.state.tracker_relay is not None:
+                await app.state.tracker_relay.aclose()
 
     app = FastAPI(
         title="Task Scheduler",
@@ -107,6 +117,10 @@ def create_app(database_url: str | None = None, db_path: str | None = None) -> F
     app.state.push_sender = push_sender
     app.state.calendar_feed_fetcher = calendar_feed_fetcher
     app.state.calendar_feed_cipher = calendar_feed_cipher
+    app.state.tracker_move_settings = tracker_move_settings
+    app.state.tracker_relay = (
+        HttpTrackerRelay(tracker_move_settings.forward_url) if tracker_move_settings.moved else None
+    )
     # IdP アダプタはディスカバリ文書と JWKS を手元に貯めるので、リクエストごとに
     # 作らず 1 つだけ持つ。SSO 無効時は None（依存が 404 を返す目印になる）。
     app.state.identity_provider = (
@@ -139,6 +153,8 @@ def create_app(database_url: str | None = None, db_path: str | None = None) -> F
         return JSONResponse(status_code=409, content={"type": "about:blank", "title": "Conflict", "status": 409, "detail": str(exc), "instance": str(request.url.path)})
 
     Instrumentator(excluded_handlers=["/metrics"]).instrument(app).expose(app, include_in_schema=False)
+    # 打刻まわりの口の関所（503・409・中継）。アクセスログの内側に置く（中継した答えも記録に残る）
+    app.add_middleware(TrackerMoveMiddleware)
     app.add_middleware(RequestLoggingMiddleware)
     # /health はコンテナ内部の healthcheck 用、/api/health は nginx プロキシ経由の
     # 外形監視用（nginx は /api/ プレフィックスを剥がさずそのまま転送する）。
@@ -174,6 +190,7 @@ def create_app(database_url: str | None = None, db_path: str | None = None) -> F
     app.include_router(calendar.router, prefix="/api")
     app.include_router(calendars.router, prefix="/api")
     app.include_router(calendars.presets_router, prefix="/api")
+    app.include_router(tracker_move.router, prefix="/api")
     return app
 
 

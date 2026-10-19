@@ -7,6 +7,8 @@ import { useI18n } from '../i18n';
 import { useAuth } from '../auth/AuthProvider';
 import AppMark from './AppMark';
 import TimerButton from './TimerButton';
+import TrackerLinkButton from './TrackerLinkButton';
+import { useTrackerMove } from '../tracker/useTrackerMove';
 import ClosingNotice from './closing/ClosingNotice';
 import OfflineNotice from './OfflineNotice';
 import InPageAlarm from './InPageAlarm';
@@ -185,6 +187,8 @@ const Layout: React.FC = () => {
   const location = useLocation();
   const isDesktop = useMediaQuery('(min-width:1024px)');
   const { t } = useI18n();
+  // 打刻を Tracker へ移した後は、打刻ボタンと締めの知らせを出さない（task #526 / ADR-0053）
+  const trackerMove = useTrackerMove();
 
   const titleKey = pageTitles.find((p) => p.pattern.test(location.pathname))?.titleKey;
   const title = titleKey ? t(titleKey) : t('app.name');
@@ -233,8 +237,8 @@ const Layout: React.FC = () => {
           </Box>
           <ScopeBadge />
           <Box sx={{ flex: 1 }} />
-          {/* 打刻（task #154）。どの画面でも上部に出す */}
-          <TimerButton />
+          {/* 打刻（task #154）。どの画面でも上部に出す。Tracker へ移した後は Tracker への案内（task #526） */}
+          {trackerMove.moved ? <TrackerLinkButton url={trackerMove.url} /> : <TimerButton />}
           {/* 予定の通知の音の入り切り（task #520） */}
           <AlarmSoundButton />
           {isDesktop ? (
@@ -263,7 +267,7 @@ const Layout: React.FC = () => {
           <OfflineNotice />
           <InPageAlarm />
           {/* 未確定の締めの期間の知らせ（task #161 / ADR-0012） */}
-          <ClosingNotice />
+          {!trackerMove.moved && <ClosingNotice />}
           <Outlet />
         </Box>
       </Box>

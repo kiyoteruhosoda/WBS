@@ -44,6 +44,9 @@ export interface TimerFailure {
  */
 export const timerReasonOf = (detail: string | null): TimerReason | null => {
   if (!detail) return null;
+  // 打刻を Tracker へ移した（task #526 / ADR-0053。src/presentation/middleware/tracker_move_middleware.py）
+  const moved = /has moved to Tracker \(([^)]+)\)/i.exec(detail);
+  if (moved) return { key: 'timer.reason.movedToTracker', params: { host: moved[1] } };
   const closed = /closing period (\d{4}-\d{2}-\d{2})\.\.(\d{4}-\d{2}-\d{2}) is closed/i.exec(detail);
   if (closed) return { key: 'timer.reason.periodClosed', params: { first: closed[1], last: closed[2] } };
   if (/is closed; reopen/i.test(detail)) return { key: 'timer.reason.periodClosedNoDates' };

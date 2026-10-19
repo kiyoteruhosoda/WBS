@@ -199,3 +199,36 @@ ADR-0031。⚠ **鍵が無ければ通知は送らない**（既定。画面は�
      置き場・権限・形（P-256 の PEM）を見直す
    - 設定 → 「端末への通知」で「この端末で受け取る」が押せること（ログイン中に `GET /api/push/config` が `enabled: true`）
    - 送ったときはログに `push.dispatch.finished`（送った数・届いた数・外した数・失敗した数）
+
+## 打刻まわりを Tracker へ移すとき（切り替えの 503 と移転モード）
+
+ADR-0053（Tracker の ADR-0053 の段 0・1）。⚠ **設定が無ければ今までどおり**（既定は切）。⚠ 移転モードの後は、設定を外しても戻らない
+（中継の間の記録は Tracker にしか無い）。
+
+| 環境変数 | 値 |
+|---|---|
+| `TRACKER_CUTOVER_HOLD` | `true` で打刻まわりの書き込みを 503（`Retry-After: 120`）。外すか `false` で切 |
+| `TRACKER_FORWARD_URL` | Tracker の api のクラスタの中の番地（prod は `http://api.tracker-prod.svc.cluster.local:8000`）。入れると移転モード |
+| `TRACKER_PUBLIC_URL` | 画面の案内の行き先。prod は省略（`https://tracker.nolumia.com`）、stg は stg の Tracker の番地 |
+
+1. WBS の ConfigMap に `TRACKER_CUTOVER_HOLD=true` を足して当て直す。確かめる:
+
+   ```bash
+   curl -s https://wbs.nolumia.com/api/tracker-move        # {"mode":"hold",...}
+   ```
+
+2. WBS の DB の写しを取り、Tracker の prod へ写して、件数と締めの結果を突き合わせる（手順は Tracker のリポジトリ）
+3. 合ったら、同じ当て直しで `TRACKER_FORWARD_URL=<Tracker の api の番地>` を足し、`TRACKER_CUTOVER_HOLD` を外す。確かめる:
+   - `GET /api/tracker-move` が `{"mode":"moved",...}`
+   - api のログに `"event": "tracker.relay"` の行が出る（溜まっていた端末の書き込みが Tracker へ入った）
+   - WBS の画面の上部が「Tracker で記録」になる（画面の新しい版を読み込んでから）
+4. 合わなかったら、3 へ進まずに `TRACKER_CUTOVER_HOLD` を外して当て直す（WBS のまま続ける。503 の間の分は端末が送り直す）
+
+中継に来た数を数えるとき（古い端末が残っているか）:
+
+```bash
+kubectl -n wbs-prod logs deploy/api --since=24h | grep '"event": "tracker.relay"' \
+  | jq -r '[.route, .client_id] | @tsv' | sort | uniq -c
+```
+
+`"event": "tracker.relay.failed"` が出ていたら、Tracker の api に届いていない（`TRACKER_FORWARD_URL`・Tracker の Pod を見る）。
