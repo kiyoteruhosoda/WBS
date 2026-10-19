@@ -3,7 +3,7 @@ export type Lang = 'ja' | 'en';
 // UI文言の辞書。キーは「画面.用途」で命名する。
 // 文中の {name} はパラメータとして t() の第2引数で置換される。
 const ja = {
-  'app.name': 'タスク管理',
+  'app.name': 'WBS',
 
   'nav.today': '今日',
   'nav.tasks': 'タスク',
@@ -870,7 +870,7 @@ const ja = {
 };
 
 const en: Record<TranslationKey, string> = {
-  'app.name': 'Task Manager',
+  'app.name': 'WBS',
 
   'nav.today': 'Today',
   'nav.tasks': 'Tasks',

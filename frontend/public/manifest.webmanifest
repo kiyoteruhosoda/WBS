@@ -2,7 +2,7 @@
   "id": "/",
   "name": "WBS",
   "short_name": "WBS",
-  "description": "タスク・予定・打刻・締め",
+  "description": "プロジェクトのタスク・担当・工数",
   "lang": "ja",
   "start_url": "/",
   "scope": "/",
