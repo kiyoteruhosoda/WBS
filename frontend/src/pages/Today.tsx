@@ -51,6 +51,8 @@ import { createTimeEntry, deleteTimeEntry, updateTimeEntry } from '../api/timeEn
 import { CLOSING_BOARD_KEY } from '../api/closing';
 import { closingFailureOf } from '../closing/closingRequests';
 import TodayEntryDialog from '../components/today/TodayEntryDialog';
+import { TrackerMovedNotice } from '../components/TrackerMovedNotice';
+import { useTrackerMove } from '../tracker/useTrackerMove';
 import { useClockStyle } from '../preferences/clockStyle';
 import { formatClockTime } from '../clock/clockFace';
 
@@ -275,7 +277,9 @@ const RoutineList: React.FC<{
   onToggleDone: (occurrence: CalendarOccurrence) => void;
   onStart: (taskId: number) => void;
   onOpen: (occurrence: CalendarOccurrence) => void;
-}> = ({ occurrences, timeZone, running, titleOf, busy, onToggleDone, onStart, onOpen }) => {
+  /** 打刻を始められるか（Tracker へ移した後は始めない。task #526） */
+  startable: boolean;
+}> = ({ occurrences, timeZone, running, titleOf, busy, onToggleDone, onStart, onOpen, startable }) => {
   const { t } = useI18n();
   const done = occurrences.filter((o) => o.is_done).length;
   return (
@@ -287,7 +291,7 @@ const RoutineList: React.FC<{
         </Box>
       </Box>
       {occurrences.map((o) => {
-        const intent = o.is_done ? null : occurrenceStartOf(o, running);
+        const intent = o.is_done || !startable ? null : occurrenceStartOf(o, running);
         const startLabel = intent && intent !== 'running'
           ? t(intent === 'switch' ? 'today.switchTask' : 'today.startTask', { title: titleOf(o) })
           : null;
@@ -538,6 +542,9 @@ const Today: React.FC = () => {
   // 広い画面の時間グリッドは画面の下端まで（上に締めの知らせが出ても、ページ全体ははみ出さない）
   const fill = useHeightToViewportBottom<HTMLDivElement>(24, wide);
   const nowMs = useMinuteClock();
+  // 打刻を Tracker へ移した後は、打刻の欄（いまの打刻・今日の実績・予定から始める）を Tracker への案内に替える。
+  // サーバも打刻を返さない（凍った値を今のものに見せない。task #526 / ADR-0053）
+  const trackerMove = useTrackerMove();
 
   const summaryQuery = useQuery({ queryKey: TODAY_SUMMARY_KEY, queryFn: fetchSummary, refetchInterval: 60_000 });
   const snapshot = summaryQuery.data;
@@ -705,18 +712,22 @@ const Today: React.FC = () => {
       // 右の列の行は中身の高さ（auto だと、overflow: hidden のカードは最小が 0 とみなされ、行が詰められて重なる）
       gridTemplateRows: { md: `${'max-content '.repeat(hasRoutine ? 4 : 3)}1fr` },
     }}>
-      <NowPanel
-        snapshot={current}
-        timeZone={timeZone}
-        totalSeconds={live.totalSeconds}
-        current={currentSegment}
-        next={nextSegment}
-        linkedTasks={linkedTasks}
-        busy={writes.busy}
-        taskDecidedOnSend={pendingStart != null && pendingStart.taskId === undefined}
-        onStart={start}
-        onStop={writes.stop}
-      />
+      {trackerMove.moved ? (
+        <TrackerMovedNotice url={trackerMove.url} bodyKey="tracker.todayBody" sx={{ gridArea: 'now' }} />
+      ) : (
+        <NowPanel
+          snapshot={current}
+          timeZone={timeZone}
+          totalSeconds={live.totalSeconds}
+          current={currentSegment}
+          next={nextSegment}
+          linkedTasks={linkedTasks}
+          busy={writes.busy}
+          taskDecidedOnSend={pendingStart != null && pendingStart.taskId === undefined}
+          onStart={start}
+          onStop={writes.stop}
+        />
+      )}
 
       {hasRoutine && (
         <RoutineList
@@ -728,6 +739,7 @@ const Today: React.FC = () => {
           onToggleDone={editing.toggleDone}
           onStart={start}
           onOpen={editing.openEdit}
+          startable={!trackerMove.moved}
         />
       )}
 
@@ -787,7 +799,7 @@ const Today: React.FC = () => {
             linkedTasks={linkedTasks}
             bands={bands}
             scrollLeadMinutes={SCROLL_LEAD_MINUTES}
-            occurrenceAction={(o) => (
+            occurrenceAction={trackerMove.moved ? undefined : (o) => (
               <BlockStart
                 occurrence={o}
                 running={running}
@@ -806,16 +818,18 @@ const Today: React.FC = () => {
         categories={categories}
         shownFirst={wide ? 8 : TASKS_SHOWN_FIRST}
       />
-      <ActualsCard
-        totalSeconds={live.totalSeconds}
-        actuals={live.actuals}
-        entries={entriesInOrder(summary.entries)}
-        timeZone={timeZone}
-        nowMs={nowMs}
-        colorOf={colorOf}
-        onOpenEntry={openEntry}
-        onAdd={() => openEntry(null)}
-      />
+      {!trackerMove.moved && (
+        <ActualsCard
+          totalSeconds={live.totalSeconds}
+          actuals={live.actuals}
+          entries={entriesInOrder(summary.entries)}
+          timeZone={timeZone}
+          nowMs={nowMs}
+          colorOf={colorOf}
+          onOpenEntry={openEntry}
+          onAdd={() => openEntry(null)}
+        />
+      )}
 
       {editing.dialogs}
       {entryDialog && (

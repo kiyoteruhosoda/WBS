@@ -78,9 +78,13 @@ class TodayUseCases:
         tasks: TaskUseCases,
         *,
         now: Callable[[], datetime] | None = None,
+        tracked_time_moved: bool = False,
     ) -> None:
         self._clock = clock
         self._time_entries = time_entries
+        # 打刻を Tracker へ移した（task #526 / ADR-0053）。WBS の打刻の表は凍っているので読まない
+        # （凍った値を今のものに見せない）。打刻・走っている打刻・今日の実績は空で返す
+        self._tracked_time_moved = tracked_time_moved
         self._tasks = tasks
         # 既定は作るときに引く（試験でモジュールの utcnow を差し替えられるように）
         self._now = now or utcnow
@@ -91,7 +95,11 @@ class TodayUseCases:
         day_start, day_end = self._clock.utc_window(user_id, today, today)
         now = self._now()
 
-        entries = self._time_entries.list_in_period(user_id, day_start, day_end)
+        entries = (
+            []
+            if self._tracked_time_moved
+            else self._time_entries.list_in_period(user_id, day_start, day_end)
+        )
         running = next((v for v in entries if v.entry.is_running), None)
 
         titles = {v.entry.task_id: v.task_title for v in entries}

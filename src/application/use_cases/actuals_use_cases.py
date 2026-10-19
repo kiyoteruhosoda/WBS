@@ -86,8 +86,11 @@ class ActualsUseCases:
         occurrences: OccurrenceSource,
         breaks: WorkBreakRepository | None = None,
         now: Callable[[], datetime] | None = None,
+        tracked_time_moved: bool = False,
     ) -> None:
         self._clock = clock
+        # 打刻を Tracker へ移した（task #526 / ADR-0053）。打刻から数える時間（TRACKED）は出さない
+        # （凍った値を今のものに見せない）。確定した実績（work_logs）はそのまま
         # 休み（ADR-0048）。打刻の時間から重なる分を引く。None は「休みを繋がない」（試験）
         self._breaks = breaks
         self._tasks = tasks
@@ -101,6 +104,7 @@ class ActualsUseCases:
         self._occurrences = occurrences
         # 既定は作るときに引く（試験でモジュールの utcnow を差し替えられるように）
         self._now = now or utcnow
+        self._tracked_time_moved = tracked_time_moved
 
     # ── タスクごと ──────────────────────────────────────────────────────
 
@@ -425,6 +429,8 @@ class ActualsUseCases:
                     continue
                 task_id = occurrence.task_id if occurrence.task_id in owned else None
                 ledger.add(task_id, occurrence.date, occurrence.duration_minutes * 60)
+            return ledger
+        if self._tracked_time_moved:
             return ledger
         # 打刻: 日をまたぐ打刻は利用者の 0:00 で割る（締めと同じ割り方）。タスクが空・消えた・他人のものはタスク外。
         # 重なる休みの時間は引く（締めの確定と同じ計算。ADR-0048）

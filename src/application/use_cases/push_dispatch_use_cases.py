@@ -86,6 +86,7 @@ class DispatchPushNotices:
         sender: PushSender,
         unit_of_work: UnitOfWork,
         now: Callable[[], datetime] = utcnow,
+        tracked_time_moved: bool = False,
     ) -> None:
         self._subscriptions = subscriptions
         self._preferences = preferences
@@ -98,6 +99,8 @@ class DispatchPushNotices:
         self._sender = sender
         self._uow = unit_of_work
         self._now = now
+        # 打刻を Tracker へ移した（task #526 / ADR-0053）。打刻の止め忘れと締めの時期は Tracker が送る
+        self._tracked_time_moved = tracked_time_moved
 
     def execute(self) -> DispatchReport:
         report = DispatchReport()
@@ -136,7 +139,7 @@ class DispatchPushNotices:
                 user.id, today - timedelta(days=1), today + timedelta(days=1), zone_name
             )
             notices.extend(planner.calendar_notices(occurrences, now, preferences))
-        if preferences.timer_left_running:
+        if preferences.timer_left_running and not self._tracked_time_moved:
             entry = self._entries.find_running(user.id)
             running = None
             if entry is not None:
@@ -148,7 +151,7 @@ class DispatchPushNotices:
                 running = RunningTimer(entry, task.title if task is not None else None)
             if (notice := planner.timer_notice(running, now, preferences)) is not None:
                 notices.append(notice)
-        if preferences.closing_due and (
+        if preferences.closing_due and not self._tracked_time_moved and (
             notice := planner.closing_notice(self._closings.pending(user.id, zone_name), now, preferences)
         ) is not None:
             notices.append(notice)

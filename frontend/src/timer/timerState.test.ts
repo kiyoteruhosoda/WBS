@@ -13,6 +13,14 @@ describe('打刻の書き込みの失敗', () => {
     });
   });
 
+  it('Tracker へ移した後の 409 は、移った先を添える（task #526）', () => {
+    const error = refused(409, 'Time tracking has moved to Tracker (tracker.nolumia.com)');
+    expect(timerFailureOf(error)).toEqual({
+      conflict: true,
+      reason: { key: 'timer.reason.movedToTracker', params: { host: 'tracker.nolumia.com' } },
+    });
+  });
+
   it('ほかの失敗・応答の無い失敗は押し直しを促す側', () => {
     expect(timerFailureOf({ response: { status: 500 } })).toEqual({ conflict: false, reason: null });
     expect(timerFailureOf(new Error('Network Error'))).toEqual({ conflict: false, reason: null });

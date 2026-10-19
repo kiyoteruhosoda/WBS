@@ -12,19 +12,27 @@ import type { CurrentSnapshot, TimerFailure } from './timerState';
 import { timerFailureOf, type TimerReason } from './timerState';
 import { TODAY_SUMMARY_KEY } from '../api/today';
 import { CLOSING_BOARD_KEY } from '../api/closing';
+import { useTrackerMove } from '../tracker/useTrackerMove';
 
 const fetchCurrent = async (): Promise<CurrentSnapshot> => ({
   current: await getCurrentTimeEntry(),
   receivedAt: Date.now(),
 });
 
-/** いま走っている打刻の控え。別の端末で押した分も拾うよう 1 分ごとに読み直す。 */
-export const useCurrentTimeEntry = () => useQuery({
-  queryKey: CURRENT_TIME_ENTRY_KEY,
-  queryFn: fetchCurrent,
-  refetchInterval: 60_000,
-  staleTime: 0,
-});
+/**
+ * いま走っている打刻の控え。別の端末で押した分も拾うよう 1 分ごとに読み直す。
+ * Tracker へ移した後は読まない（WBS の打刻は凍っている。凍った値を今のものに見せない。task #526）。
+ */
+export const useCurrentTimeEntry = () => {
+  const { moved } = useTrackerMove();
+  return useQuery({
+    queryKey: CURRENT_TIME_ENTRY_KEY,
+    queryFn: fetchCurrent,
+    refetchInterval: 60_000,
+    staleTime: 0,
+    enabled: !moved,
+  });
+};
 
 /** 押した人。SSO を使わない配備（利用者が 1 人）では 0 */
 const useTimerUserId = (): number => useAuth().user?.user_id ?? 0;

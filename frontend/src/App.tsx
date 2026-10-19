@@ -20,6 +20,7 @@ import MilestonesPage from './pages/MilestonesPage';
 import ProjectsPage from './pages/ProjectsPage';
 import Settings from './pages/Settings';
 import AppReturnPage from './pages/AppReturnPage';
+import { MovedToTrackerGate } from './components/TrackerMovedNotice';
 import { I18nProvider } from './i18n';
 import { AuthProvider } from './auth/AuthProvider';
 import AppUpdatePrompt from './components/AppUpdatePrompt';
@@ -57,13 +58,14 @@ const SignedInApp: React.FC = () => (
           <Route path="actuals/:view" element={<ActualsPage />} />
           <Route path="calendar" element={<CalendarPage />} />
           <Route path="calendar/settings" element={<CalendarSettingsPage />} />
-          <Route path="closing" element={<ClosingPage />} />
+          {/* 締めと規則は Tracker へ移したら Tracker の同じ画面への案内に替える（task #526 / ADR-0053） */}
+          <Route path="closing" element={<MovedToTrackerGate><ClosingPage /></MovedToTrackerGate>} />
           <Route path="inbox" element={<Inbox />} />
           <Route path="projects" element={<ProjectsPage />} />
           <Route path="categories" element={<CategoriesPage />} />
           {/* PC の自動記録の規則（ADR-0043）。new は WinTrack が欄を埋めて開く。key で作り直して欄を読み直す */}
-          <Route path="tracking-rules" element={<TrackingRulesPage key="list" />} />
-          <Route path="tracking-rules/new" element={<TrackingRulesPage key="new" />} />
+          <Route path="tracking-rules" element={<MovedToTrackerGate><TrackingRulesPage key="list" /></MovedToTrackerGate>} />
+          <Route path="tracking-rules/new" element={<MovedToTrackerGate><TrackingRulesPage key="new" /></MovedToTrackerGate>} />
           <Route path="milestones" element={<MilestonesPage />} />
           <Route path="settings" element={<Settings />} />
           {/* ログイン済みで /login に来た場合（コールバック後の戻り先など）は最初の画面へ */}
