@@ -213,7 +213,8 @@ def _seed(client: TestClient) -> tuple[int, int]:
     due = utcnow().date().isoformat()
     task_id = client.post("/api/tasks", json={"title": "設計", "due_date": due}).json()["id"]
     unbooked_id = client.post("/api/tasks", json={"title": "未定", "due_date": due}).json()["id"]
-    tomorrow = isoformat_utc(utcnow() + timedelta(days=1))
+    # 予定の開始は分ちょうど（秒があると 422）
+    tomorrow = isoformat_utc((utcnow() + timedelta(days=1)).replace(second=0, microsecond=0))
     res = client.post(
         "/api/calendar/events",
         json={"title": "設計の時間", "start": tomorrow, "duration_minutes": 90, "task_id": task_id},
