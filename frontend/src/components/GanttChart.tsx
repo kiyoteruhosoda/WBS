@@ -18,6 +18,7 @@ import { useI18n } from '../i18n';
 import { ds } from '../theme';
 import CategoryDot from './CategoryDot';
 import PriorityChip from './PriorityChip';
+import { useSchedulerMove } from '../scheduler/useSchedulerMove';
 
 const DAY_WIDTH = 54;
 const ROW_HEIGHT = 40;
@@ -69,6 +70,8 @@ const GanttChart: React.FC<Props> = ({ tasks, categories, showMeta = true, onTog
   // 行の中では `t` をタスクの変数に使っているので、訳は別名で持つ
   const tr = t;
   const today = todayDate();
+  // 予定を Scheduler へ移した後は「時間を取る」を出さない（task #535 / ADR-0054）
+  const schedulerMove = useSchedulerMove();
 
   const { rangeStart, days } = useMemo(() => {
     let min = addDays(today, -3);
@@ -172,7 +175,7 @@ const GanttChart: React.FC<Props> = ({ tasks, categories, showMeta = true, onTog
               {t.title}
             </Box>
             {showMeta && <PriorityChip priority={t.priority} />}
-            {t.status !== 'DONE' && t.status !== 'CANCELLED' && (
+            {t.status !== 'DONE' && t.status !== 'CANCELLED' && !schedulerMove.moved && (
               <Tooltip title={tr('task.scheduleTime')}>
                 <IconButton
                   size="small"

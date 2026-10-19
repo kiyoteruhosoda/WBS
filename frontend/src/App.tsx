@@ -21,6 +21,7 @@ import ProjectsPage from './pages/ProjectsPage';
 import Settings from './pages/Settings';
 import AppReturnPage from './pages/AppReturnPage';
 import { MovedToTrackerGate } from './components/TrackerMovedNotice';
+import { MovedToSchedulerGate } from './components/SchedulerMovedNotice';
 import { I18nProvider } from './i18n';
 import { AuthProvider } from './auth/AuthProvider';
 import AppUpdatePrompt from './components/AppUpdatePrompt';
@@ -56,8 +57,9 @@ const SignedInApp: React.FC = () => (
           {/* 実績の見える化。/actuals/review は締めの直後に「残を見直す」（task #162） */}
           <Route path="actuals" element={<ActualsPage />} />
           <Route path="actuals/:view" element={<ActualsPage />} />
-          <Route path="calendar" element={<CalendarPage />} />
-          <Route path="calendar/settings" element={<CalendarSettingsPage />} />
+          {/* カレンダーとその設定は Scheduler へ移したら Scheduler の同じ画面への案内に替える（task #535 / ADR-0054） */}
+          <Route path="calendar" element={<MovedToSchedulerGate><CalendarPage /></MovedToSchedulerGate>} />
+          <Route path="calendar/settings" element={<MovedToSchedulerGate><CalendarSettingsPage /></MovedToSchedulerGate>} />
           {/* 締めと規則は Tracker へ移したら Tracker の同じ画面への案内に替える（task #526 / ADR-0053） */}
           <Route path="closing" element={<MovedToTrackerGate><ClosingPage /></MovedToTrackerGate>} />
           <Route path="inbox" element={<Inbox />} />

@@ -15,7 +15,7 @@ import {
   withVisibleIds, workOnlyCalendarIds,
 } from '../../calendar/calendarSelection';
 import { eventColor } from '../../calendar/calendarColors';
-import { errorDetailOf } from '../../calendar/calendarRequests';
+import { useCalendarFailureDetail } from '../../scheduler/useSchedulerMove';
 
 // カレンダーの画面の「表示の切り替え」（ADR-0034・ADR-0035）。チェック・表示の組み合わせ・すべて/休みだけ/仕事だけ。
 // 触る頻度が低い（組み合わせを一度決めたらほぼ触らない）ので常時は出さず、カレンダーの見出しの端の小さなボタンから
@@ -37,6 +37,7 @@ const CalendarVisibilityMenu: React.FC<Props> = ({ calendars, onError }) => {
   const c = theme.palette.calendar;
   const narrow = useMediaQuery(theme.breakpoints.down('md'));
   const qc = useQueryClient();
+  const failureDetail = useCalendarFailureDetail();
   // 開いているときのボタン（ポップオーバーの付け先。狭い画面のシートでも開いている印に使う）
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
   const open = anchor != null;
@@ -46,7 +47,7 @@ const CalendarVisibilityMenu: React.FC<Props> = ({ calendars, onError }) => {
 
   const failed = (error: unknown) => {
     void qc.invalidateQueries({ queryKey: [CALENDARS_QUERY] });
-    onError(errorDetailOf(error) ?? '');
+    onError(failureDetail(error));
   };
   const putCalendars = (list: Calendar[]) => qc.setQueryData<Calendar[]>([CALENDARS_QUERY], list);
 

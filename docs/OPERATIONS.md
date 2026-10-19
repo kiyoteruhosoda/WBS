@@ -232,3 +232,37 @@ kubectl -n wbs-prod logs deploy/api --since=24h | grep '"event": "tracker.relay"
 ```
 
 `"event": "tracker.relay.failed"` が出ていたら、Tracker の api に届いていない（`TRACKER_FORWARD_URL`・Tracker の Pod を見る）。
+
+## 予定まわりを Scheduler へ移すとき（切り替えの 503 と移転モード）
+
+ADR-0054（Scheduler の ADR-0054 の段 0・1）。⚠ **設定が無ければ今までどおり**（既定は切）。⚠ 移転モードの後は、設定を外しても戻らない
+（Scheduler で書いた予定は Scheduler にしか無い）。打刻の `TRACKER_*` とは別の設定で、触らない。
+
+| 環境変数 | 値 |
+|---|---|
+| `SCHEDULER_CUTOVER_HOLD` | `true` で予定まわりの書き込みを 503（`Retry-After: 120`）。取り込んだカレンダーの読み込み直しも止まる。外すか `false` で切 |
+| `SCHEDULER_FORWARD_URL` | Scheduler の api のクラスタの中の番地（prod は `http://api.scheduler-prod.svc.cluster.local:8000`、stg は `http://api.scheduler-stg.svc.cluster.local:8000`）。入れると移転モード |
+| `SCHEDULER_PUBLIC_URL` | 画面の案内の行き先。prod は省略（`https://scheduler.nolumia.com`）、stg は `https://schedulerstg.nolumia.com` |
+
+0. 切り替えの時刻と、503 の間は WBS の画面で予定を変えられないことを、前もって持ち主へ知らせる
+1. WBS の ConfigMap に `SCHEDULER_CUTOVER_HOLD=true` を足して当て直す。確かめる:
+
+   ```bash
+   curl -s https://wbs.nolumia.com/api/scheduler-move        # {"mode":"hold",...}
+   ```
+
+2. WBS の DB の写しを取り、Scheduler の prod へ写して、件数と回の展開を突き合わせる（手順は Scheduler のリポジトリ）
+3. 合ったら、同じ当て直しで `SCHEDULER_FORWARD_URL=<Scheduler の api の番地>` を足し、`SCHEDULER_CUTOVER_HOLD` を外す。確かめる:
+   - `GET /api/scheduler-move` が `{"mode":"moved",...}`
+   - api のログに `"event": "scheduler.relay"` の行が出る（wbstimer のアラームの読みが Scheduler へ入った）
+   - WBS の画面のカレンダーが「予定は Scheduler に移りました」になる（画面の新しい版を読み込んでから）
+4. 合わなかったら、3 へ進まずに `SCHEDULER_CUTOVER_HOLD` を外して当て直す（WBS のまま続ける）
+
+中継に来た数を数えるとき（古い wbstimer が残っているか）:
+
+```bash
+kubectl -n wbs-prod logs deploy/api --since=24h | grep '"event": "scheduler.relay"' \
+  | jq -r '[.route, .client_id] | @tsv' | sort | uniq -c
+```
+
+`"event": "scheduler.relay.failed"` が出ていたら、Scheduler の api に届いていない（`SCHEDULER_FORWARD_URL`・Scheduler の Pod を見る）。

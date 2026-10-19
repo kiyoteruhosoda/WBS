@@ -79,12 +79,16 @@ class TodayUseCases:
         *,
         now: Callable[[], datetime] | None = None,
         tracked_time_moved: bool = False,
+        calendar_moved: bool = False,
     ) -> None:
         self._clock = clock
         self._time_entries = time_entries
         # 打刻を Tracker へ移した（task #526 / ADR-0053）。WBS の打刻の表は凍っているので読まない
         # （凍った値を今のものに見せない）。打刻・走っている打刻・今日の実績は空で返す
         self._tracked_time_moved = tracked_time_moved
+        # 予定を Scheduler へ移した（task #535 / ADR-0054）。「まだ予定を取っていないタスク」は予定の表から
+        # 決まる（凍っている）うえ、「時間を取る」先のカレンダーも WBS に無いので、空で返す
+        self._calendar_moved = calendar_moved
         self._tasks = tasks
         # 既定は作るときに引く（試験でモジュールの utcnow を差し替えられるように）
         self._now = now or utcnow
@@ -128,7 +132,11 @@ class TodayUseCases:
             entries=entries,
             total_seconds=sum(a.seconds for a in actuals),
             actuals=actuals,
-            tasks_to_schedule=pick_tasks_to_schedule(self._tasks.list_tasks(user_id, {}), today),
+            tasks_to_schedule=(
+                []
+                if self._calendar_moved
+                else pick_tasks_to_schedule(self._tasks.list_tasks(user_id, {}), today)
+            ),
         )
 
 

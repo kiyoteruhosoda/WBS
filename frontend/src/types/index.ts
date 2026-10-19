@@ -177,6 +177,14 @@ export interface TrackerMove {
   url: string;
 }
 
+/** 予定まわりを Scheduler へ移したか（task #535 / ADR-0054。`GET /api/scheduler-move`） */
+export interface SchedulerMove {
+  /** off: WBS に予定 / hold: 切り替え中（予定の書き込みは断られる） / moved: Scheduler に予定 */
+  mode: 'off' | 'hold' | 'moved';
+  /** Scheduler の番地 */
+  url: string;
+}
+
 // ── 認証（SSO）─────────────────────────────────────────────────────────────
 export interface AuthConfig {
   mode: 'single_user' | 'oidc';
