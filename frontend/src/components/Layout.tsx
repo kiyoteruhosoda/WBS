@@ -10,6 +10,7 @@ import TimerButton from './TimerButton';
 import ClosingNotice from './closing/ClosingNotice';
 import OfflineNotice from './OfflineNotice';
 import InPageAlarm from './InPageAlarm';
+import AlarmSoundButton from './AlarmSoundButton';
 import ProjectScopeSelect from './ProjectScopeSelect';
 import { useProjectScope } from '../projects/useProjectScope';
 import type { TranslationKey } from '../i18n/translations';
@@ -234,6 +235,8 @@ const Layout: React.FC = () => {
           <Box sx={{ flex: 1 }} />
           {/* 打刻（task #154）。どの画面でも上部に出す */}
           <TimerButton />
+          {/* 予定の通知の音の入り切り（task #520） */}
+          <AlarmSoundButton />
           {isDesktop ? (
             <Button
               variant="contained"

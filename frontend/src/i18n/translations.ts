@@ -579,6 +579,8 @@ const ja = {
   'inPageAlarm.startsAt': '{time} から',
   'inPageAlarm.soundBlocked': '音を出すには、画面を一度クリックしてください',
   'inPageAlarm.dismiss': '閉じる',
+  'alarmSound.mute': '予定の通知の音を消す',
+  'alarmSound.unmute': '予定の通知の音を鳴らす（いまは消しています）',
 
   'category.new': '新規カテゴリ',
   'category.newTitle': 'カテゴリの登録',
@@ -1429,6 +1431,8 @@ const en: Record<TranslationKey, string> = {
   'inPageAlarm.startsAt': 'From {time}',
   'inPageAlarm.soundBlocked': 'Click anywhere on the page once to allow sound',
   'inPageAlarm.dismiss': 'Close',
+  'alarmSound.mute': 'Mute event alarm sounds',
+  'alarmSound.unmute': 'Unmute event alarm sounds (currently muted)',
 
   'category.new': 'New Category',
   'category.newTitle': 'New Category',
