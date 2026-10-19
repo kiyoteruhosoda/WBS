@@ -17,7 +17,9 @@ import {
   shellCacheName,
   staleShellCaches,
 } from './requestRoutes';
-import { parsePushPayload, safeAppPath } from './pushNotice';
+import {
+  ALARM_SOUND_CACHE, ALARM_SOUND_KEY, isSilenced, parsePushPayload, safeAppPath,
+} from './pushNotice';
 
 declare const self: ServiceWorkerGlobalScope;
 
@@ -89,14 +91,28 @@ self.addEventListener('push', (event) => {
     text = null;
   }
   const notice = parsePushPayload(text);
-  event.waitUntil(self.registration.showNotification(notice.title, {
-    body: notice.body,
-    tag: notice.tag,
-    icon: NOTICE_ICON,
-    badge: NOTICE_ICON,
-    data: { url: notice.url },
-  }));
+  event.waitUntil((async () => {
+    await self.registration.showNotification(notice.title, {
+      body: notice.body,
+      tag: notice.tag,
+      icon: NOTICE_ICON,
+      badge: NOTICE_ICON,
+      data: { url: notice.url },
+      // 画面の上部で予定の通知の音を消してあれば、音なしで出す（task #520・ADR-0052）
+      silent: isSilenced(notice, await readAlarmSound()),
+    });
+  })());
 });
+
+/** 画面が写した「予定の通知の音」の入り切り。読めなければ null（＝鳴らす） */
+const readAlarmSound = async (): Promise<string | null> => {
+  try {
+    const response = await (await caches.open(ALARM_SOUND_CACHE)).match(ALARM_SOUND_KEY);
+    return response ? await response.text() : null;
+  } catch {
+    return null;
+  }
+};
 
 /** 押された通知の画面を開く。開いている画面があればそれを手前へ出して移し、無ければ新しく開く */
 self.addEventListener('notificationclick', (event) => {

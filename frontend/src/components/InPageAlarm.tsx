@@ -8,6 +8,7 @@ import {
 import { Chime, claimRingOnThisDevice, openAlarmChannel, startTicker } from '../alarms/browserAlarm';
 import { usePushCoversAlarms } from '../alarms/usePushCoversAlarms';
 import { useInPageAlarmSetting } from '../preferences/inPageAlarm';
+import { useAlarmSoundSetting } from '../preferences/alarmSound';
 import { useClockStyle } from '../preferences/clockStyle';
 import { formatClockTime } from '../clock/clockFace';
 import { resolveTimeZone, toZonedPoint } from '../calendar/zonedTime';
@@ -26,6 +27,7 @@ const InPageAlarm: React.FC = () => {
   const { t, timezone } = useI18n();
   const { style } = useClockStyle();
   const { enabled } = useInPageAlarmSetting();
+  const { sound } = useAlarmSoundSetting();
   const covered = usePushCoversAlarms();
   const active = enabled && !covered;
 
@@ -33,6 +35,7 @@ const InPageAlarm: React.FC = () => {
   const [soundBlocked, setSoundBlocked] = useState(false);
 
   const activeRef = useRef(active);
+  const soundRef = useRef(sound);
   const alarmsRef = useRef<CalendarAlarm[]>([]);
   const lastFetchRef = useRef(0);
   const fetchingRef = useRef(false);
@@ -46,6 +49,11 @@ const InPageAlarm: React.FC = () => {
   useEffect(() => {
     shownRef.current = shown;
   }, [shown]);
+
+  useEffect(() => {
+    soundRef.current = sound;
+    if (!sound) setSoundBlocked(false);
+  }, [sound]);
 
   useEffect(() => {
     activeRef.current = active;
@@ -79,6 +87,8 @@ const InPageAlarm: React.FC = () => {
   const ring = useCallback(async (alarm: CalendarAlarm) => {
     if (!chime.ready) await new Promise((resolve) => { window.setTimeout(resolve, YIELD_TO_AUDIBLE_TAB_MS); });
     if (!(await claimRingOnThisDevice(alarm.id, Date.now()))) return;
+    // 上部で音を消してあれば、表示と題名の点滅だけ（task #520）
+    if (!soundRef.current) return;
     if (!(await chime.play())) setSoundBlocked(true);
   }, [chime]);
 

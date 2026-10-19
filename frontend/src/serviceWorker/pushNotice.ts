@@ -12,7 +12,21 @@ export interface PushNoticeData {
   url: string;
   /** 端末の通知の束ね札（同じ札は置き換わる） */
   tag: string | undefined;
+  /** 通知の種類（`event_alarm` など。サーバの PushKind） */
+  kind: string | undefined;
 }
+
+/**
+ * 予定の通知の音を消す印の置き場（task #520・ADR-0052）。Service Worker は localStorage を読めないので、
+ * 画面が Cache Storage にも写す。⚠ 画面側（preferences/alarmSound.ts）にも同じ値を書いている（束を分けるため import しない。試験で揃いを守る）
+ */
+export const ALARM_SOUND_CACHE = 'wbs-prefs';
+export const ALARM_SOUND_KEY = '/__prefs/alarm-sound';
+export const ALARM_SOUND_OFF = 'off';
+
+/** 音なしで出す通知か。消してあるのは予定の通知の音だけ（ほかの通知は端末の設定どおり鳴る） */
+export const isSilenced = (notice: Pick<PushNoticeData, 'kind'>, soundSetting: string | null | undefined): boolean =>
+  notice.kind === 'event_alarm' && soundSetting === ALARM_SOUND_OFF;
 
 export const FALLBACK_TITLE = 'WBS';
 export const HOME_PATH = '/';
@@ -45,5 +59,6 @@ export const parsePushPayload = (text: string | null | undefined): PushNoticeDat
     body: asText(raw.body) ?? '',
     url: safeAppPath(raw.url),
     tag: asText(raw.tag),
+    kind: asText(raw.kind),
   };
 };
