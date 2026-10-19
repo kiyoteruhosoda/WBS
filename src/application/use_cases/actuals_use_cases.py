@@ -87,6 +87,7 @@ class ActualsUseCases:
         breaks: WorkBreakRepository | None = None,
         now: Callable[[], datetime] | None = None,
         tracked_time_moved: bool = False,
+        calendar_moved: bool = False,
     ) -> None:
         self._clock = clock
         # 打刻を Tracker へ移した（task #526 / ADR-0053）。打刻から数える時間（TRACKED）は出さない
@@ -105,6 +106,8 @@ class ActualsUseCases:
         # 既定は作るときに引く（試験でモジュールの utcnow を差し替えられるように）
         self._now = now or utcnow
         self._tracked_time_moved = tracked_time_moved
+        # 予定を Scheduler へ移した（task #535 / ADR-0054）。予定から数える時間（PLANNED）は出さない（0）
+        self._calendar_moved = calendar_moved
 
     # ── タスクごと ──────────────────────────────────────────────────────
 
@@ -420,6 +423,8 @@ class ActualsUseCases:
                 ledger.add(log.task_id, log.work_date, log.seconds)
             return ledger
         if source is TimeSource.PLANNED:
+            if self._calendar_moved:
+                return ledger
             # 回はその始まりの日に数える（日をまたぐ回も割らない）。終日の回は作業の時間ではない（ADR-0014）。
             # プライベートのカレンダーの予定は計画に数えない（ADR-0033）
             for occurrence in self._occurrences.list_occurrence_views(

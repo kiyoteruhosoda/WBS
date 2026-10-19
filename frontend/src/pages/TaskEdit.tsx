@@ -23,6 +23,7 @@ import TaskRemovalDialog from '../components/tasks/TaskRemovalDialog';
 import { milestoneReachable, parseScope, pickableProjects } from '../projects/projectScope';
 import { useProjectScope } from '../projects/useProjectScope';
 import { useDayOffReason } from '../calendar/useDayOffReason';
+import { useSchedulerMove } from '../scheduler/useSchedulerMove';
 
 const STATUSES: TaskStatus[] = ['TODO', 'DOING', 'WAITING', 'DONE', 'CANCELLED'];
 const DEP_TYPES: DependencyType[] = ['FS', 'SS', 'FF', 'SF'];
@@ -135,6 +136,8 @@ const TaskEdit: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const isNew = id === undefined || id === 'new';
   const navigate = useNavigate();
+  // 予定を Scheduler へ移した後は「予定済みの時間」と「時間を取る」を出さない（task #535 / ADR-0054）
+  const schedulerMove = useSchedulerMove();
   const qc = useQueryClient();
   const { t } = useI18n();
   const [form, setForm] = useState<FormData>(defaultForm);
@@ -430,7 +433,7 @@ const TaskEdit: React.FC = () => {
           </Box>
 
           {/* 予定済みの時間と、まだ取っていない分（task #159） */}
-          {!isNew && task && (
+          {!isNew && task && !schedulerMove.moved && (
             <Box
               data-testid="task-scheduled-hours"
               sx={{

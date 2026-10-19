@@ -47,8 +47,11 @@ DISPATCH_INTERVAL_SECONDS = 60.0
 FIRST_RUN_DELAY_SECONDS = 20.0
 
 
-def dispatch_once(sender: PushSender, *, tracked_time_moved: bool = False) -> DispatchReport:
-    """1 周回ぶん走らせる。打刻を Tracker へ移したら、打刻の止め忘れと締めの時期は送らない（ADR-0053）。"""
+def dispatch_once(
+    sender: PushSender, *, tracked_time_moved: bool = False, calendar_moved: bool = False
+) -> DispatchReport:
+    """1 周回ぶん走らせる。打刻を Tracker へ移したら、打刻の止め忘れと締めの時期は送らない（ADR-0053）。
+    予定を Scheduler へ移したら、予定の通知と定常業務の開始は送らない（ADR-0054）。"""
     session = get_db_session()
     try:
         now = utcnow()
@@ -73,6 +76,7 @@ def dispatch_once(sender: PushSender, *, tracked_time_moved: bool = False) -> Di
             unit_of_work=session,
             now=lambda: now,
             tracked_time_moved=tracked_time_moved,
+            calendar_moved=calendar_moved,
         ).execute()
     finally:
         session.close()
@@ -91,7 +95,7 @@ def dispatch_once(sender: PushSender, *, tracked_time_moved: bool = False) -> Di
 
 
 def start_push_dispatch_worker(
-    sender: PushSender, *, tracked_time_moved: bool = False
+    sender: PushSender, *, tracked_time_moved: bool = False, calendar_moved: bool = False
 ) -> IntervalWorker | None:
     """送る係を開始する（送れる設定のときだけ）。"""
     if not sender.enabled:
@@ -102,7 +106,9 @@ def start_push_dispatch_worker(
         return None
     worker = IntervalWorker(
         WORKER_NAME,
-        lambda: dispatch_once(sender, tracked_time_moved=tracked_time_moved),
+        lambda: dispatch_once(
+            sender, tracked_time_moved=tracked_time_moved, calendar_moved=calendar_moved
+        ),
         interval_seconds=DISPATCH_INTERVAL_SECONDS,
         first_delay_seconds=FIRST_RUN_DELAY_SECONDS,
     )

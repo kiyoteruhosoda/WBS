@@ -21,7 +21,7 @@ import { formFromEvent, newEventForm, planOccurrenceDelete } from '../../calenda
 import type { RecurringScope } from '../../calendar/eventForm';
 import type { RescheduleEntry } from '../../calendar/calendarRequests';
 import {
-  applyScheduleToOccurrences, errorDetailOf, isConflictError, occurrenceDoneRequest, redoRequest, rescheduleEntryOf,
+  applyScheduleToOccurrences, isConflictError, occurrenceDoneRequest, redoRequest, rescheduleEntryOf,
   rescheduleRequest, undoRequest, withEventVersion, withOccurrenceDone, withOccurrenceEventVersion,
 } from '../../calendar/calendarRequests';
 import type { OperationHistory } from '../../calendar/operationHistory';
@@ -30,6 +30,7 @@ import {
 } from '../../calendar/operationHistory';
 import { CALENDARS_QUERY, OCCURRENCES_QUERY, queriesAfterEventWrite } from '../../calendar/calendarQueries';
 import { addDays, toZonedPoint } from '../../calendar/zonedTime';
+import { useCalendarFailureDetail } from '../../scheduler/useSchedulerMove';
 
 /** 繰り返しを書いたとき、休みの日に当たる回を何日先まで見るか。 */
 const WARN_RECURRING_DAYS = 62;
@@ -61,6 +62,8 @@ interface Options {
 export const useCalendarEditing = ({ occurrencesKey, timeZone, tasks }: Options) => {
   const { t } = useI18n();
   const qc = useQueryClient();
+  // 断られた理由（Scheduler に移った 409 は言葉に直す。task #535）
+  const failureDetail = useCalendarFailureDetail();
   // 予定のカレンダー（ADR-0027）。編集画面で選ぶ・新しい予定の入れ先を決める
   const { data: calendars } = useQuery({ queryKey: [CALENDARS_QUERY], queryFn: getCalendars });
 
@@ -126,7 +129,7 @@ export const useCalendarEditing = ({ occurrencesKey, timeZone, tasks }: Options)
   const onFailure = (error: unknown) => {
     if (isConflictError(error)) { onConflict(); return; }
     refresh();
-    notify('calendar.saveFailed', 'error', { detail: errorDetailOf(error) ?? '' });
+    notify('calendar.saveFailed', 'error', { detail: failureDetail(error) });
   };
 
   /** 書き込みを 1 つずつ（ドラッグ中に次の書き込みを重ねない）。 */

@@ -9,6 +9,8 @@ import {
 } from '../api/push';
 import type { PushDevice, PushPreferences } from '../api/push';
 import { useTrackerMove } from '../tracker/useTrackerMove';
+import { useSchedulerMove } from '../scheduler/useSchedulerMove';
+import { schedulerHostOf } from '../scheduler/schedulerMove';
 import {
   browserPushEnvironment, disableOnThisDevice, enableOnThisDevice, thisDeviceLabel, thisDeviceOf, thisDeviceState,
 } from '../pwa/webPush';
@@ -37,6 +39,8 @@ type KindKey = 'event_alarm' | 'routine_start' | 'timer_left_running' | 'closing
 const KINDS: KindKey[] = ['event_alarm', 'routine_start', 'timer_left_running', 'closing_due'];
 /** 打刻まわりの通知。Tracker へ移した後は WBS からは送らない（Tracker が送る。task #526 / ADR-0053） */
 const TRACKING_KINDS: readonly KindKey[] = ['timer_left_running', 'closing_due'];
+/** 予定まわりの通知。Scheduler へ移した後は WBS からは送らない（Scheduler が送る。task #535 / ADR-0054） */
+const CALENDAR_KINDS: readonly KindKey[] = ['event_alarm', 'routine_start'];
 const kindPatch = (kind: KindKey, on: boolean): Partial<PushPreferences> => {
   const patch: Partial<PushPreferences> = {};
   patch[kind] = on;
@@ -71,7 +75,9 @@ const PushSettings: React.FC = () => {
   const inPageAlarm = useInPageAlarmSetting();
   const pushCoversAlarms = usePushCoversAlarms();
   const trackerMove = useTrackerMove();
-  const kinds = trackerMove.moved ? KINDS.filter((kind) => !TRACKING_KINDS.includes(kind)) : KINDS;
+  const schedulerMove = useSchedulerMove();
+  const kinds = KINDS.filter((kind) => !(trackerMove.moved && TRACKING_KINDS.includes(kind))
+    && !(schedulerMove.moved && CALENDAR_KINDS.includes(kind)));
 
   const config = useQuery({ queryKey: ['push', 'config'], queryFn: getPushConfig });
   const preferences = useQuery({ queryKey: PREFERENCES_KEY, queryFn: getPushPreferences });
@@ -190,7 +196,12 @@ const PushSettings: React.FC = () => {
 
         {notGranted && <Alert severity="warning" onClose={() => setNotGranted(false)}>{t('push.notGranted')}</Alert>}
 
-        <Box>
+        {schedulerMove.moved && (
+          <Alert severity="info">{t('scheduler.pushBody', { host: schedulerHostOf(schedulerMove.url) })}</Alert>
+        )}
+
+        {/* 画面の中の予定の知らせ。Scheduler へ移した後は WBS では知らせない */}
+        {!schedulerMove.moved && <Box>
           <FormControlLabel
             sx={{ mr: 0 }}
             control={(
@@ -204,11 +215,11 @@ const PushSettings: React.FC = () => {
           <Box sx={help}>
             {t(pushCoversAlarms && inPageAlarm.enabled ? 'inPageAlarm.settingCovered' : 'inPageAlarm.settingHelp')}
           </Box>
-        </Box>
+        </Box>}
 
         {error && <Alert severity="error" onClose={() => setError(null)}>{t('push.error', { detail: error })}</Alert>}
 
-        {prefs && (
+        {prefs && kinds.length > 0 && (
           <Box>
             <Box sx={{ fontSize: 13, fontWeight: 700, color: ds.text, mb: '6px' }}>{t('push.kinds')}</Box>
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -276,18 +287,23 @@ const PushSettings: React.FC = () => {
                     {' ・ '}
                     {t('push.lastSentAt', { date: dateTime(d.last_sent_at) })}
                   </Box>
-                  <FormControlLabel
-                    sx={{ mr: 0 }}
-                    control={(
-                      <Switch
-                        size="small"
-                        checked={d.receives_calendar}
-                        onChange={(e) => changeDevice.mutate({ id: d.id, receivesCalendar: e.target.checked })}
+                  {/* 予定の通知をこの端末で受けるか。Scheduler へ移した後は WBS から予定の通知を送らないので出さない */}
+                  {!schedulerMove.moved && (
+                    <>
+                      <FormControlLabel
+                        sx={{ mr: 0 }}
+                        control={(
+                          <Switch
+                            size="small"
+                            checked={d.receives_calendar}
+                            onChange={(e) => changeDevice.mutate({ id: d.id, receivesCalendar: e.target.checked })}
+                          />
+                        )}
+                        label={<Box sx={{ fontSize: 13 }}>{t('push.receivesCalendar')}</Box>}
                       />
-                    )}
-                    label={<Box sx={{ fontSize: 13 }}>{t('push.receivesCalendar')}</Box>}
-                  />
-                  <Box sx={{ ...help, mt: '-4px' }}>{t('push.receivesCalendarHelp')}</Box>
+                      <Box sx={{ ...help, mt: '-4px' }}>{t('push.receivesCalendarHelp')}</Box>
+                    </>
+                  )}
                 </Box>
               ))}
             </Box>

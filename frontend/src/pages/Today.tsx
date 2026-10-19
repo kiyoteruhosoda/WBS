@@ -53,6 +53,8 @@ import { closingFailureOf } from '../closing/closingRequests';
 import TodayEntryDialog from '../components/today/TodayEntryDialog';
 import { TrackerMovedNotice } from '../components/TrackerMovedNotice';
 import { useTrackerMove } from '../tracker/useTrackerMove';
+import { SchedulerMovedNotice } from '../components/SchedulerMovedNotice';
+import { useSchedulerMove } from '../scheduler/useSchedulerMove';
 import { useClockStyle } from '../preferences/clockStyle';
 import { formatClockTime } from '../clock/clockFace';
 
@@ -545,6 +547,9 @@ const Today: React.FC = () => {
   // 打刻を Tracker へ移した後は、打刻の欄（いまの打刻・今日の実績・予定から始める）を Tracker への案内に替える。
   // サーバも打刻を返さない（凍った値を今のものに見せない。task #526 / ADR-0053）
   const trackerMove = useTrackerMove();
+  // 予定を Scheduler へ移した後は、予定の欄（時間の表・定常業務・まだ時間を取っていないタスク）を Scheduler への案内に替え、
+  // 予定を読まない（WBS の予定は凍っている。凍った値を今のものに見せない。task #535 / ADR-0054）
+  const schedulerMove = useSchedulerMove();
 
   const summaryQuery = useQuery({ queryKey: TODAY_SUMMARY_KEY, queryFn: fetchSummary, refetchInterval: 60_000 });
   const snapshot = summaryQuery.data;
@@ -559,7 +564,7 @@ const Today: React.FC = () => {
     if (date != null && now.date !== date) void qc.invalidateQueries({ queryKey: TODAY_SUMMARY_KEY });
   }, [date, now.date, qc]);
 
-  const range = date ? { from: date, to: date } : null;
+  const range = date && !schedulerMove.moved ? { from: date, to: date } : null;
   const occurrencesKey = useMemo(() => [OCCURRENCES_QUERY, date, date, timeZone] as const, [date, timeZone]);
   const occurrencesQuery = useQuery({
     queryKey: occurrencesKey,
@@ -694,7 +699,12 @@ const Today: React.FC = () => {
   const toolButton = { width: 36, height: 36, color: ds.textSub } as const;
 
   return (
-    <Box ref={fill.ref} sx={{
+    <Box ref={fill.ref} sx={schedulerMove.moved ? {
+      // 予定の欄が無いので 1 列（いまの打刻か Tracker への案内・Scheduler への案内・今日の実績）
+      display: 'grid', gap: '12px', alignItems: 'start',
+      gridTemplateColumns: 'minmax(0, 1fr)',
+      gridTemplateAreas: '"now" "grid" "actuals"',
+    } : {
       display: 'grid', gap: '12px', alignItems: 'start',
       // 広い画面は箱ごと画面の下端まで。高さを決めずに時間グリッドだけに高さを持たせると、右の列の最後の
       // 1fr の行がグリッドの高さぶん伸びて、ページの下に数百 px の空きができる。
@@ -729,7 +739,11 @@ const Today: React.FC = () => {
         />
       )}
 
-      {hasRoutine && (
+      {schedulerMove.moved && (
+        <SchedulerMovedNotice url={schedulerMove.url} bodyKey="scheduler.todayBody" sx={{ gridArea: 'grid' }} />
+      )}
+
+      {hasRoutine && !schedulerMove.moved && (
         <RoutineList
           occurrences={routine}
           timeZone={timeZone}
@@ -743,7 +757,7 @@ const Today: React.FC = () => {
         />
       )}
 
-      <Box sx={{
+      {!schedulerMove.moved && <Box sx={{
         ...card, gridArea: 'grid', display: 'flex', flexDirection: 'column',
         height: { xs: '46vh', md: 'auto' }, minHeight: { xs: 300 }, alignSelf: { md: 'stretch' },
       }} data-testid="today-grid">
@@ -810,14 +824,17 @@ const Today: React.FC = () => {
             )}
           />
         </Box>
-      </Box>
+      </Box>}
 
-      <ToScheduleList
-        tasks={summary.tasks_to_schedule}
-        today={date}
-        categories={categories}
-        shownFirst={wide ? 8 : TASKS_SHOWN_FIRST}
-      />
+      {/* まだ時間を取っていないタスクと「時間を取る」。Scheduler へ移した後は出さない（サーバも空で返す） */}
+      {!schedulerMove.moved && (
+        <ToScheduleList
+          tasks={summary.tasks_to_schedule}
+          today={date}
+          categories={categories}
+          shownFirst={wide ? 8 : TASKS_SHOWN_FIRST}
+        />
+      )}
       {!trackerMove.moved && (
         <ActualsCard
           totalSeconds={live.totalSeconds}

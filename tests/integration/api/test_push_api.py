@@ -321,6 +321,20 @@ def test_after_the_move_to_tracker_only_calendar_notices_are_sent(push_client, s
     assert push_dispatch.dispatch_once(sender, tracked_time_moved=True).notices == 1
 
 
+def test_after_the_move_to_scheduler_calendar_notices_are_not_sent(push_client, sender, push_service, monkeypatch) -> None:
+    """予定を Scheduler へ移したら、予定の通知と定常業務の開始は WBS から送らない（task #535 / ADR-0054）。"""
+    _event(push_client)
+    _subscribe(push_client)
+    monkeypatch.setattr(push_dispatch, "utcnow", lambda: FIFTEEN_BEFORE)
+
+    assert push_dispatch.dispatch_once(sender, calendar_moved=True).notices == 0
+    assert push_service.received == []
+
+    # 移していなければ今までどおり送る
+    assert push_dispatch.dispatch_once(sender).notices == 1
+    assert push_service.received == [MY_ENDPOINT]
+
+
 def test_a_gone_subscription_is_removed(push_client, sender, push_service, db, dispatch) -> None:
     _event(push_client)
     _subscribe(push_client)

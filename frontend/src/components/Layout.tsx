@@ -9,6 +9,7 @@ import AppMark from './AppMark';
 import TimerButton from './TimerButton';
 import TrackerLinkButton from './TrackerLinkButton';
 import { useTrackerMove } from '../tracker/useTrackerMove';
+import { useSchedulerMove } from '../scheduler/useSchedulerMove';
 import ClosingNotice from './closing/ClosingNotice';
 import OfflineNotice from './OfflineNotice';
 import InPageAlarm from './InPageAlarm';
@@ -189,6 +190,8 @@ const Layout: React.FC = () => {
   const { t } = useI18n();
   // 打刻を Tracker へ移した後は、打刻ボタンと締めの知らせを出さない（task #526 / ADR-0053）
   const trackerMove = useTrackerMove();
+  // 予定を Scheduler へ移した後は、画面の中の予定の知らせと音の入り切りを出さない（Scheduler が知らせる。task #535 / ADR-0054）
+  const schedulerMove = useSchedulerMove();
 
   const titleKey = pageTitles.find((p) => p.pattern.test(location.pathname))?.titleKey;
   const title = titleKey ? t(titleKey) : t('app.name');
@@ -240,7 +243,7 @@ const Layout: React.FC = () => {
           {/* 打刻（task #154）。どの画面でも上部に出す。Tracker へ移した後は Tracker への案内（task #526） */}
           {trackerMove.moved ? <TrackerLinkButton url={trackerMove.url} /> : <TimerButton />}
           {/* 予定の通知の音の入り切り（task #520） */}
-          <AlarmSoundButton />
+          {!schedulerMove.moved && <AlarmSoundButton />}
           {isDesktop ? (
             <Button
               variant="contained"
@@ -265,7 +268,7 @@ const Layout: React.FC = () => {
         <Box component="main" sx={{ flex: 1, p: { xs: '16px', md: '24px' } }}>
           {/* つながっていない（task #192 / ADR-0028）。殻は出ているがデータは読めない */}
           <OfflineNotice />
-          <InPageAlarm />
+          {!schedulerMove.moved && <InPageAlarm />}
           {/* 未確定の締めの期間の知らせ（task #161 / ADR-0012） */}
           {!trackerMove.moved && <ClosingNotice />}
           <Outlet />

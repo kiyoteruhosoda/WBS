@@ -10,6 +10,7 @@
 import type { CalendarEvent, CalendarOccurrence, OccurrenceSeriesKey } from '../types';
 import type { OccurrenceReschedule, OccurrenceSchedule } from '../components/calendar/calendarInteractions';
 import type { OperationHistory } from './operationHistory';
+import { schedulerHostOfRefusal } from '../scheduler/schedulerMove';
 
 export interface CalendarRequest {
   method: 'GET' | 'POST' | 'PUT' | 'DELETE';
@@ -198,10 +199,14 @@ export const withOccurrenceDone = (
 
 // ── 応答の誤り ────────────────────────────────────────────────────────────
 
-/** 版の食い違い（ほかで変わっていた）。axios の誤りの `response.status` を見る。 */
+/**
+ * 版の食い違い（ほかで変わっていた）。axios の誤りの `response.status` を見る。
+ * 「Scheduler に移りました」の 409（task #535）は食い違いではないので外す（取り直しても書けない）。
+ */
 export const isConflictError = (error: unknown): boolean =>
   typeof error === 'object' && error != null
-  && (error as { response?: { status?: number } }).response?.status === 409;
+  && (error as { response?: { status?: number } }).response?.status === 409
+  && schedulerHostOfRefusal(error) == null;
 
 /** API の誤りの文言（FastAPI の `detail`）。無ければ null。 */
 export const errorDetailOf = (error: unknown): string | null => {

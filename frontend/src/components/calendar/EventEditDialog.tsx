@@ -20,7 +20,8 @@ import {
   newTaskPayload, planEventSave, startTimeOptions, withAlarmOffset, withAlarmOn, withEndMinute, withLinkedTask, withRepeat,
   withStartMinute,
 } from '../../calendar/eventForm';
-import { errorDetailOf, isConflictError } from '../../calendar/calendarRequests';
+import { isConflictError } from '../../calendar/calendarRequests';
+import { useCalendarFailureDetail } from '../../scheduler/useSchedulerMove';
 import { isPrivateCalendar } from '../../calendar/calendarSelection';
 import { eventColor } from '../../calendar/calendarColors';
 import { formatMinute } from '../../calendar/zonedTime';
@@ -123,6 +124,7 @@ const EventEditDialog: React.FC<Props> = ({
   target, viewerTimeZone, tasks, calendars = NO_CALENDARS, onClose, onSaved, onConflict, onDelete,
 }) => {
   const { t, weekdays } = useI18n();
+  const failureDetail = useCalendarFailureDetail();
   const theme = useTheme();
   const fullScreen = useMediaQuery(theme.breakpoints.down('sm'));
   const c = theme.palette.calendar;
@@ -166,7 +168,7 @@ const EventEditDialog: React.FC<Props> = ({
       onSaved(written);
     } catch (e) {
       if (isConflictError(e)) { onConflict(); return; }
-      setError(t('calendar.saveFailed', { detail: errorDetailOf(e) ?? '' }));
+      setError(t('calendar.saveFailed', { detail: failureDetail(e) }));
     } finally {
       setSaving(false);
     }

@@ -4,6 +4,12 @@
 
 ## 2026-10-19
 
+- **予定まわりを Scheduler へ移すための関所を足した**（task #535、ADR-0054。Scheduler の ADR-0054 の段 0・1）。設定が無ければ何も変わらない。
+  `SCHEDULER_CUTOVER_HOLD=true` で予定・カレンダー・休み・取り込み・表示の組み合わせの書き込みを 503 で待たせ、取り込みの読み込み直しも止める。
+  `SCHEDULER_FORWARD_URL` を入れると移転モード: wbstimer の予定のアラームの口（Bearer）は Scheduler へそのまま中継し（1 件ごとに `scheduler.relay` のログ）、
+  ほかの予定の書き込みは 409（「予定は Scheduler に移りました」）。WBS の予定の表は書き換わらない。サーバーは「まだ時間を取っていないタスク」・
+  タスクの予定済みの時間・実績の予定の時間を出さず、予定の通知と定常業務の開始の通知を送らない。画面は `GET /api/scheduler-move` を見て、
+  カレンダーとその設定を Scheduler への案内に替え、「今日」の予定の欄・「時間を取る」・画面の中の予定の知らせを出さない。打刻の関所（`TRACKER_*`）とは別で、互いに触らない。
 - **打刻まわりを Tracker へ移すための関所を足した**（task #526、ADR-0053。Tracker の ADR-0053 の段 0・1）。設定が無ければ何も変わらない。
   `TRACKER_CUTOVER_HOLD=true` で打刻・休み・PC の時間・規則・締めの書き込みを 503 で待たせる（端末は手元に残して送り直す）。
   `TRACKER_FORWARD_URL` を入れると移転モード: wbstimer・WinTrack の Bearer の口は Tracker へそのまま中継し（1 件ごとに `tracker.relay` のログ）、

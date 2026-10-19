@@ -25,7 +25,7 @@ import { isDayOffLayer, isImportedCalendar, isPrivateCalendar, visibleCalendarId
 import { feedFailureKey, feedFailureOf, formatImportedAt } from '../calendar/importedOccurrences';
 import { EVENT_COLOR_KEYS, WEEKDAY_CODES } from '../calendar/eventForm';
 import { eventColor } from '../calendar/calendarColors';
-import { errorDetailOf } from '../calendar/calendarRequests';
+import { useCalendarFailureDetail } from '../scheduler/useSchedulerMove';
 import { todayDate } from '../utils/format';
 
 // カレンダーの設定（ADR-0034）。カレンダーの画面から分けた「管理」: 予定のカレンダーの追加・名前と色・
@@ -84,6 +84,8 @@ const CalendarSettingsPage: React.FC = () => {
   const { t, weekdays } = useI18n();
   const c = useTheme().palette.calendar;
   const qc = useQueryClient();
+  // 断られた理由（Scheduler に移った 409 は言葉に直す。task #535）
+  const failureDetail = useCalendarFailureDetail();
   const [draft, setDraft] = useState<CalendarDraft | null>(null);
   const [deleting, setDeleting] = useState<Calendar | null>(null);
   const [presetDraft, setPresetDraft] = useState<PresetDraft | null>(null);
@@ -100,7 +102,7 @@ const CalendarSettingsPage: React.FC = () => {
 
   const failed = (e: unknown) => {
     void qc.invalidateQueries({ queryKey: [CALENDARS_QUERY] });
-    setError(t('calendar.saveFailed', { detail: errorDetailOf(e) ?? '' }));
+    setError(t('calendar.saveFailed', { detail: failureDetail(e) }));
   };
   const refreshPresets = () => void qc.invalidateQueries({ queryKey: [CALENDAR_VIEW_PRESETS_QUERY] });
 
@@ -110,7 +112,7 @@ const CalendarSettingsPage: React.FC = () => {
   const importFailed = (e: unknown) => {
     void qc.invalidateQueries({ queryKey: [CALENDARS_QUERY] });
     const key = feedFailureKey(feedFailureOf(e));
-    setError(key ? t(key) : t('calendar.saveFailed', { detail: errorDetailOf(e) ?? '' }));
+    setError(key ? t(key) : t('calendar.saveFailed', { detail: failureDetail(e) }));
   };
   const afterImport = (count: number | null) => {
     for (const queryKey of [[CALENDARS_QUERY], [IMPORTED_OCCURRENCES_QUERY]]) void qc.invalidateQueries({ queryKey });

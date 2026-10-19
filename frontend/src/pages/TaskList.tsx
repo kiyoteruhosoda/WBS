@@ -28,6 +28,7 @@ import MoveToProjectDialog from '../components/tasks/MoveToProjectDialog';
 import { SearchIcon } from '../components/icons';
 import { scopeParams } from '../projects/projectScope';
 import { useProjectScope } from '../projects/useProjectScope';
+import { useSchedulerMove } from '../scheduler/useSchedulerMove';
 import {
   followingIds, groupRows, groupTaskIds, groupTasksByProject, planProjectMove, sortTasks,
   type TaskGroupNode, type TaskListRow, type TaskSortKey,
@@ -53,6 +54,8 @@ const desktopOnly = { display: { xs: 'none', md: 'table-cell' } } as const;
 const TaskList: React.FC = () => {
   const navigate = useNavigate();
   const { t } = useI18n();
+  // 予定を Scheduler へ移した後は「予定済み」の列と「時間を取る」を出さない（サーバも null で返す。task #535 / ADR-0054）
+  const schedulerMove = useSchedulerMove();
   const [statusFilter, setStatusFilter] = useState<TaskStatus[]>([]);
   const [categoryId, setCategoryId] = useState<string>('');
   const [milestoneId, setMilestoneId] = useState<string>('');
@@ -148,7 +151,7 @@ const TaskList: React.FC = () => {
     setNotice(detached > 0 ? `${moved} ${t('taskList.movedDetached', { count: detached })}` : moved);
   };
 
-  const columnCount = grouped ? 8 : 9;
+  const columnCount = (grouped ? 8 : 9) - (schedulerMove.moved ? 2 : 0);
   const sortLabel = (key: TaskSortKey, label: string) => (
     <TableSortLabel
       active={sortKey === key}
@@ -309,7 +312,7 @@ const TaskList: React.FC = () => {
           />
         </TableCell>
         <TableCell><StatusChip task={task} /></TableCell>
-        <TableCell sx={wideOnly}>
+        {!schedulerMove.moved && <TableCell sx={wideOnly}>
           <Box sx={{ fontSize: 13, color: ds.textSub, whiteSpace: 'nowrap' }}>
             {formatHours(task.scheduled_hours)}
           </Box>
@@ -318,8 +321,8 @@ const TaskList: React.FC = () => {
               {t('taskList.unscheduled', { hours: formatHours(task.unscheduled_hours) })}
             </Box>
           )}
-        </TableCell>
-        <TableCell padding="checkbox">
+        </TableCell>}
+        {!schedulerMove.moved && <TableCell padding="checkbox">
           {!closed && (
             <Tooltip title={t('task.scheduleTime')}>
               <IconButton
@@ -331,7 +334,7 @@ const TaskList: React.FC = () => {
               </IconButton>
             </Tooltip>
           )}
-        </TableCell>
+        </TableCell>}
       </TableRow>
     );
   };
@@ -457,8 +460,8 @@ const TaskList: React.FC = () => {
                   <TableCell>{sortLabel('due_date', t('taskList.due'))}</TableCell>
                   <TableCell sx={{ ...wideOnly, minWidth: 140 }}>{t('taskList.progress')}</TableCell>
                   <TableCell>{t('taskList.status')}</TableCell>
-                  <TableCell sx={wideOnly}>{t('taskList.scheduled')}</TableCell>
-                  <TableCell padding="checkbox" />
+                  {!schedulerMove.moved && <TableCell sx={wideOnly}>{t('taskList.scheduled')}</TableCell>}
+                  {!schedulerMove.moved && <TableCell padding="checkbox" />}
                 </TableRow>
               </TableHead>
               <TableBody>

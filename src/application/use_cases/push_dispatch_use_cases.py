@@ -87,6 +87,7 @@ class DispatchPushNotices:
         unit_of_work: UnitOfWork,
         now: Callable[[], datetime] = utcnow,
         tracked_time_moved: bool = False,
+        calendar_moved: bool = False,
     ) -> None:
         self._subscriptions = subscriptions
         self._preferences = preferences
@@ -101,6 +102,8 @@ class DispatchPushNotices:
         self._now = now
         # 打刻を Tracker へ移した（task #526 / ADR-0053）。打刻の止め忘れと締めの時期は Tracker が送る
         self._tracked_time_moved = tracked_time_moved
+        # 予定を Scheduler へ移した（task #535 / ADR-0054）。予定の通知と定常業務の開始は Scheduler が送る
+        self._calendar_moved = calendar_moved
 
     def execute(self) -> DispatchReport:
         report = DispatchReport()
@@ -133,7 +136,7 @@ class DispatchPushNotices:
         zone_name, zone = _zone_of(user)
         planner = PushNoticePlanner(user.id, zone, user.language)
         notices: list[PushNotice] = []
-        if preferences.event_alarm or preferences.routine_start:
+        if (preferences.event_alarm or preferences.routine_start) and not self._calendar_moved:
             today = local_date_of(now, zone)
             occurrences = self._occurrences.list_occurrence_views(
                 user.id, today - timedelta(days=1), today + timedelta(days=1), zone_name

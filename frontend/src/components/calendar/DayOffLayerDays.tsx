@@ -8,7 +8,7 @@ import { useI18n } from '../../i18n';
 import type { Calendar } from '../../types';
 import { addLayerDay, getLayerDays, importLayerJapaneseHolidays, removeLayerDay } from '../../api/calendars';
 import { DAY_OFF_MARKS_QUERY, OCCURRENCES_QUERY } from '../../calendar/calendarQueries';
-import { errorDetailOf } from '../../calendar/calendarRequests';
+import { useCalendarFailureDetail } from '../../scheduler/useSchedulerMove';
 import { formatDate } from '../../utils/format';
 
 // 休みの日の一覧の層（会社の公休・私の休み・日本の祝日）の日を年ごとに並べ、足す・消す（ADR-0029）。
@@ -27,6 +27,7 @@ const LAYER_DAYS_QUERY = 'calendar-layer-days';
 const DayOffLayerDays: React.FC<Props> = ({ layer, initialYear, onError }) => {
   const { t } = useI18n();
   const qc = useQueryClient();
+  const failureDetail = useCalendarFailureDetail();
   const [year, setYear] = useState(initialYear);
   const [date, setDate] = useState('');
   const [name, setName] = useState('');
@@ -38,7 +39,7 @@ const DayOffLayerDays: React.FC<Props> = ({ layer, initialYear, onError }) => {
     qc.setQueryData(key, list);
     for (const queryKey of [[DAY_OFF_MARKS_QUERY], [OCCURRENCES_QUERY]]) void qc.invalidateQueries({ queryKey });
   };
-  const failed = (error: unknown) => onError(errorDetailOf(error) ?? '');
+  const failed = (error: unknown) => onError(failureDetail(error));
 
   const add = useMutation({
     mutationFn: () => addLayerDay(layer.id, { date, name: name.trim() || null }),

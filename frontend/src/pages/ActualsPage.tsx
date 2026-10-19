@@ -10,6 +10,8 @@ import BreakdownPanel from '../components/actuals/BreakdownPanel';
 import ExportPanel from '../components/actuals/ExportPanel';
 import { TrackerMovedNotice } from '../components/TrackerMovedNotice';
 import { useTrackerMove } from '../tracker/useTrackerMove';
+import { SchedulerMovedNotice } from '../components/SchedulerMovedNotice';
+import { useSchedulerMove } from '../scheduler/useSchedulerMove';
 
 type View = 'tasks' | 'review' | 'periods' | 'breakdown' | 'export';
 const VIEWS: View[] = ['tasks', 'review', 'periods', 'breakdown', 'export'];
@@ -24,10 +26,13 @@ const ActualsPage: React.FC = () => {
   const go = (next: View) => navigate(next === 'tasks' ? '/actuals' : `/actuals/${next}`);
   // 打刻を Tracker へ移した後は、打刻から数える時間をサーバが出さない（task #526 / ADR-0053）
   const trackerMove = useTrackerMove();
+  // 予定を Scheduler へ移した後は、予定から数える時間（予定した時間）をサーバが出さない（0。task #535 / ADR-0054）
+  const schedulerMove = useSchedulerMove();
 
   return (
     <Box>
       {trackerMove.moved && <TrackerMovedNotice url={trackerMove.url} bodyKey="tracker.actualsBody" sx={{ mb: '14px' }} />}
+      {schedulerMove.moved && <SchedulerMovedNotice url={schedulerMove.url} bodyKey="scheduler.actualsBody" sx={{ mb: '14px' }} />}
       <Tabs value={tab} onChange={(_, v: View) => go(v)} sx={{ mb: '14px', minHeight: 40 }}>
         <Tab value="tasks" label={t('actuals.tabTasks')} />
         <Tab value="periods" label={t('actuals.tabPeriods')} />

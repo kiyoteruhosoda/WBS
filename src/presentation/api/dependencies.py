@@ -84,6 +84,7 @@ from src.infrastructure.repositories.user_account_repository import (
 )
 from src.infrastructure.repositories.work_break_repository import SqlAlchemyWorkBreakRepository
 from src.infrastructure.repositories.work_log_repository import SqlAlchemyWorkLogRepository
+from src.infrastructure.scheduler_move.scheduler_move_settings import SchedulerMoveSettings
 from src.infrastructure.tracker_move.tracker_move_settings import TrackerMoveSettings
 from src.infrastructure.wintrack_release.s3_release_file_store import S3ReleaseFileStore
 from src.infrastructure.wintrack_release.wintrack_release_settings import (
@@ -113,6 +114,13 @@ def get_tracker_move_settings(request: Request) -> TrackerMoveSettings:
     return request.app.state.tracker_move_settings
 
 TrackerMoveSettingsDep = Annotated[TrackerMoveSettings, Depends(get_tracker_move_settings)]
+
+
+def get_scheduler_move_settings(request: Request) -> SchedulerMoveSettings:
+    """予定まわりを Scheduler へ移したか（task #535 / ADR-0054。``create_app`` が置く）。"""
+    return request.app.state.scheduler_move_settings
+
+SchedulerMoveSettingsDep = Annotated[SchedulerMoveSettings, Depends(get_scheduler_move_settings)]
 
 
 def get_identity_provider(request: Request) -> IdentityProvider:
@@ -307,9 +315,20 @@ def get_calendar_event_use_cases(db: DbDep) -> CalendarEventUseCases:
 CalendarEventUseCasesDep = Annotated[CalendarEventUseCases, Depends(get_calendar_event_use_cases)]
 
 
-def get_task_use_cases(db: DbDep) -> TaskUseCases:
+def _scheduled_time_of(
+    db: Session, scheduler_move: SchedulerMoveSettings
+) -> CalendarEventUseCases | None:
+    """タスクの「予定済みの時間」を数える口（ADR-0014）。
+
+    予定を Scheduler へ移した後は無し（``scheduled_hours``・``unscheduled_hours`` は null）。
+    WBS の予定の表は凍っているので、凍った値を今のものに見せない（task #535 / ADR-0054）。
+    """
+    return None if scheduler_move.moved else get_calendar_event_use_cases(db)
+
+
+def get_task_use_cases(db: DbDep, scheduler_move: SchedulerMoveSettingsDep) -> TaskUseCases:
     """タスクのユースケース。「予定済みの時間」は予定のユースケースから引く（ADR-0014）。"""
-    return TaskUseCases(db, scheduled_time=get_calendar_event_use_cases(db))
+    return TaskUseCases(db, scheduled_time=_scheduled_time_of(db, scheduler_move))
 
 TaskUseCasesDep = Annotated[TaskUseCases, Depends(get_task_use_cases)]
 
@@ -326,14 +345,17 @@ def get_task_removal_use_cases(db: DbDep) -> TaskRemovalUseCases:
 TaskRemovalUseCasesDep = Annotated[TaskRemovalUseCases, Depends(get_task_removal_use_cases)]
 
 
-def get_today_use_cases(db: DbDep, tracker_move: TrackerMoveSettingsDep) -> TodayUseCases:
+def get_today_use_cases(
+    db: DbDep, tracker_move: TrackerMoveSettingsDep, scheduler_move: SchedulerMoveSettingsDep
+) -> TodayUseCases:
     """「今日」の画面の要約。時計は 1 つを共有する（タスクの期限の近さと今日の区切りを揃える）。"""
     clock = UserClock(db)
     return TodayUseCases(
         clock,
         time_entries=get_time_entry_use_cases(db),
-        tasks=TaskUseCases(db, clock, scheduled_time=get_calendar_event_use_cases(db)),
+        tasks=TaskUseCases(db, clock, scheduled_time=_scheduled_time_of(db, scheduler_move)),
         tracked_time_moved=tracker_move.moved,
+        calendar_moved=scheduler_move.moved,
     )
 
 TodayUseCasesDep = Annotated[TodayUseCases, Depends(get_today_use_cases)]
@@ -368,13 +390,15 @@ def get_closing_use_cases(db: DbDep) -> ClosingUseCases:
 ClosingUseCasesDep = Annotated[ClosingUseCases, Depends(get_closing_use_cases)]
 
 
-def get_actuals_use_cases(db: DbDep, tracker_move: TrackerMoveSettingsDep) -> ActualsUseCases:
+def get_actuals_use_cases(
+    db: DbDep, tracker_move: TrackerMoveSettingsDep, scheduler_move: SchedulerMoveSettingsDep
+) -> ActualsUseCases:
     """実績の見える化（ADR-0017）。時計は 1 つを共有する（タスクの予定済みと期間の区切りを揃える）。"""
     clock = UserClock(db)
     calendar = get_calendar_event_use_cases(db)
     return ActualsUseCases(
         clock=clock,
-        tasks=TaskUseCases(db, clock, scheduled_time=calendar),
+        tasks=TaskUseCases(db, clock, scheduled_time=_scheduled_time_of(db, scheduler_move)),
         task_repository=SqlAlchemyTaskRepository(db),
         work_logs=SqlAlchemyWorkLogRepository(db),
         time_entries=SqlAlchemyTimeEntryRepository(db),
@@ -385,6 +409,7 @@ def get_actuals_use_cases(db: DbDep, tracker_move: TrackerMoveSettingsDep) -> Ac
         occurrences=calendar,
         breaks=SqlAlchemyWorkBreakRepository(db),
         tracked_time_moved=tracker_move.moved,
+        calendar_moved=scheduler_move.moved,
     )
 
 ActualsUseCasesDep = Annotated[ActualsUseCases, Depends(get_actuals_use_cases)]
