@@ -175,3 +175,27 @@ def test_project_and_person_calendars_move_the_forecast(client) -> None:
     assert res.status_code == 200, res.text
     tasks = _by_title(client)
     assert tasks["根の"]["forecast_finish"] == "2026-11-05"
+
+
+def test_working_hours_and_extra_workdays_move_the_forecast(client) -> None:
+    """ADR-0060: 残業・短い日・休日出勤と、プロジェクトの稼働日。今日 = 11/2（月）。"""
+    root = _project(client)
+    pid = root["id"]
+    _task(client, "T", project_id=pid, remaining_hours=40)
+    leave = f"/api/projects/{pid}/members/{SINGLE_USER_ID}/leave"
+    assert _by_title(client)["T"]["forecast_finish"] == "2026-11-06"  # 月〜金の 8 時間 × 5
+    # 月に 16 時間の残業で、木に終わる
+    client.post(leave, json={"day": "2026-11-02", "hours": 16})
+    assert _by_title(client)["T"]["forecast_finish"] == "2026-11-05"
+    # 火を 0 時間にすると金に戻る
+    client.post(leave, json={"day": "2026-11-03", "hours": 0})
+    assert _by_title(client)["T"]["forecast_finish"] == "2026-11-06"
+    # 残りを増やし、土に休日出勤 8 時間で月まで延びずに土で終わる
+    client.put(f"/api/tasks/{_by_title(client)['T']['id']}", json={"remaining_hours": 48})
+    assert _by_title(client)["T"]["forecast_finish"] == "2026-11-09"
+    client.post(leave, json={"day": "2026-11-07", "hours": 8})
+    assert _by_title(client)["T"]["forecast_finish"] == "2026-11-07"
+    # 本人の休日出勤をやめ、プロジェクトの稼働日にしても土で終わる
+    client.delete(f"{leave}/2026-11-07")
+    client.post(f"/api/projects/{pid}/calendar/extra-workdays", json={"day": "2026-11-07"})
+    assert _by_title(client)["T"]["forecast_finish"] == "2026-11-07"

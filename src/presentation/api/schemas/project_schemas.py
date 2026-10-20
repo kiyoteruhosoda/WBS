@@ -168,6 +168,10 @@ class JapaneseHolidaysRequest(BaseModel):
 class MemberLeaveRequest(BaseModel):
     day: date
     off_percent: int = Field(default=100, ge=1, le=100, description="休む割合（終日 100・半休 50）")
+    hours: float | None = Field(
+        default=None, ge=0, le=24,
+        description="その日の稼働時間（入れれば休む割合は見ない。残業・短い日・稼働しない日なら休日出勤）",
+    )
 
 
 class TeamDayOffResponse(BaseModel):
@@ -179,10 +183,19 @@ class TeamDayOffResponse(BaseModel):
     inherited: bool
 
 
+class TeamExtraWorkdayResponse(BaseModel):
+    day: date
+    name: str | None
+    project_id: int
+    inherited: bool
+
+
 class MemberLeaveResponse(BaseModel):
     user_id: int
     day: date
     off_percent: int
+    # その日の稼働時間（入っていれば off_percent は見ない）
+    hours: float | None
 
 
 class TeamCalendarResponse(BaseModel):
@@ -196,6 +209,8 @@ class TeamCalendarResponse(BaseModel):
     can_manage: bool
     workdays: list[Weekday]
     days_off: list[TeamDayOffResponse]
+    # 稼働しない曜日に働く日（ADR-0060。同じ日の休日とは重ならない。近いプロジェクトのものが勝つ）
+    extra_workdays: list[TeamExtraWorkdayResponse]
     leave: list[MemberLeaveResponse]
 
     @classmethod
@@ -211,5 +226,14 @@ class TeamCalendarResponse(BaseModel):
                 )
                 for d in view.days_off
             ],
-            leave=[MemberLeaveResponse(user_id=d.user_id, day=d.day, off_percent=d.off_percent) for d in view.leave],
+            extra_workdays=[
+                TeamExtraWorkdayResponse(
+                    day=d.day, name=d.name, project_id=d.project_id, inherited=d.project_id != view.project_id,
+                )
+                for d in view.extra_workdays
+            ],
+            leave=[
+                MemberLeaveResponse(user_id=d.user_id, day=d.day, off_percent=d.off_percent, hours=d.hours)
+                for d in view.leave
+            ],
         )

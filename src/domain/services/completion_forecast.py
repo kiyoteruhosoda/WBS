@@ -2,8 +2,11 @@
 
 担当者 × いちばん上のプロジェクトを 1 つの「枠」（``WorkSeat``）とし、今日から 1 日ずつ進める。
 
-- その日に使える時間 = 1 日の工数 × 従事率（稼働する曜日で、チームの休日でない日だけ。本人の休みの日は休む割合を引く）
-- 下のプロジェクトで足した休日は、そのプロジェクトのタスクだけ進めない（ほかのタスクへ時間が回る。ADR-0059）
+- その日に使える時間 = 1 日の工数 × 従事率（本人の休みの日は休む割合を引く）。本人がその日の稼働時間を決めた日
+  （残業・短い日・休日出勤）は、その時間 × 従事率（ADR-0060）
+- タスクが進むのは、そのタスクのプロジェクトのカレンダーで稼働する日か、本人が稼働時間を決めた日だけ。
+  プロジェクトのカレンダーは根の曜日に、自分と先祖の休日・稼働日を重ねたもの（近いほうが勝つ。ADR-0059・ADR-0060）。
+  進めないタスクの分の時間は、同じ人のほかのタスクへ回る
 - まずアサイン比率のあるタスクへ「比率 × その日の時間」、残った時間を比率の無いタスクへ順番に
   （期限 → 優先度 → 計画の開始日 → 番号）。依存で待っているものは飛ばす
 - 子を持つタスクは時間を使わず、子孫の葉の見込みを束ねる
@@ -58,12 +61,15 @@ class ForecastGap(enum.StrEnum):
 
 @dataclass(frozen=True)
 class TeamCalendar:
-    """いちばん上のプロジェクトの稼働する曜日と休日。"""
+    """プロジェクトのカレンダー: 根の稼働する曜日と、休日・稼働日（稼働しない曜日に働く日）。2 つは重ならない。"""
 
     workdays: frozenset[Weekday] = WEEKDAYS_MON_TO_FRI
     days_off: frozenset[date] = frozenset()
+    extra_workdays: frozenset[date] = frozenset()
 
     def is_working_day(self, day: date) -> bool:
+        if day in self.extra_workdays:
+            return True
         return Weekday.of(day) in self.workdays and day not in self.days_off
 
 
@@ -76,20 +82,40 @@ class WorkSeat:
     calendar: TeamCalendar = field(default_factory=TeamCalendar)
     leave: Mapping[date, int] = field(default_factory=dict)
     """本人の休みの日 → 休む割合（終日 100・半休 50。プロジェクトをまたいで同じ。ADR-0059 決定 2）。"""
+    day_hours: Mapping[date, float] = field(default_factory=dict)
+    """本人がその日の稼働時間を決めた日 → 時間（残業・短い日・休日出勤。プロジェクトをまたいで同じ。ADR-0060）。"""
+
+    @property
+    def _engagement(self) -> float:
+        return max(min(self.engagement_percent, 100), 0) / 100
 
     @property
     def hours_per_day(self) -> float:
-        return max(self.daily_hours, 0.0) * max(min(self.engagement_percent, 100), 0) / 100
+        return max(self.daily_hours, 0.0) * self._engagement
 
     @property
     def has_capacity(self) -> bool:
-        return self.hours_per_day > _EPSILON and bool(self.calendar.workdays)
+        if self._engagement <= _EPSILON:
+            return False
+        usual = self.hours_per_day > _EPSILON and bool(self.calendar.workdays)
+        return usual or any(h > _EPSILON for h in self.day_hours.values())
 
-    def hours_on(self, day: date) -> float:
-        if not self.calendar.is_working_day(day):
-            return 0.0
+    def person_hours(self, day: date) -> float:
+        """その日にこの人がこのプロジェクトに使える時間（稼働する日かどうかは見ない）。"""
+        if day in self.day_hours:
+            return max(self.day_hours[day], 0.0) * self._engagement
         off_percent = max(min(self.leave.get(day, 0), 100), 0)
         return self.hours_per_day * (100 - off_percent) / 100
+
+    def works_on(self, day: date, calendar: TeamCalendar) -> bool:
+        """その日にそのカレンダーのタスクを進めるか。稼働時間を決めた日は、休日・稼働しない曜日でも進める。"""
+        if self.day_hours.get(day, 0) > _EPSILON:
+            return True
+        return calendar.is_working_day(day)
+
+    def hours_on(self, day: date) -> float:
+        """根のカレンダーでの、その日に使える時間。"""
+        return self.person_hours(day) if self.works_on(day, self.calendar) else 0.0
 
 
 @dataclass(frozen=True)
@@ -123,8 +149,8 @@ class _Leaf:
     seat_key: SeatKey
     remaining: float
     started_before_today: bool
-    #: このタスクのプロジェクトで足した休日（根のものは枠の空きに入っているので含めない。ADR-0059 決定 1）
-    days_off: frozenset[date] = frozenset()
+    #: このタスクのプロジェクトのカレンダー（None なら枠の＝根のカレンダー。ADR-0059 決定 1）
+    calendar: TeamCalendar | None = None
     start: date | None = None
     finish: date | None = None
 
@@ -180,11 +206,12 @@ class CompletionForecaster:
         dependencies: Iterable[TaskDependency],
         seats: Mapping[SeatKey, WorkSeat],
         root_of: Callable[[int | None], int | None],
-        project_days_off: Callable[[int | None], frozenset[date]] = lambda _: frozenset(),
+        project_calendar: Callable[[int | None], TeamCalendar | None] = lambda _: None,
     ) -> CompletionForecast:
         """``tasks`` は削除・アーカイブを除いた全部（依存と同じ枠のタスクを数えるため、絞らずに渡す）。
 
-        ``project_days_off`` はプロジェクトの id から、そのプロジェクトと根を除く先祖で足した休日を返す。
+        ``project_calendar`` はプロジェクトの id から、そのプロジェクトのカレンダー（根の曜日に自分と先祖の休日・稼働日を
+        重ねたもの）を返す。None なら担当者の枠のカレンダー（根のもの）を使う。
         """
         tasks = [t for t in tasks if t.id is not None]
         by_id = {t.id: t for t in tasks}
@@ -197,7 +224,7 @@ class CompletionForecaster:
             if gap is not None:
                 result[task.id] = TaskForecast(task.id, gap=gap)
             else:
-                leaf.days_off = project_days_off(task.project_id)
+                leaf.calendar = project_calendar(task.project_id)
                 leaves[task.id] = leaf
 
         constraints = self._constraints(dependencies, by_id, board)
@@ -311,7 +338,7 @@ class CompletionForecaster:
         open_count = len(leaves)
         day = self._today
         while open_count and day <= self._last_day:
-            left = {key: seats[key].hours_on(day) for key in by_seat}
+            left = {key: seats[key].person_hours(day) for key in by_seat}
             capacity = dict(left)
             given_today: set[int] = set()
             progressed = True
@@ -321,9 +348,11 @@ class CompletionForecaster:
                 for key, queue in by_seat.items():
                     if left[key] <= _EPSILON:
                         continue
+                    seat = seats[key]
                     ready = [
                         leaf for leaf in queue
                         if leaf.finish is None and leaf.task.id not in given_today
+                        and seat.works_on(day, leaf.calendar or seat.calendar)
                         and self._is_ready(leaf, day, constraints, leaves, board)
                     ]
                     if not ready:
@@ -374,8 +403,6 @@ class CompletionForecaster:
         board: TaskProgressBoard,
     ) -> bool:
         if leaf.task.start_date is not None and day < leaf.task.start_date:
-            return False
-        if day in leaf.days_off:
             return False
         return all(self._is_satisfied(c, day, leaves, board) for c in constraints.get(leaf.task.id, ()))
 

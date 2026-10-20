@@ -12,6 +12,7 @@ from src.infrastructure.database.models import (
     ProjectModel,
     TaskModel,
     TeamDayOffModel,
+    TeamExtraWorkdayModel,
     TeamWorkweekModel,
 )
 from src.infrastructure.repositories.project_visibility import project_visible_to
@@ -103,6 +104,9 @@ class SqlAlchemyProjectRepository(ProjectRepository):
             delete(ProjectMemberModel).where(ProjectMemberModel.project_id == project_id)
         )
         self._session.execute(delete(TeamDayOffModel).where(TeamDayOffModel.project_id == project_id))
+        self._session.execute(
+            delete(TeamExtraWorkdayModel).where(TeamExtraWorkdayModel.project_id == project_id)
+        )
         self._session.execute(delete(TeamWorkweekModel).where(TeamWorkweekModel.project_id == project_id))
         model = self._session.get(ProjectModel, project_id)
         if model is not None:

@@ -4,7 +4,7 @@ from abc import ABC, abstractmethod
 from collections.abc import Iterable
 from datetime import date
 
-from src.domain.entities.team_day_off import MemberDayOff, TeamDayOff
+from src.domain.entities.team_day_off import MemberDayOff, TeamDayOff, TeamExtraWorkday
 from src.domain.value_objects.recurrence import Weekday
 
 
@@ -36,6 +36,19 @@ class TeamCalendarRepository(ABC):
     def remove_team_day_off(self, project_id: int, day: date) -> None: ...
 
     @abstractmethod
+    def extra_workdays(
+        self, project_ids: Iterable[int], from_date: date | None = None, to_date: date | None = None,
+    ) -> list[TeamExtraWorkday]:
+        """稼働しない曜日に働く日（ADR-0060）。日付の順。"""
+
+    @abstractmethod
+    def add_extra_workday(self, workday: TeamExtraWorkday) -> None:
+        """同じ日があれば名前を書き換える。"""
+
+    @abstractmethod
+    def remove_extra_workday(self, project_id: int, day: date) -> None: ...
+
+    @abstractmethod
     def forget_workdays(self, project_id: int) -> None:
         """根でなくなるときに曜日を消す（休日はそのプロジェクト自身の休日として残す）。"""
 
@@ -47,7 +60,7 @@ class TeamCalendarRepository(ABC):
 
     @abstractmethod
     def add_member_day_off(self, day_off: MemberDayOff) -> None:
-        """同じ日があれば休む割合を書き換える。"""
+        """同じ日があれば休む割合と稼働時間を書き換える。"""
 
     @abstractmethod
     def remove_member_day_off(self, user_id: int, day: date) -> None: ...

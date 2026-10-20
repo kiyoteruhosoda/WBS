@@ -263,11 +263,11 @@ def test_member_enters_own_leave_and_the_manager_sees_it(client, as_, other_id) 
 
     as_.me()
     view = client.get(f"/api/projects/{root['id']}/calendar").json()
-    assert view["leave"] == [{"user_id": other_id, "day": "2026-11-05", "off_percent": 100}]
+    assert view["leave"] == [{"user_id": other_id, "day": "2026-11-05", "off_percent": 100, "hours": None}]
     # 管理者は誰の休みでも入れ・消せる
     client.post(f"/api/projects/{root['id']}/members/{other_id}/leave", json={"day": "2026-11-06"})
     res = client.delete(f"/api/projects/{root['id']}/members/{other_id}/leave/2026-11-05")
-    assert res.json()["leave"] == [{"user_id": other_id, "day": "2026-11-06", "off_percent": 100}]
+    assert res.json()["leave"] == [{"user_id": other_id, "day": "2026-11-06", "off_percent": 100, "hours": None}]
 
 
 def test_a_half_day_off_is_saved_and_changed(client, other_id) -> None:
@@ -275,9 +275,9 @@ def test_a_half_day_off_is_saved_and_changed(client, other_id) -> None:
     base = f"/api/projects/{root['id']}/members/{other_id}/leave"
     res = client.post(base, json={"day": "2026-11-05", "off_percent": 50})
     assert res.status_code == 200, res.text
-    assert res.json()["leave"] == [{"user_id": other_id, "day": "2026-11-05", "off_percent": 50}]
+    assert res.json()["leave"] == [{"user_id": other_id, "day": "2026-11-05", "off_percent": 50, "hours": None}]
     res = client.post(base, json={"day": "2026-11-05", "off_percent": 100})
-    assert res.json()["leave"] == [{"user_id": other_id, "day": "2026-11-05", "off_percent": 100}]
+    assert res.json()["leave"] == [{"user_id": other_id, "day": "2026-11-05", "off_percent": 100, "hours": None}]
     assert client.post(base, json={"day": "2026-11-05", "off_percent": 0}).status_code == 422
     assert client.post(base, json={"day": "2026-11-05", "off_percent": 101}).status_code == 422
 
@@ -288,7 +288,7 @@ def test_leave_is_the_same_across_projects(client, as_, other_id) -> None:
     client.post(f"/api/projects/{second['id']}/members", json={"user_id": other_id})
     client.post(f"/api/projects/{first['id']}/members/{other_id}/leave", json={"day": "2026-11-05"})
     view = client.get(f"/api/projects/{second['id']}/calendar").json()
-    assert view["leave"] == [{"user_id": other_id, "day": "2026-11-05", "off_percent": 100}]
+    assert view["leave"] == [{"user_id": other_id, "day": "2026-11-05", "off_percent": 100, "hours": None}]
 
 
 def test_leave_of_a_non_member_is_404(client, other_id) -> None:
@@ -312,3 +312,58 @@ def test_allocation_percent_is_saved_and_cleared(client) -> None:
     assert res.json()["allocation_percent"] is None
     assert client.put(f"/api/tasks/{task['id']}", json={"allocation_percent": 0}).status_code == 422
     assert client.put(f"/api/tasks/{task['id']}", json={"allocation_percent": 101}).status_code == 422
+
+
+# ---- その日の稼働時間・稼働日（#558 / ADR-0060） -----------------------------------------
+
+
+def test_working_hours_of_a_day_replace_the_day_off(client, other_id) -> None:
+    root = _shared_root(client, other_id)
+    base = f"/api/projects/{root['id']}/members/{other_id}/leave"
+    res = client.post(base, json={"day": "2026-11-05", "hours": 10.5})
+    assert res.status_code == 200, res.text
+    assert res.json()["leave"] == [{"user_id": other_id, "day": "2026-11-05", "off_percent": 100, "hours": 10.5}]
+    # 休み（割合）に戻すと稼働時間は消える
+    res = client.post(base, json={"day": "2026-11-05", "off_percent": 50})
+    assert res.json()["leave"] == [{"user_id": other_id, "day": "2026-11-05", "off_percent": 50, "hours": None}]
+    assert client.post(base, json={"day": "2026-11-05", "hours": 25}).status_code == 422
+    assert client.post(base, json={"day": "2026-11-05", "hours": -1}).status_code == 422
+
+
+def test_extra_workdays_are_inherited_and_the_nearer_project_wins(client) -> None:
+    root = _project(client, "根")
+    child = _project(client, "子", parent=root["id"])
+    root_base = f"/api/projects/{root['id']}/calendar"
+    child_base = f"/api/projects/{child['id']}/calendar"
+    res = client.post(f"{root_base}/extra-workdays", json={"day": "2026-11-07", "name": "出勤日"})
+    assert res.status_code == 200, res.text
+    client.post(f"{root_base}/days-off", json={"day": "2026-11-03"})
+    view = client.get(child_base).json()
+    assert [(d["day"], d["inherited"]) for d in view["extra_workdays"]] == [("2026-11-07", True)]
+    # 子で親の休日を稼働日に、親の稼働日を休日にできる（近いほうが勝つ）
+    client.post(f"{child_base}/extra-workdays", json={"day": "2026-11-03"})
+    client.post(f"{child_base}/days-off", json={"day": "2026-11-07"})
+    view = client.get(child_base).json()
+    assert [(d["day"], d["inherited"]) for d in view["extra_workdays"]] == [("2026-11-03", False)]
+    assert [(d["day"], d["inherited"]) for d in view["days_off"]] == [("2026-11-07", False)]
+    # 同じプロジェクトでは、稼働日を入れると同じ日の休日は消える
+    client.post(f"{child_base}/extra-workdays", json={"day": "2026-11-07"})
+    view = client.get(child_base).json()
+    assert view["days_off"] == []
+    assert ("2026-11-07", False) in [(d["day"], d["inherited"]) for d in view["extra_workdays"]]
+    res = client.delete(f"{child_base}/extra-workdays/2026-11-07")
+    assert ("2026-11-07", True) in [(d["day"], d["inherited"]) for d in res.json()["extra_workdays"]]
+
+
+def test_only_managers_add_extra_workdays(client, as_, other_id) -> None:
+    root = _shared_root(client, other_id)
+    as_.other()
+    base = f"/api/projects/{root['id']}/calendar/extra-workdays"
+    assert client.post(base, json={"day": "2026-11-07"}).status_code == 403
+    assert client.delete(f"{base}/2026-11-07").status_code == 403
+
+
+def test_a_root_with_extra_workdays_can_be_deleted(client) -> None:
+    root = _project(client, "根")
+    client.post(f"/api/projects/{root['id']}/calendar/extra-workdays", json={"day": "2026-11-07"})
+    assert client.delete(f"/api/projects/{root['id']}").status_code == 204
