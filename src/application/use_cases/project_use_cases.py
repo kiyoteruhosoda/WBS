@@ -11,6 +11,7 @@ from src.application.dto.unset import UNSET
 from src.application.use_cases.project_membership import ProjectMembership
 from src.domain.entities.project import Project, project_code, project_name
 from src.domain.exceptions import ProjectCycleError, ProjectNotEmptyError
+from src.domain.services.project_calendar import layer_calendar_days
 from src.domain.services.project_tree import ProjectTree
 from src.domain.value_objects.project_role import ProjectRole
 from src.infrastructure.repositories.milestone_repository import SqlAlchemyMilestoneRepository
@@ -157,16 +158,23 @@ class ProjectUseCases:
         self._session.commit()
 
     def _copy_team_calendar(self, from_root_id: int, lineage: list[int], to_project_id: int) -> None:
-        """下のプロジェクトを根へ出すとき、元の根の曜日と先祖から引き継いでいた休日を写す（見込みを変えない）。"""
+        """下のプロジェクトを根へ出すとき、元の根の曜日と先祖から引き継いでいた休日・稼働日を写す（見込みを変えない）。"""
         workdays = self._team_calendar.workdays(from_root_id)
         if workdays is not None:
             self._team_calendar.set_workdays(to_project_id, workdays)
         own = {d.day for d in self._team_calendar.team_days_off([to_project_id])}
+        own |= {d.day for d in self._team_calendar.extra_workdays([to_project_id])}
         ancestors = [p for p in lineage if p != to_project_id]
-        for day_off in self._team_calendar.team_days_off(ancestors):
+        # 先祖の休日・稼働日は近いほうが勝ったものを写す（ADR-0060）
+        inherited = layer_calendar_days(
+            ancestors, self._team_calendar.team_days_off(ancestors), self._team_calendar.extra_workdays(ancestors),
+        )
+        for day_off in inherited.days_off:
             if day_off.day not in own:
-                own.add(day_off.day)
                 self._team_calendar.add_team_day_off(replace(day_off, project_id=to_project_id))
+        for workday in inherited.extra_workdays:
+            if workday.day not in own:
+                self._team_calendar.add_extra_workday(replace(workday, project_id=to_project_id))
 
     def _view(
         self, project: Project, tree: ProjectTree, roles: dict[int, ProjectRole]

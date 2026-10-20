@@ -2,14 +2,20 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from datetime import date
+from decimal import Decimal
 
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
-from src.domain.entities.team_day_off import MemberDayOff, TeamDayOff
+from src.domain.entities.team_day_off import MemberDayOff, TeamDayOff, TeamExtraWorkday
 from src.domain.repositories.team_calendar_repository import TeamCalendarRepository
 from src.domain.value_objects.recurrence import Weekday
-from src.infrastructure.database.models import MemberDayOffModel, TeamDayOffModel, TeamWorkweekModel
+from src.infrastructure.database.models import (
+    MemberDayOffModel,
+    TeamDayOffModel,
+    TeamExtraWorkdayModel,
+    TeamWorkweekModel,
+)
 
 _WORKDAY_SEPARATOR = ","
 
@@ -69,6 +75,44 @@ class SqlAlchemyTeamCalendarRepository(TeamCalendarRepository):
         )
         self._session.flush()
 
+    def extra_workdays(
+        self, project_ids: Iterable[int], from_date: date | None = None, to_date: date | None = None,
+    ) -> list[TeamExtraWorkday]:
+        ids = list(project_ids)
+        if not ids:
+            return []
+        stmt = select(TeamExtraWorkdayModel).where(TeamExtraWorkdayModel.project_id.in_(ids))
+        if from_date is not None:
+            stmt = stmt.where(TeamExtraWorkdayModel.day >= from_date)
+        if to_date is not None:
+            stmt = stmt.where(TeamExtraWorkdayModel.day <= to_date)
+        stmt = stmt.order_by(TeamExtraWorkdayModel.day, TeamExtraWorkdayModel.id)
+        return [
+            TeamExtraWorkday(project_id=m.project_id, day=m.day, name=m.name) for m in self._session.scalars(stmt)
+        ]
+
+    def add_extra_workday(self, workday: TeamExtraWorkday) -> None:
+        model = self._session.scalar(
+            select(TeamExtraWorkdayModel).where(
+                TeamExtraWorkdayModel.project_id == workday.project_id, TeamExtraWorkdayModel.day == workday.day,
+            )
+        )
+        if model is None:
+            self._session.add(
+                TeamExtraWorkdayModel(project_id=workday.project_id, day=workday.day, name=workday.name)
+            )
+        else:
+            model.name = workday.name
+        self._session.flush()
+
+    def remove_extra_workday(self, project_id: int, day: date) -> None:
+        self._session.execute(
+            delete(TeamExtraWorkdayModel).where(
+                TeamExtraWorkdayModel.project_id == project_id, TeamExtraWorkdayModel.day == day,
+            )
+        )
+        self._session.flush()
+
     def forget_workdays(self, project_id: int) -> None:
         self._session.execute(delete(TeamWorkweekModel).where(TeamWorkweekModel.project_id == project_id))
         self._session.flush()
@@ -86,7 +130,11 @@ class SqlAlchemyTeamCalendarRepository(TeamCalendarRepository):
             stmt = stmt.where(MemberDayOffModel.day <= to_date)
         stmt = stmt.order_by(MemberDayOffModel.day, MemberDayOffModel.user_id)
         return [
-            MemberDayOff(user_id=m.user_id, day=m.day, off_percent=m.off_percent) for m in self._session.scalars(stmt)
+            MemberDayOff(
+                user_id=m.user_id, day=m.day, off_percent=m.off_percent,
+                hours=float(m.hours) if m.hours is not None else None,
+            )
+            for m in self._session.scalars(stmt)
         ]
 
     def add_member_day_off(self, day_off: MemberDayOff) -> None:
@@ -97,10 +145,13 @@ class SqlAlchemyTeamCalendarRepository(TeamCalendarRepository):
         )
         if model is None:
             self._session.add(
-                MemberDayOffModel(user_id=day_off.user_id, day=day_off.day, off_percent=day_off.off_percent)
+                MemberDayOffModel(
+                    user_id=day_off.user_id, day=day_off.day, off_percent=day_off.off_percent, hours=_hours(day_off),
+                )
             )
         else:
             model.off_percent = day_off.off_percent
+            model.hours = _hours(day_off)
         self._session.flush()
 
     def remove_member_day_off(self, user_id: int, day: date) -> None:
@@ -108,6 +159,10 @@ class SqlAlchemyTeamCalendarRepository(TeamCalendarRepository):
             delete(MemberDayOffModel).where(MemberDayOffModel.user_id == user_id, MemberDayOffModel.day == day)
         )
         self._session.flush()
+
+
+def _hours(day_off: MemberDayOff) -> Decimal | None:
+    return Decimal(str(day_off.hours)) if day_off.hours is not None else None
 
 
 def _parse(text: str) -> frozenset[Weekday]:

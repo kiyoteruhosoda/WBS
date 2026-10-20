@@ -154,6 +154,26 @@ class MemberDayOffModel(Base):
     day: Mapped[date] = mapped_column(sa.Date, nullable=False)
     #: 休む割合（終日 100・半休 50）
     off_percent: Mapped[int] = mapped_column(sa.Integer, nullable=False, server_default="100", default=100)
+    #: その日の稼働時間（入っていれば休む割合は見ない。残業・短い日・休日出勤。task #558 / ADR-0060）
+    hours: Mapped[Decimal | None] = mapped_column(sa.Numeric(4, 2), nullable=True)
+
+
+class TeamExtraWorkdayModel(Base):
+    """プロジェクトの稼働日＝稼働しない曜日に働く日（task #558 / ADR-0060）。下のプロジェクトは引き継ぐ。"""
+
+    __tablename__ = "team_extra_workdays"
+    __table_args__ = (
+        sa.UniqueConstraint("project_id", "day", name="uq_team_extra_workdays_project_day"),
+        {"sqlite_autoincrement": True},
+    )
+    id: Mapped[int] = mapped_column(BigIntPK, primary_key=True, autoincrement=True)
+    project_id: Mapped[int] = mapped_column(
+        sa.BigInteger().with_variant(sa.Integer(), "sqlite"),
+        sa.ForeignKey("projects.id", name="fk_team_extra_workdays_project_id"),
+        nullable=False,
+    )
+    day: Mapped[date] = mapped_column(sa.Date, nullable=False)
+    name: Mapped[str | None] = mapped_column(sa.String(100), nullable=True)
 
 class MilestoneModel(Base):
     __tablename__ = "milestones"

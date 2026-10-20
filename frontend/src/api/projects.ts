@@ -116,18 +116,32 @@ export const removeTeamDayOff = async (projectId: number, day: string): Promise<
   return data;
 };
 
+/** そのプロジェクトに稼働日（稼働しない曜日に働く日）を足す。同じ日の休日は消える（管理者だけ。ADR-0060）。 */
+export const addExtraWorkday = async (projectId: number, day: string, name: string | null): Promise<TeamCalendar> => {
+  const { data } = await client.post<TeamCalendar>(`/projects/${projectId}/calendar/extra-workdays`, { day, name });
+  return data;
+};
+
+export const removeExtraWorkday = async (projectId: number, day: string): Promise<TeamCalendar> => {
+  const { data } = await client.delete<TeamCalendar>(`/projects/${projectId}/calendar/extra-workdays/${day}`);
+  return data;
+};
+
 /** その年の日本の祝日を足す（すでにある日はそのまま。管理者だけ）。 */
 export const importTeamJapaneseHolidays = async (projectId: number, year: number): Promise<TeamCalendar> => {
   const { data } = await client.post<TeamCalendar>(`/projects/${projectId}/calendar/days-off/japan`, { year });
   return data;
 };
 
-/** その人の休み（終日 100・半休 50。同じ日なら割合を書き換える。本人か管理者だけ。プロジェクトをまたいで同じ）。 */
+/**
+ * その人のその日（休み・半休は offPercent、稼働時間を決めるなら hours。同じ日なら書き換える）。
+ * 本人か管理者だけ。プロジェクトをまたいで同じ（ADR-0059・ADR-0060）。
+ */
 export const addMemberLeave = async (
-  projectId: number, userId: number, day: string, offPercent = 100,
+  projectId: number, userId: number, day: string, offPercent = 100, hours: number | null = null,
 ): Promise<TeamCalendar> => {
   const { data } = await client.post<TeamCalendar>(`/projects/${projectId}/members/${userId}/leave`, {
-    day, off_percent: offPercent,
+    day, off_percent: offPercent, hours,
   });
   return data;
 };

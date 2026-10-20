@@ -8,8 +8,8 @@ import { useI18n } from '../../i18n';
 import { ds } from '../../theme';
 
 export interface DayMark {
-  /** off: 休み（終日）／half: 半日／inherited: 親から引き継いだ休み（押せない）／quiet: 稼働しない曜日など */
-  tone: 'off' | 'half' | 'inherited' | 'quiet';
+  /** off: 休み（終日）／half: 半日・短い日／work: 稼働日・出勤・残業／inherited: 親・プロジェクトから引き継いだもの／quiet: 稼働しない曜日など */
+  tone: 'off' | 'half' | 'work' | 'inherited' | 'quiet';
   /** 日の下に出す短い言葉 */
   label: string;
 }
@@ -21,7 +21,8 @@ interface Props {
   markOf: (day: string) => DayMark | null;
   /** 押せない日（引き継いだ休みなど）。省くとすべて押せる */
   isLocked?: (day: string) => boolean;
-  onPick: (day: string) => void;
+  /** 押した日と、押したボタン（小さなメニューを出す場所） */
+  onPick: (day: string, anchor: HTMLElement) => void;
   disabled?: boolean;
   ariaLabel: string;
 }
@@ -32,6 +33,7 @@ export const isoDay = (d: Date): string =>
 const TONES: Record<DayMark['tone'], { bg: string; fg: string; border: string }> = {
   off: { bg: ds.dangerPale, fg: ds.dangerText, border: ds.danger },
   half: { bg: ds.warnPale, fg: ds.warnText, border: ds.warnText },
+  work: { bg: ds.successPale2, fg: ds.text, border: ds.success },
   inherited: { bg: ds.track, fg: ds.textSub, border: ds.border },
   quiet: { bg: 'transparent', fg: ds.textMuted, border: ds.borderPale },
 };
@@ -88,7 +90,7 @@ const MonthCalendarPicker: React.FC<Props> = ({
               type="button"
               disabled={disabled || locked}
               aria-label={mark ? `${name} ${mark.label}` : name}
-              onClick={() => onPick(day)}
+              onClick={(e: React.MouseEvent<HTMLElement>) => onPick(day, e.currentTarget)}
               sx={{
                 minHeight: 44, p: '2px', borderRadius: '6px', font: 'inherit', cursor: disabled || locked ? 'default' : 'pointer',
                 display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '1px',

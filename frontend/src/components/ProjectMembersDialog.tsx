@@ -136,7 +136,7 @@ const ProjectMembersDialog: React.FC<Props> = ({ project, rootName, onClose }) =
       display: (m) => t('member.hours', { hours: Math.round(m.daily_hours * m.engagement_percent) / 100 }),
     },
     {
-      key: 'calendar', header: t('member.calendar'), width: 110, kind: 'readonly',
+      key: 'calendar', header: t('member.calendar'), width: 130, kind: 'readonly',
       value: () => '',
       onActivate: (m) => setCalendarOf(m),
       display: (m) => (

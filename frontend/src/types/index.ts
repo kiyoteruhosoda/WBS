@@ -131,8 +131,10 @@ export interface TeamCalendar {
   can_manage: boolean;
   workdays: WeekdayCode[];
   days_off: { day: string; name: string | null; project_id: number; inherited: boolean }[];
-  // 休む割合（終日 100・半休 50）
-  leave: { user_id: number; day: string; off_percent: number }[];
+  // 稼働しない曜日に働く日（ADR-0060。休日とは重ならない。近いプロジェクトのものが勝つ）
+  extra_workdays: { day: string; name: string | null; project_id: number; inherited: boolean }[];
+  // 休む割合（終日 100・半休 50）。hours があればその日の稼働時間（残業・短い日・休日出勤）で、割合は見ない
+  leave: { user_id: number; day: string; off_percent: number; hours: number | null }[];
 }
 
 export interface ProjectMembers {

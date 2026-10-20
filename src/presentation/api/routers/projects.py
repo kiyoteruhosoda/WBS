@@ -207,12 +207,32 @@ def remove_team_day_off(
     return TeamCalendarResponse.from_view(view)
 
 
+@router.post("/{project_id}/calendar/extra-workdays", response_model=TeamCalendarResponse)
+def add_extra_workday(
+    project_id: int, body: TeamDayOffRequest, db: DbDep, current_user: CurrentUserDep
+) -> TeamCalendarResponse:
+    """このプロジェクトに稼働日（稼働しない曜日に働く日）を足す。同じ日の休日は消す（管理者だけ。ADR-0060）。"""
+    view = TeamCalendarUseCases(db).add_extra_workday(current_user.user_id, project_id, body.day, body.name)
+    return TeamCalendarResponse.from_view(view)
+
+
+@router.delete("/{project_id}/calendar/extra-workdays/{day}", response_model=TeamCalendarResponse)
+def remove_extra_workday(
+    project_id: int, day: date, db: DbDep, current_user: CurrentUserDep
+) -> TeamCalendarResponse:
+    view = TeamCalendarUseCases(db).remove_extra_workday(current_user.user_id, project_id, day)
+    return TeamCalendarResponse.from_view(view)
+
+
 @router.post("/{project_id}/members/{user_id}/leave", response_model=TeamCalendarResponse)
 def add_member_leave(
     project_id: int, user_id: int, body: MemberLeaveRequest, db: DbDep, current_user: CurrentUserDep
 ) -> TeamCalendarResponse:
-    """その人の休みを足す（同じ日なら休む割合を書き換える。本人か管理者だけ。休みはプロジェクトをまたいで同じ）。"""
-    view = TeamCalendarUseCases(db).add_leave(current_user.user_id, project_id, user_id, body.day, body.off_percent)
+    """その人の休みか、その日の稼働時間（hours。残業・短い日・休日出勤）を入れる（同じ日なら書き換える。
+    本人か管理者だけ。プロジェクトをまたいで同じ）。"""
+    view = TeamCalendarUseCases(db).add_leave(
+        current_user.user_id, project_id, user_id, body.day, body.off_percent, body.hours
+    )
     return TeamCalendarResponse.from_view(view)
 
 

@@ -1,7 +1,8 @@
 // プロジェクトのカレンダー（task #557 / ADR-0059 決定 1。もとは #554 の「稼働日と休み」）。
 // - 稼働する曜日はいちばん上のプロジェクトに 1 つ（どの段から開いても根のもの）
-// - 休日は開いたプロジェクトに足す。親（先祖）の休日は引き継ぎ、ここでは消せない
-// - 終わる見込みの計算では、そのプロジェクトと下のプロジェクトのタスクは休日に進まない
+// - 休日と稼働日（稼働しない曜日に働く日。ADR-0060）は開いたプロジェクトに足す。親（先祖）のものは引き継ぎ、
+//   同じ日をここで逆にできる（近いほうが勝つ）。親のものはここでは消せない
+// - 終わる見込みの計算では、そのプロジェクトと下のプロジェクトのタスクは休日に進まず、稼働日には進む
 // 変えられるのは管理者だけ。各人の休みは人の一覧の行から開く「その人のカレンダー」で入れる。
 import React, { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -11,7 +12,8 @@ import {
   TextField, ToggleButton, ToggleButtonGroup,
 } from '@mui/material';
 import {
-  addTeamDayOff, getTeamCalendar, importTeamJapaneseHolidays, removeTeamDayOff, setTeamWorkdays, teamCalendarKey,
+  addExtraWorkday, addTeamDayOff, getTeamCalendar, importTeamJapaneseHolidays, removeExtraWorkday, removeTeamDayOff,
+  setTeamWorkdays, teamCalendarKey,
 } from '../api/projects';
 import type { Project, TeamCalendar, WeekdayCode } from '../types';
 import { WEEKDAY_CODES } from '../calendar/eventForm';
@@ -64,6 +66,7 @@ const ProjectCalendarDialog: React.FC<Props> = ({ project, rootName, onClose }) 
     return t('teamCalendar.dayLabel', { month: d.getMonth() + 1, day: d.getDate(), weekday: weekdays[d.getDay()] });
   };
   const dayOffByDate = useMemo(() => new Map((calendar.data?.days_off ?? []).map((d) => [d.day, d])), [calendar.data]);
+  const workdayByDate = useMemo(() => new Map((calendar.data?.extra_workdays ?? []).map((d) => [d.day, d])), [calendar.data]);
   const workdaySet = useMemo(() => new Set(calendar.data?.workdays ?? []), [calendar.data]);
 
   const saved = (data: TeamCalendar) => {
@@ -82,23 +85,32 @@ const ProjectCalendarDialog: React.FC<Props> = ({ project, rootName, onClose }) 
     onSuccess: (data) => { setNewDay(''); setNewName(''); saved(data); },
   });
   const removeDay = useMutation({ mutationFn: (day: string) => removeTeamDayOff(projectId, day), onSuccess: saved });
+  const addWork = useMutation({ mutationFn: (day: string) => addExtraWorkday(projectId, day, null), onSuccess: saved });
+  const removeWork = useMutation({ mutationFn: (day: string) => removeExtraWorkday(projectId, day), onSuccess: saved });
   const importJapan = useMutation({ mutationFn: () => importTeamJapaneseHolidays(projectId, year), onSuccess: saved });
-  const failed = [workdays, addDay, removeDay, importJapan].find((m) => m.isError);
-  const busy = addDay.isPending || removeDay.isPending;
+  const failed = [workdays, addDay, removeDay, addWork, removeWork, importJapan].find((m) => m.isError);
+  const busy = addDay.isPending || removeDay.isPending || addWork.isPending || removeWork.isPending;
+  const isUsualWorkday = (day: string) => workdaySet.has(WEEKDAY_CODES[parseDay(day).getDay()]);
 
   const markOf = (day: string): DayMark | null => {
     const off = dayOffByDate.get(day);
-    if (off) return { tone: off.inherited ? 'inherited' : 'off', label: off.inherited ? t('projectCalendar.inherited') : (off.name || t('projectCalendar.dayOff')) };
-    if (!workdaySet.has(WEEKDAY_CODES[parseDay(day).getDay()])) return { tone: 'quiet', label: t('projectCalendar.nonWorking') };
+    if (off) return { tone: off.inherited ? 'inherited' : 'off', label: off.inherited ? t('projectCalendar.inheritedOff') : (off.name || t('projectCalendar.dayOff')) };
+    const work = workdayByDate.get(day);
+    if (work) return { tone: work.inherited ? 'inherited' : 'work', label: work.inherited ? t('projectCalendar.inheritedWork') : (work.name || t('projectCalendar.extraWorkday')) };
+    if (!isUsualWorkday(day)) return { tone: 'quiet', label: t('projectCalendar.nonWorking') };
     return null;
   };
+  // 自分の指定は消す（親のもの・曜日どおりへ戻る）。それ以外は、その日に働くなら休日に、働かないなら稼働日にする
   const pick = (day: string) => {
     const off = dayOffByDate.get(day);
-    if (off?.inherited) return;
-    if (off) removeDay.mutate(day);
+    const work = workdayByDate.get(day);
+    if (off && !off.inherited) removeDay.mutate(day);
+    else if (work && !work.inherited) removeWork.mutate(day);
+    else if (off || (!work && !isUsualWorkday(day))) addWork.mutate(day);
     else addDay.mutate({ day, name: null });
   };
   const daysInYear = (calendar.data?.days_off ?? []).filter((d) => d.day.startsWith(`${year}-`));
+  const workdaysInYear = (calendar.data?.extra_workdays ?? []).filter((d) => d.day.startsWith(`${year}-`));
 
   const sectionTitle = (text: string) => (
     <Box component="h3" sx={{ fontSize: 14, fontWeight: 700, color: ds.text, m: 0 }}>{text}</Box>
@@ -136,7 +148,6 @@ const ProjectCalendarDialog: React.FC<Props> = ({ project, rootName, onClose }) 
               </Box>
               <MonthCalendarPicker
                 month={month} onMonthChange={setMonth} markOf={markOf}
-                isLocked={(day) => dayOffByDate.get(day)?.inherited ?? false}
                 onPick={pick} disabled={!canManage || busy}
                 ariaLabel={t('projectCalendar.daysOff')}
               />
@@ -155,6 +166,21 @@ const ProjectCalendarDialog: React.FC<Props> = ({ project, rootName, onClose }) 
                         <Chip
                           size="small" variant="outlined" label={text}
                           onDelete={canManage && !d.inherited ? () => removeDay.mutate(d.day) : undefined}
+                        />
+                      </Box>
+                    );
+                  })}
+                </Box>
+              )}
+              {workdaysInYear.length > 0 && (
+                <Box component="ul" aria-label={t('projectCalendar.workListTitle', { year })} sx={{ listStyle: 'none', m: 0, p: 0, display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                  {workdaysInYear.map((d) => {
+                    const text = [label(d.day), d.name || t('projectCalendar.extraWorkday'), d.inherited ? `（${t('projectCalendar.inherited')}）` : null].filter(Boolean).join(' ');
+                    return (
+                      <Box component="li" key={d.day}>
+                        <Chip
+                          size="small" variant="outlined" color="success" label={text}
+                          onDelete={canManage && !d.inherited ? () => removeWork.mutate(d.day) : undefined}
                         />
                       </Box>
                     );

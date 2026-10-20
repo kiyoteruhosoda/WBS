@@ -188,10 +188,47 @@ def test_days_off_of_a_sub_project_stop_only_its_tasks() -> None:
         dependencies=(),
         seats=seats,
         root_of=lambda project_id: PROJECT,
-        project_days_off=lambda project_id: frozenset({date(2026, 11, 3)}) if project_id == sub else frozenset(),
+        project_calendar=lambda project_id: (
+            TeamCalendar(days_off=frozenset({date(2026, 11, 3)})) if project_id == sub else None
+        ),
     )
     assert result.task(2).finish == date(2026, 11, 3)  # 火は 1 が休みなので 2 へ
     assert result.task(1).finish == date(2026, 11, 4)  # 月・(火は下のプロジェクトの休日)・水
+
+
+def test_working_hours_of_a_day_replace_the_usual_hours() -> None:
+    # ADR-0060: その日の稼働時間 × 従事率。残業・短い日・休日出勤（土）
+    seat = WorkSeat(daily_hours=8, engagement_percent=50, day_hours={
+        date(2026, 11, 2): 12, date(2026, 11, 3): 0, date(2026, 11, 7): 8,
+    })
+    assert seat.hours_on(date(2026, 11, 2)) == 6
+    assert seat.hours_on(date(2026, 11, 3)) == 0
+    assert seat.hours_on(date(2026, 11, 7)) == 4  # 土でも働く
+    assert seat.hours_on(date(2026, 11, 8)) == 0
+    result = _forecast([_task(1, remaining=20)], {(ALICE, PROJECT): seat})
+    # 月 6・火 0・水 4・木 4・金 4 → 18、土 4（休日出勤）で 22 ≥ 20
+    assert result.task(1).finish == date(2026, 11, 7)
+
+
+def test_extra_workday_of_a_project_lets_its_tasks_work_that_day() -> None:
+    # ADR-0060: プロジェクトの稼働日（土）は、そのプロジェクトのタスクだけ進む
+    sub = 11
+    tasks = [_task(1, remaining=48, project_id=sub), _task(2, remaining=48)]
+    saturday = date(2026, 11, 7)
+    seats = {(ALICE, PROJECT): _seat(8), (BOB, PROJECT): _seat(8)}
+    tasks[1] = _task(2, remaining=48, assignee=BOB)
+    result = CompletionForecaster(today=MONDAY).forecast(
+        tasks=tasks,
+        board=TaskProgressBoard(tasks, {}),
+        dependencies=(),
+        seats=seats,
+        root_of=lambda project_id: PROJECT,
+        project_calendar=lambda project_id: (
+            TeamCalendar(extra_workdays=frozenset({saturday})) if project_id == sub else None
+        ),
+    )
+    assert result.task(1).finish == saturday            # 月〜金 40 ＋ 土 8
+    assert result.task(2).finish == date(2026, 11, 9)   # 土は働かず、次の月
 
 
 def test_weekend_is_skipped_and_workdays_follow_the_team() -> None:
