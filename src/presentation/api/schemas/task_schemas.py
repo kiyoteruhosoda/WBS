@@ -25,6 +25,8 @@ class TaskCreateRequest(BaseModel):
     milestone_id: int | None = None
     # 空 = 未分類。親を持つタスクは親のプロジェクトに入る（省くと親に揃える。違う値は 422。ADR-0024）
     project_id: int | None = None
+    # 担当者（利用者の id）。省くと作った人、null で担当なし。根のプロジェクトのメンバー以外は 422（ADR-0055）
+    assignee_user_id: int | None = None
 
 
 class TaskUpdateRequest(BaseModel):
@@ -44,6 +46,8 @@ class TaskUpdateRequest(BaseModel):
     milestone_id: int | None = None
     # null を送ると未分類へ。子孫も一緒に移る。子タスクは親と違う値を送ると 422
     project_id: int | None = None
+    # null を送ると担当なし。根のプロジェクトのメンバー以外は 422（ADR-0055）
+    assignee_user_id: int | None = None
 
 
 class TaskMoveToProjectRequest(BaseModel):
@@ -93,6 +97,9 @@ class TaskResponse(BaseModel):
     # 属するプロジェクト（null = 未分類）と、表示用の道筋（「親 / 子」）
     project_id: int | None = None
     project_path: str | None = None
+    # 担当者と、その表示名（ADR-0055）。担当なしは null
+    assignee_user_id: int | None = None
+    assignee_name: str | None = None
     completed_at: UtcDatetime | None = None
     deleted_at: UtcDatetime | None = None
     # アーカイブした時刻（ADR-0046）。アーカイブしたタスクは一覧に出ないが、1 件の取得では返る

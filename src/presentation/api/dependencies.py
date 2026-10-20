@@ -25,6 +25,7 @@ from src.application.use_cases.calendar_use_cases import CalendarUseCases
 from src.application.use_cases.closing_use_cases import ClosingUseCases
 from src.application.use_cases.day_off_use_cases import DayOffUseCases
 from src.application.use_cases.pc_activity_use_cases import PcActivityUseCases
+from src.application.use_cases.project_member_use_cases import ProjectMemberUseCases
 from src.application.use_cases.task_removal_use_cases import TaskRemovalUseCases
 from src.application.use_cases.task_use_cases import TaskUseCases
 from src.application.use_cases.time_entry_use_cases import TimeEntryUseCases
@@ -34,7 +35,7 @@ from src.application.use_cases.wintrack_release_use_cases import WinTrackRelease
 from src.application.use_cases.work_break_use_cases import WorkBreakUseCases
 from src.application.user_clock import UserClock
 from src.domain.exceptions import AuthenticationError
-from src.infrastructure.auth.auth_settings import SINGLE_USER_ID, AuthSettings
+from src.infrastructure.auth.auth_settings import SINGLE_USER_ID, AuthMode, AuthSettings
 from src.infrastructure.calendar_feed.ics_parser import IcsCalendarParser
 from src.infrastructure.database.session import get_db_session
 from src.infrastructure.repositories.auth_session_repository import (
@@ -70,6 +71,7 @@ from src.infrastructure.repositories.occurrence_completion_repository import (
     SqlAlchemyOccurrenceCompletionRepository,
 )
 from src.infrastructure.repositories.pc_activity_repository import SqlAlchemyPcActivityRepository
+from src.infrastructure.repositories.person_directory import SqlAlchemyPersonDirectory
 from src.infrastructure.repositories.project_repository import SqlAlchemyProjectRepository
 from src.infrastructure.repositories.task_repository import SqlAlchemyTaskRepository
 from src.infrastructure.repositories.time_entry_carving_repository import (
@@ -107,6 +109,15 @@ def get_auth_settings(request: Request) -> AuthSettings:
     return request.app.state.auth_settings
 
 AuthSettingsDep = Annotated[AuthSettings, Depends(get_auth_settings)]
+
+
+def get_project_member_use_cases(db: DbDep, auth: AuthSettingsDep) -> ProjectMemberUseCases:
+    # SSO では assay と結び付いている人だけを候補にする（ADR-0055 決定 5）
+    people = SqlAlchemyPersonDirectory(db, require_identity=auth.mode is AuthMode.OIDC)
+    return ProjectMemberUseCases(db, people)
+
+
+ProjectMemberUseCasesDep = Annotated[ProjectMemberUseCases, Depends(get_project_member_use_cases)]
 
 
 def get_tracker_move_settings(request: Request) -> TrackerMoveSettings:

@@ -11,6 +11,7 @@ import { getTask, createTask, updateTask, getTaskDependencies, addDependency, re
 import { getWorklogs, createWorklog, deleteWorklog } from '../api/worklogs';
 import { getCategories } from '../api/categories';
 import { getMilestones } from '../api/milestones';
+import { getProjectMembers, projectMembersKey } from '../api/projects';
 import type { Milestone, Task, TaskStatus, DependencyType } from '../types';
 import { formatDate, formatHours, priorityBand, priorityBandValue, todayDate } from '../utils/format';
 import type { PriorityBand } from '../utils/format';
@@ -45,13 +46,15 @@ interface FormData {
   milestone_id: string;
   // '' = 未分類。子タスクは親と同じ（選べない。ADR-0024）
   project_id: string;
+  // 担当者（ADR-0055）。'' = 担当なし、'auto' = 送らない（新しいタスクは作った人になる）
+  assignee: string;
   memo: string;
 }
 
 const defaultForm: FormData = {
   title: '', category_id: '', priority: 3, urgency: 3, status: 'TODO',
   start_date: '', due_date: '', estimated_hours: '', actual_hours: '', remaining_hours: '',
-  parent_task_id: '', milestone_id: '', project_id: '', memo: '',
+  parent_task_id: '', milestone_id: '', project_id: '', assignee: 'auto', memo: '',
 };
 
 const toForm = (t: Task): FormData => ({
@@ -61,7 +64,8 @@ const toForm = (t: Task): FormData => ({
   actual_hours: String(t.actual_hours ?? 0),
   remaining_hours: t.remaining_hours_entered === null ? '' : String(t.remaining_hours_entered),
   parent_task_id: String(t.parent_task_id ?? ''),
-  milestone_id: String(t.milestone_id ?? ''), project_id: String(t.project_id ?? ''), memo: t.memo ?? '',
+  milestone_id: String(t.milestone_id ?? ''), project_id: String(t.project_id ?? ''),
+  assignee: t.assignee_user_id == null ? '' : String(t.assignee_user_id), memo: t.memo ?? '',
 });
 
 // ユーザー設定タイムゾーンでの「今日」を YYYY-MM-DD にする（実績差分の記録日）
@@ -173,14 +177,29 @@ const TaskEdit: React.FC = () => {
   // 選べるマイルストーン: このプロジェクトとその祖先のもの・未分類のもの（ADR-0024）
   const reachableMilestones = (milestonesList: Milestone[] | undefined, projectId: number | null) =>
     (milestonesList ?? []).filter((m) => milestoneReachable(projects, m.project_id, projectId));
+  // 担当者の候補はその木のメンバー（ADR-0055）。未分類のタスクは作った本人だけ
+  const memberProject = isChild ? (task?.project_id ?? projectNumber) : projectNumber;
+  const { data: members } = useQuery({
+    queryKey: projectMembersKey(memberProject ?? 0),
+    queryFn: () => getProjectMembers(memberProject ?? 0),
+    enabled: memberProject !== null,
+  });
+  const assigneeChoices = memberProject === null ? [] : (members?.members ?? []);
   const changeProject = (value: string) => {
     const next = value ? Number(value) : null;
     const current = milestones?.find((m) => String(m.id) === form.milestone_id);
     const keep = current === undefined || milestoneReachable(projects, current.project_id, next);
     setMilestoneCleared(!keep);
-    setForm({ ...form, project_id: value, milestone_id: keep ? form.milestone_id : '' });
+    // 未分類へ移す新しいタスクは、担当を作った人（自分）に戻す
+    const assignee = next === null && isNew && form.assignee !== '' ? 'auto' : form.assignee;
+    setForm({ ...form, project_id: value, milestone_id: keep ? form.milestone_id : '', assignee });
   };
   useEffect(() => { if (task) setForm(toForm(task)); }, [task]);
+  // 新しいタスクの既定は自分（メンバーが読めたら、自分の行を選んだ形で見せる）
+  useEffect(() => {
+    const me = members?.members.find((m) => m.is_you);
+    if (isNew && me) setForm((f) => (f.assignee === 'auto' ? { ...f, assignee: String(me.user_id) } : f));
+  }, [isNew, members]);
   // 新しいタスクは、指定のプロジェクト（`?project=<id>`。タスク一覧の束の見出しから来る。`none` は未分類）、
   // 無ければいま絞っているプロジェクトに入れておく
   const [searchParams] = useSearchParams();
@@ -235,6 +254,9 @@ const TaskEdit: React.FC = () => {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['deps', id] }),
   });
 
+  const assigneeChanged = form.assignee !== 'auto'
+    && (isNew || form.assignee !== (task?.assignee_user_id == null ? '' : String(task.assignee_user_id)));
+
   const handleSubmit = () => {
     if (!form.title.trim()) {
       setShowTitleError(true);
@@ -251,6 +273,8 @@ const TaskEdit: React.FC = () => {
       milestone_id: form.milestone_id ? Number(form.milestone_id) : null,
       // 子タスクは親のプロジェクトに入る（送らない。親を移すと子孫も移る）
       ...(isChild ? {} : { project_id: form.project_id ? Number(form.project_id) : null }),
+      // 担当者は変えたときだけ送る（前からの担当は、外れた人でも残す。ADR-0055）
+      ...(assigneeChanged ? { assignee_user_id: form.assignee === '' ? null : Number(form.assignee) } : {}),
       memo: form.memo || null,
     });
   };
@@ -486,6 +510,38 @@ const TaskEdit: React.FC = () => {
                 ))}
               </Select>
             )}
+          </Box>
+
+          {/* 担当者（task #544）。その木のメンバーから選ぶ */}
+          <Box>
+            <FieldLabel>{t('taskEdit.assignee')}</FieldLabel>
+            <Select
+              fullWidth size="small" displayEmpty
+              value={form.assignee}
+              onChange={e => setForm({ ...form, assignee: String(e.target.value) })}
+              renderValue={(v) => {
+                if (v === '') return t('taskEdit.noAssignee');
+                if (v === 'auto') return t('member.you');
+                const member = assigneeChoices.find((m) => String(m.user_id) === v);
+                if (member) return member.display_name || member.email;
+                return t('taskEdit.assigneeOutside', { name: task?.assignee_name ?? '' });
+              }}
+            >
+              <MenuItem value="">{t('taskEdit.noAssignee')}</MenuItem>
+              {memberProject === null && (
+                <MenuItem value={isNew ? 'auto' : String(task?.user_id ?? '')}>{t('member.you')}</MenuItem>
+              )}
+              {assigneeChoices.map((m) => (
+                <MenuItem key={m.user_id} value={String(m.user_id)}>
+                  {m.display_name || m.email}{m.is_you ? `（${t('member.you')}）` : ''}
+                </MenuItem>
+              ))}
+              {memberProject !== null && form.assignee !== '' && form.assignee !== 'auto'
+                && !assigneeChoices.some((m) => String(m.user_id) === form.assignee) && (
+                <MenuItem value={form.assignee}>{t('taskEdit.assigneeOutside', { name: task?.assignee_name ?? '' })}</MenuItem>
+              )}
+            </Select>
+            <Box sx={{ fontSize: 12, color: ds.textMuted, mt: '4px' }}>{t('taskEdit.assigneeHint')}</Box>
           </Box>
 
           <Box>

@@ -10,7 +10,7 @@ const D2 = '2026-09-02';
 const NOW = Date.parse('2026-09-10T03:00:00Z');
 
 const project = (id: number, name: string, code: string | null, parent: number | null = null): Project => ({
-  id, name, parent_project_id: parent, color: null, code, description: null, status: 'active', sort_order: id, path: name,
+  id, name, parent_project_id: parent, color: null, code, description: null, status: 'active', sort_order: id, path: name, root_project_id: id, my_role: 'manager',
 });
 
 const projects = [project(1, 'ProjectA', 'PA-0012'), project(2, 'ProjectA の子', null, 1), project(5, 'ProjectB', 'PB-0204')];

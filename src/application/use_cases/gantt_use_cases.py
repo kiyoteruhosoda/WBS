@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from src.application.use_cases.ownership import owned_by
+from src.domain.exceptions import NotFoundError
 from src.domain.repositories.project_repository import ProjectRepository
 from src.domain.repositories.task_dependency_repository import TaskDependencyRepository
 from src.domain.repositories.task_repository import TaskRepository
@@ -27,10 +27,7 @@ class GanttUseCases:
         if project_id is not None:
             scope = set(self._projects.subtree_ids(user_id, project_id))
             if not scope:
-                owned_by(
-                    self._projects.find_by_id(project_id), user_id,
-                    resource="Project", resource_id=project_id,
-                )
+                raise NotFoundError("Project", project_id)
             tasks = [t for t in all_tasks if t.project_id in scope]
         tree = ProjectTree(self._projects.find_all(user_id))
         # 自分の依存だけを引く（task_dependencies に持ち主の列は無く、リポジトリがタスクを辿って絞る）。

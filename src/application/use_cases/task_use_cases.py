@@ -6,7 +6,6 @@ from sqlalchemy.orm import Session
 
 from src.application.dto.task_dto import CreateTaskDTO, UpdateTaskDTO
 from src.application.ports.scheduled_time_lookup import ScheduledTimeLookup
-from src.application.use_cases.ownership import owned_by
 from src.application.use_cases.project_membership import ProjectMembership
 from src.application.user_clock import UserClock
 from src.domain.entities.task import Task
@@ -18,6 +17,10 @@ from src.domain.services.task_branch_selection import TaskBranchSelection
 from src.domain.services.task_progress_board import TaskProgressBoard
 from src.domain.value_objects.task_status import TaskStatus
 from src.infrastructure.repositories.milestone_repository import SqlAlchemyMilestoneRepository
+from src.infrastructure.repositories.person_directory import SqlAlchemyPersonDirectory
+from src.infrastructure.repositories.project_member_repository import (
+    SqlAlchemyProjectMemberRepository,
+)
 from src.infrastructure.repositories.project_repository import SqlAlchemyProjectRepository
 from src.infrastructure.repositories.task_repository import SqlAlchemyTaskRepository
 
@@ -48,8 +51,11 @@ class TaskUseCases:
             projects=SqlAlchemyProjectRepository(session),
             tasks=self._repo,
             milestones=self._milestones,
+            members=SqlAlchemyProjectMemberRepository(session),
         )
         self._session = session
+        # 担当者の名前を引くだけ（候補の絞りは使わない）
+        self._people = SqlAlchemyPersonDirectory(session, require_identity=False)
         self._clock = clock or UserClock(session)
         # 予定の口が無ければ「予定済みの時間」は出さない（null）。
         self._scheduled_time = scheduled_time
@@ -67,7 +73,8 @@ class TaskUseCases:
         board = self.progress_board(user_id)
         scheduled = self.scheduled_minutes(user_id, scheduled_until)
         tree = self._membership.tree(user_id)
-        return [self._enrich(t, board, scheduled, tree) for t in tasks]
+        names = self._assignee_names(tasks)
+        return [self._enrich(t, board, scheduled, tree, names) for t in tasks]
 
     def resolve_project_filter(self, user_id: int, filters: dict) -> dict:
         """``project_id`` を、そのプロジェクトと子孫の id の一覧（``project_ids``）に置き換える。"""
@@ -123,7 +130,7 @@ class TaskUseCases:
                 raise ValidationError("a subtask belongs to the project of its parent task")
             project_id = parent.project_id
         elif project_id is not None:
-            self._membership.owned_project(dto.user_id, project_id)
+            self._membership.visible_project(dto.user_id, project_id)
         if dto.milestone_id is not None:
             self._check_milestone(dto.user_id, dto.milestone_id, project_id)
         task = Task(
@@ -142,7 +149,11 @@ class TaskUseCases:
             parent_task_id=dto.parent_task_id,
             milestone_id=dto.milestone_id,
             project_id=project_id,
+            assignee_user_id=(
+                dto.assignee_user_id if dto.assignee_user_id_given else dto.user_id
+            ),
         )
+        self._check_assignee(dto.user_id, task)
         saved = self._repo.save(task)
         self._session.commit()
         return self._enrich(saved)
@@ -186,6 +197,10 @@ class TaskUseCases:
         # 自分で選び直したマイルストーンが届かないなら断る。前から付いていたものは下で外す
         if task.milestone_id is not None and task.milestone_id != previous_milestone:
             self._check_milestone(user_id, task.milestone_id, task.project_id)
+        # 担当者は選び直したときだけ確かめる。前からの担当は、外れた人でも消さずに残す（ADR-0055 決定 4）
+        if dto.assignee_user_id_given and dto.assignee_user_id != task.assignee_user_id:
+            task.assignee_user_id = dto.assignee_user_id
+            self._check_assignee(user_id, task)
 
         saved = self._repo.save(task)
         if task.project_id != previous_project:
@@ -205,7 +220,7 @@ class TaskUseCases:
         自分のタスクでない id・他人のプロジェクトは 404。届かなくなったマイルストーンは外す。
         """
         if project_id is not None:
-            self._membership.owned_project(user_id, project_id)
+            self._membership.visible_project(user_id, project_id)
         live = {t.id: t for t in self._repo.find_all(user_id, {}) if t.id is not None}
         for task_id in task_ids:
             if task_id not in live:
@@ -248,7 +263,7 @@ class TaskUseCases:
         if not dto.project_id_given:
             return task.project_id
         if dto.project_id is not None:
-            self._membership.owned_project(user_id, dto.project_id)
+            self._membership.visible_project(user_id, dto.project_id)
         return dto.project_id
 
     def _owned_task(self, task_id: int, user_id: int) -> Task:
@@ -257,12 +272,27 @@ class TaskUseCases:
             raise NotFoundError("Task", task_id)
         return task
 
+    def _assignee_names(self, tasks: list[Task]) -> dict[int, str]:
+        ids = {t.assignee_user_id for t in tasks if t.assignee_user_id is not None}
+        return {pid: p.display_name for pid, p in self._people.by_ids(ids).items()}
+
+    def _check_assignee(self, user_id: int, task: Task) -> None:
+        """担当者に付けられるのは、根のプロジェクトのメンバー（未分類なら作った人）だけ（ADR-0055 決定 4）。"""
+        if task.assignee_user_id is None:
+            return
+        if task.project_id is None:
+            allowed = {task.user_id}
+        else:
+            root = self._membership.tree(user_id).root_of(task.project_id)
+            allowed = self._membership.member_ids(root)
+        if task.assignee_user_id not in allowed:
+            raise ValidationError("the assignee must be a member of the top project of this task")
+
     def _check_milestone(self, user_id: int, milestone_id: int, project_id: int | None) -> None:
-        """自分のマイルストーンで、そのプロジェクト（か祖先・未分類）のものか（ADR-0024）。"""
-        milestone = owned_by(
-            self._milestones.find_by_id(milestone_id), user_id,
-            resource="Milestone", resource_id=milestone_id,
-        )
+        """見えるマイルストーンで、そのプロジェクト（か祖先・未分類）のものか（ADR-0024・ADR-0055）。"""
+        milestone = self._milestones.find_by_id_for_user(milestone_id, user_id)
+        if milestone is None:
+            raise NotFoundError("Milestone", milestone_id)
         tree = self._membership.tree(user_id)
         if not tree.milestone_reachable(milestone.project_id, project_id):
             raise ValidationError(
@@ -275,7 +305,10 @@ class TaskUseCases:
         board: TaskProgressBoard | None = None,
         scheduled: dict[int, int] | None = None,
         tree: ProjectTree | None = None,
+        names: dict[int, str] | None = None,
     ) -> dict:
+        if names is None:
+            names = self._assignee_names([task])
         if board is None:
             board = self.progress_board(task.user_id)
         if scheduled is None:
@@ -325,6 +358,10 @@ class TaskUseCases:
             "parent_task_id": task.parent_task_id,
             "milestone_id": task.milestone_id,
             "project_id": task.project_id,
+            "assignee_user_id": task.assignee_user_id,
+            "assignee_name": (
+                names.get(task.assignee_user_id) if task.assignee_user_id is not None else None
+            ),
             # 表示用の道筋（「親 / 子」）。未分類は null
             "project_path": tree.path(task.project_id),
             "completed_at": task.completed_at,

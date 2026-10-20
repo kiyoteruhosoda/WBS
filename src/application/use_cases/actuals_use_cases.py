@@ -36,12 +36,11 @@ from src.application.dto.actuals_dto import (
     TimeSource,
 )
 from src.application.ports.occurrence_source import OccurrenceSource
-from src.application.use_cases.ownership import owned_by
 from src.application.use_cases.task_use_cases import TaskUseCases
 from src.application.user_clock import UserClock
 from src.domain.entities.closing_period import ClosingPeriod
 from src.domain.entities.task import Task
-from src.domain.exceptions import ValidationError
+from src.domain.exceptions import NotFoundError, ValidationError
 from src.domain.repositories.category_repository import CategoryRepository
 from src.domain.repositories.closing_period_repository import ClosingPeriodRepository
 from src.domain.repositories.milestone_repository import MilestoneRepository
@@ -392,10 +391,7 @@ class ActualsUseCases:
             return None
         projects = set(self._projects.subtree_ids(user_id, project_id))
         if not projects:
-            owned_by(
-                self._projects.find_by_id(project_id), user_id,
-                resource="Project", resource_id=project_id,
-            )
+            raise NotFoundError("Project", project_id)
         return {task_id for task_id, task in owned.items() if task.project_id in projects}
 
     def _latest_closed(self, user_id: int) -> ClosingPeriod | None:

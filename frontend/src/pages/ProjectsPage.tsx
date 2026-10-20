@@ -21,6 +21,7 @@ import {
   flattenTree, isEffectivelyArchived, parentCandidates, toTree, type ProjectNode,
 } from '../projects/projectScope';
 import { useProjects, useProjectScope } from '../projects/useProjectScope';
+import ProjectMembersDialog from '../components/ProjectMembersDialog';
 
 interface FormData {
   name: string;
@@ -90,6 +91,8 @@ const ProjectsPage: React.FC = () => {
   const [menu, setMenu] = useState<{ anchor: HTMLElement; node: ProjectNode } | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Project | null>(null);
   const [moveError, setMoveError] = useState(false);
+  // メンバーの窓（ADR-0055。どの段から開いても根の名簿）
+  const [membersOf, setMembersOf] = useState<Project | null>(null);
 
   useEffect(() => {
     if (dialog === null) return;
@@ -146,6 +149,9 @@ const ProjectsPage: React.FC = () => {
     onSuccess: () => { invalidate(); setDeleteTarget(null); },
   });
   const deleteBlocked = isAxiosError(remove.error) && remove.error.response?.status === 409;
+  // いちばん上を消せるのは管理者だけ（ADR-0055）
+  const deleteForbidden = isAxiosError(remove.error) && remove.error.response?.status === 403;
+  const rootName = (p: Project | null) => (p ? projects.find((x) => x.id === p.root_project_id)?.name ?? p.name : '');
 
   const siblingsOf = (p: Project): Project[] =>
     flattenTree(tree)
@@ -242,6 +248,11 @@ const ProjectsPage: React.FC = () => {
                   )}
                 </Box>
                 {p.status === 'archived' && <Chip size="small" label={t('project.archived')} sx={{ fontSize: 11 }} />}
+                {node.depth === 0 && (
+                  <Button size="small" onClick={() => setMembersOf(p)} sx={{ whiteSpace: 'nowrap', display: { xs: 'none', sm: 'inline-flex' } }}>
+                    {t('project.members')}
+                  </Button>
+                )}
                 <Button size="small" onClick={() => openTasks(p)} sx={{ whiteSpace: 'nowrap', display: { xs: 'none', sm: 'inline-flex' } }}>
                   {t('project.openTasks')}
                 </Button>
@@ -280,6 +291,9 @@ const ProjectsPage: React.FC = () => {
             </MenuItem>,
             <MenuItem key="tasks" onClick={close(() => openTasks(p))}>
               <ListItemText>{t('project.openTasks')}</ListItemText>
+            </MenuItem>,
+            <MenuItem key="members" onClick={close(() => setMembersOf(p))}>
+              <ListItemText>{t('project.members')}</ListItemText>
             </MenuItem>,
             <MenuItem key="up" disabled={index <= 0}
               onClick={close(() => move.mutate({ id: p.id, parent: p.parent_project_id, position: index - 1 }))}>
@@ -345,13 +359,17 @@ const ProjectsPage: React.FC = () => {
         </DialogActions>
       </Dialog>
 
+      <ProjectMembersDialog project={membersOf} rootName={rootName(membersOf)} onClose={() => setMembersOf(null)} />
+
       {/* 消す（空のものだけ。中身があれば断られる） */}
       <Dialog open={deleteTarget !== null} onClose={() => setDeleteTarget(null)} fullWidth maxWidth="xs">
         <DialogTitle sx={{ fontSize: 16, fontWeight: 700 }}>{t('project.deleteTitle')}</DialogTitle>
         <DialogContent>
           {remove.isError && (
             <Alert severity={deleteBlocked ? 'warning' : 'error'} sx={{ mb: '12px' }}>
-              {deleteBlocked ? t('project.deleteNotEmpty') : t('project.deleteError')}
+              {deleteBlocked
+                ? t('project.deleteNotEmpty')
+                : deleteForbidden ? t('project.deleteManagerOnly') : t('project.deleteError')}
             </Alert>
           )}
           <Box sx={{ fontSize: 14, color: ds.textSub }}>
