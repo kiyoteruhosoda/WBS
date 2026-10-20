@@ -73,7 +73,7 @@ def test_adr_example_through_the_api(client, other_id) -> None:
     client.post(f"/api/projects/{pid}/members", json={"user_id": other_id})
     client.put(f"/api/projects/{pid}/members/{SINGLE_USER_ID}/capacity", json={"daily_hours": 8, "engagement_percent": 50})
     client.put(f"/api/projects/{pid}/members/{other_id}/capacity", json={"daily_hours": 8, "engagement_percent": 75})
-    client.post(f"/api/projects/{pid}/team-calendar/days-off", json={"day": "2026-11-03", "name": "文化の日"})
+    client.post(f"/api/projects/{pid}/calendar/days-off", json={"day": "2026-11-03", "name": "文化の日"})
     client.post(f"/api/projects/{pid}/members/{SINGLE_USER_ID}/leave", json={"day": "2026-11-05"})
     milestone = client.post("/api/milestones", json={"name": "M", "project_id": pid}).json()
 
@@ -134,7 +134,7 @@ def test_uncategorized_task_uses_8_hours_a_day(client) -> None:
 def test_engagement_and_workdays_are_used(client) -> None:
     pid = _project(client)["id"]
     client.put(f"/api/projects/{pid}/members/{SINGLE_USER_ID}/capacity", json={"daily_hours": 4, "engagement_percent": 100})
-    client.put(f"/api/projects/{pid}/team-calendar/workdays", json={"workdays": ["MO", "WE"]})
+    client.put(f"/api/projects/{pid}/calendar/workdays", json={"workdays": ["MO", "WE"]})
     task = _task(client, "週 2 日", project_id=pid, remaining_hours=8)
     assert task["forecast_finish"] == "2026-11-04"  # 月 4h・水 4h
 
@@ -148,3 +148,30 @@ def test_a_member_seen_by_another_member_has_the_same_forecast(client, other_id)
         assert _by_title(client)["共有"]["forecast_finish"] == "2026-11-03"
     finally:
         client.app.dependency_overrides.pop(get_current_user, None)
+
+
+def test_project_and_person_calendars_move_the_forecast(client) -> None:
+    """ADR-0059: 下のプロジェクトの休日はそのプロジェクトのタスクだけ止め、半休はその日を半分にする。"""
+    root = _project(client)
+    child = client.post("/api/projects", json={"name": "子", "parent_project_id": root["id"]}).json()
+    grandchild = client.post("/api/projects", json={"name": "孫", "parent_project_id": child["id"]}).json()
+    _task(client, "根の", project_id=root["id"], remaining_hours=16)
+    _task(client, "孫の", project_id=grandchild["id"], remaining_hours=8, due_date="2026-11-01")
+    # 孫のタスクが先（期限が早い）: 月に 8 時間で終わる。根のタスクは火・水
+    tasks = _by_title(client)
+    assert tasks["孫の"]["forecast_finish"] == "2026-11-02"
+    assert tasks["根の"]["forecast_finish"] == "2026-11-04"
+
+    # 子に休日を足すと孫が引き継ぎ、月は根のタスクへ回る
+    client.post(f"/api/projects/{child['id']}/calendar/days-off", json={"day": "2026-11-02"})
+    tasks = _by_title(client)
+    assert tasks["孫の"]["forecast_finish"] == "2026-11-03"
+    assert tasks["根の"]["forecast_finish"] == "2026-11-04"  # 月 8・(火は孫へ)・水 8
+
+    # 本人の半休（水）で根のタスクが後ろへずれる
+    res = client.post(
+        f"/api/projects/{root['id']}/members/{SINGLE_USER_ID}/leave", json={"day": "2026-11-04", "off_percent": 50}
+    )
+    assert res.status_code == 200, res.text
+    tasks = _by_title(client)
+    assert tasks["根の"]["forecast_finish"] == "2026-11-05"

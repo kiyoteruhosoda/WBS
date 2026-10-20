@@ -69,8 +69,7 @@ class SqlAlchemyTeamCalendarRepository(TeamCalendarRepository):
         )
         self._session.flush()
 
-    def forget_team(self, project_id: int) -> None:
-        self._session.execute(delete(TeamDayOffModel).where(TeamDayOffModel.project_id == project_id))
+    def forget_workdays(self, project_id: int) -> None:
         self._session.execute(delete(TeamWorkweekModel).where(TeamWorkweekModel.project_id == project_id))
         self._session.flush()
 
@@ -86,17 +85,23 @@ class SqlAlchemyTeamCalendarRepository(TeamCalendarRepository):
         if to_date is not None:
             stmt = stmt.where(MemberDayOffModel.day <= to_date)
         stmt = stmt.order_by(MemberDayOffModel.day, MemberDayOffModel.user_id)
-        return [MemberDayOff(user_id=m.user_id, day=m.day) for m in self._session.scalars(stmt)]
+        return [
+            MemberDayOff(user_id=m.user_id, day=m.day, off_percent=m.off_percent) for m in self._session.scalars(stmt)
+        ]
 
     def add_member_day_off(self, day_off: MemberDayOff) -> None:
-        exists = self._session.scalar(
-            select(MemberDayOffModel.id).where(
+        model = self._session.scalar(
+            select(MemberDayOffModel).where(
                 MemberDayOffModel.user_id == day_off.user_id, MemberDayOffModel.day == day_off.day,
             )
         )
-        if exists is None:
-            self._session.add(MemberDayOffModel(user_id=day_off.user_id, day=day_off.day))
-            self._session.flush()
+        if model is None:
+            self._session.add(
+                MemberDayOffModel(user_id=day_off.user_id, day=day_off.day, off_percent=day_off.off_percent)
+            )
+        else:
+            model.off_percent = day_off.off_percent
+        self._session.flush()
 
     def remove_member_day_off(self, user_id: int, day: date) -> None:
         self._session.execute(

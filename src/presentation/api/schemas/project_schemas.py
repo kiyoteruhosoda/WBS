@@ -167,24 +167,32 @@ class JapaneseHolidaysRequest(BaseModel):
 
 class MemberLeaveRequest(BaseModel):
     day: date
+    off_percent: int = Field(default=100, ge=1, le=100, description="休む割合（終日 100・半休 50）")
 
 
 class TeamDayOffResponse(BaseModel):
     day: date
     name: str | None
+    # 休日が付いているプロジェクト
+    project_id: int
+    # 親（先祖）から引き継いだものか（開いたプロジェクトでは消せない）
+    inherited: bool
 
 
 class MemberLeaveResponse(BaseModel):
     user_id: int
     day: date
+    off_percent: int
 
 
 class TeamCalendarResponse(BaseModel):
-    """チームの稼働する曜日・休日と、メンバーの休み（ADR-0058 決定 2）。"""
+    """プロジェクトのカレンダー（稼働する曜日・休日）と、メンバーの休み（ADR-0058 決定 2・ADR-0059）。"""
 
-    # 曜日と休日が付いているいちばん上のプロジェクト
+    # 開いたプロジェクト（休日を足す先）
+    project_id: int
+    # 曜日が付いているいちばん上のプロジェクト
     root_project_id: int
-    # 自分が管理者か（チームの休日と、だれの休みでも入れられる。メンバーは自分の休みだけ）
+    # 自分が管理者か（曜日・休日と、だれの休みでも入れられる。メンバーは自分の休みだけ）
     can_manage: bool
     workdays: list[Weekday]
     days_off: list[TeamDayOffResponse]
@@ -193,9 +201,15 @@ class TeamCalendarResponse(BaseModel):
     @classmethod
     def from_view(cls, view: TeamCalendarView) -> TeamCalendarResponse:
         return cls(
+            project_id=view.project_id,
             root_project_id=view.root_project_id,
             can_manage=view.can_manage,
             workdays=view.workdays,
-            days_off=[TeamDayOffResponse(day=d.day, name=d.name) for d in view.days_off],
-            leave=[MemberLeaveResponse(user_id=d.user_id, day=d.day) for d in view.leave],
+            days_off=[
+                TeamDayOffResponse(
+                    day=d.day, name=d.name, project_id=d.project_id, inherited=d.project_id != view.project_id,
+                )
+                for d in view.days_off
+            ],
+            leave=[MemberLeaveResponse(user_id=d.user_id, day=d.day, off_percent=d.off_percent) for d in view.leave],
         )

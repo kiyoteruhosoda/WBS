@@ -132,7 +132,7 @@ def test_capacity_of_a_non_member_is_404(client, other_id) -> None:
 
 def test_team_calendar_defaults_to_monday_to_friday(client) -> None:
     root = _project(client, "根")
-    res = client.get(f"/api/projects/{root['id']}/team-calendar")
+    res = client.get(f"/api/projects/{root['id']}/calendar")
     assert res.status_code == 200, res.text
     body = res.json()
     assert body["root_project_id"] == root["id"]
@@ -141,25 +141,27 @@ def test_team_calendar_defaults_to_monday_to_friday(client) -> None:
     assert body["days_off"] == [] and body["leave"] == []
 
 
-def test_manager_sets_workdays_and_days_off_on_the_root(client) -> None:
+def test_manager_sets_workdays_on_the_root_and_days_off_on_the_project(client) -> None:
     root = _project(client, "根")
     child = _project(client, "子", parent=root["id"])
-    base = f"/api/projects/{child['id']}/team-calendar"
+    base = f"/api/projects/{child['id']}/calendar"
     res = client.put(f"{base}/workdays", json={"workdays": ["SA", "MO", "TU", "WE", "TH", "FR"]})
     assert res.status_code == 200, res.text
     assert res.json()["workdays"] == ["MO", "TU", "WE", "TH", "FR", "SA"]
     assert client.put(f"{base}/workdays", json={"workdays": []}).status_code == 422
+    # 曜日は根に 1 つ
+    assert client.get(f"/api/projects/{root['id']}/calendar").json()["workdays"][-1] == "SA"
 
     client.post(f"{base}/days-off", json={"day": "2026-12-29", "name": "  年末  "})
     client.post(f"{base}/days-off", json={"day": "2026-12-28"})
     res = client.post(f"{base}/days-off", json={"day": "2026-12-29", "name": "年末休み"})
+    own = {"project_id": child["id"], "inherited": False}
     assert res.json()["days_off"] == [
-        {"day": "2026-12-28", "name": None},
-        {"day": "2026-12-29", "name": "年末休み"},
+        {"day": "2026-12-28", "name": None, **own},
+        {"day": "2026-12-29", "name": "年末休み", **own},
     ]
-    # 根から読んでも同じ
-    root_view = client.get(f"/api/projects/{root['id']}/team-calendar").json()
-    assert [d["day"] for d in root_view["days_off"]] == ["2026-12-28", "2026-12-29"]
+    # 子で足した休日は根には出ない
+    assert client.get(f"/api/projects/{root['id']}/calendar").json()["days_off"] == []
 
     res = client.delete(f"{base}/days-off/2026-12-28")
     assert [d["day"] for d in res.json()["days_off"]] == ["2026-12-29"]
@@ -167,9 +169,32 @@ def test_manager_sets_workdays_and_days_off_on_the_root(client) -> None:
     assert ranged["days_off"] == []
 
 
+def test_a_sub_project_inherits_the_days_off_of_its_ancestors(client) -> None:
+    root = _project(client, "根")
+    child = _project(client, "子", parent=root["id"])
+    grandchild = _project(client, "孫", parent=child["id"])
+    client.post(f"/api/projects/{root['id']}/calendar/days-off", json={"day": "2026-11-03", "name": "文化の日"})
+    client.post(f"/api/projects/{child['id']}/calendar/days-off", json={"day": "2026-11-04", "name": "子の休み"})
+    client.post(f"/api/projects/{grandchild['id']}/calendar/days-off", json={"day": "2026-11-05"})
+    view = client.get(f"/api/projects/{grandchild['id']}/calendar").json()
+    assert [(d["day"], d["project_id"], d["inherited"]) for d in view["days_off"]] == [
+        ("2026-11-03", root["id"], True),
+        ("2026-11-04", child["id"], True),
+        ("2026-11-05", grandchild["id"], False),
+    ]
+    # 引き継いだ休日は子からは消せない（親のものはそのまま）
+    client.delete(f"/api/projects/{grandchild['id']}/calendar/days-off/2026-11-03")
+    view = client.get(f"/api/projects/{grandchild['id']}/calendar").json()
+    assert "2026-11-03" in [d["day"] for d in view["days_off"]]
+    # 同じ日を子でも足すと、子のものだけを出す
+    client.post(f"/api/projects/{child['id']}/calendar/days-off", json={"day": "2026-11-03", "name": "子でも"})
+    view = client.get(f"/api/projects/{child['id']}/calendar").json()
+    assert view["days_off"][0] == {"day": "2026-11-03", "name": "子でも", "project_id": child["id"], "inherited": False}
+
+
 def test_japanese_holidays_are_imported_without_overwriting(client) -> None:
     root = _project(client, "根")
-    base = f"/api/projects/{root['id']}/team-calendar"
+    base = f"/api/projects/{root['id']}/calendar"
     client.post(f"{base}/days-off", json={"day": "2026-11-03", "name": "会社の名前"})
     res = client.post(f"{base}/days-off/japan", json={"year": 2026})
     assert res.status_code == 200, res.text
@@ -181,7 +206,7 @@ def test_japanese_holidays_are_imported_without_overwriting(client) -> None:
 
 def test_only_managers_change_the_team_calendar(client, as_, other_id) -> None:
     root = _shared_root(client, other_id)
-    base = f"/api/projects/{root['id']}/team-calendar"
+    base = f"/api/projects/{root['id']}/calendar"
     as_.other()
     assert client.get(base).json()["can_manage"] is False
     assert client.put(f"{base}/workdays", json={"workdays": ["MO"]}).status_code == 403
@@ -193,31 +218,34 @@ def test_only_managers_change_the_team_calendar(client, as_, other_id) -> None:
 def test_outsiders_see_no_team_calendar(client, as_) -> None:
     root = _project(client, "根")
     as_.other()
-    assert client.get(f"/api/projects/{root['id']}/team-calendar").status_code == 404
+    assert client.get(f"/api/projects/{root['id']}/calendar").status_code == 404
 
 
 def test_a_sub_project_taken_out_to_the_top_keeps_the_calendar(client) -> None:
     root = _project(client, "根")
     child = _project(client, "子", parent=root["id"])
-    client.put(f"/api/projects/{root['id']}/team-calendar/workdays", json={"workdays": ["MO", "TU"]})
-    client.post(f"/api/projects/{root['id']}/team-calendar/days-off", json={"day": "2026-12-29", "name": "年末"})
+    client.put(f"/api/projects/{root['id']}/calendar/workdays", json={"workdays": ["MO", "TU"]})
+    client.post(f"/api/projects/{root['id']}/calendar/days-off", json={"day": "2026-12-29", "name": "年末"})
     res = client.post(f"/api/projects/{child['id']}/move", json={"parent_project_id": None})
     assert res.status_code == 200, res.text
-    moved = client.get(f"/api/projects/{child['id']}/team-calendar").json()
+    moved = client.get(f"/api/projects/{child['id']}/calendar").json()
     assert moved["root_project_id"] == child["id"]
     assert moved["workdays"] == ["MO", "TU"]
-    assert moved["days_off"] == [{"day": "2026-12-29", "name": "年末"}]
+    assert moved["days_off"] == [{"day": "2026-12-29", "name": "年末", "project_id": child["id"], "inherited": False}]
 
-    # 根を別の下へ入れると、移った先の根のものになる
+    # 根を別の下へ入れると、曜日は移った先の根のものになり、休日は自分の休日として残る
+    client.post(f"/api/projects/{child['id']}/calendar/days-off", json={"day": "2026-12-30"})
     res = client.post(f"/api/projects/{child['id']}/move", json={"parent_project_id": root["id"]})
     assert res.status_code == 200, res.text
-    assert client.get(f"/api/projects/{child['id']}/team-calendar").json()["root_project_id"] == root["id"]
+    back = client.get(f"/api/projects/{child['id']}/calendar").json()
+    assert back["root_project_id"] == root["id"]
+    assert [(d["day"], d["inherited"]) for d in back["days_off"]] == [("2026-12-29", False), ("2026-12-30", False)]
 
 
 def test_a_root_with_a_calendar_can_be_deleted(client) -> None:
     root = _project(client, "根")
-    client.put(f"/api/projects/{root['id']}/team-calendar/workdays", json={"workdays": ["MO"]})
-    client.post(f"/api/projects/{root['id']}/team-calendar/days-off", json={"day": "2026-12-29"})
+    client.put(f"/api/projects/{root['id']}/calendar/workdays", json={"workdays": ["MO"]})
+    client.post(f"/api/projects/{root['id']}/calendar/days-off", json={"day": "2026-12-29"})
     assert client.delete(f"/api/projects/{root['id']}").status_code == 204
 
 
@@ -234,12 +262,24 @@ def test_member_enters_own_leave_and_the_manager_sees_it(client, as_, other_id) 
     ).status_code == 403
 
     as_.me()
-    view = client.get(f"/api/projects/{root['id']}/team-calendar").json()
-    assert view["leave"] == [{"user_id": other_id, "day": "2026-11-05"}]
+    view = client.get(f"/api/projects/{root['id']}/calendar").json()
+    assert view["leave"] == [{"user_id": other_id, "day": "2026-11-05", "off_percent": 100}]
     # 管理者は誰の休みでも入れ・消せる
     client.post(f"/api/projects/{root['id']}/members/{other_id}/leave", json={"day": "2026-11-06"})
     res = client.delete(f"/api/projects/{root['id']}/members/{other_id}/leave/2026-11-05")
-    assert res.json()["leave"] == [{"user_id": other_id, "day": "2026-11-06"}]
+    assert res.json()["leave"] == [{"user_id": other_id, "day": "2026-11-06", "off_percent": 100}]
+
+
+def test_a_half_day_off_is_saved_and_changed(client, other_id) -> None:
+    root = _shared_root(client, other_id)
+    base = f"/api/projects/{root['id']}/members/{other_id}/leave"
+    res = client.post(base, json={"day": "2026-11-05", "off_percent": 50})
+    assert res.status_code == 200, res.text
+    assert res.json()["leave"] == [{"user_id": other_id, "day": "2026-11-05", "off_percent": 50}]
+    res = client.post(base, json={"day": "2026-11-05", "off_percent": 100})
+    assert res.json()["leave"] == [{"user_id": other_id, "day": "2026-11-05", "off_percent": 100}]
+    assert client.post(base, json={"day": "2026-11-05", "off_percent": 0}).status_code == 422
+    assert client.post(base, json={"day": "2026-11-05", "off_percent": 101}).status_code == 422
 
 
 def test_leave_is_the_same_across_projects(client, as_, other_id) -> None:
@@ -247,8 +287,8 @@ def test_leave_is_the_same_across_projects(client, as_, other_id) -> None:
     second = _project(client, "別の根")
     client.post(f"/api/projects/{second['id']}/members", json={"user_id": other_id})
     client.post(f"/api/projects/{first['id']}/members/{other_id}/leave", json={"day": "2026-11-05"})
-    view = client.get(f"/api/projects/{second['id']}/team-calendar").json()
-    assert view["leave"] == [{"user_id": other_id, "day": "2026-11-05"}]
+    view = client.get(f"/api/projects/{second['id']}/calendar").json()
+    assert view["leave"] == [{"user_id": other_id, "day": "2026-11-05", "off_percent": 100}]
 
 
 def test_leave_of_a_non_member_is_404(client, other_id) -> None:
