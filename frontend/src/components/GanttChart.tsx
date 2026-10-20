@@ -1,17 +1,14 @@
 import React, { useEffect, useMemo, useRef } from 'react';
-import { useQuery } from '@tanstack/react-query';
 import { Box, Checkbox, IconButton, Tooltip } from '@mui/material';
 import WarningAmberIcon from '@mui/icons-material/WarningAmber';
 import FlagOutlinedIcon from '@mui/icons-material/FlagOutlined';
 import { useTheme } from '@mui/material/styles';
-import { getCalendars, getDayOffMarks } from '../api/calendars';
-import { CALENDARS_QUERY, DAY_OFF_MARKS_QUERY } from '../calendar/calendarQueries';
-import { buildDayOffView, businessDaysBetween } from '../calendar/daysOff';
-import { dayColumnBackground } from '../calendar/calendarColors';
+import { DEFAULT_PROJECT_DAYS, projectDaysOf, workingDaysBetween, worksOn } from '../calendar/projectCalendarDays';
+import type { ProjectDays } from '../calendar/projectCalendarDays';
 import MoreTimeIcon from '@mui/icons-material/MoreTime';
 import { scheduleTaskPath } from '../calendar/taskScheduling';
 import { useNavigate } from 'react-router-dom';
-import type { Task, Category, Milestone } from '../types';
+import type { Task, Category, Milestone, TeamCalendar } from '../types';
 import { forecastGapKey, milestoneForecastIsPartial, taskForecastSpan } from '../forecast/forecastView';
 import EditableGrid from './grid/EditableGrid';
 import type { GridColumn } from './grid/EditableGrid';
@@ -52,8 +49,6 @@ const diffDays = (a: Date, b: Date): number => Math.round((dateOnly(a).getTime()
 /** ローカルの日付を YYYY-MM-DD に（休みの層の API の日付）。 */
 const isoDay = (d: Date): string =>
   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-/** 休みの理由を一度に引ける日数（サーバーの上限 800 日より少し手前） */
-const MAX_DAY_OFF_SPAN = 790;
 const parse = (s: string | null): Date | null => {
   const d = parseDate(s);
   return d ? dateOnly(d) : null;
@@ -82,6 +77,10 @@ interface Props {
   onEditTask?: (task: Task, patch: Partial<Task>) => Promise<void>;
   /** 担当に選べる人（そのタスクの根のメンバー）。null なら担当は変えられない（未分類のタスクなど） */
   assigneeChoices?: (task: Task) => { value: string; label: string }[] | null;
+  /** 列を塗るカレンダー＝表示しているプロジェクトのもの（全部・未分類なら無し＝月〜金。task #559） */
+  columnCalendar?: TeamCalendar | null;
+  /** タスクのプロジェクトのカレンダー（プロジェクトの id → カレンダー）。列と違う日はその行だけ塗り、営業日もこれで数える */
+  taskCalendars?: ReadonlyMap<number, TeamCalendar>;
 }
 
 const isOpen = (task: Task) => task.status !== 'DONE' && task.status !== 'CANCELLED';
@@ -90,6 +89,7 @@ const isOpenLeaf = (task: Task) => !task.has_subtasks && isOpen(task);
 
 const GanttChart: React.FC<Props> = ({
   tasks, categories, showMeta = true, onToggleDone, actuals, milestones = [], onEditTask, assigneeChoices,
+  columnCalendar, taskCalendars,
 }) => {
   const navigate = useNavigate();
   const { t, weekdays } = useI18n();
@@ -145,38 +145,60 @@ const GanttChart: React.FC<Props> = ({
   const todayIdx = diffDays(today, rangeStart);
   const timelineWidth = days.length * DAY_WIDTH;
 
-  // 休みの 4 層（ADR-0029）: 表示中の層で日の列を塗り、タスクの期間の営業日の数を出す（数は表示に関係しない）。
-  // 範囲の外にはみ出すタスクの期間も数えるので、引く期間はタスクの期間まで広げる。
+  // プロジェクトのカレンダー（ADR-0059・ADR-0060。task #559）: 列は表示しているプロジェクトのカレンダーで塗り、
+  // 下のプロジェクトだけの休日・稼働日はその行だけ塗り直す。営業日の数はタスクのプロジェクトのカレンダーで数える
   const calendarPalette = useTheme().palette.calendar;
-  const markRange = useMemo(() => {
-    let from = days[0];
-    let to = days[days.length - 1];
-    for (const t of tasks) {
-      const s = parse(t.start_date) ?? parse(t.due_date);
-      const e = parse(t.due_date) ?? parse(t.start_date);
-      if (s && s < from) from = s;
-      if (e && e > to) to = e;
-    }
-    if (diffDays(to, from) > MAX_DAY_OFF_SPAN) return { from: isoDay(days[0]), to: isoDay(days[days.length - 1]) };
-    return { from: isoDay(from), to: isoDay(to) };
-  }, [days, tasks]);
-  const { data: marks } = useQuery({
-    queryKey: [DAY_OFF_MARKS_QUERY, markRange.from, markRange.to],
-    queryFn: () => getDayOffMarks(markRange),
-  });
-  const { data: calendars } = useQuery({ queryKey: [CALENDARS_QUERY], queryFn: getCalendars });
-  const dayOffView = useMemo(() => buildDayOffView(marks ?? [], calendars), [marks, calendars]);
-  const holidayByDate = useMemo(() => new Map(dayOffView.holidays.map((h) => [h.date, h])), [dayOffView]);
-  const columnBackground = (d: Date): string => {
+  const daysByProject = useMemo(
+    () => new Map([...(taskCalendars ?? new Map<number, TeamCalendar>())].map(([id, c]) => [id, projectDaysOf(c)])),
+    [taskCalendars],
+  );
+  // 表示しているプロジェクトのタスクは列と同じもの（行を塗り直さない）
+  const columnDays = useMemo(
+    () => (columnCalendar ? daysByProject.get(columnCalendar.project_id) ?? projectDaysOf(columnCalendar) : DEFAULT_PROJECT_DAYS),
+    [columnCalendar, daysByProject],
+  );
+  const daysOfTask = (task: Task): ProjectDays => (
+    task.project_id == null ? DEFAULT_PROJECT_DAYS : daysByProject.get(task.project_id) ?? DEFAULT_PROJECT_DAYS
+  );
+  const backgroundOn = (calendarDays: ProjectDays, d: Date): string => {
     const key = isoDay(d);
-    return dayColumnBackground(
-      calendarPalette, d.getDay(), holidayByDate.get(key),
-      dayOffView.nonWorkdays ? dayOffView.nonWorkdays.has(key) : null,
-    );
+    if (worksOn(calendarDays, key)) return 'transparent';
+    if (calendarDays.daysOff.has(key)) return calendarPalette.holidayBg;
+    if (d.getDay() === 0) return calendarPalette.sundayBg;
+    if (d.getDay() === 6) return calendarPalette.saturdayBg;
+    return calendarPalette.weeklyOffBg;
   };
-  const businessDaysOf = (s: Date, e: Date): number | null => {
-    if (!marks || isoDay(s) < markRange.from || isoDay(e) > markRange.to) return null;
-    return businessDaysBetween(isoDay(s), isoDay(e), dayOffView.nonBusinessDays);
+  const columnBackground = (d: Date): string => backgroundOn(columnDays, d);
+  /** 見出しに出す日の名前（休日の名前・稼働日） */
+  const dayTitle = (d: Date): string | undefined => {
+    const key = isoDay(d);
+    if (columnDays.daysOff.has(key)) return columnDays.daysOff.get(key) ?? tr('projectCalendar.dayOff');
+    if (columnDays.extraWorkdays.has(key)) return columnDays.extraWorkdays.get(key) ?? tr('projectCalendar.extraWorkday');
+    return undefined;
+  };
+  const businessDaysOf = (task: Task, s: Date, e: Date): number => workingDaysBetween(daysOfTask(task), isoDay(s), isoDay(e));
+
+  /** 列と違う日（下のプロジェクトだけの休日・稼働日）を、その行だけ塗り直す */
+  const rowDayCells = (task: Task): React.ReactNode => {
+    const own = daysOfTask(task);
+    if (own === columnDays) return null;
+    return days.map((d, i) => {
+      const key = isoDay(d);
+      if (worksOn(own, key) === worksOn(columnDays, key)) return null;
+      const off = !worksOn(own, key);
+      return (
+        <Box
+          key={`d${i}`}
+          data-testid="gantt-row-day"
+          data-day-off={off ? 'true' : 'false'}
+          title={off ? own.daysOff.get(key) ?? tr('projectCalendar.dayOff') : own.extraWorkdays.get(key) ?? tr('projectCalendar.extraWorkday')}
+          sx={{
+            position: 'absolute', top: 0, bottom: 0, left: i * DAY_WIDTH + 1, width: DAY_WIDTH - 1,
+            bgcolor: off ? backgroundOn(own, d) : ds.paper,
+          }}
+        />
+      );
+    });
   };
 
   // 初期表示で今日が見えるようにスクロールする（今日を左から1/3の位置に置く）
@@ -353,11 +375,11 @@ const GanttChart: React.FC<Props> = ({
               const dow = d.getDay();
               const color = dow === 0 ? ds.dangerText : dow === 6 ? ds.primary : ds.textSub;
               return (
-                <Box key={i} title={holidayByDate.get(isoDay(d))?.name ?? undefined} sx={{
+                <Box key={i} title={dayTitle(d)} data-day-off={columnDays.daysOff.has(isoDay(d)) ? 'true' : undefined} sx={{
                   width: DAY_WIDTH, flexShrink: 0, textAlign: 'center', pt: '9px',
                   borderLeft: i === 0 ? 'none' : '1px solid #ECECEE',
                   bgcolor: columnBackground(d),
-                  borderBottom: holidayByDate.get(isoDay(d))?.color ? `3px solid ${holidayByDate.get(isoDay(d))?.color}` : 'none',
+                  borderBottom: columnDays.daysOff.has(isoDay(d)) ? `3px solid ${calendarPalette.red}` : 'none',
                 }}>
                   <Box sx={{ fontSize: 13, fontWeight: 700, color: ds.text }}>{d.getMonth() + 1}/{d.getDate()}</Box>
                   <Box sx={{ fontSize: 11, color }}>{weekdays[dow]}</Box>
@@ -482,8 +504,7 @@ const GanttChart: React.FC<Props> = ({
                   const width = (endIdx - startIdx + 1) * DAY_WIDTH - 6;
                   const colors = barColors[st];
                   const fillPct = st === 'DONE' ? 100 : Math.max(0, Math.min(100, t.progress_percent ?? 0));
-                  const businessDays = businessDaysOf(s, e);
-                  const businessLabel = businessDays != null ? tr('gantt.businessDays', { count: businessDays }) : null;
+                  const businessLabel = tr('gantt.businessDays', { count: businessDaysOf(t, s, e) });
                   bar = (
                     <>
                     {businessLabel && (
@@ -590,6 +611,7 @@ const GanttChart: React.FC<Props> = ({
                   position: 'relative', height: ROW_HEIGHT,
                   borderBottom: '1px solid #ECECEE', '&:last-child': { borderBottom: 'none' },
                 }}>
+                  {rowDayCells(t)}
                   {bar}
                   {forecast}
                   {actualStrip}

@@ -56,4 +56,5 @@ ADR-0059 の人のカレンダーは時間を減らす向き（休み・半休�
 - 移行 `0028`: `member_days_off.hours`、表 `team_extra_workdays`。今の行は `hours` が空（今までどおり）。
 - `GET /api/projects/{id}/calendar` は `extra_workdays`（休日と同じ形）と、休みの `hours` を返す。
   `POST/DELETE /api/projects/{id}/calendar/extra-workdays`、`POST /api/projects/{id}/members/{user_id}/leave` は `hours` を受ける。
-- ガントの日の列の塗り（休みの層。ADR-0029）は、この稼働日・その日の稼働時間をまだ映さない（ADR-0058 から変わらず）。
+- ガントの日の列は、task #559 からプロジェクトのカレンダー（休日・稼働日）で塗る（表示しているプロジェクトのもの。下のプロジェクトだけの日はその行だけ）。
+  人ごとの稼働時間はガントの列には映さない（行は人ではなくタスク）。

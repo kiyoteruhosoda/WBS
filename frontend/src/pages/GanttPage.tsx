@@ -6,8 +6,8 @@ import { getScopedMilestones } from '../api/milestones';
 import WarningAmberIcon from '@mui/icons-material/WarningAmber';
 import { showsOnGantt } from '../forecast/forecastView';
 import { getCategories } from '../api/categories';
-import { getProjectMembers, getProjects, projectMembersKey, PROJECTS_KEY } from '../api/projects';
-import type { Task } from '../types';
+import { getProjectMembers, getProjects, getTeamCalendar, projectMembersKey, PROJECTS_KEY, teamCalendarKey } from '../api/projects';
+import type { Task, TeamCalendar } from '../types';
 import { ds } from '../theme';
 import { useI18n } from '../i18n';
 import type { TranslationKey } from '../i18n/translations';
@@ -82,6 +82,24 @@ const GanttPage: React.FC = () => {
     });
     return map;
   }, [roots, memberLists]);
+  // 日の列はプロジェクトのカレンダーで塗る（task #559）。表示しているプロジェクトと、タスクのあるプロジェクトのもの
+  const calendarProjects = useMemo(() => {
+    const ids = new Set((data ?? []).map((task) => task.project_id).filter((id): id is number => id != null));
+    if (typeof scope === 'number') ids.add(scope);
+    return [...ids].sort((a, b) => a - b);
+  }, [data, scope]);
+  // combine の結果は中身が同じなら同じ参照のまま（行の塗り直しの計算を毎回やり直さない）
+  const calendarData = useQueries({
+    queries: calendarProjects.map((id) => ({ queryKey: teamCalendarKey(id), queryFn: () => getTeamCalendar(id) })),
+    combine: (results) => results.map((r) => r.data),
+  });
+  const taskCalendars = useMemo(() => {
+    const map = new Map<number, TeamCalendar>();
+    calendarProjects.forEach((id, i) => { const c = calendarData[i]; if (c) map.set(id, c); });
+    return map;
+  }, [calendarProjects, calendarData]);
+  const columnCalendar = typeof scope === 'number' ? taskCalendars.get(scope) ?? null : null;
+
   // 未分類のタスク（担当は作った人だけ）とメンバーが読めないものは変えない
   const assigneeChoices = (task: Task) => {
     const root = task.project_id == null ? undefined : rootOf.get(task.project_id);
@@ -141,6 +159,7 @@ const GanttPage: React.FC = () => {
             onToggleDone={(t) => toggleDone.mutate(t)}
             onEditTask={async (task, patch) => { await editTask.mutateAsync({ task, patch }); }}
             assigneeChoices={assigneeChoices}
+            columnCalendar={columnCalendar} taskCalendars={taskCalendars}
           />
         </>
       )}
