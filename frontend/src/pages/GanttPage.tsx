@@ -1,11 +1,12 @@
 import React, { useMemo } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQueries, useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Box, CircularProgress, Alert } from '@mui/material';
 import { getTasks, completeTask, reopenTask, updateTask } from '../api/tasks';
 import { getScopedMilestones } from '../api/milestones';
 import WarningAmberIcon from '@mui/icons-material/WarningAmber';
 import { showsOnGantt } from '../forecast/forecastView';
 import { getCategories } from '../api/categories';
+import { getProjectMembers, getProjects, projectMembersKey, PROJECTS_KEY } from '../api/projects';
 import type { Task } from '../types';
 import { ds } from '../theme';
 import { useI18n } from '../i18n';
@@ -52,15 +53,40 @@ const GanttPage: React.FC = () => {
     },
   });
 
-  // 残をその場で直す。見込みは読み直したときに計算し直される（ADR-0058 決定 4）
-  const editRemaining = useMutation({
-    mutationFn: ({ task, hours }: { task: Task; hours: number | null }) => updateTask(task.id, { remaining_hours: hours }),
+  // 左の表のセルをその場で保存する。見込みは読み直したときに計算し直される（ADR-0058 決定 4・ADR-0059 決定 3）
+  const editTask = useMutation({
+    mutationFn: ({ task, patch }: { task: Task; patch: Partial<Task> }) => updateTask(task.id, patch),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['tasks'] });
       qc.invalidateQueries({ queryKey: ['milestones'] });
       qc.invalidateQueries({ queryKey: ['today'] });
     },
   });
+
+  // 担当に選べるのは、そのタスクのいちばん上のプロジェクトのメンバー（ADR-0055）
+  const { data: projects } = useQuery({ queryKey: PROJECTS_KEY, queryFn: getProjects });
+  const rootOf = useMemo(() => new Map((projects ?? []).map((p) => [p.id, p.root_project_id])), [projects]);
+  const roots = useMemo(
+    () => [...new Set((data ?? []).map((task) => (task.project_id == null ? undefined : rootOf.get(task.project_id)))
+      .filter((r): r is number => r !== undefined))],
+    [data, rootOf],
+  );
+  const memberLists = useQueries({
+    queries: roots.map((root) => ({ queryKey: projectMembersKey(root), queryFn: () => getProjectMembers(root) })),
+  });
+  const choicesByRoot = useMemo(() => {
+    const map = new Map<number, { value: string; label: string }[]>();
+    roots.forEach((root, i) => {
+      const members = memberLists[i]?.data?.members;
+      if (members) map.set(root, members.map((m) => ({ value: String(m.user_id), label: m.display_name || m.email })));
+    });
+    return map;
+  }, [roots, memberLists]);
+  // 未分類のタスク（担当は作った人だけ）とメンバーが読めないものは変えない
+  const assigneeChoices = (task: Task) => {
+    const root = task.project_id == null ? undefined : rootOf.get(task.project_id);
+    return root === undefined ? null : choicesByRoot.get(root) ?? null;
+  };
 
   const tasks = useMemo(
     () => (data ?? [])
@@ -110,11 +136,11 @@ const GanttPage: React.FC = () => {
         </Box>
       ) : (
         <>
-          {editRemaining.isError && <Alert severity="error" sx={{ mb: '10px' }}>{t('gantt.remainingError')}</Alert>}
           <GanttChart
             tasks={tasks} categories={categories} actuals={actuals} milestones={milestones}
             onToggleDone={(t) => toggleDone.mutate(t)}
-            onEditRemaining={(task, hours) => editRemaining.mutate({ task, hours })}
+            onEditTask={async (task, patch) => { await editTask.mutateAsync({ task, patch }); }}
+            assigneeChoices={assigneeChoices}
           />
         </>
       )}

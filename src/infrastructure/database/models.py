@@ -121,7 +121,7 @@ class TeamWorkweekModel(Base):
     workdays: Mapped[str] = mapped_column(sa.String(32), nullable=False)
 
 class TeamDayOffModel(Base):
-    """チームの休日（いちばん上のプロジェクトごと。task #554 / ADR-0058）。"""
+    """プロジェクトの休日（task #554 / ADR-0058）。根のものはチームの休日、下のものはその木で足した休日（ADR-0059）。"""
 
     __tablename__ = "team_days_off"
     __table_args__ = (
@@ -138,7 +138,7 @@ class TeamDayOffModel(Base):
     name: Mapped[str | None] = mapped_column(sa.String(100), nullable=True)
 
 class MemberDayOffModel(Base):
-    """各人の休み（人ごと・プロジェクトをまたいで同じ。日付だけ。task #554 / ADR-0058）。"""
+    """各人の休み（人ごと・プロジェクトをまたいで同じ。日付と休む割合だけ。task #554 / ADR-0058・#557 / ADR-0059）。"""
 
     __tablename__ = "member_days_off"
     __table_args__ = (
@@ -152,6 +152,8 @@ class MemberDayOffModel(Base):
         nullable=False,
     )
     day: Mapped[date] = mapped_column(sa.Date, nullable=False)
+    #: 休む割合（終日 100・半休 50）
+    off_percent: Mapped[int] = mapped_column(sa.Integer, nullable=False, server_default="100", default=100)
 
 class MilestoneModel(Base):
     __tablename__ = "milestones"

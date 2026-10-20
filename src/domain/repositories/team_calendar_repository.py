@@ -9,7 +9,7 @@ from src.domain.value_objects.recurrence import Weekday
 
 
 class TeamCalendarRepository(ABC):
-    """チームの稼働する曜日・休日（根のプロジェクトごと）と、各人の休み（ADR-0058 決定 2）。"""
+    """稼働する曜日（根のプロジェクトごと）・休日（どのプロジェクトにも）と、各人の休み（ADR-0058 決定 2・ADR-0059）。"""
 
     @abstractmethod
     def workdays(self, project_id: int) -> frozenset[Weekday] | None:
@@ -36,8 +36,8 @@ class TeamCalendarRepository(ABC):
     def remove_team_day_off(self, project_id: int, day: date) -> None: ...
 
     @abstractmethod
-    def forget_team(self, project_id: int) -> None:
-        """根でなくなる・消すときに、曜日と休日を全部消す。"""
+    def forget_workdays(self, project_id: int) -> None:
+        """根でなくなるときに曜日を消す（休日はそのプロジェクト自身の休日として残す）。"""
 
     @abstractmethod
     def member_days_off(
@@ -47,7 +47,7 @@ class TeamCalendarRepository(ABC):
 
     @abstractmethod
     def add_member_day_off(self, day_off: MemberDayOff) -> None:
-        """同じ日があれば何もしない。"""
+        """同じ日があれば休む割合を書き換える。"""
 
     @abstractmethod
     def remove_member_day_off(self, user_id: int, day: date) -> None: ...

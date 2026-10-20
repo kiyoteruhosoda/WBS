@@ -1,6 +1,6 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Box, Button, Checkbox, IconButton, Popover, TextField, Tooltip } from '@mui/material';
+import { Box, Checkbox, IconButton, Tooltip } from '@mui/material';
 import WarningAmberIcon from '@mui/icons-material/WarningAmber';
 import FlagOutlinedIcon from '@mui/icons-material/FlagOutlined';
 import { useTheme } from '@mui/material/styles';
@@ -13,6 +13,9 @@ import { scheduleTaskPath } from '../calendar/taskScheduling';
 import { useNavigate } from 'react-router-dom';
 import type { Task, Category, Milestone } from '../types';
 import { forecastGapKey, milestoneForecastIsPartial, taskForecastSpan } from '../forecast/forecastView';
+import EditableGrid from './grid/EditableGrid';
+import type { GridColumn } from './grid/EditableGrid';
+import { parseChoice, parseDay, parseNumber } from './grid/gridModel';
 import type { GanttActualSpan } from '../types/actuals';
 import { ACTUAL_DAY_COLOR, ACTUAL_STRIP_COLOR, ganttActualLayout } from '../actuals/actualsView';
 import { dateRangeParts, displayStatus, formatDate, formatSecondsAsHours, parseDate, todayDate } from '../utils/format';
@@ -27,7 +30,8 @@ const DAY_WIDTH = 54;
 // 計画の帯・見込みの帯・実績の帯の 3 段が入る高さ（task #556）
 const ROW_HEIGHT = 48;
 const HEADER_HEIGHT = 56;
-const LEFT_WIDTH = 360;
+// 左の表（担当・アサイン比率・残り時間・開始・期限・見込みの終わり。task #557 / ADR-0059）。入りきらない列は横に送る
+const LEFT_WIDTH = { xs: 260, md: 520, lg: 700 };
 // 表示範囲は今日を基準にクランプする（過去・未来に古いタスクがあっても今日ラインが常に見えるようにする）
 const MAX_PAST_DAYS = 30;
 const MAX_FUTURE_DAYS = 59;
@@ -74,47 +78,18 @@ interface Props {
   actuals?: Map<number, GanttActualSpan>;
   /** 上に並べるマイルストーン（期限と見込みの日。ADR-0058） */
   milestones?: Milestone[];
-  /** 残をその場で直す（渡せば行に「残 Nh」のボタンを出す） */
-  onEditRemaining?: (task: Task, hours: number | null) => void;
+  /** 左の表のセルをその場で保存する（渡さなければ表は読むだけ）。失敗は投げる */
+  onEditTask?: (task: Task, patch: Partial<Task>) => Promise<void>;
+  /** 担当に選べる人（そのタスクの根のメンバー）。null なら担当は変えられない（未分類のタスクなど） */
+  assigneeChoices?: (task: Task) => { value: string; label: string }[] | null;
 }
 
-/** 残をその場で直す小さな入れ物。空で保存すると手の値を消し、見積 − 実績 に戻す（ADR-0010） */
-const RemainingEditor: React.FC<{
-  task: Task;
-  anchor: HTMLElement | null;
-  onClose: () => void;
-  onSave: (hours: number | null) => void;
-}> = ({ task, anchor, onClose, onSave }) => {
-  const { t } = useI18n();
-  const [value, setValue] = useState(task.remaining_hours_entered === null ? '' : String(task.remaining_hours_entered));
-  const invalid = value !== '' && !(Number(value) >= 0 && Number(value) <= 9999.99);
-  const save = () => { if (!invalid) { onSave(value === '' ? null : Number(value)); onClose(); } };
-  return (
-    <Popover open={anchor !== null} anchorEl={anchor} onClose={onClose} anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }}>
-      <Box
-        component="form"
-        onSubmit={(e) => { e.preventDefault(); save(); }}
-        sx={{ p: '12px', display: 'flex', flexDirection: 'column', gap: '8px', width: 240 }}
-      >
-        <Box sx={{ fontSize: 13, fontWeight: 700 }}>{t('gantt.remainingTitle', { title: task.title })}</Box>
-        <TextField
-          autoFocus size="small" type="number" label={t('taskEdit.remainingHours')} value={value} error={invalid}
-          placeholder={task.remaining_hours === null ? '' : String(task.remaining_hours)}
-          slotProps={{ htmlInput: { min: 0, step: 0.5 } }}
-          onChange={(e) => setValue(e.target.value)}
-        />
-        <Box sx={{ fontSize: 12, color: ds.textMuted }}>{t('gantt.remainingHint')}</Box>
-        <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
-          <Button size="small" onClick={onClose} sx={{ color: ds.textSub }}>{t('gantt.cancel')}</Button>
-          <Button size="small" variant="contained" type="submit" disabled={invalid}>{t('gantt.save')}</Button>
-        </Box>
-      </Box>
-    </Popover>
-  );
-};
+const isOpen = (task: Task) => task.status !== 'DONE' && task.status !== 'CANCELLED';
+// 時間を使うのは子を持たない開いたタスクだけ（比率・残を直せるのもそれだけ。ADR-0058）
+const isOpenLeaf = (task: Task) => !task.has_subtasks && isOpen(task);
 
 const GanttChart: React.FC<Props> = ({
-  tasks, categories, showMeta = true, onToggleDone, actuals, milestones = [], onEditRemaining,
+  tasks, categories, showMeta = true, onToggleDone, actuals, milestones = [], onEditTask, assigneeChoices,
 }) => {
   const navigate = useNavigate();
   const { t, weekdays } = useI18n();
@@ -123,7 +98,6 @@ const GanttChart: React.FC<Props> = ({
   const today = todayDate();
   // 予定を Scheduler へ移した後は「時間を取る」を出さない（task #535 / ADR-0054）
   const schedulerMove = useSchedulerMove();
-  const [remainingOf, setRemainingOf] = useState<{ task: Task; anchor: HTMLElement } | null>(null);
   // 期限か見込みのあるマイルストーンだけ（上に並べる）
   const milestoneRows = useMemo(
     () => milestones
@@ -215,100 +189,159 @@ const GanttChart: React.FC<Props> = ({
     // 表示範囲が変わったときだけ位置を合わせ直す
   }, [todayIdx, timelineWidth]);
 
+  // 左の表の列（MS Project のガントの左の表。ADR-0059 決定 3）
+  const thisYear = today.getFullYear();
+  const overdueIcon = (days: number) => (
+    <Tooltip title={tr('gantt.overdueTip', { days })}>
+      <WarningAmberIcon titleAccess={tr('gantt.overdueTip', { days })} sx={{ fontSize: 18, color: OVERDUE_COLOR, flexShrink: 0 }} />
+    </Tooltip>
+  );
+  const choicesOf = (task: Task) => {
+    const people = assigneeChoices?.(task);
+    return people ? [{ value: '', label: tr('taskEdit.noAssignee') }, ...people] : null;
+  };
+  const columns: GridColumn<Task>[] = [
+    {
+      key: 'title', header: tr('gantt.taskName'), width: 240, kind: 'readonly',
+      value: (task) => task.title,
+      onActivate: (task) => navigate(`/tasks/${task.id}`),
+      display: (task) => (
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0 }}>
+          <Checkbox
+            size="small" tabIndex={-1}
+            checked={task.status === 'DONE'}
+            onChange={() => onToggleDone?.(task)}
+            slotProps={{ input: { 'aria-label': tr('gantt.toggleDone', { title: task.title }) } }}
+            sx={{ p: '4px', color: ds.todoGray, '&.Mui-checked': { color: ds.success } }}
+          />
+          <CategoryDot categoryId={task.category_id} categories={categories} size={7} />
+          <Box
+            onClick={() => navigate(`/tasks/${task.id}`)}
+            sx={{
+              flex: 1, minWidth: 0, fontSize: 13, color: ds.text, cursor: 'pointer',
+              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+              textDecoration: task.status === 'DONE' ? 'line-through' : 'none',
+              '&:hover': { color: ds.primary },
+            }}
+          >
+            {task.title}
+          </Box>
+          {(task.forecast_overdue_days ?? 0) > 0 && overdueIcon(task.forecast_overdue_days ?? 0)}
+          {showMeta && <PriorityChip priority={task.priority} />}
+          {isOpen(task) && !schedulerMove.moved && (
+            <Tooltip title={tr('task.scheduleTime')}>
+              <IconButton
+                size="small" tabIndex={-1}
+                aria-label={tr('task.scheduleTime')}
+                onClick={() => navigate(scheduleTaskPath(task.id))}
+                sx={{ p: '4px', color: ds.textSub }}
+              >
+                <MoreTimeIcon sx={{ fontSize: 18 }} />
+              </IconButton>
+            </Tooltip>
+          )}
+        </Box>
+      ),
+    },
+    {
+      key: 'assignee', header: tr('gantt.assignee'), width: 120, kind: 'select',
+      value: (task) => (task.assignee_user_id == null ? '' : String(task.assignee_user_id)),
+      display: (task) => (task.assignee_user_id == null ? '—' : task.assignee_name || '—'),
+      options: (task) => choicesOf(task) ?? [],
+      editable: (task) => onEditTask !== undefined && choicesOf(task) !== null,
+      parse: (raw, task) => parseChoice(raw, choicesOf(task) ?? []),
+    },
+    {
+      key: 'allocation', header: tr('gantt.allocation'), hint: tr('gantt.allocationHint'), width: 76, kind: 'number', align: 'right',
+      value: (task) => (task.allocation_percent == null ? '' : String(task.allocation_percent)),
+      display: (task) => (task.allocation_percent == null ? '—' : `${task.allocation_percent}%`),
+      editable: (task) => onEditTask !== undefined && isOpenLeaf(task),
+      parse: (raw) => parseNumber(raw, { min: 1, max: 100, integer: true, allowEmpty: true }),
+    },
+    {
+      key: 'remaining', header: tr('gantt.remaining'), hint: tr('gantt.remainingHint'), width: 76, kind: 'number', align: 'right',
+      value: (task) => (task.remaining_hours_entered == null ? '' : String(task.remaining_hours_entered)),
+      display: (task) => (task.remaining_hours == null ? '—' : `${task.remaining_hours}h`),
+      editable: (task) => onEditTask !== undefined && isOpenLeaf(task),
+      parse: (raw) => parseNumber(raw, { min: 0, max: 9999.99, allowEmpty: true }),
+    },
+    {
+      key: 'start', header: tr('gantt.start'), width: 88, kind: 'text',
+      value: (task) => task.start_date ?? '',
+      display: (task) => (task.start_date ? formatDate(task.start_date) : '—'),
+      editable: () => onEditTask !== undefined,
+      parse: (raw) => parseDay(raw, thisYear),
+    },
+    {
+      key: 'due', header: tr('gantt.due'), width: 88, kind: 'text',
+      value: (task) => task.due_date ?? '',
+      display: (task) => (task.due_date ? formatDate(task.due_date) : '—'),
+      editable: () => onEditTask !== undefined,
+      parse: (raw) => parseDay(raw, thisYear),
+    },
+    {
+      key: 'forecast', header: tr('gantt.forecastFinish'), width: 112, kind: 'readonly',
+      value: (task) => task.forecast_finish ?? '',
+      display: (task) => {
+        if (task.forecast_finish) {
+          const overdue = task.forecast_overdue_days ?? 0;
+          return (
+            <Box component="span" sx={{ color: overdue > 0 ? ds.dangerText : ds.text, fontWeight: overdue > 0 ? 700 : 400 }}>
+              {formatDate(task.forecast_finish)}{overdue > 0 && ` ${tr('gantt.overdueLabel', { days: overdue })}`}
+            </Box>
+          );
+        }
+        const gap = forecastGapKey(task.forecast_gap);
+        return <Box component="span" sx={{ color: ds.textMuted, fontSize: 12 }}>{gap ? tr(gap) : '—'}</Box>;
+      },
+    },
+  ];
+  const commitCell = async (task: Task, key: string, value: unknown) => {
+    if (!onEditTask) return;
+    const patches: Record<string, Partial<Task>> = {
+      assignee: { assignee_user_id: value === '' ? null : Number(value) },
+      allocation: { allocation_percent: value as number | null },
+      remaining: { remaining_hours: value as number | null },
+      start: { start_date: value as string | null },
+      due: { due_date: value as string | null },
+    };
+    await onEditTask(task, patches[key]);
+  };
+
   return (
     <Box sx={{ display: 'flex', border: `1px solid ${ds.border}`, borderRadius: '10px', bgcolor: ds.paper, overflow: 'hidden' }}>
-      {/* 左: タスク名パネル */}
-      <Box sx={{ width: { xs: 220, md: LEFT_WIDTH }, flexShrink: 0, borderRight: `1px solid ${ds.border}` }}>
-        <Box sx={{
-          height: HEADER_HEIGHT, display: 'flex', alignItems: 'center', px: '14px',
-          bgcolor: '#F7F7F8', borderBottom: `1px solid ${ds.border}`,
-          fontSize: 13, fontWeight: 700, color: ds.textSub,
-        }}>
-          {t('gantt.taskName')}
-        </Box>
-        {milestoneRows.map((m) => (
-          <Box key={`m${m.id}`} data-testid="gantt-milestone-row" sx={{
-            height: ROW_HEIGHT, display: 'flex', alignItems: 'center', gap: '8px', px: '12px',
-            borderBottom: '1px solid #ECECEE', bgcolor: '#FAFAFB',
-          }}>
-            <FlagOutlinedIcon sx={{ fontSize: 18, color: ds.textSub }} aria-hidden />
-            <Box
-              onClick={() => navigate('/milestones')}
-              sx={{
-                flex: 1, minWidth: 0, fontSize: 13, fontWeight: 600, color: ds.text, cursor: 'pointer',
-                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', '&:hover': { color: ds.primary },
-              }}
-            >
-              {m.name}
+      {/* 左: セルを直接書き換える表（task #557 / ADR-0059）。行の高さは右の帯とそろえる */}
+      <Box sx={{ width: LEFT_WIDTH, flexShrink: 0, borderRight: `1px solid ${ds.border}`, overflowX: 'auto' }}>
+        <EditableGrid
+          rows={tasks} rowKey={(task) => task.id} rowLabel={(task) => task.title}
+          columns={columns} onCommit={commitCell} ariaLabel={tr('gantt.table')}
+          rowHeight={ROW_HEIGHT} headerHeight={HEADER_HEIGHT}
+          beforeRows={milestoneRows.map((m) => (
+            <Box key={`m${m.id}`} data-testid="gantt-milestone-row" sx={{
+              height: ROW_HEIGHT, display: 'flex', alignItems: 'center', gap: '8px', px: '12px',
+              borderBottom: '1px solid #ECECEE', bgcolor: '#FAFAFB',
+            }}>
+              <FlagOutlinedIcon sx={{ fontSize: 18, color: ds.textSub }} aria-hidden />
+              <Box
+                onClick={() => navigate('/milestones')}
+                sx={{
+                  flex: '0 1 auto', minWidth: 0, fontSize: 13, fontWeight: 600, color: ds.text, cursor: 'pointer',
+                  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', '&:hover': { color: ds.primary },
+                }}
+              >
+                {m.name}
+              </Box>
+              {(m.forecast_overdue_days ?? 0) > 0 && (
+                <Tooltip title={tr('gantt.overdueTip', { days: m.forecast_overdue_days ?? 0 })}>
+                  <WarningAmberIcon
+                    titleAccess={tr('gantt.overdueTip', { days: m.forecast_overdue_days ?? 0 })}
+                    sx={{ fontSize: 18, color: OVERDUE_COLOR }}
+                  />
+                </Tooltip>
+              )}
             </Box>
-            {(m.forecast_overdue_days ?? 0) > 0 && (
-              <Tooltip title={tr('gantt.overdueTip', { days: m.forecast_overdue_days ?? 0 })}>
-                <WarningAmberIcon
-                  titleAccess={tr('gantt.overdueTip', { days: m.forecast_overdue_days ?? 0 })}
-                  sx={{ fontSize: 18, color: OVERDUE_COLOR }}
-                />
-              </Tooltip>
-            )}
-          </Box>
-        ))}
-        {tasks.map((t) => (
-          <Box key={t.id} sx={{
-            height: ROW_HEIGHT, display: 'flex', alignItems: 'center', gap: '8px', px: '8px',
-            borderBottom: '1px solid #ECECEE', '&:last-child': { borderBottom: 'none' },
-          }}>
-            <Checkbox
-              size="small"
-              checked={t.status === 'DONE'}
-              onChange={() => onToggleDone?.(t)}
-              sx={{ p: '4px', color: ds.todoGray, '&.Mui-checked': { color: ds.success } }}
-            />
-            <CategoryDot categoryId={t.category_id} categories={categories} size={7} />
-            <Box
-              onClick={() => navigate(`/tasks/${t.id}`)}
-              sx={{
-                flex: 1, minWidth: 0, fontSize: 13, color: ds.text, cursor: 'pointer',
-                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                textDecoration: t.status === 'DONE' ? 'line-through' : 'none',
-                '&:hover': { color: ds.primary },
-              }}
-            >
-              {t.title}
-            </Box>
-            {(t.forecast_overdue_days ?? 0) > 0 && (
-              <Tooltip title={tr('gantt.overdueTip', { days: t.forecast_overdue_days ?? 0 })}>
-                <WarningAmberIcon
-                  titleAccess={tr('gantt.overdueTip', { days: t.forecast_overdue_days ?? 0 })}
-                  sx={{ fontSize: 18, color: OVERDUE_COLOR }}
-                />
-              </Tooltip>
-            )}
-            {onEditRemaining && !t.has_subtasks && t.status !== 'DONE' && t.status !== 'CANCELLED' && (
-              <Tooltip title={tr('gantt.remainingEdit')}>
-                <Button
-                  size="small" variant="text"
-                  aria-label={`${tr('gantt.remainingEdit')}: ${t.title}`}
-                  onClick={(e) => setRemainingOf({ task: t, anchor: e.currentTarget })}
-                  sx={{ minWidth: 0, px: '6px', py: 0, fontSize: 11, color: ds.textSub, whiteSpace: 'nowrap', display: { xs: 'none', sm: 'inline-flex' } }}
-                >
-                  {t.remaining_hours === null ? tr('gantt.remainingUnknown') : tr('gantt.remainingShort', { hours: t.remaining_hours })}
-                </Button>
-              </Tooltip>
-            )}
-            {showMeta && <PriorityChip priority={t.priority} />}
-            {t.status !== 'DONE' && t.status !== 'CANCELLED' && !schedulerMove.moved && (
-              <Tooltip title={tr('task.scheduleTime')}>
-                <IconButton
-                  size="small"
-                  aria-label={tr('task.scheduleTime')}
-                  onClick={() => navigate(scheduleTaskPath(t.id))}
-                  sx={{ p: '4px', color: ds.textSub }}
-                >
-                  <MoreTimeIcon sx={{ fontSize: 18 }} />
-                </IconButton>
-              </Tooltip>
-            )}
-          </Box>
-        ))}
+          ))}
+        />
       </Box>
 
       {/* 右: タイムライン */}
@@ -587,12 +620,6 @@ const GanttChart: React.FC<Props> = ({
           )}
         </Box>
       </Box>
-      {remainingOf && onEditRemaining && (
-        <RemainingEditor
-          task={remainingOf.task} anchor={remainingOf.anchor} onClose={() => setRemainingOf(null)}
-          onSave={(hours) => onEditRemaining(remainingOf.task, hours)}
-        />
-      )}
     </Box>
   );
 };

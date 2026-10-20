@@ -120,14 +120,19 @@ export interface ProjectMember {
   engagement_percent: number;
 }
 
-/** チームの稼働する曜日・休日と、メンバーの休み（いちばん上のプロジェクトに付く。ADR-0058） */
+/**
+ * プロジェクトのカレンダーと、メンバーの休み（ADR-0058・ADR-0059）。
+ * 稼働する曜日は根に 1 つ、休日は開いたプロジェクトと先祖のもの（`inherited` は親から引き継いだもの）。
+ */
 export interface TeamCalendar {
+  project_id: number;
   root_project_id: number;
-  // 管理者か（チームの休日と、だれの休みでも入れられる。メンバーは自分の休みだけ）
+  // 管理者か（曜日・休日と、だれの休みでも入れられる。メンバーは自分の休みだけ）
   can_manage: boolean;
   workdays: WeekdayCode[];
-  days_off: { day: string; name: string | null }[];
-  leave: { user_id: number; day: string }[];
+  days_off: { day: string; name: string | null; project_id: number; inherited: boolean }[];
+  // 休む割合（終日 100・半休 50）
+  leave: { user_id: number; day: string; off_percent: number }[];
 }
 
 export interface ProjectMembers {

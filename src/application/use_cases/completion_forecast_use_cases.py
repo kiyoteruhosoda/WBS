@@ -1,7 +1,8 @@
 """終わる見込みの日を、見ている人に見えるタスク全部について出す（task #555 / ADR-0058）。
 
 計算は Domain の ``CompletionForecaster``。ここでは、見えるタスク・依存・実績と、担当者 × 根の枠
-（1 日の工数 × 従事率、チームの曜日と休日、本人の休み）を集めて渡すだけ。保存しない（決定 4: その場で毎回）。
+（1 日の工数 × 従事率、根の曜日と休日、本人の休み）と、下のプロジェクトで足した休日（ADR-0059）を集めて渡すだけ。
+保存しない（決定 4: その場で毎回）。
 """
 
 from __future__ import annotations
@@ -65,7 +66,24 @@ class CompletionForecastUseCases:
             dependencies=self._dependencies.find_all_for_user(user_id),
             seats=self._seats(tasks, root_of, today),
             root_of=root_of,
+            project_days_off=self._project_days_off(tasks, tree, today),
         )
+
+    def _project_days_off(
+        self, tasks: list[Task], tree: ProjectTree, today: date,
+    ) -> Callable[[int | None], frozenset[date]]:
+        """プロジェクト → そのプロジェクトと、根を除く先祖で足した休日（根の休日は枠の空きに入れてある）。"""
+        lineages = {
+            p: tree.ancestors_or_self(p)[:-1] for p in {t.project_id for t in tasks} if p is not None and p in tree
+        }
+        below_root = {p for lineage in lineages.values() for p in lineage}
+        days: dict[int, set[date]] = defaultdict(set)
+        for day_off in self._team_calendar.team_days_off(below_root, today, today + timedelta(days=HORIZON_DAYS)):
+            days[day_off.project_id].add(day_off.day)
+        by_project = {
+            p: frozenset(d for ancestor in lineage for d in days[ancestor]) for p, lineage in lineages.items()
+        }
+        return lambda project_id: by_project.get(project_id, frozenset()) if project_id is not None else frozenset()
 
     def _seats(
         self, tasks: list[Task], root_of: Callable[[int | None], int | None], today: date,
@@ -80,9 +98,9 @@ class CompletionForecastUseCases:
         people = {m.user_id for ms in members.values() for m in ms}
         # 未分類のタスクは担当が作った人だけ（ADR-0055）。その人の休みも引く
         people |= {t.assignee_user_id for t in tasks if t.project_id is None and t.assignee_user_id is not None}
-        leave: dict[int, set[date]] = defaultdict(set)
+        leave: dict[int, dict[date, int]] = defaultdict(dict)
         for day_off in self._team_calendar.member_days_off(people, today, last_day):
-            leave[day_off.user_id].add(day_off.day)
+            leave[day_off.user_id][day_off.day] = day_off.off_percent
 
         seats: dict[SeatKey, WorkSeat] = {}
         for root, ms in members.items():
@@ -94,14 +112,14 @@ class CompletionForecastUseCases:
                     daily_hours=float(m.daily_hours),
                     engagement_percent=m.engagement_percent,
                     calendar=calendar,
-                    leave=frozenset(leave[m.user_id]),
+                    leave=leave[m.user_id],
                 )
         # 未分類: 1 日 8 時間・100%・月〜金・チームの休日なし（ADR-0058 決定 1）
         for task in tasks:
             if task.project_id is None and task.assignee_user_id is not None:
                 key: SeatKey = (task.assignee_user_id, None)
                 if key not in seats:
-                    seats[key] = WorkSeat(leave=frozenset(leave[task.assignee_user_id]))
+                    seats[key] = WorkSeat(leave=leave[task.assignee_user_id])
         return seats
 
 

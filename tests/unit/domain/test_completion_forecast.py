@@ -42,7 +42,9 @@ def _seat(daily: float = 8, engagement: int = 100, *, days_off=(), leave=(), wor
     calendar = TeamCalendar(days_off=frozenset(days_off))
     if workdays is not None:
         calendar = TeamCalendar(workdays=frozenset(workdays), days_off=frozenset(days_off))
-    return WorkSeat(daily_hours=daily, engagement_percent=engagement, calendar=calendar, leave=frozenset(leave))
+    # 休みは日付の集まり（終日）か、日付 → 休む割合
+    off = leave if isinstance(leave, dict) else dict.fromkeys(leave, 100)
+    return WorkSeat(daily_hours=daily, engagement_percent=engagement, calendar=calendar, leave=off)
 
 
 def _forecast(tasks, seats, dependencies=(), *, actual=None, today=MONDAY, horizon_days=None):
@@ -160,6 +162,36 @@ def test_team_days_off_and_leave_are_skipped() -> None:
     seat = _seat(8, days_off={date(2026, 11, 3)}, leave={date(2026, 11, 4)})
     result = _forecast([_task(1, remaining=16)], {(ALICE, PROJECT): seat})
     assert result.task(1).finish == date(2026, 11, 5)  # 月・(火休日)・(水休み)・木
+
+
+def test_a_half_day_off_halves_the_hours_of_that_day() -> None:
+    # ADR-0059 決定 2: 半休（50）の日は半分だけ
+    seat = _seat(8, leave={date(2026, 11, 3): 50})
+    result = _forecast([_task(1, remaining=16)], {(ALICE, PROJECT): seat})
+    assert result.task(1).finish == date(2026, 11, 4)  # 月 8・火 4・水 4
+    seat = _seat(8, leave={date(2026, 11, 3): 100})
+    result = _forecast([_task(1, remaining=16)], {(ALICE, PROJECT): seat})
+    assert result.task(1).finish == date(2026, 11, 4)  # 月 8・(火休み)・水 8
+
+
+def test_days_off_of_a_sub_project_stop_only_its_tasks() -> None:
+    # ADR-0059 決定 1: 下のプロジェクトで足した休日は、そのプロジェクトのタスクだけ止まり、時間はほかへ回る
+    sub = 11
+    tasks = [
+        _task(1, remaining=16, project_id=sub, due_date=date(2026, 11, 3)),
+        _task(2, remaining=8, due_date=date(2026, 11, 30)),
+    ]
+    seats = {(ALICE, PROJECT): _seat(8)}
+    result = CompletionForecaster(today=MONDAY).forecast(
+        tasks=tasks,
+        board=TaskProgressBoard(tasks, {}),
+        dependencies=(),
+        seats=seats,
+        root_of=lambda project_id: PROJECT,
+        project_days_off=lambda project_id: frozenset({date(2026, 11, 3)}) if project_id == sub else frozenset(),
+    )
+    assert result.task(2).finish == date(2026, 11, 3)  # 火は 1 が休みなので 2 へ
+    assert result.task(1).finish == date(2026, 11, 4)  # 月・(火は下のプロジェクトの休日)・水
 
 
 def test_weekend_is_skipped_and_workdays_follow_the_team() -> None:
