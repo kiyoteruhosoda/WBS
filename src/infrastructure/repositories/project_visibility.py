@@ -8,6 +8,8 @@
 
 from __future__ import annotations
 
+from itertools import count
+
 from sqlalchemy import ColumnElement, Select, and_, or_, select
 
 from src.infrastructure.database.models import (
@@ -18,6 +20,11 @@ from src.infrastructure.database.models import (
 )
 
 
+#: CTE の名前の通し番号。⚠ 1 つの文の中で述語を 2 度使う（依存の両端・再帰の起点と子）と、
+#: 同じ名前の CTE がぶつかって組み立てられない（CompileError）。呼ぶたびに別の名前にする
+_cte_numbers = count()
+
+
 def visible_project_ids(user_id: int) -> Select[tuple[int]]:
     """自分に見えるプロジェクトの id（根のメンバー → 子孫）。``IN`` の右辺に使う。"""
     # UNION（重複を落とす）なので、親子が万一環になっていても止まる
@@ -25,7 +32,7 @@ def visible_project_ids(user_id: int) -> Select[tuple[int]]:
         select(ProjectModel.id)
         .join(ProjectMemberModel, ProjectMemberModel.project_id == ProjectModel.id)
         .where(ProjectMemberModel.user_id == user_id)
-        .cte("visible_projects", recursive=True)
+        .cte(f"visible_projects_{next(_cte_numbers)}", recursive=True)
     )
     child = select(ProjectModel.id).join(base, ProjectModel.parent_project_id == base.c.id)
     tree = base.union(child)
