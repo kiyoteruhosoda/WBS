@@ -3,7 +3,7 @@
 // - 文字を打つか Enter・F2 で書き換えを始め、Enter で確定して下へ、Tab で確定して右へ（Shift+Tab で左）、Esc でやめる
 // - 確定したらその場で保存する（onCommit）。Delete で空にできる列は空にする
 // - 表計算から貼り付けると、選んだセルを左上としてセルごとに保存する（読めない・直せないセルは飛ばす）
-import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Box } from '@mui/material';
 import { useI18n } from '../../i18n';
 import { ds } from '../../theme';
@@ -86,10 +86,14 @@ function EditableGrid<R>({
     document.getElementById(cellId(active.row, active.col))?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
   }, [active]);
 
-  useEffect(() => {
-    if (editing) inputRef.current?.focus();
-    // 書き換えを始めたときだけ
-  }, [editing !== null]);
+  // 書き換えを始めたら、次のキーより先に入れ物へ焦点を移し、打った文字の後ろに文字の位置を置く
+  const isEditingNow = editing !== null;
+  useLayoutEffect(() => {
+    const el = inputRef.current;
+    if (!isEditingNow || !el) return;
+    el.focus();
+    if (el instanceof HTMLInputElement) el.setSelectionRange(el.value.length, el.value.length);
+  }, [isEditingNow]);
 
   const mark = (setter: React.Dispatch<React.SetStateAction<Set<string>>>, key: string, on: boolean) => {
     setter((prev) => {
