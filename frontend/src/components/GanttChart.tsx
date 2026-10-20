@@ -39,6 +39,8 @@ const ACTUAL_STRIP_HEIGHT = 6;
 const FORECAST_BAR_HEIGHT = 9;
 const FORECAST_COLOR = ds.primary;
 const OVERDUE_COLOR = ds.danger;
+// 見込みの文字のための余白（日）
+const LABEL_ROOM_DAYS = 3;
 
 const dateOnly = (d: Date): Date => new Date(d.getFullYear(), d.getMonth(), d.getDate());
 const addDays = (d: Date, n: number): Date => new Date(d.getFullYear(), d.getMonth(), d.getDate() + n);
@@ -133,6 +135,7 @@ const GanttChart: React.FC<Props> = ({
   const { rangeStart, days } = useMemo(() => {
     let min = addDays(today, -3);
     let max = addDays(today, 10);
+    let labelEnd = today;
     for (const t of tasks) {
       const s = parse(t.start_date) ?? parse(t.due_date);
       const e = parse(t.due_date) ?? parse(t.start_date);
@@ -143,15 +146,19 @@ const GanttChart: React.FC<Props> = ({
       const fe = parse(t.forecast_finish ?? null);
       if (fs && fs < min) min = fs;
       if (fe && fe > max) max = fe;
+      if (fe && fe > labelEnd) labelEnd = fe;
     }
     for (const m of milestoneRows) {
       for (const d of [parse(m.due_date), parse(m.forecast_finish ?? null)]) {
         if (d && d < min) min = d;
         if (d && d > max) max = d;
+        if (d && d > labelEnd) labelEnd = d;
       }
     }
     min = addDays(min, -1);
     max = addDays(max, 1);
+    // 見込みの右に出す文字（「見込み 11/10 ⚠ 期限 +4 日」）が切れないよう、終わりの後ろに余白の日を置く
+    if (addDays(labelEnd, LABEL_ROOM_DAYS) > max) max = addDays(labelEnd, LABEL_ROOM_DAYS);
     // 今日を含む一定幅にクランプ（範囲外にかかるバーは端で切って表示する）
     const clampMin = addDays(today, -MAX_PAST_DAYS);
     const clampMax = addDays(today, MAX_FUTURE_DAYS);
