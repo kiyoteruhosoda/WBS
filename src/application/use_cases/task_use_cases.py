@@ -6,12 +6,14 @@ from sqlalchemy.orm import Session
 
 from src.application.dto.task_dto import CreateTaskDTO, UpdateTaskDTO
 from src.application.ports.scheduled_time_lookup import ScheduledTimeLookup
+from src.application.use_cases.completion_forecast_use_cases import CompletionForecastUseCases
 from src.application.use_cases.project_membership import ProjectMembership
 from src.application.user_clock import UserClock
 from src.domain.entities.task import Task
 from src.domain.exceptions import ConflictError, NotFoundError, ValidationError
 from src.domain.repositories.milestone_repository import MilestoneRepository
 from src.domain.repositories.task_repository import TaskRepository
+from src.domain.services.completion_forecast import CompletionForecast
 from src.domain.services.project_tree import ProjectTree
 from src.domain.services.task_branch_selection import TaskBranchSelection
 from src.domain.services.task_progress_board import TaskProgressBoard
@@ -30,6 +32,17 @@ SCHEDULED_TIME_HORIZON_DAYS = 365
 終わりの無い繰り返しは、ここまで数えると 1 年分が積まれて残を大きく超える（15 分 × 毎平日で 65h）。
 そちらは画面の期間の終わり（無ければ今月末）までにする（ADR-0051）。
 """
+
+
+def _forecast_fields(forecast: CompletionForecast, task: Task) -> dict:
+    """終わる見込み（ADR-0058）。見込みを出さないときは ``forecast_gap`` に理由。"""
+    f = forecast.task(task.id or 0)
+    return {
+        "forecast_start": f.start,
+        "forecast_finish": f.finish,
+        "forecast_gap": f.gap.value if f.gap is not None else None,
+        "forecast_overdue_days": f.overdue_days,
+    }
 
 
 def _end_of_month(day: date) -> date:
@@ -57,6 +70,7 @@ class TaskUseCases:
         # 担当者の名前を引くだけ（候補の絞りは使わない）
         self._people = SqlAlchemyPersonDirectory(session, require_identity=False)
         self._clock = clock or UserClock(session)
+        self._forecasts = CompletionForecastUseCases(session, self._clock)
         # 予定の口が無ければ「予定済みの時間」は出さない（null）。
         self._scheduled_time = scheduled_time
 
@@ -74,7 +88,8 @@ class TaskUseCases:
         scheduled = self.scheduled_minutes(user_id, scheduled_until)
         tree = self._membership.tree(user_id)
         names = self._assignee_names(tasks)
-        return [self._enrich(t, board, scheduled, tree, names) for t in tasks]
+        forecast = self._forecasts.forecast(user_id)
+        return [self._enrich(t, board, scheduled, tree, names, forecast) for t in tasks]
 
     def assigned_open_tasks(self, user_id: int) -> list[tuple[Task, str | None]]:
         """担当が自分で、自分に見えて、まだ作業できるタスクと、その道筋（ADR-0056。Tracker の選ぶ欄へ渡す）。
@@ -128,7 +143,7 @@ class TaskUseCases:
         task = self._repo.find_by_id_for_user(task_id, user_id)
         if task is None:
             raise NotFoundError("Task", task_id)
-        return self._enrich(task)
+        return self._enrich(task, forecast=self._forecasts.forecast(user_id))
 
     def create_task(self, dto: CreateTaskDTO) -> dict:
         project_id = dto.project_id
@@ -166,7 +181,7 @@ class TaskUseCases:
         self._check_assignee(dto.user_id, task)
         saved = self._repo.save(task)
         self._session.commit()
-        return self._enrich(saved)
+        return self._enrich(saved, forecast=self._forecasts.forecast(dto.user_id))
 
     def update_task(self, task_id: int, user_id: int, dto: UpdateTaskDTO) -> dict:
         task = self._repo.find_by_id_for_user(task_id, user_id)
@@ -222,7 +237,9 @@ class TaskUseCases:
             self._session.expire_all()
         self._session.commit()
         refreshed = self._repo.find_by_id_for_user(task_id, user_id)
-        return self._enrich(refreshed if refreshed is not None else saved)
+        return self._enrich(
+            refreshed if refreshed is not None else saved, forecast=self._forecasts.forecast(user_id)
+        )
 
     def move_to_project(self, user_id: int, task_ids: list[int], project_id: int | None) -> dict:
         """選んだタスクをまとめて別のプロジェクトへ（``None`` で未分類へ）。ADR-0030。
@@ -318,7 +335,11 @@ class TaskUseCases:
         scheduled: dict[int, int] | None = None,
         tree: ProjectTree | None = None,
         names: dict[int, str] | None = None,
+        forecast: CompletionForecast | None = None,
     ) -> dict:
+        if forecast is None:
+            # 1 件でも、見込みは同じ枠のタスク全部を積んで出す（ADR-0058）
+            forecast = self._forecasts.forecast(task.user_id)
         if names is None:
             names = self._assignee_names([task])
         if board is None:
@@ -372,6 +393,7 @@ class TaskUseCases:
             "project_id": task.project_id,
             "assignee_user_id": task.assignee_user_id,
             "allocation_percent": task.allocation_percent,
+            **_forecast_fields(forecast, task),
             "assignee_name": (
                 names.get(task.assignee_user_id) if task.assignee_user_id is not None else None
             ),

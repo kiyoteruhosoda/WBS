@@ -5,6 +5,7 @@ from typing import Annotated
 from fastapi import APIRouter, Query, status
 
 from src.application.dto.milestone_dto import CreateMilestoneDTO, UpdateMilestoneDTO
+from src.application.use_cases.completion_forecast_use_cases import CompletionForecastUseCases
 from src.application.use_cases.milestone_use_cases import MilestoneUseCases
 from src.presentation.api.dependencies import CurrentUserDep, DbDep
 from src.presentation.api.schemas.milestone_schemas import (
@@ -31,7 +32,9 @@ def list_milestones(
     milestones = uc.list_milestones(
         current_user.user_id, project_id=project_id, unclassified=unclassified
     )
-    return [MilestoneResponse.model_validate(m, from_attributes=True) for m in milestones]
+    # 見込みの日は読むたびに出す（ADR-0058）
+    forecast = CompletionForecastUseCases(db).forecast(current_user.user_id)
+    return [MilestoneResponse.with_forecast(m, forecast) for m in milestones]
 
 
 @router.post("", response_model=MilestoneResponse, status_code=status.HTTP_201_CREATED)
@@ -47,7 +50,8 @@ def create_milestone(body: MilestoneCreateRequest, db: DbDep, current_user: Curr
 @router.get("/{milestone_id}", response_model=MilestoneResponse)
 def get_milestone(milestone_id: int, db: DbDep, current_user: CurrentUserDep) -> MilestoneResponse:
     uc = MilestoneUseCases(db)
-    return MilestoneResponse.model_validate(uc.get_milestone(milestone_id, current_user.user_id), from_attributes=True)
+    forecast = CompletionForecastUseCases(db).forecast(current_user.user_id)
+    return MilestoneResponse.with_forecast(uc.get_milestone(milestone_id, current_user.user_id), forecast)
 
 
 @router.put("/{milestone_id}", response_model=MilestoneResponse)

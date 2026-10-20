@@ -1,7 +1,10 @@
 import React, { useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Box, CircularProgress, Alert } from '@mui/material';
-import { getTasks, completeTask, reopenTask } from '../api/tasks';
+import { getTasks, completeTask, reopenTask, updateTask } from '../api/tasks';
+import { getScopedMilestones } from '../api/milestones';
+import WarningAmberIcon from '@mui/icons-material/WarningAmber';
+import { showsOnGantt } from '../forecast/forecastView';
 import { getCategories } from '../api/categories';
 import type { Task } from '../types';
 import { ds } from '../theme';
@@ -30,6 +33,11 @@ const GanttPage: React.FC = () => {
     queryFn: () => getTasks(scopeParams(scope)),
   });
   const { data: categories } = useQuery({ queryKey: ['categories'], queryFn: getCategories });
+  // マイルストーンの期限と見込みの日（ADR-0058）。取れなくてもタスクは出す
+  const { data: milestones } = useQuery({
+    queryKey: ['milestones', 'scope', scope],
+    queryFn: () => getScopedMilestones(scopeParams(scope)),
+  });
   // 実績の帯（確定した実績。task #162）。取れなくても計画の帯は出す
   const { data: actualSpans } = useQuery({ queryKey: [...ACTUALS_KEY, 'gantt'], queryFn: () => getGanttActuals() });
   const actuals = useMemo(() => new Map((actualSpans ?? []).map((s) => [s.task_id, s])), [actualSpans]);
@@ -40,12 +48,24 @@ const GanttPage: React.FC = () => {
       qc.invalidateQueries({ queryKey: ['tasks'] });
       qc.invalidateQueries({ queryKey: ['today'] });
       qc.invalidateQueries({ queryKey: ['kpi'] });
+      qc.invalidateQueries({ queryKey: ['milestones'] });
+    },
+  });
+
+  // 残をその場で直す。見込みは読み直したときに計算し直される（ADR-0058 決定 4）
+  const editRemaining = useMutation({
+    mutationFn: ({ task, hours }: { task: Task; hours: number | null }) => updateTask(task.id, { remaining_hours: hours }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['tasks'] });
+      qc.invalidateQueries({ queryKey: ['milestones'] });
+      qc.invalidateQueries({ queryKey: ['today'] });
     },
   });
 
   const tasks = useMemo(
     () => (data ?? [])
-      .filter((t) => t.start_date || t.due_date)
+      // 計画の日付が無くても、終わる見込みがあれば出す
+      .filter(showsOnGantt)
       .sort((a, b) => (a.start_date ?? a.due_date ?? '').localeCompare(b.start_date ?? b.due_date ?? '')),
     [data],
   );
@@ -70,6 +90,14 @@ const GanttPage: React.FC = () => {
             <Box sx={{ width: 12, height: 6, borderRadius: '3px', bgcolor: ACTUAL_DAY_COLOR }} />
             {t('gantt.legendActual')}
           </Box>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: 12, color: ds.textSub }}>
+            <Box sx={{ width: 16, height: 8, borderRadius: '3px', border: `1.5px dashed ${ds.primary}`, bgcolor: ds.primaryPale }} />
+            {t('gantt.legendForecast')}
+          </Box>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: 12, color: ds.dangerText }}>
+            <WarningAmberIcon sx={{ fontSize: 16 }} aria-hidden />
+            {t('gantt.legendOverdue')}
+          </Box>
         </Box>
       </Box>
 
@@ -81,7 +109,14 @@ const GanttPage: React.FC = () => {
           {t('gantt.empty')}
         </Box>
       ) : (
-        <GanttChart tasks={tasks} categories={categories} actuals={actuals} onToggleDone={(t) => toggleDone.mutate(t)} />
+        <>
+          {editRemaining.isError && <Alert severity="error" sx={{ mb: '10px' }}>{t('gantt.remainingError')}</Alert>}
+          <GanttChart
+            tasks={tasks} categories={categories} actuals={actuals} milestones={milestones}
+            onToggleDone={(t) => toggleDone.mutate(t)}
+            onEditRemaining={(task, hours) => editRemaining.mutate({ task, hours })}
+          />
+        </>
       )}
     </Box>
   );

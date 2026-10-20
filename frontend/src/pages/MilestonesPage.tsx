@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { milestoneForecastIsPartial } from '../forecast/forecastView';
 import {
   Alert, Box, Button, CircularProgress, Dialog, DialogActions, DialogContent,
   DialogTitle, IconButton, Table, TableBody, TableCell, TableContainer, TableHead,
@@ -110,6 +111,7 @@ const MilestonesPage: React.FC = () => {
                 <TableRow>
                   <TableCell sx={{ minWidth: 200 }}>{t('milestone.name')}</TableCell>
                   <TableCell sx={{ minWidth: 120 }}>{t('milestone.dueDate')}</TableCell>
+                  <TableCell sx={{ minWidth: 150 }}>{t('milestone.forecast')}</TableCell>
                   <TableCell>{t('milestone.description')}</TableCell>
                   <TableCell align="right"></TableCell>
                 </TableRow>
@@ -129,6 +131,16 @@ const MilestonesPage: React.FC = () => {
                       </TableCell>
                       <TableCell sx={{ fontSize: 13, color: ds.textSub }}>
                         {m.due_date ? formatDate(m.due_date) : t('common.dueNone')}
+                      </TableCell>
+                      <TableCell data-testid="milestone-forecast" sx={{ fontSize: 13, color: (m.forecast_overdue_days ?? 0) > 0 ? ds.dangerText : ds.textSub }}>
+                        {m.forecast_finish
+                          ? t(milestoneForecastIsPartial(m) ? 'milestone.forecastPartial' : 'milestone.forecastDate', {
+                            date: formatDate(m.forecast_finish), count: m.forecast_unforecast_count ?? 0,
+                          })
+                          : '—'}
+                        {(m.forecast_overdue_days ?? 0) > 0 && (
+                          <Box sx={{ fontSize: 12, fontWeight: 700 }}>{t('gantt.overdueLabel', { days: m.forecast_overdue_days ?? 0 })}</Box>
+                        )}
                       </TableCell>
                       <TableCell sx={{
                         fontSize: 13, color: ds.textSub, maxWidth: 260,

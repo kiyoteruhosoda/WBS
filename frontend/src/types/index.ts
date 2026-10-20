@@ -1,4 +1,7 @@
 export type TaskStatus = 'TODO' | 'DOING' | 'WAITING' | 'DONE' | 'CANCELLED';
+/** 見込みを出さない理由（ADR-0058）。finished は完了・中止・残 0 */
+export type ForecastGap =
+  | 'finished' | 'no_assignee' | 'no_remaining' | 'no_capacity' | 'waiting' | 'child_unforecast' | 'beyond_horizon';
 export type DependencyType = 'FS' | 'SS' | 'FF' | 'SF';
 
 export interface Task {
@@ -40,6 +43,12 @@ export interface Task {
   assignee_name?: string | null;
   // アサイン比率（%）。入れたタスクは担当者の 1 日の空きのうちこの割合で進む。null は順番に片付ける（ADR-0058）
   allocation_percent?: number | null;
+  // 終わる見込み（ADR-0058。読むたびに、残を担当者の空きに積んで出す）。出さないときは forecast_gap に理由
+  forecast_start?: string | null;
+  forecast_finish?: string | null;
+  forecast_gap?: ForecastGap | null;
+  // 見込みの終わりが期限を越える暦の日数（越えなければ 0）
+  forecast_overdue_days?: number;
   completed_at: string | null;
   deleted_at: string | null;
   // アーカイブした時刻（打刻や実績のあるタスクは消さずにアーカイブする。ADR-0046）
@@ -62,6 +71,11 @@ export interface Milestone {
   description: string | null;
   // 属するプロジェクト（null = 未分類。どのタスクにも付けられる）
   project_id: number | null;
+  // 付いた開いているタスクの見込みの終わりのうち、いちばん遅い日（ADR-0058）。
+  // 見込みの出ないタスクが forecast_unforecast_count 件あれば「少なくとも」の意味
+  forecast_finish?: string | null;
+  forecast_unforecast_count?: number;
+  forecast_overdue_days?: number;
 }
 
 export type ProjectStatus = 'active' | 'archived';

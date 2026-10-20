@@ -4,6 +4,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Query
 
+from src.application.use_cases.completion_forecast_use_cases import CompletionForecastUseCases
 from src.application.use_cases.gantt_use_cases import GanttUseCases
 from src.infrastructure.repositories.project_repository import SqlAlchemyProjectRepository
 from src.infrastructure.repositories.task_dependency_repository import (
@@ -28,4 +29,6 @@ def get_gantt(
         dependencies=SqlAlchemyTaskDependencyRepository(db),
         projects=SqlAlchemyProjectRepository(db),
     )
-    return uc.get_gantt_data(current_user.user_id, project_id)
+    # 終わる見込みは読むたびに出す（ADR-0058 決定 4）
+    forecast = CompletionForecastUseCases(db).forecast(current_user.user_id)
+    return uc.get_gantt_data(current_user.user_id, project_id, forecast)
