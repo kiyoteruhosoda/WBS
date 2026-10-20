@@ -44,6 +44,7 @@ from src.presentation.api.routers import (
     gantt,
     health,
     inbox,
+    machine,
     milestones,
     ops,
     pc_activity,
@@ -215,6 +216,8 @@ def create_app(database_url: str | None = None, db_path: str | None = None) -> F
     app.include_router(calendars.presets_router, prefix="/api")
     app.include_router(tracker_move.router, prefix="/api")
     app.include_router(scheduler_move.router, prefix="/api")
+    # ほかのアプリのサーバー（Tracker）が利用者の代わりに読み書きする口（ADR-0056）
+    app.include_router(machine.router, prefix="/api")
     return app
 
 
