@@ -10,7 +10,6 @@ from datetime import datetime
 from decimal import Decimal
 
 from src.domain.exceptions import ValidationError
-
 from src.domain.value_objects.project_role import ProjectRole
 
 DEFAULT_DAILY_HOURS = Decimal(8)

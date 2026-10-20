@@ -23,7 +23,9 @@ from src.infrastructure.repositories.project_member_repository import (
 )
 from src.infrastructure.repositories.project_repository import SqlAlchemyProjectRepository
 from src.infrastructure.repositories.task_repository import SqlAlchemyTaskRepository
-from src.infrastructure.repositories.team_calendar_repository import SqlAlchemyTeamCalendarRepository
+from src.infrastructure.repositories.team_calendar_repository import (
+    SqlAlchemyTeamCalendarRepository,
+)
 
 
 @dataclass(frozen=True)
