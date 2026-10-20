@@ -237,7 +237,7 @@ const GanttChart: React.FC<Props> = ({
             {(m.forecast_overdue_days ?? 0) > 0 && (
               <Tooltip title={tr('gantt.overdueTip', { days: m.forecast_overdue_days ?? 0 })}>
                 <WarningAmberIcon
-                  role="img" aria-label={tr('gantt.overdueTip', { days: m.forecast_overdue_days ?? 0 })}
+                  titleAccess={tr('gantt.overdueTip', { days: m.forecast_overdue_days ?? 0 })}
                   sx={{ fontSize: 18, color: OVERDUE_COLOR }}
                 />
               </Tooltip>
@@ -270,7 +270,7 @@ const GanttChart: React.FC<Props> = ({
             {(t.forecast_overdue_days ?? 0) > 0 && (
               <Tooltip title={tr('gantt.overdueTip', { days: t.forecast_overdue_days ?? 0 })}>
                 <WarningAmberIcon
-                  role="img" aria-label={tr('gantt.overdueTip', { days: t.forecast_overdue_days ?? 0 })}
+                  titleAccess={tr('gantt.overdueTip', { days: t.forecast_overdue_days ?? 0 })}
                   sx={{ fontSize: 18, color: OVERDUE_COLOR }}
                 />
               </Tooltip>
@@ -396,7 +396,9 @@ const GanttChart: React.FC<Props> = ({
               const hasActual = actualLayout.strip !== null;
               const forecastSpan = taskForecastSpan(t);
               // 実績か見込みの帯があれば計画の帯を細くして上へ寄せ、下に 見込み → 実績 の順に置く
-              const stacked = hasActual || forecastSpan !== null;
+              const gapKey = forecastSpan === null ? forecastGapKey(t.forecast_gap) : null;
+              // 見込みの出ない理由も見込みの段に書く（行からはみ出さないよう計画の帯を上へ寄せる）
+              const stacked = hasActual || forecastSpan !== null || gapKey !== null;
               const planHeight = stacked ? PLAN_BAR_HEIGHT_STACKED : PLAN_BAR_HEIGHT;
               const planTop = stacked ? 4 : (ROW_HEIGHT - PLAN_BAR_HEIGHT) / 2;
               const forecastTop = planTop + planHeight + 4;
@@ -530,21 +532,18 @@ const GanttChart: React.FC<Props> = ({
                     </>
                   );
                 }
-              } else {
-                const gapKey = forecastGapKey(t.forecast_gap);
-                if (gapKey && todayIdx >= 0 && todayIdx < days.length) {
-                  forecast = (
-                    <Box
-                      data-testid="gantt-forecast-gap"
-                      sx={{
-                        position: 'absolute', left: todayIdx * DAY_WIDTH + DAY_WIDTH / 2 + 6, top: planTop + planHeight + 1,
-                        fontSize: 11, color: ds.textMuted, whiteSpace: 'nowrap', pointerEvents: 'none',
-                      }}
-                    >
-                      {tr('gantt.noForecast', { reason: tr(gapKey) })}
-                    </Box>
-                  );
-                }
+              } else if (gapKey && todayIdx >= 0 && todayIdx < days.length) {
+                forecast = (
+                  <Box
+                    data-testid="gantt-forecast-gap"
+                    sx={{
+                      position: 'absolute', left: todayIdx * DAY_WIDTH + DAY_WIDTH / 2 + 6, top: forecastTop - 3, lineHeight: '15px',
+                      fontSize: 11, color: ds.textMuted, whiteSpace: 'nowrap', pointerEvents: 'none',
+                    }}
+                  >
+                    {tr('gantt.noForecast', { reason: tr(gapKey) })}
+                  </Box>
+                );
               }
               return (
                 <Box key={t.id} sx={{
