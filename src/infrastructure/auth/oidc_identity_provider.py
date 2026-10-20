@@ -161,6 +161,19 @@ class OidcIdentityProvider(IdentityProvider):
         （RFC 8707 の ``resource``）を載せない（assay の ADR-0042 決定 6、2026-09-30 に据え置き）。
         どのアプリ宛てかは ``client_id`` で見分ける（ユースケース側）。
         """
+        return self._verify_jwt_access_token(token, audience=None)
+
+    def verify_machine_token(self, token: str, *, audience: str) -> Mapping[str, Any]:
+        """ほかのアプリのサーバーが機械として持ってきたトークンを確かめる（ADR-0056）。
+
+        機械のトークンは宛名（``resource``）を付けて取るので、``aud`` はこのアプリの宛名
+        （``MACHINE_AUDIENCE``）。⚠ 宛名は「どこ宛てか」だけで、何をしてよいかは ``client_id`` で決める。
+        """
+        if not audience:
+            raise AuthenticationError("Machine tokens are not accepted by this deployment")
+        return self._verify_jwt_access_token(token, audience=audience)
+
+    def _verify_jwt_access_token(self, token: str, *, audience: str | None) -> Mapping[str, Any]:
         try:
             discovery = self._discovery.get()
             header = jwt.get_unverified_header(token)
@@ -172,7 +185,7 @@ class OidcIdentityProvider(IdentityProvider):
                 token,
                 signing_key.key,
                 algorithms=discovery.allowed_algorithms,
-                audience=f"{discovery.issuer.rstrip('/')}/userinfo",
+                audience=audience or f"{discovery.issuer.rstrip('/')}/userinfo",
                 issuer=discovery.issuer,
                 options={"require": ["exp", "iat", "iss", "aud", "sub"]},
             )

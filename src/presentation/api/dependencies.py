@@ -4,7 +4,7 @@ from collections.abc import Generator
 from functools import cache
 from typing import Annotated
 
-from fastapi import Depends, HTTPException, Request, status
+from fastapi import Depends, HTTPException, Query, Request, status
 from sqlalchemy.orm import Session
 
 from src.application.dto.auth_dto import AuthenticatedUserDTO
@@ -14,6 +14,7 @@ from src.application.ports.secret_generator import UrlSafeSecretGenerator
 from src.application.use_cases.actuals_use_cases import ActualsUseCases
 from src.application.use_cases.authentication_use_cases import (
     AppTokenAuthenticationUseCases,
+    MachineReaderAuthenticationUseCases,
     SessionAuthenticationUseCases,
     SsoLoginUseCases,
 )
@@ -109,6 +110,36 @@ def get_auth_settings(request: Request) -> AuthSettings:
     return request.app.state.auth_settings
 
 AuthSettingsDep = Annotated[AuthSettings, Depends(get_auth_settings)]
+
+
+def get_machine_reader_user(
+    request: Request,
+    db: DbDep,
+    settings: AuthSettingsDep,
+    issuer: Annotated[str, Query(description="利用者の発行者（iss）")],
+    subject: Annotated[str, Query(description="利用者の本人番号（sub）")],
+) -> AuthenticatedUserDTO:
+    """ほかのアプリのサーバー（Tracker）が利用者の代わりに読み書きする口の利用者（ADR-0056）。
+
+    ⚠ **Bearer の機械のトークンだけ**で決める（Cookie は見ない）。``AUTH_MODE=single_user`` では閉じる
+    （名乗りを確かめられないので、機械の口は SSO の配備だけのもの）。
+    """
+    authorization = request.headers.get("Authorization") or ""
+    scheme, _, token = authorization.partition(" ")
+    if not settings.sso_enabled or scheme.lower() != "bearer" or not token.strip():
+        raise AuthenticationError("A machine Bearer token is required")
+    provider = request.app.state.identity_provider
+    if provider is None:
+        raise AuthenticationError("SSO is not configured")
+    return MachineReaderAuthenticationUseCases(
+        identity_provider=provider,
+        users=SqlAlchemyUserAccountRepository(db),
+        audience=settings.machine_audience,
+        accepted_client_ids=settings.machine_reader_client_ids,
+    ).authenticate(token=token.strip(), issuer=issuer, subject=subject)
+
+
+MachineReaderUserDep = Annotated[AuthenticatedUserDTO, Depends(get_machine_reader_user)]
 
 
 def get_project_member_use_cases(db: DbDep, auth: AuthSettingsDep) -> ProjectMemberUseCases:

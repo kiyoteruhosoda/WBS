@@ -60,6 +60,16 @@ class IdentityProvider(ABC):
         """
 
     @abstractmethod
+    def verify_machine_token(self, token: str, *, audience: str) -> Mapping[str, Any]:
+        """ほかのアプリのサーバーが**機械として**持ってきたアクセストークンを確かめる（ADR-0056）。
+
+        確かめるのは**署名・``typ``（``at+jwt``）・発行者・宛先（``audience``）・期限**まで。
+        機械のトークンか（``sub_type``）・どのアプリか（``client_id``）はユースケース側が決める。
+
+        通らなければ ``AuthenticationError`` を送出する。
+        """
+
+    @abstractmethod
     def verify_access_token(self, token: str) -> Mapping[str, Any]:
         """アプリが ``Authorization: Bearer`` で持ってきた**利用者の**アクセストークンを確かめる
         （ADR-0018）。

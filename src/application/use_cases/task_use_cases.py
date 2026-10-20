@@ -76,6 +76,15 @@ class TaskUseCases:
         names = self._assignee_names(tasks)
         return [self._enrich(t, board, scheduled, tree, names) for t in tasks]
 
+    def assigned_open_tasks(self, user_id: int) -> list[tuple[Task, str | None]]:
+        """担当が自分で、自分に見えて、まだ作業できるタスクと、その道筋（ADR-0056。Tracker の選ぶ欄へ渡す）。
+
+        ⚠ メンバーから外れた人の担当は残っている（ADR-0055 決定 4）が、見えないのでここには出ない。
+        """
+        tree = self._membership.tree(user_id)
+        tasks = self._repo.find_all(user_id, {"assignee_user_id": user_id})
+        return [(t, tree.path(t.project_id)) for t in tasks if t.is_open]
+
     def resolve_project_filter(self, user_id: int, filters: dict) -> dict:
         """``project_id`` を、そのプロジェクトと子孫の id の一覧（``project_ids``）に置き換える。"""
         if filters.get("project_id") is None:

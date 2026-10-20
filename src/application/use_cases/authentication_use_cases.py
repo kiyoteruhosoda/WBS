@@ -31,7 +31,7 @@ from src.domain.entities.login_transaction import (
     LoginTransaction,
 )
 from src.domain.entities.user_account import UserAccount
-from src.domain.exceptions import AccessDeniedError, AuthenticationError
+from src.domain.exceptions import AccessDeniedError, AuthenticationError, NotFoundError
 from src.domain.repositories.auth_session_repository import AuthSessionRepository
 from src.domain.repositories.login_transaction_repository import LoginTransactionRepository
 from src.domain.repositories.user_account_repository import UserAccountRepository
@@ -121,6 +121,52 @@ class AppTokenAuthenticationUseCases:
             raise AccessDeniedError(
                 "No account is linked to this sign-in yet; sign in to the web app once"
             )
+        if not user.is_active:
+            raise AccessDeniedError(f"User account is deactivated: {user.email}")
+        return _to_dto(user)
+
+
+class MachineReaderAuthenticationUseCases:
+    """ほかのアプリのサーバーが、利用者の代わりに読み書きしに来たときの利用者（ADR-0056。Scheduler の ADR-0056 と同じ形）。
+
+    受け取る条件（どれか 1 つでも外れたら 401）:
+
+    - 署名・``typ``・発行者・宛先（``MACHINE_AUDIENCE``）・期限（``IdentityProvider.verify_machine_token``）
+    - ``sub_type`` が**ある**（機械のトークン。人のログインのトークンでは通らない）
+    - ``client_id`` が読んでよいアプリの機械のもの（``MACHINE_READER_CLIENT_IDS``）
+
+    利用者は呼び手が渡す ``(iss, sub)`` で引く。⚠ **ここでも利用者を作らない。** 結び付きが無ければ 404
+    （呼び手は「WBS に一度ログインしてください」と出す）。止めた利用者は 403。
+    宛名も許可リストも空なら閉じる（既定）。
+    """
+
+    def __init__(
+        self,
+        *,
+        identity_provider: IdentityProvider,
+        users: UserAccountRepository,
+        audience: str,
+        accepted_client_ids: frozenset[str],
+    ) -> None:
+        self._idp = identity_provider
+        self._users = users
+        self._audience = audience
+        self._accepted_client_ids = accepted_client_ids
+
+    def authenticate(self, *, token: str, issuer: str, subject: str) -> AuthenticatedUserDTO:
+        if not self._audience or not self._accepted_client_ids:
+            raise AuthenticationError("Machine readers are not accepted by this deployment")
+        claims = self._idp.verify_machine_token(token, audience=self._audience)
+        if "sub_type" not in claims:
+            # 人のログインのトークン（宛名が合っても）はこの口を通さない
+            raise AuthenticationError("Only machine tokens are accepted here")
+        if str(claims.get("client_id") or "") not in self._accepted_client_ids:
+            raise AuthenticationError("Machine token was issued to an application not accepted here")
+        if issuer != self._idp.federated_issuer or not subject.strip():
+            raise NotFoundError("user", subject)
+        user = self._users.find_by_identity(FederatedIdentity(issuer=issuer, subject=subject))
+        if user is None:
+            raise NotFoundError("user", subject)
         if not user.is_active:
             raise AccessDeniedError(f"User account is deactivated: {user.email}")
         return _to_dto(user)

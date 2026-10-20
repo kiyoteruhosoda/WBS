@@ -161,6 +161,9 @@ class FakeIdentityProvider(IdentityProvider):
     def verify_logout_token(self, token):
         raise InvalidLogoutTokenError("this fake does not serve logout tokens")
 
+    def verify_machine_token(self, token, *, audience):
+        raise AuthenticationError("this fake does not serve machine tokens")
+
     def verify_access_token(self, token):
         raise AuthenticationError("this fake does not serve access tokens")
 
