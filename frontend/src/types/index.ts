@@ -38,6 +38,8 @@ export interface Task {
   // 担当者（ADR-0055）。担当なしは null
   assignee_user_id?: number | null;
   assignee_name?: string | null;
+  // アサイン比率（%）。入れたタスクは担当者の 1 日の空きのうちこの割合で進む。null は順番に片付ける（ADR-0058）
+  allocation_percent?: number | null;
   completed_at: string | null;
   deleted_at: string | null;
   // アーカイブした時刻（打刻や実績のあるタスクは消さずにアーカイブする。ADR-0046）
@@ -99,6 +101,19 @@ export interface ProjectMember {
   role: ProjectRole;
   // 聞いた本人か（「外す」を「抜ける」と出す）
   is_you: boolean;
+  // 1 日の工数（時間）と従事率（%）。1 日にこのプロジェクトに使える時間 = 掛けた値（ADR-0058）
+  daily_hours: number;
+  engagement_percent: number;
+}
+
+/** チームの稼働する曜日・休日と、メンバーの休み（いちばん上のプロジェクトに付く。ADR-0058） */
+export interface TeamCalendar {
+  root_project_id: number;
+  // 管理者か（チームの休日と、だれの休みでも入れられる。メンバーは自分の休みだけ）
+  can_manage: boolean;
+  workdays: WeekdayCode[];
+  days_off: { day: string; name: string | null }[];
+  leave: { user_id: number; day: string }[];
 }
 
 export interface ProjectMembers {

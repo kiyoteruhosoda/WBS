@@ -19,7 +19,7 @@ class ProjectMemberRepository(ABC):
 
     @abstractmethod
     def save(self, member: ProjectMember) -> ProjectMember:
-        """足す（id が無い）か、役割を書き換える。"""
+        """足す（id が無い）か、役割・1 日の工数・従事率を書き換える。"""
 
     @abstractmethod
     def delete(self, project_id: int, user_id: int) -> None: ...

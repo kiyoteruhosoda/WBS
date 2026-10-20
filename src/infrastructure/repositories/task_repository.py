@@ -83,6 +83,7 @@ class SqlAlchemyTaskRepository(TaskRepository):
             model.milestone_id = task.milestone_id
             model.project_id = task.project_id
             model.assignee_user_id = task.assignee_user_id
+            model.allocation_percent = task.allocation_percent
             model.completed_at = task.completed_at
             model.archived_at = task.archived_at
             model.updated_at = utcnow()
@@ -172,6 +173,7 @@ class SqlAlchemyTaskRepository(TaskRepository):
             milestone_id=model.milestone_id,
             project_id=model.project_id,
             assignee_user_id=model.assignee_user_id,
+            allocation_percent=model.allocation_percent,
             completed_at=model.completed_at,
             deleted_at=model.deleted_at,
             archived_at=model.archived_at,
@@ -196,6 +198,7 @@ class SqlAlchemyTaskRepository(TaskRepository):
             milestone_id=task.milestone_id,
             project_id=task.project_id,
             assignee_user_id=task.assignee_user_id,
+            allocation_percent=task.allocation_percent,
             completed_at=task.completed_at,
             archived_at=task.archived_at,
         )

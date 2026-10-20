@@ -57,7 +57,10 @@ class ProjectMembership:
         """下のプロジェクトを根へ出すとき、元の木のメンバーをそのまま写す（見える人を変えない。ADR-0055 決定 6）。"""
         for member in self._members.find_by_project(from_root_id):
             self._members.save(
-                ProjectMember(id=None, project_id=to_project_id, user_id=member.user_id, role=member.role)
+                ProjectMember(
+                    id=None, project_id=to_project_id, user_id=member.user_id, role=member.role,
+                    daily_hours=member.daily_hours, engagement_percent=member.engagement_percent,
+                )
             )
 
     def forget_members(self, project_id: int) -> None:

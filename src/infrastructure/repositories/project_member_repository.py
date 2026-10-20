@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from decimal import Decimal
+
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
@@ -36,10 +38,14 @@ class SqlAlchemyProjectMemberRepository(ProjectMemberRepository):
                 project_id=member.project_id,
                 user_id=member.user_id,
                 role=member.role.value,
+                daily_hours=member.daily_hours,
+                engagement_percent=member.engagement_percent,
             )
             self._session.add(model)
         else:
             model.role = member.role.value
+            model.daily_hours = member.daily_hours
+            model.engagement_percent = member.engagement_percent
         self._session.flush()
         return self._to_entity(model)
 
@@ -73,5 +79,7 @@ class SqlAlchemyProjectMemberRepository(ProjectMemberRepository):
             project_id=model.project_id,
             user_id=model.user_id,
             role=ProjectRole(model.role),
+            daily_hours=Decimal(model.daily_hours),
+            engagement_percent=model.engagement_percent,
             created_at=model.created_at,
         )

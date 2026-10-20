@@ -1,5 +1,5 @@
 import client from './client';
-import type { Person, Project, ProjectMembers, ProjectRole, ProjectStatus } from '../types';
+import type { Person, Project, ProjectMembers, ProjectRole, ProjectStatus, TeamCalendar, WeekdayCode } from '../types';
 
 /** プロジェクト（task #187、ADR-0024）。書いたらタスク・マイルストーンも読み直させる（道筋が変わる）。 */
 export const PROJECTS_KEY = ['projects'] as const;
@@ -79,4 +79,56 @@ export const changeProjectMemberRole = async (
 /** 外す（自分なら抜ける）。最後の管理者は 409。担当は残る。 */
 export const removeProjectMember = async (projectId: number, userId: number): Promise<void> => {
   await client.delete(`/projects/${projectId}/members/${userId}`);
+};
+
+/** 1 日の工数と従事率（ADR-0058）。管理者は誰のでも、メンバーは自分のだけ（403）。 */
+export const changeProjectMemberCapacity = async (
+  projectId: number, userId: number, dailyHours: number, engagementPercent: number,
+): Promise<ProjectMembers> => {
+  const { data } = await client.put<ProjectMembers>(`/projects/${projectId}/members/${userId}/capacity`, {
+    daily_hours: dailyHours, engagement_percent: engagementPercent,
+  });
+  return data;
+};
+
+/** チームの稼働する曜日・休日と、メンバーの休み。どの段の id で聞いても根のもの（ADR-0058）。 */
+export const teamCalendarKey = (projectId: number) => ['projects', projectId, 'team-calendar'] as const;
+
+export const getTeamCalendar = async (projectId: number): Promise<TeamCalendar> => {
+  const { data } = await client.get<TeamCalendar>(`/projects/${projectId}/team-calendar`);
+  return data;
+};
+
+/** 稼働する曜日（管理者だけ。1 つ以上）。 */
+export const setTeamWorkdays = async (projectId: number, workdays: WeekdayCode[]): Promise<TeamCalendar> => {
+  const { data } = await client.put<TeamCalendar>(`/projects/${projectId}/team-calendar/workdays`, { workdays });
+  return data;
+};
+
+/** チームの休日を足す（同じ日なら名前を書き換える。管理者だけ）。 */
+export const addTeamDayOff = async (projectId: number, day: string, name: string | null): Promise<TeamCalendar> => {
+  const { data } = await client.post<TeamCalendar>(`/projects/${projectId}/team-calendar/days-off`, { day, name });
+  return data;
+};
+
+export const removeTeamDayOff = async (projectId: number, day: string): Promise<TeamCalendar> => {
+  const { data } = await client.delete<TeamCalendar>(`/projects/${projectId}/team-calendar/days-off/${day}`);
+  return data;
+};
+
+/** その年の日本の祝日を足す（すでにある日はそのまま。管理者だけ）。 */
+export const importTeamJapaneseHolidays = async (projectId: number, year: number): Promise<TeamCalendar> => {
+  const { data } = await client.post<TeamCalendar>(`/projects/${projectId}/team-calendar/days-off/japan`, { year });
+  return data;
+};
+
+/** その人の休み（本人か管理者だけ。休みはプロジェクトをまたいで同じ）。 */
+export const addMemberLeave = async (projectId: number, userId: number, day: string): Promise<TeamCalendar> => {
+  const { data } = await client.post<TeamCalendar>(`/projects/${projectId}/members/${userId}/leave`, { day });
+  return data;
+};
+
+export const removeMemberLeave = async (projectId: number, userId: number, day: string): Promise<TeamCalendar> => {
+  const { data } = await client.delete<TeamCalendar>(`/projects/${projectId}/members/${userId}/leave/${day}`);
+  return data;
 };

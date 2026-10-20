@@ -1,12 +1,17 @@
 from __future__ import annotations
 
+from datetime import date
+from decimal import Decimal
+
 from pydantic import BaseModel, Field
 
 from src.application.ports.person_directory import Person
 from src.application.use_cases.project_member_use_cases import ProjectMembersView
 from src.application.use_cases.project_use_cases import ProjectView
+from src.application.use_cases.team_calendar_use_cases import TeamCalendarView
 from src.domain.value_objects.project_role import ProjectRole
 from src.domain.value_objects.project_status import ProjectStatus
+from src.domain.value_objects.recurrence import Weekday
 from src.presentation.api.schemas.types import UtcDatetime
 
 # 色は #rrggbb（カテゴリと同じ形）
@@ -101,6 +106,13 @@ class ProjectMemberRoleRequest(BaseModel):
     role: ProjectRole
 
 
+class ProjectMemberCapacityRequest(BaseModel):
+    """1 日の工数と従事率（ADR-0058）。この人がこのプロジェクトに 1 日に使える時間 = 1 日の工数 × 従事率。"""
+
+    daily_hours: Decimal = Field(ge=0, le=24, decimal_places=2)
+    engagement_percent: int = Field(ge=0, le=100)
+
+
 class ProjectMemberResponse(BaseModel):
     user_id: int
     display_name: str
@@ -108,6 +120,9 @@ class ProjectMemberResponse(BaseModel):
     role: ProjectRole
     # 聞いた本人か
     is_you: bool
+    # 1 日の工数（時間）と従事率（%）。ADR-0058
+    daily_hours: float
+    engagement_percent: int
 
 
 class ProjectMembersResponse(BaseModel):
@@ -129,7 +144,58 @@ class ProjectMembersResponse(BaseModel):
                     email=m.email,
                     role=m.role,
                     is_you=m.is_you,
+                    daily_hours=float(m.daily_hours),
+                    engagement_percent=m.engagement_percent,
                 )
                 for m in view.members
             ],
+        )
+
+
+class TeamWorkdaysRequest(BaseModel):
+    workdays: list[Weekday] = Field(min_length=1, description="稼働する曜日（MO〜SU）")
+
+
+class TeamDayOffRequest(BaseModel):
+    day: date
+    name: str | None = Field(default=None, max_length=100)
+
+
+class JapaneseHolidaysRequest(BaseModel):
+    year: int = Field(ge=1980, le=2099)
+
+
+class MemberLeaveRequest(BaseModel):
+    day: date
+
+
+class TeamDayOffResponse(BaseModel):
+    day: date
+    name: str | None
+
+
+class MemberLeaveResponse(BaseModel):
+    user_id: int
+    day: date
+
+
+class TeamCalendarResponse(BaseModel):
+    """チームの稼働する曜日・休日と、メンバーの休み（ADR-0058 決定 2）。"""
+
+    # 曜日と休日が付いているいちばん上のプロジェクト
+    root_project_id: int
+    # 自分が管理者か（チームの休日と、だれの休みでも入れられる。メンバーは自分の休みだけ）
+    can_manage: bool
+    workdays: list[Weekday]
+    days_off: list[TeamDayOffResponse]
+    leave: list[MemberLeaveResponse]
+
+    @classmethod
+    def from_view(cls, view: TeamCalendarView) -> TeamCalendarResponse:
+        return cls(
+            root_project_id=view.root_project_id,
+            can_manage=view.can_manage,
+            workdays=view.workdays,
+            days_off=[TeamDayOffResponse(day=d.day, name=d.name) for d in view.days_off],
+            leave=[MemberLeaveResponse(user_id=d.user_id, day=d.day) for d in view.leave],
         )

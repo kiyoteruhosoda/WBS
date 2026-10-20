@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from decimal import Decimal
 
 from sqlalchemy.orm import Session
 
@@ -34,6 +35,9 @@ class MemberView:
     role: ProjectRole
     #: 聞いた本人か（画面が「外す」を「抜ける」と出す）
     is_you: bool
+    #: 1 日の工数（時間）と従事率（%）。ADR-0058
+    daily_hours: Decimal
+    engagement_percent: int
 
 
 @dataclass(frozen=True)
@@ -104,6 +108,26 @@ class ProjectMemberUseCases:
         self._session.commit()
         return self.list_members(user_id, project_id)
 
+    def change_capacity(
+        self,
+        user_id: int,
+        project_id: int,
+        member_user_id: int,
+        daily_hours: Decimal,
+        engagement_percent: int,
+    ) -> ProjectMembersView:
+        """1 日の工数と従事率を変える。管理者は誰のでも、メンバーは自分のだけ（ADR-0058 決定 1）。"""
+        root = self._root_of(user_id, project_id)
+        if member_user_id != user_id:
+            self._membership.require_manager(user_id, root)
+        member = self._members.find(root, member_user_id)
+        if member is None:
+            raise NotFoundError("ProjectMember", member_user_id)
+        member.set_capacity(daily_hours, engagement_percent)
+        self._members.save(member)
+        self._session.commit()
+        return self.list_members(user_id, project_id)
+
     def remove_member(self, user_id: int, project_id: int, member_user_id: int) -> None:
         """外す。管理者は誰でも、メンバーは自分だけ（抜ける）を外せる。最後の管理者は外せない（409）。"""
         root = self._root_of(user_id, project_id)
@@ -138,6 +162,8 @@ class ProjectMemberUseCases:
             email=person.email if person is not None else "",
             role=member.role,
             is_you=member.user_id == viewer_id,
+            daily_hours=member.daily_hours,
+            engagement_percent=member.engagement_percent,
         )
 
 

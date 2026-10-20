@@ -92,7 +92,66 @@ class ProjectMemberModel(Base):
         nullable=False,
     )
     role: Mapped[str] = mapped_column(sa.String(16), nullable=False)
+    # 1 日の工数（時間）と従事率（%）。見込みの計算に使う（task #554 / ADR-0058）
+    daily_hours: Mapped[Decimal] = mapped_column(
+        sa.Numeric(4, 2), default=Decimal(8), server_default="8", nullable=False
+    )
+    engagement_percent: Mapped[int] = mapped_column(
+        sa.Integer, default=100, server_default="100", nullable=False
+    )
     created_at: Mapped[datetime] = mapped_column(sa.DateTime, default=utcnow, nullable=False)
+
+class TeamWorkweekModel(Base):
+    """いちばん上のプロジェクトの稼働する曜日（task #554 / ADR-0058）。行が無ければ月〜金。
+
+    ``workdays`` は MO〜SU をカンマで（休みの層の ``calendars.workdays`` と同じ綴り）。
+    """
+
+    __tablename__ = "team_workweeks"
+    __table_args__ = (
+        sa.UniqueConstraint("project_id", name="uq_team_workweeks_project"),
+        {"sqlite_autoincrement": True},
+    )
+    id: Mapped[int] = mapped_column(BigIntPK, primary_key=True, autoincrement=True)
+    project_id: Mapped[int] = mapped_column(
+        sa.BigInteger().with_variant(sa.Integer(), "sqlite"),
+        sa.ForeignKey("projects.id", name="fk_team_workweeks_project_id"),
+        nullable=False,
+    )
+    workdays: Mapped[str] = mapped_column(sa.String(32), nullable=False)
+
+class TeamDayOffModel(Base):
+    """チームの休日（いちばん上のプロジェクトごと。task #554 / ADR-0058）。"""
+
+    __tablename__ = "team_days_off"
+    __table_args__ = (
+        sa.UniqueConstraint("project_id", "day", name="uq_team_days_off_project_day"),
+        {"sqlite_autoincrement": True},
+    )
+    id: Mapped[int] = mapped_column(BigIntPK, primary_key=True, autoincrement=True)
+    project_id: Mapped[int] = mapped_column(
+        sa.BigInteger().with_variant(sa.Integer(), "sqlite"),
+        sa.ForeignKey("projects.id", name="fk_team_days_off_project_id"),
+        nullable=False,
+    )
+    day: Mapped[date] = mapped_column(sa.Date, nullable=False)
+    name: Mapped[str | None] = mapped_column(sa.String(100), nullable=True)
+
+class MemberDayOffModel(Base):
+    """各人の休み（人ごと・プロジェクトをまたいで同じ。日付だけ。task #554 / ADR-0058）。"""
+
+    __tablename__ = "member_days_off"
+    __table_args__ = (
+        sa.UniqueConstraint("user_id", "day", name="uq_member_days_off_user_day"),
+        {"sqlite_autoincrement": True},
+    )
+    id: Mapped[int] = mapped_column(BigIntPK, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(
+        sa.BigInteger().with_variant(sa.Integer(), "sqlite"),
+        sa.ForeignKey("users.id", name="fk_member_days_off_user_id"),
+        nullable=False,
+    )
+    day: Mapped[date] = mapped_column(sa.Date, nullable=False)
 
 class MilestoneModel(Base):
     __tablename__ = "milestones"
@@ -150,6 +209,8 @@ class TaskModel(Base):
         nullable=True,
         index=True,
     )
+    # アサイン比率（%、空可。task #554 / ADR-0058）。入れたタスクは担当者の 1 日の空きのうちこの割合で進む
+    allocation_percent: Mapped[int | None] = mapped_column(sa.Integer, nullable=True)
 
 class WorkLogModel(Base):
     __tablename__ = "work_logs"

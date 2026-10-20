@@ -27,6 +27,8 @@ class TaskCreateRequest(BaseModel):
     project_id: int | None = None
     # 担当者（利用者の id）。省くと作った人、null で担当なし。根のプロジェクトのメンバー以外は 422（ADR-0055）
     assignee_user_id: int | None = None
+    # アサイン比率（%）。入れると担当者の 1 日の空きのうちこの割合で進む見込みになる。空なら順番に片付ける（ADR-0058）
+    allocation_percent: int | None = Field(default=None, ge=1, le=100)
 
 
 class TaskUpdateRequest(BaseModel):
@@ -48,6 +50,8 @@ class TaskUpdateRequest(BaseModel):
     project_id: int | None = None
     # null を送ると担当なし。根のプロジェクトのメンバー以外は 422（ADR-0055）
     assignee_user_id: int | None = None
+    # null を送ると比率なし（順番に片付ける）。ADR-0058
+    allocation_percent: int | None = Field(default=None, ge=1, le=100)
 
 
 class TaskMoveToProjectRequest(BaseModel):
@@ -100,6 +104,8 @@ class TaskResponse(BaseModel):
     # 担当者と、その表示名（ADR-0055）。担当なしは null
     assignee_user_id: int | None = None
     assignee_name: str | None = None
+    # アサイン比率（%、ADR-0058）。null は比率なし
+    allocation_percent: int | None = None
     completed_at: UtcDatetime | None = None
     deleted_at: UtcDatetime | None = None
     # アーカイブした時刻（ADR-0046）。アーカイブしたタスクは一覧に出ないが、1 件の取得では返る

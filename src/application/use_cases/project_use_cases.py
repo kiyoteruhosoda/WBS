@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from sqlalchemy.orm import Session
 
@@ -19,6 +19,7 @@ from src.infrastructure.repositories.project_member_repository import (
 )
 from src.infrastructure.repositories.project_repository import SqlAlchemyProjectRepository
 from src.infrastructure.repositories.task_repository import SqlAlchemyTaskRepository
+from src.infrastructure.repositories.team_calendar_repository import SqlAlchemyTeamCalendarRepository
 
 
 @dataclass(frozen=True)
@@ -36,6 +37,7 @@ class ProjectUseCases:
     def __init__(self, session: Session) -> None:
         self._session = session
         self._repo = SqlAlchemyProjectRepository(session)
+        self._team_calendar = SqlAlchemyTeamCalendarRepository(session)
         self._membership = ProjectMembership(
             projects=self._repo,
             tasks=SqlAlchemyTaskRepository(session),
@@ -113,9 +115,13 @@ class ProjectUseCases:
             # 根を他の下へ入れると、この木のメンバーは消え、移った先の木のメンバーに見える（ADR-0055 決定 6）
             self._membership.require_manager(user_id, project_id)
             self._membership.forget_members(project_id)
+            # チームの曜日と休日も根にだけ付く。移った先の木のものを使う（ADR-0058 決定 2）
+            self._team_calendar.forget_team(project_id)
         elif old_parent is not None and new_parent is None:
             # 下のものを根へ出す: 元の木のメンバーを写す（見える人は変わらない）
-            self._membership.copy_members(tree.root_of(project_id), project_id)
+            old_root = tree.root_of(project_id)
+            self._membership.copy_members(old_root, project_id)
+            self._copy_team_calendar(old_root, project_id)
 
         siblings = [p.id for p in tree.children_of(new_parent) if p.id != project_id]
         position = dto.position
@@ -146,6 +152,14 @@ class ProjectUseCases:
             raise ProjectNotEmptyError()
         self._repo.delete(project_id)
         self._session.commit()
+
+    def _copy_team_calendar(self, from_root_id: int, to_project_id: int) -> None:
+        """下のプロジェクトを根へ出すとき、元の木の曜日と休日を写す（見込みを変えない）。"""
+        workdays = self._team_calendar.workdays(from_root_id)
+        if workdays is not None:
+            self._team_calendar.set_workdays(to_project_id, workdays)
+        for day_off in self._team_calendar.team_days_off([from_root_id]):
+            self._team_calendar.add_team_day_off(replace(day_off, project_id=to_project_id))
 
     def _view(
         self, project: Project, tree: ProjectTree, roles: dict[int, ProjectRole]
