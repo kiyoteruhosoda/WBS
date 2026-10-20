@@ -23,6 +23,7 @@ from src.domain.repositories.closing_period_repository import ClosingPeriodRepos
 from src.domain.repositories.time_entry_carving_repository import TimeEntryCarvingRepository
 from src.domain.repositories.time_entry_repository import TimeEntryRepository
 from src.domain.repositories.work_log_repository import WorkLogRepository
+from src.domain.value_objects.work_log_source import WorkLogSource
 
 
 class InMemoryTimeEntryRepository(TimeEntryRepository):
@@ -167,6 +168,25 @@ class InMemoryWorkLogRepository(WorkLogRepository):
 
     def delete_by_closing_period(self, closing_period_id: int) -> int:
         doomed = [i for i, w in self._rows.items() if w.closing_period_id == closing_period_id]
+        for i in doomed:
+            del self._rows[i]
+        return len(doomed)
+
+    def remove_tracker_period(self, user_id: int, first_day: date) -> int:
+        doomed = [
+            i for i, w in self._rows.items()
+            if w.user_id == user_id and w.source is WorkLogSource.TRACKER and w.tracker_first_day == first_day
+        ]
+        for i in doomed:
+            del self._rows[i]
+        return len(doomed)
+
+    def retire_own_closings(self, user_id: int, first_day: date, last_day: date) -> int:
+        doomed = [
+            i for i, w in self._rows.items()
+            if w.user_id == user_id and w.source is WorkLogSource.CLOSING
+            and first_day <= w.work_date <= last_day
+        ]
         for i in doomed:
             del self._rows[i]
         return len(doomed)
