@@ -45,7 +45,7 @@ class TaskProgressBoard:
 
         actual = own_actual
         remainders: list[float | None] = []
-        for node in self._descendants(task.id):
+        for node in self.descendants(task.id):
             node_actual = self.actual_hours(node.id)
             actual += node_actual
             if self.has_subtasks(node.id):
@@ -61,7 +61,8 @@ class TaskProgressBoard:
     def progress_percent(self, task: Task) -> float | None:
         return self.figures(task).progress_percent(done=task.status == TaskStatus.DONE)
 
-    def _descendants(self, root_id: int) -> Iterator[Task]:
+    def descendants(self, root_id: int) -> Iterator[Task]:
+        """子孫（自分を除く）。"""
         # 親子が輪になっていても止まるよう、通ったものは二度辿らない
         seen = {root_id}
         stack = list(self._children.get(root_id, ()))
