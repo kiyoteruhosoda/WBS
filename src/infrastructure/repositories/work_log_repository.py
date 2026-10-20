@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import date
 
-from sqlalchemy import delete, select
+from sqlalchemy import Select, delete, select
 from sqlalchemy.orm import Session
 
 from src.domain.entities.work_log import WorkLog
@@ -41,6 +41,7 @@ class SqlAlchemyWorkLogRepository(WorkLogRepository):
                 source=work_log.source.value,
                 closing_period_id=work_log.closing_period_id,
                 duration_seconds=work_log.duration_seconds,
+                tracker_first_day=work_log.tracker_first_day,
             )
             self._session.add(model)
             self._session.flush()
@@ -80,6 +81,33 @@ class SqlAlchemyWorkLogRepository(WorkLogRepository):
         self._session.flush()
         return result.rowcount or 0
 
+    def remove_tracker_period(self, user_id: int, first_day: date) -> int:
+        stmt = select(WorkLogModel).where(
+            WorkLogModel.user_id == user_id,
+            WorkLogModel.source == WorkLogSource.TRACKER.value,
+            WorkLogModel.tracker_first_day == first_day,
+            WorkLogModel.deleted_at.is_(None),
+        )
+        return self._soft_delete_all(stmt)
+
+    def retire_own_closings(self, user_id: int, first_day: date, last_day: date) -> int:
+        stmt = select(WorkLogModel).where(
+            WorkLogModel.user_id == user_id,
+            WorkLogModel.source == WorkLogSource.CLOSING.value,
+            WorkLogModel.work_date >= first_day,
+            WorkLogModel.work_date <= last_day,
+            WorkLogModel.deleted_at.is_(None),
+        )
+        return self._soft_delete_all(stmt)
+
+    def _soft_delete_all(self, stmt: Select[tuple[WorkLogModel]]) -> int:
+        now = utcnow()
+        models = list(self._session.scalars(stmt))
+        for model in models:
+            model.deleted_at = now
+        self._session.flush()
+        return len(models)
+
     def find_for_user(
         self, user_id: int, first_day: date | None = None, last_day: date | None = None
     ) -> list[WorkLog]:
@@ -113,4 +141,5 @@ class SqlAlchemyWorkLogRepository(WorkLogRepository):
             source=WorkLogSource(model.source),
             closing_period_id=model.closing_period_id,
             duration_seconds=model.duration_seconds,
+            tracker_first_day=model.tracker_first_day,
         )

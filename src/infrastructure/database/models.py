@@ -172,6 +172,9 @@ class WorkLogModel(Base):
     )
     # 締めで作った行の正確な長さ（秒）。hours は小数 2 桁に収めた値
     duration_seconds: Mapped[int | None] = mapped_column(sa.Integer, nullable=True)
+    # Tracker から受け取った行（source=tracker）の、Tracker の締めの期間の初日（task #540 / ADR-0056）。
+    # 利用者と組で期間を指す（置き換え・取り消しの単位）
+    tracker_first_day: Mapped[date | None] = mapped_column(sa.Date, nullable=True)
 
 class TaskDependencyModel(Base):
     __tablename__ = "task_dependencies"

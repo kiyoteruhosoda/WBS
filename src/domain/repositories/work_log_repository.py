@@ -22,6 +22,17 @@ class WorkLogRepository(ABC):
     def delete_by_closing_period(self, closing_period_id: int) -> int:
         """締めでその期間から作った実績を消す（物理削除。打刻から作り直せるため）。消した数を返す。"""
     @abstractmethod
+    def remove_tracker_period(self, user_id: int, first_day: date) -> int:
+        """Tracker から受け取ったその期間の行を論理削除する（ADR-0056）。消した数を返す。"""
+
+    @abstractmethod
+    def retire_own_closings(self, user_id: int, first_day: date, last_day: date) -> int:
+        """WBS 自身の締めで作った行（``source=closing``。Tracker へ移る前のもの）のうち、期間に入るものを論理削除する。
+
+        Tracker が同じ期間を送ってきたら、そちらが正（Tracker の ADR-0053 決定 4）。二重に数えないために退ける。
+        """
+
+    @abstractmethod
     def find_for_user(
         self, user_id: int, first_day: date | None = None, last_day: date | None = None
     ) -> list[WorkLog]:
