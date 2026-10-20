@@ -27,6 +27,7 @@ import ProjectScopeSelect from '../components/ProjectScopeSelect';
 import MoveToProjectDialog from '../components/tasks/MoveToProjectDialog';
 import { SearchIcon } from '../components/icons';
 import { scopeParams } from '../projects/projectScope';
+import { getPeople, PEOPLE_KEY } from '../api/projects';
 import { useProjectScope } from '../projects/useProjectScope';
 import { useSchedulerMove } from '../scheduler/useSchedulerMove';
 import {
@@ -59,6 +60,8 @@ const TaskList: React.FC = () => {
   const [statusFilter, setStatusFilter] = useState<TaskStatus[]>([]);
   const [categoryId, setCategoryId] = useState<string>('');
   const [milestoneId, setMilestoneId] = useState<string>('');
+  // 担当者（ADR-0055）。'' = すべて、'me' = 自分、'none' = 担当なし、数字 = その人。絞りはサーバ
+  const [assignee, setAssignee] = useState<string>('');
   const [keyword, setKeyword] = useState('');
   const [sortKey, setSortKey] = useState<TaskSortKey>('priority_score');
   const [sortDesc, setSortDesc] = useState(false);
@@ -71,9 +74,10 @@ const TaskList: React.FC = () => {
   // 範囲はサイドバーと同じ状態（ここで替えればサイドバーも替わる）。絞りはサーバ（task #187、ADR-0024）
   const { scope, projects } = useProjectScope();
   const { data, isLoading, error } = useQuery({
-    queryKey: ['tasks', 'scope', scope],
-    queryFn: () => getTasks(scopeParams(scope)),
+    queryKey: ['tasks', 'scope', scope, assignee],
+    queryFn: () => getTasks({ ...scopeParams(scope), ...(assignee ? { assignee } : {}) }),
   });
+  const { data: people } = useQuery({ queryKey: PEOPLE_KEY, queryFn: getPeople });
   const { data: categories } = useQuery({ queryKey: ['categories'], queryFn: getCategories });
   const { data: milestones } = useQuery({ queryKey: ['milestones'], queryFn: getMilestones });
 
@@ -274,6 +278,11 @@ const TaskList: React.FC = () => {
                 )}
                 {task.title}
               </Box>
+              {task.assignee_name && (
+                <Box sx={{ fontSize: 11, color: ds.textSub }} title={t('taskList.assignee')}>
+                  {`${t('taskList.assignee')}: ${task.assignee_name}`}
+                </Box>
+              )}
               {/* 束ねない表では、狭い幅だけ題名の下に道筋（広い幅はプロジェクトの列） */}
               {!grouped && task.project_path && (
                 <Box sx={{ fontSize: 11, color: ds.textMuted, display: { xs: 'block', md: 'none' } }} title={t('taskList.project')}>
@@ -383,6 +392,15 @@ const TaskList: React.FC = () => {
           <Select value={milestoneId} label={t('taskList.milestone')} onChange={e => setMilestoneId(e.target.value)}>
             <MenuItem value="">{t('taskList.all')}</MenuItem>
             {milestones?.map(m => <MenuItem key={m.id} value={String(m.id)}>{m.name}</MenuItem>)}
+          </Select>
+        </FormControl>
+        <FormControl size="small" sx={{ minWidth: 140, flex: { xs: '1 1 140px', sm: '0 0 auto' } }}>
+          <InputLabel>{t('taskList.assignee')}</InputLabel>
+          <Select value={assignee} label={t('taskList.assignee')} onChange={e => setAssignee(e.target.value)} data-testid="tasklist-assignee">
+            <MenuItem value="">{t('taskList.assigneeAll')}</MenuItem>
+            <MenuItem value="me">{t('taskList.assigneeMe')}</MenuItem>
+            <MenuItem value="none">{t('taskList.assigneeNone')}</MenuItem>
+            {people?.map(p => <MenuItem key={p.id} value={String(p.id)}>{p.display_name || p.email}</MenuItem>)}
           </Select>
         </FormControl>
         <ToggleButtonGroup

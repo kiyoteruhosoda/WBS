@@ -9,11 +9,14 @@ class ProjectRepository(ABC):
     @abstractmethod
     def find_by_id(self, project_id: int) -> Project | None: ...
     @abstractmethod
+    def find_by_id_for_user(self, project_id: int, user_id: int) -> Project | None:
+        """利用者に見えるなら返す（根のメンバーなら子孫も見える。ADR-0055）。"""
+    @abstractmethod
     def find_all(self, user_id: int) -> list[Project]:
-        """利用者のプロジェクト全部（親子の別なく、兄弟の並び → id の順）。"""
+        """利用者に見えるプロジェクト全部（親子の別なく、兄弟の並び → id の順）。"""
     @abstractmethod
     def subtree_ids(self, user_id: int, project_id: int) -> list[int]:
-        """自分と子孫の id（再帰 CTE で 1 回に引く）。他人のプロジェクトなら空。"""
+        """自分と子孫の id（再帰 CTE で 1 回に引く）。見えないプロジェクトなら空。"""
     @abstractmethod
     def save(self, project: Project) -> Project: ...
     @abstractmethod

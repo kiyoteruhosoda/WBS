@@ -67,6 +67,33 @@ class ProjectModel(Base):
     created_at: Mapped[datetime] = mapped_column(sa.DateTime, default=utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(sa.DateTime, default=utcnow, onupdate=utcnow, nullable=False)
 
+class ProjectMemberModel(Base):
+    """プロジェクトのメンバー（task #544 / ADR-0055）。⚠ **行はいちばん上のプロジェクトにだけ置く**。
+    その下のプロジェクト・タスク・マイルストーンは、根のメンバー全員に見える。
+
+    ``role`` は ``ProjectRole`` の値（manager / member）。ネイティブ ENUM にしない。
+    """
+
+    __tablename__ = "project_members"
+    __table_args__ = (
+        sa.UniqueConstraint("project_id", "user_id", name="uq_project_members_project_user"),
+        sa.Index("ix_project_members_user_id", "user_id"),
+        {"sqlite_autoincrement": True},
+    )
+    id: Mapped[int] = mapped_column(BigIntPK, primary_key=True, autoincrement=True)
+    project_id: Mapped[int] = mapped_column(
+        sa.BigInteger().with_variant(sa.Integer(), "sqlite"),
+        sa.ForeignKey("projects.id", name="fk_project_members_project_id"),
+        nullable=False,
+    )
+    user_id: Mapped[int] = mapped_column(
+        sa.BigInteger().with_variant(sa.Integer(), "sqlite"),
+        sa.ForeignKey("users.id", name="fk_project_members_user_id"),
+        nullable=False,
+    )
+    role: Mapped[str] = mapped_column(sa.String(16), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(sa.DateTime, default=utcnow, nullable=False)
+
 class MilestoneModel(Base):
     __tablename__ = "milestones"
     id: Mapped[int] = mapped_column(BigIntPK, primary_key=True, autoincrement=True)
@@ -113,6 +140,13 @@ class TaskModel(Base):
     project_id: Mapped[int | None] = mapped_column(
         sa.BigInteger().with_variant(sa.Integer(), "sqlite"),
         sa.ForeignKey("projects.id", name="fk_tasks_project_id"),
+        nullable=True,
+        index=True,
+    )
+    # 担当者（空可。task #544 / ADR-0055）。付けられるのは根のプロジェクトのメンバー（未分類なら作った人）
+    assignee_user_id: Mapped[int | None] = mapped_column(
+        sa.BigInteger().with_variant(sa.Integer(), "sqlite"),
+        sa.ForeignKey("users.id", name="fk_tasks_assignee_user_id"),
         nullable=True,
         index=True,
     )

@@ -13,7 +13,8 @@ class TaskRepository(ABC):
     @abstractmethod
     def find_all(self, user_id: int, filters: dict) -> list[Task]:
         """消していないタスク。``filters`` の ``project_ids``（この中のどれかに属する）・
-        ``unclassified``（プロジェクトが空）でも絞れる。"""
+        ``unclassified``（プロジェクトが空）・``assignee_user_id``（担当者）・
+        ``unassigned``（担当なし）でも絞れる。⚠ 「利用者の」は「利用者に見える」（ADR-0055）。"""
     @abstractmethod
     def save(self, task: Task) -> Task: ...
     @abstractmethod
@@ -22,7 +23,7 @@ class TaskRepository(ABC):
     def get_actual_hours(self, task_id: int) -> float: ...
     @abstractmethod
     def get_actual_hours_by_task(self, user_id: int) -> dict[int, float]:
-        """利用者のタスクごとの実績（削除していない work_logs の合計）。work_logs の無いタスクは載らない。"""
+        """利用者に見えるタスクごとの実績（全員ぶんの、削除していない work_logs の合計）。work_logs の無いタスクは載らない。"""
     @abstractmethod
     def subtree_ids(self, user_id: int, task_id: int) -> list[int]:
         """自分と子孫のタスクの id（消したものも含む。再帰 CTE で 1 回に引く）。"""

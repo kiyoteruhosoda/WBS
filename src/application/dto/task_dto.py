@@ -24,6 +24,9 @@ class CreateTaskDTO:
     milestone_id: int | None = None
     # 空 = 未分類。⚠ 親を持つタスクは親のプロジェクトに入る（違う値は 422。ADR-0024）
     project_id: int | None = None
+    # 担当者。送られなければ作った人（ADR-0055）。null を送れば担当なし
+    assignee_user_id: int | None = None
+    assignee_user_id_given: bool = False
 
 @dataclass
 class UpdateTaskDTO:
@@ -45,3 +48,6 @@ class UpdateTaskDTO:
     milestone_id_given: bool = False
     project_id: int | None = None
     project_id_given: bool = False
+    # 担当者は空へ戻せる（ADR-0055）
+    assignee_user_id: int | None = None
+    assignee_user_id_given: bool = False

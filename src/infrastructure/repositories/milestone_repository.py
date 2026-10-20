@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from src.domain.entities.milestone import Milestone
 from src.domain.repositories.milestone_repository import MilestoneRepository
 from src.infrastructure.database.models import MilestoneModel
+from src.infrastructure.repositories.project_visibility import milestone_visible_to
 from src.shared.clock import utcnow
 
 
@@ -19,6 +20,15 @@ class SqlAlchemyMilestoneRepository(MilestoneRepository):
             return None
         return self._to_entity(model)
 
+    def find_by_id_for_user(self, milestone_id: int, user_id: int) -> Milestone | None:
+        stmt = select(MilestoneModel).where(
+            MilestoneModel.id == milestone_id,
+            MilestoneModel.deleted_at.is_(None),
+            milestone_visible_to(user_id),
+        )
+        model = self._session.scalar(stmt)
+        return self._to_entity(model) if model is not None else None
+
     def find_all(
         self,
         user_id: int,
@@ -27,7 +37,7 @@ class SqlAlchemyMilestoneRepository(MilestoneRepository):
         unclassified: bool = False,
     ) -> list[Milestone]:
         stmt = select(MilestoneModel).where(
-            MilestoneModel.user_id == user_id,
+            milestone_visible_to(user_id),
             MilestoneModel.deleted_at.is_(None),
         ).order_by(MilestoneModel.due_date.nullslast(), MilestoneModel.id)
         if project_ids is not None:

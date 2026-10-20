@@ -35,6 +35,9 @@ export interface Task {
   // 属するプロジェクト（null = 未分類）と、表示用の道筋（「親 / 子」）。子タスクは親と同じ（ADR-0024）
   project_id: number | null;
   project_path: string | null;
+  // 担当者（ADR-0055）。担当なしは null
+  assignee_user_id?: number | null;
+  assignee_name?: string | null;
   completed_at: string | null;
   deleted_at: string | null;
   // アーカイブした時刻（打刻や実績のあるタスクは消さずにアーカイブする。ADR-0046）
@@ -74,6 +77,34 @@ export interface Project {
   sort_order: number;
   // 表示用の道筋（「親 / 子」）
   path: string;
+  // メンバーが付いているいちばん上のプロジェクトと、そこでの自分の役割（ADR-0055）
+  root_project_id: number;
+  my_role: ProjectRole | null;
+}
+
+/** プロジェクトのメンバーの役割（ADR-0055）。管理者はメンバーの出し入れができる。 */
+export type ProjectRole = 'manager' | 'member';
+
+/** メンバー・担当者に選べる人（WBS に 1 度でもログインした人）。 */
+export interface Person {
+  id: number;
+  display_name: string;
+  email: string;
+}
+
+export interface ProjectMember {
+  user_id: number;
+  display_name: string;
+  email: string;
+  role: ProjectRole;
+  // 聞いた本人か（「外す」を「抜ける」と出す）
+  is_you: boolean;
+}
+
+export interface ProjectMembers {
+  root_project_id: number;
+  can_manage: boolean;
+  members: ProjectMember[];
 }
 
 export interface WorkLog {
@@ -152,6 +183,8 @@ export interface TaskListParams {
   // このプロジェクトと子孫のもの（ADR-0024）/ 未分類のものだけ
   project_id?: number;
   unclassified?: boolean;
+  // 担当者で絞る: me（自分）・none（担当なし）・利用者の id（ADR-0055）
+  assignee?: string;
   // 終わりの無い繰り返しを予定済みに数える終わりの日（YYYY-MM-DD）。省くと今月末（ADR-0051）
   scheduled_until?: string;
 }

@@ -9,6 +9,7 @@ from src.domain.entities.work_log import WorkLog
 from src.domain.repositories.work_log_repository import WorkLogRepository
 from src.domain.value_objects.work_log_source import WorkLogSource
 from src.infrastructure.database.models import TaskModel, WorkLogModel
+from src.infrastructure.repositories.project_visibility import task_visible_to
 from src.shared.clock import utcnow
 
 
@@ -87,7 +88,7 @@ class SqlAlchemyWorkLogRepository(WorkLogRepository):
             .join(TaskModel, TaskModel.id == WorkLogModel.task_id)
             .where(
                 WorkLogModel.user_id == user_id,
-                TaskModel.user_id == user_id,
+                task_visible_to(user_id),
                 WorkLogModel.deleted_at.is_(None),
             )
         )

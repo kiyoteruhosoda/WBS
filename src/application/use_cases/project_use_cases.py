@@ -12,7 +12,11 @@ from src.application.use_cases.project_membership import ProjectMembership
 from src.domain.entities.project import Project, project_code, project_name
 from src.domain.exceptions import ProjectCycleError, ProjectNotEmptyError
 from src.domain.services.project_tree import ProjectTree
+from src.domain.value_objects.project_role import ProjectRole
 from src.infrastructure.repositories.milestone_repository import SqlAlchemyMilestoneRepository
+from src.infrastructure.repositories.project_member_repository import (
+    SqlAlchemyProjectMemberRepository,
+)
 from src.infrastructure.repositories.project_repository import SqlAlchemyProjectRepository
 from src.infrastructure.repositories.task_repository import SqlAlchemyTaskRepository
 
@@ -23,6 +27,9 @@ class ProjectView:
 
     project: Project
     path: str
+    #: いちばん上のプロジェクトの id と、そこでの自分の役割（ADR-0055）
+    root_project_id: int
+    my_role: ProjectRole | None
 
 
 class ProjectUseCases:
@@ -33,28 +40,30 @@ class ProjectUseCases:
             projects=self._repo,
             tasks=SqlAlchemyTaskRepository(session),
             milestones=SqlAlchemyMilestoneRepository(session),
+            members=SqlAlchemyProjectMemberRepository(session),
         )
 
     def list_projects(self, user_id: int) -> list[ProjectView]:
         """全部（保管したものも）。木の順（親の直後に子、兄弟は並び順）に並べる。"""
         tree = self._membership.tree(user_id)
+        roles = self._membership.roles_of(user_id)
         ordered: list[ProjectView] = []
 
         def walk(parent_id: int | None) -> None:
             for project in tree.children_of(parent_id):
-                ordered.append(ProjectView(project, tree.path(project.id) or project.name))
+                ordered.append(self._view(project, tree, roles))
                 walk(project.id)
 
         walk(None)
         return ordered
 
     def get_project(self, project_id: int, user_id: int) -> ProjectView:
-        project = self._membership.owned_project(user_id, project_id)
-        return self._view(project, self._membership.tree(user_id))
+        project = self._membership.visible_project(user_id, project_id)
+        return self._view(project, self._membership.tree(user_id), self._membership.roles_of(user_id))
 
     def create_project(self, dto: CreateProjectDTO) -> ProjectView:
         if dto.parent_project_id is not None:
-            self._membership.owned_project(dto.user_id, dto.parent_project_id)
+            self._membership.visible_project(dto.user_id, dto.parent_project_id)
         tree = self._membership.tree(dto.user_id)
         project = Project(
             id=None,
@@ -68,11 +77,14 @@ class ProjectUseCases:
             sort_order=len(tree.children_of(dto.parent_project_id)),
         )
         saved = self._repo.save(project)
+        if saved.parent_project_id is None and saved.id is not None:
+            # 新しい根は作った人が管理者（ADR-0055 決定 6）
+            self._membership.make_manager(dto.user_id, saved.id)
         self._session.commit()
-        return self._view(saved, self._membership.tree(dto.user_id))
+        return self.get_project(saved.id or 0, dto.user_id)
 
     def update_project(self, project_id: int, user_id: int, dto: UpdateProjectDTO) -> ProjectView:
-        project = self._membership.owned_project(user_id, project_id)
+        project = self._membership.visible_project(user_id, project_id)
         if dto.name is not UNSET:
             project.name = project_name(dto.name)
         if dto.color is not UNSET:
@@ -83,21 +95,28 @@ class ProjectUseCases:
             project.description = dto.description
         if dto.status is not UNSET:
             project.status = dto.status
-        saved = self._repo.save(project)
+        self._repo.save(project)
         self._session.commit()
-        return self._view(saved, self._membership.tree(user_id))
+        return self.get_project(project_id, user_id)
 
     def move_project(self, project_id: int, user_id: int, dto: MoveProjectDTO) -> ProjectView:
         """親を替える・兄弟の中で並べ替える。⚠ 自分と自分の子孫の下へは移さない（環になる）。"""
-        project = self._membership.owned_project(user_id, project_id)
+        project = self._membership.visible_project(user_id, project_id)
         new_parent = dto.parent_project_id
         if new_parent is not None:
-            self._membership.owned_project(user_id, new_parent)
+            self._membership.visible_project(user_id, new_parent)
         tree = self._membership.tree(user_id)
         if tree.would_cycle(project_id, new_parent):
             raise ProjectCycleError()
-
         old_parent = project.parent_project_id
+        if old_parent is None and new_parent is not None:
+            # 根を他の下へ入れると、この木のメンバーは消え、移った先の木のメンバーに見える（ADR-0055 決定 6）
+            self._membership.require_manager(user_id, project_id)
+            self._membership.forget_members(project_id)
+        elif old_parent is not None and new_parent is None:
+            # 下のものを根へ出す: 元の木のメンバーを写す（見える人は変わらない）
+            self._membership.copy_members(tree.root_of(project_id), project_id)
+
         siblings = [p.id for p in tree.children_of(new_parent) if p.id != project_id]
         position = dto.position
         if position is None or position < 0 or position > len(siblings):
@@ -119,14 +138,20 @@ class ProjectUseCases:
 
     def delete_project(self, project_id: int, user_id: int) -> None:
         """空のプロジェクトだけ消す。中身があれば 409（保管するか、中身を移してから）。"""
-        self._membership.owned_project(user_id, project_id)
+        project = self._membership.visible_project(user_id, project_id)
+        if project.parent_project_id is None:
+            # いちばん上を消すのは管理者だけ（ADR-0055 決定 2）
+            self._membership.require_manager(user_id, project_id)
         if self._repo.has_contents(project_id):
             raise ProjectNotEmptyError()
         self._repo.delete(project_id)
         self._session.commit()
 
-    def _view(self, project: Project, tree: ProjectTree) -> ProjectView:
-        return ProjectView(project, tree.path(project.id) or project.name)
+    def _view(
+        self, project: Project, tree: ProjectTree, roles: dict[int, ProjectRole]
+    ) -> ProjectView:
+        root = tree.root_of(project.id) if project.id is not None else 0
+        return ProjectView(project, tree.path(project.id) or project.name, root, roles.get(root))
 
 
 __all__ = ["ProjectUseCases", "ProjectView"]

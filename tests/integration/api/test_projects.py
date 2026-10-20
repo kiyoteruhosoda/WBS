@@ -348,11 +348,7 @@ def test_another_users_project_is_not_reachable(client, db) -> None:
     theirs = ProjectModel(user_id=other.id, name="他人の", status="active", sort_order=0)
     db.add(theirs)
     db.flush()
-    # 他人の行が自分のプロジェクトの下を指していても、子孫として辿らない
-    sneaky = ProjectModel(user_id=other.id, name="紛れ込み", parent_project_id=mine["id"], status="active", sort_order=0)
-    db.add(sneaky)
-    db.flush()
-    db.add(TaskModel(user_id=other.id, title="他人のタスク", project_id=sneaky.id))
+    db.add(TaskModel(user_id=other.id, title="他人のタスク", project_id=theirs.id))
     db.commit()
 
     pid = theirs.id

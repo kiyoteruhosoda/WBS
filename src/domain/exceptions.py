@@ -56,3 +56,17 @@ class ProjectNotEmptyError(ConflictError):
         super().__init__(
             "the project still has sub-projects, tasks or milestones; archive it or move them out first"
         )
+
+
+class ProjectManagerRequiredError(AccessDeniedError):
+    """管理者だけができる操作（メンバーの出し入れ・いちばん上のプロジェクトを消す・他の下へ移す）。ADR-0055。"""
+
+    def __init__(self) -> None:
+        super().__init__("only a manager of the top project can do this")
+
+
+class LastProjectManagerError(ConflictError):
+    """最後の管理者を外す・メンバーに下げると、だれもメンバーを出し入れできなくなる（ADR-0055）。"""
+
+    def __init__(self) -> None:
+        super().__init__("a top project needs at least one manager")

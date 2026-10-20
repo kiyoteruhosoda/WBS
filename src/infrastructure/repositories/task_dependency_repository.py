@@ -7,6 +7,7 @@ from src.domain.entities.task_dependency import TaskDependency
 from src.domain.repositories.task_dependency_repository import TaskDependencyRepository
 from src.domain.value_objects.dependency_type import DependencyType
 from src.infrastructure.database.models import TaskDependencyModel, TaskModel
+from src.infrastructure.repositories.project_visibility import task_visible_to
 
 
 class SqlAlchemyTaskDependencyRepository(TaskDependencyRepository):
@@ -54,8 +55,8 @@ class SqlAlchemyTaskDependencyRepository(TaskDependencyRepository):
 
     @staticmethod
     def _owned_by(user_id: int) -> Select[tuple[TaskDependencyModel]]:
-        # 依存の行には持ち主が無いので、両端のタスクを辿って持ち主を見る。
-        # 片端だけ見ると、他人のタスクへ伸びた依存（入口で弾いているが、古いデータに
+        # 依存の行には持ち主が無いので、両端のタスクを辿って見えるかを見る（ADR-0055）。
+        # 片端だけ見ると、見えないタスクへ伸びた依存（入口で弾いているが、古いデータに
         # 残りうる）が混ざる。削除済みのタスクは絞らない（従来どおり。表示側で落とす）。
         predecessor = aliased(TaskModel)
         successor = aliased(TaskModel)
@@ -63,7 +64,7 @@ class SqlAlchemyTaskDependencyRepository(TaskDependencyRepository):
             select(TaskDependencyModel)
             .join(predecessor, predecessor.id == TaskDependencyModel.predecessor_task_id)
             .join(successor, successor.id == TaskDependencyModel.successor_task_id)
-            .where(predecessor.user_id == user_id, successor.user_id == user_id)
+            .where(task_visible_to(user_id, predecessor), task_visible_to(user_id, successor))
         )
 
     def _to_entity(self, model: TaskDependencyModel) -> TaskDependency:

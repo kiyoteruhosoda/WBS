@@ -35,6 +35,11 @@ class ProjectTree:
             current = self._projects[current].parent_project_id
         return chain
 
+    def root_of(self, project_id: int) -> int:
+        """いちばん上のプロジェクトの id（メンバーはここに付く。ADR-0055）。木に無ければ自分。"""
+        chain = self.ancestors_or_self(project_id)
+        return chain[-1] if chain else project_id
+
     def subtree_ids(self, project_id: int) -> set[int]:
         """自分と子孫の id。"""
         children: dict[int, list[int]] = {}

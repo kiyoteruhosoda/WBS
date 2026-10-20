@@ -7,6 +7,7 @@ from src.domain.entities.task import Task
 from src.domain.repositories.task_repository import TaskRepository
 from src.domain.value_objects.task_status import TaskStatus
 from src.infrastructure.database.models import TaskModel, WorkLogModel
+from src.infrastructure.repositories.project_visibility import task_visible_to
 from src.shared.clock import utcnow
 
 
@@ -23,7 +24,7 @@ class SqlAlchemyTaskRepository(TaskRepository):
     def find_by_id_for_user(self, task_id: int, user_id: int) -> Task | None:
         stmt = select(TaskModel).where(
             TaskModel.id == task_id,
-            TaskModel.user_id == user_id,
+            task_visible_to(user_id),
             TaskModel.deleted_at.is_(None),
         )
         model = self._session.scalar(stmt)
@@ -31,7 +32,7 @@ class SqlAlchemyTaskRepository(TaskRepository):
 
     def find_all(self, user_id: int, filters: dict) -> list[Task]:
         stmt = select(TaskModel).where(
-            TaskModel.user_id == user_id,
+            task_visible_to(user_id),
             TaskModel.deleted_at.is_(None),
         )
         if "status" in filters and filters["status"]:
@@ -47,6 +48,11 @@ class SqlAlchemyTaskRepository(TaskRepository):
             stmt = stmt.where(TaskModel.project_id.in_(filters["project_ids"]))
         if filters.get("unclassified"):
             stmt = stmt.where(TaskModel.project_id.is_(None))
+        # 担当者（ADR-0055）。``unassigned`` は担当の無いタスクだけ
+        if filters.get("assignee_user_id") is not None:
+            stmt = stmt.where(TaskModel.assignee_user_id == filters["assignee_user_id"])
+        if filters.get("unassigned"):
+            stmt = stmt.where(TaskModel.assignee_user_id.is_(None))
         stmt = stmt.order_by(TaskModel.priority.desc(), TaskModel.urgency.desc(), TaskModel.id)
         return [self._to_entity(m) for m in self._session.scalars(stmt)]
 
@@ -76,6 +82,7 @@ class SqlAlchemyTaskRepository(TaskRepository):
             model.parent_task_id = task.parent_task_id
             model.milestone_id = task.milestone_id
             model.project_id = task.project_id
+            model.assignee_user_id = task.assignee_user_id
             model.completed_at = task.completed_at
             model.archived_at = task.archived_at
             model.updated_at = utcnow()
@@ -88,7 +95,7 @@ class SqlAlchemyTaskRepository(TaskRepository):
             TaskModel.deleted_at.is_(None),
         )
         if user_id is not None:
-            stmt = stmt.where(TaskModel.user_id == user_id)
+            stmt = stmt.where(task_visible_to(user_id))
         model = self._session.scalar(stmt)
         if model:
             model.deleted_at = utcnow()
@@ -107,7 +114,7 @@ class SqlAlchemyTaskRepository(TaskRepository):
         rows = self._session.execute(
             select(WorkLogModel.task_id, func.sum(WorkLogModel.hours))
             .join(TaskModel, TaskModel.id == WorkLogModel.task_id)
-            .where(TaskModel.user_id == user_id, WorkLogModel.deleted_at.is_(None))
+            .where(task_visible_to(user_id), WorkLogModel.deleted_at.is_(None))
             .group_by(WorkLogModel.task_id)
         )
         return {task_id: float(total or 0) for task_id, total in rows}
@@ -116,13 +123,13 @@ class SqlAlchemyTaskRepository(TaskRepository):
         # UNION（重複を落とす）なので、親子が万一環になっていても止まる
         base = (
             select(TaskModel.id)
-            .where(TaskModel.id == task_id, TaskModel.user_id == user_id)
+            .where(TaskModel.id == task_id, task_visible_to(user_id))
             .cte("task_subtree", recursive=True)
         )
         child = (
             select(TaskModel.id)
             .join(base, TaskModel.parent_task_id == base.c.id)
-            .where(TaskModel.user_id == user_id)
+            .where(task_visible_to(user_id))
         )
         tree = base.union(child)
         return [int(i) for i in self._session.scalars(select(tree.c.id))]
@@ -164,6 +171,7 @@ class SqlAlchemyTaskRepository(TaskRepository):
             parent_task_id=model.parent_task_id,
             milestone_id=model.milestone_id,
             project_id=model.project_id,
+            assignee_user_id=model.assignee_user_id,
             completed_at=model.completed_at,
             deleted_at=model.deleted_at,
             archived_at=model.archived_at,
@@ -187,6 +195,7 @@ class SqlAlchemyTaskRepository(TaskRepository):
             parent_task_id=task.parent_task_id,
             milestone_id=task.milestone_id,
             project_id=task.project_id,
+            assignee_user_id=task.assignee_user_id,
             completed_at=task.completed_at,
             archived_at=task.archived_at,
         )

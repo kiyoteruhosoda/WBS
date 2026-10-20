@@ -37,6 +37,13 @@ def list_tasks(
     unclassified: Annotated[
         bool, Query(description="true ならプロジェクトの無い（未分類の）タスクだけ")
     ] = False,
+    assignee: Annotated[
+        str | None,
+        Query(
+            description="担当者で絞る: `me`（自分）・`none`（担当なし）・利用者の id（ADR-0055）",
+            pattern=r"^(me|none|[0-9]+)$",
+        ),
+    ] = None,
     scheduled_until: Annotated[
         date | None,
         Query(
@@ -58,6 +65,12 @@ def list_tasks(
         filters["project_id"] = project_id
     if unclassified:
         filters["unclassified"] = True
+    if assignee == "me":
+        filters["assignee_user_id"] = current_user.user_id
+    elif assignee == "none":
+        filters["unassigned"] = True
+    elif assignee is not None:
+        filters["assignee_user_id"] = int(assignee)
     return [
         TaskResponse(**t)
         for t in uc.list_tasks(current_user.user_id, filters, scheduled_until=scheduled_until)
@@ -81,6 +94,8 @@ def create_task(body: TaskCreateRequest, uc: TaskUseCasesDep, current_user: Curr
         parent_task_id=body.parent_task_id,
         milestone_id=body.milestone_id,
         project_id=body.project_id,
+        assignee_user_id=body.assignee_user_id,
+        assignee_user_id_given="assignee_user_id" in body.model_fields_set,
     )
     return TaskResponse(**uc.create_task(dto))
 
@@ -121,6 +136,8 @@ def update_task(task_id: int, body: TaskUpdateRequest, uc: TaskUseCasesDep, curr
         milestone_id_given="milestone_id" in body.model_fields_set,
         project_id=body.project_id,
         project_id_given="project_id" in body.model_fields_set,
+        assignee_user_id=body.assignee_user_id,
+        assignee_user_id_given="assignee_user_id" in body.model_fields_set,
     )
     return TaskResponse(**uc.update_task(task_id, current_user.user_id, dto))
 

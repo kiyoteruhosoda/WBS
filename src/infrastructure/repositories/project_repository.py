@@ -1,12 +1,18 @@
 from __future__ import annotations
 
-from sqlalchemy import exists, or_, select, update
+from sqlalchemy import delete, exists, or_, select, update
 from sqlalchemy.orm import Session
 
 from src.domain.entities.project import Project
 from src.domain.repositories.project_repository import ProjectRepository
 from src.domain.value_objects.project_status import ProjectStatus
-from src.infrastructure.database.models import MilestoneModel, ProjectModel, TaskModel
+from src.infrastructure.database.models import (
+    MilestoneModel,
+    ProjectMemberModel,
+    ProjectModel,
+    TaskModel,
+)
+from src.infrastructure.repositories.project_visibility import project_visible_to
 from src.shared.clock import utcnow
 
 
@@ -18,25 +24,30 @@ class SqlAlchemyProjectRepository(ProjectRepository):
         model = self._session.get(ProjectModel, project_id)
         return self._to_entity(model) if model is not None else None
 
+    def find_by_id_for_user(self, project_id: int, user_id: int) -> Project | None:
+        stmt = select(ProjectModel).where(
+            ProjectModel.id == project_id, project_visible_to(user_id)
+        )
+        model = self._session.scalar(stmt)
+        return self._to_entity(model) if model is not None else None
+
     def find_all(self, user_id: int) -> list[Project]:
         stmt = (
             select(ProjectModel)
-            .where(ProjectModel.user_id == user_id)
+            .where(project_visible_to(user_id))
             .order_by(ProjectModel.sort_order, ProjectModel.id)
         )
         return [self._to_entity(m) for m in self._session.scalars(stmt)]
 
     def subtree_ids(self, user_id: int, project_id: int) -> list[int]:
         # ⚠ 行ごとに子を引かない（多段なので深くなるほど N+1 が効く）。UNION（重複を落とす）なので、
-        #   万一の環でも止まる。持ち主は根でも子でも確かめる（他人の行へ辿らない）
+        #   万一の環でも止まる。起点が見えれば子孫も同じ木なので見える（ADR-0055）
         base = (
             select(ProjectModel.id)
-            .where(ProjectModel.id == project_id, ProjectModel.user_id == user_id)
+            .where(ProjectModel.id == project_id, project_visible_to(user_id))
             .cte("project_subtree", recursive=True)
         )
-        child = select(ProjectModel.id).join(base, ProjectModel.parent_project_id == base.c.id).where(
-            ProjectModel.user_id == user_id
-        )
+        child = select(ProjectModel.id).join(base, ProjectModel.parent_project_id == base.c.id)
         tree = base.union(child)
         return [int(i) for i in self._session.scalars(select(tree.c.id))]
 
@@ -85,6 +96,9 @@ class SqlAlchemyProjectRepository(ProjectRepository):
             update(MilestoneModel)
             .where(MilestoneModel.project_id == project_id)
             .values(project_id=None)
+        )
+        self._session.execute(
+            delete(ProjectMemberModel).where(ProjectMemberModel.project_id == project_id)
         )
         model = self._session.get(ProjectModel, project_id)
         if model is not None:

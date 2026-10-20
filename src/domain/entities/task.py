@@ -29,6 +29,8 @@ class Task:
     milestone_id: int | None = None
     # 属するプロジェクト（空 = 未分類）。⚠ 子タスクは親と同じ値（ADR-0024）
     project_id: int | None = None
+    # 担当者（空可。根のプロジェクトのメンバー、未分類なら作った人。ADR-0055）
+    assignee_user_id: int | None = None
     completed_at: datetime | None = None
     deleted_at: datetime | None = None
     # アーカイブした時刻（打刻や実績のあるタスクは消さずにアーカイブする。ADR-0046）。一覧・付け替え先に出ない
