@@ -4,6 +4,7 @@ from src.domain.exceptions import NotFoundError
 from src.domain.repositories.project_repository import ProjectRepository
 from src.domain.repositories.task_dependency_repository import TaskDependencyRepository
 from src.domain.repositories.task_repository import TaskRepository
+from src.domain.services.completion_forecast import CompletionForecast
 from src.domain.services.project_tree import ProjectTree
 from src.domain.services.task_progress_board import TaskProgressBoard
 
@@ -20,7 +21,9 @@ class GanttUseCases:
         self._dependencies = dependencies
         self._projects = projects
 
-    def get_gantt_data(self, user_id: int, project_id: int | None = None) -> list[dict]:
+    def get_gantt_data(
+        self, user_id: int, project_id: int | None = None, forecast: CompletionForecast | None = None,
+    ) -> list[dict]:
         """``project_id`` を指すと、そのプロジェクトと子孫のタスクだけ（ADR-0024）。アーカイブしたタスクは出さない（ADR-0046）。"""
         all_tasks = [t for t in self._tasks.find_all(user_id, {}) if not t.is_archived]
         tasks = all_tasks
@@ -59,6 +62,20 @@ class GanttUseCases:
                     "project_path": tree.path(task.project_id),
                     "progress_percent": board.progress_percent(task),
                     "dependencies": task_deps,
+                    **_forecast_fields(forecast, task.id),
                 }
             )
         return result
+
+
+def _forecast_fields(forecast: CompletionForecast | None, task_id: int | None) -> dict:
+    """終わる見込み（ADR-0058）。見込みを渡されなければ載せない。"""
+    if forecast is None or task_id is None:
+        return {}
+    f = forecast.task(task_id)
+    return {
+        "forecast_start": str(f.start) if f.start else None,
+        "forecast_finish": str(f.finish) if f.finish else None,
+        "forecast_gap": f.gap.value if f.gap is not None else None,
+        "forecast_overdue_days": f.overdue_days,
+    }

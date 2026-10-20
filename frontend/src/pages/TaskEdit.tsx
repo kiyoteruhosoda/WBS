@@ -233,6 +233,8 @@ const TaskEdit: React.FC = () => {
       qc.invalidateQueries({ queryKey: ['kpi'] });
       qc.invalidateQueries({ queryKey: ['worklogs', id] });
       qc.invalidateQueries({ queryKey: ['task'] });
+      // マイルストーンの見込みの日も変わる（ADR-0058）
+      qc.invalidateQueries({ queryKey: ['milestones'] });
       navigate('/tasks');
     },
   });
@@ -249,12 +251,19 @@ const TaskEdit: React.FC = () => {
 
   const addDep = useMutation({
     mutationFn: () => addDependency(Number(id), { predecessor_task_id: Number(depPredId), dependency_type: depType }),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['deps', id] }); setDepPredId(''); },
+    // 依存は見込みの日を動かす（ADR-0058）
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['deps', id] }); setDepPredId('');
+      qc.invalidateQueries({ queryKey: ['tasks'] }); qc.invalidateQueries({ queryKey: ['milestones'] });
+    },
   });
 
   const delDep = useMutation({
     mutationFn: (predId: number) => removeDependency(Number(id), predId),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['deps', id] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['deps', id] });
+      qc.invalidateQueries({ queryKey: ['tasks'] }); qc.invalidateQueries({ queryKey: ['milestones'] });
+    },
   });
 
   const allocationInvalid = form.allocation_percent !== ''

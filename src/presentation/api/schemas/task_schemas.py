@@ -5,6 +5,7 @@ from decimal import Decimal
 
 from pydantic import BaseModel, Field
 
+from src.domain.services.completion_forecast import ForecastGap
 from src.domain.value_objects.task_status import TaskStatus
 from src.presentation.api.schemas.types import UtcDatetime
 
@@ -106,6 +107,12 @@ class TaskResponse(BaseModel):
     assignee_name: str | None = None
     # アサイン比率（%、ADR-0058）。null は比率なし
     allocation_percent: int | None = None
+    # 終わる見込み（ADR-0058。読むたびに、残を担当者の空きに積んで出す）。出さないときは forecast_gap に理由
+    forecast_start: date | None = None
+    forecast_finish: date | None = None
+    forecast_gap: ForecastGap | None = None
+    # 見込みの終わりが期限を越える暦の日数（越えなければ 0）
+    forecast_overdue_days: int = 0
     completed_at: UtcDatetime | None = None
     deleted_at: UtcDatetime | None = None
     # アーカイブした時刻（ADR-0046）。アーカイブしたタスクは一覧に出ないが、1 件の取得では返る
