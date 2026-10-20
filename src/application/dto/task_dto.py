@@ -27,6 +27,8 @@ class CreateTaskDTO:
     # 担当者。送られなければ作った人（ADR-0055）。null を送れば担当なし
     assignee_user_id: int | None = None
     assignee_user_id_given: bool = False
+    # アサイン比率（%、空可。ADR-0058）
+    allocation_percent: int | None = None
 
 @dataclass
 class UpdateTaskDTO:
@@ -51,3 +53,6 @@ class UpdateTaskDTO:
     # 担当者は空へ戻せる（ADR-0055）
     assignee_user_id: int | None = None
     assignee_user_id_given: bool = False
+    # アサイン比率は空へ戻せる（ADR-0058）
+    allocation_percent: int | None = None
+    allocation_percent_given: bool = False

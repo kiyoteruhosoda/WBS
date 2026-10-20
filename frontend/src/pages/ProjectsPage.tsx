@@ -22,6 +22,7 @@ import {
 } from '../projects/projectScope';
 import { useProjects, useProjectScope } from '../projects/useProjectScope';
 import ProjectMembersDialog from '../components/ProjectMembersDialog';
+import TeamCalendarDialog from '../components/TeamCalendarDialog';
 
 interface FormData {
   name: string;
@@ -93,6 +94,8 @@ const ProjectsPage: React.FC = () => {
   const [moveError, setMoveError] = useState(false);
   // メンバーの窓（ADR-0055。どの段から開いても根の名簿）
   const [membersOf, setMembersOf] = useState<Project | null>(null);
+  // 稼働日と休み（task #554、ADR-0058）
+  const [calendarOf, setCalendarOf] = useState<Project | null>(null);
 
   useEffect(() => {
     if (dialog === null) return;
@@ -249,9 +252,14 @@ const ProjectsPage: React.FC = () => {
                 </Box>
                 {p.status === 'archived' && <Chip size="small" label={t('project.archived')} sx={{ fontSize: 11 }} />}
                 {node.depth === 0 && (
-                  <Button size="small" onClick={() => setMembersOf(p)} sx={{ whiteSpace: 'nowrap', display: { xs: 'none', sm: 'inline-flex' } }}>
-                    {t('project.members')}
-                  </Button>
+                  <>
+                    <Button size="small" onClick={() => setMembersOf(p)} sx={{ whiteSpace: 'nowrap', display: { xs: 'none', sm: 'inline-flex' } }}>
+                      {t('project.members')}
+                    </Button>
+                    <Button size="small" onClick={() => setCalendarOf(p)} sx={{ whiteSpace: 'nowrap', display: { xs: 'none', sm: 'inline-flex' } }}>
+                      {t('project.teamCalendar')}
+                    </Button>
+                  </>
                 )}
                 <Button size="small" onClick={() => openTasks(p)} sx={{ whiteSpace: 'nowrap', display: { xs: 'none', sm: 'inline-flex' } }}>
                   {t('project.openTasks')}
@@ -294,6 +302,9 @@ const ProjectsPage: React.FC = () => {
             </MenuItem>,
             <MenuItem key="members" onClick={close(() => setMembersOf(p))}>
               <ListItemText>{t('project.members')}</ListItemText>
+            </MenuItem>,
+            <MenuItem key="team-calendar" onClick={close(() => setCalendarOf(p))}>
+              <ListItemText>{t('project.teamCalendar')}</ListItemText>
             </MenuItem>,
             <MenuItem key="up" disabled={index <= 0}
               onClick={close(() => move.mutate({ id: p.id, parent: p.parent_project_id, position: index - 1 }))}>
@@ -360,6 +371,7 @@ const ProjectsPage: React.FC = () => {
       </Dialog>
 
       <ProjectMembersDialog project={membersOf} rootName={rootName(membersOf)} onClose={() => setMembersOf(null)} />
+      <TeamCalendarDialog project={calendarOf} rootName={rootName(calendarOf)} onClose={() => setCalendarOf(null)} />
 
       {/* 消す（空のものだけ。中身があれば断られる） */}
       <Dialog open={deleteTarget !== null} onClose={() => setDeleteTarget(null)} fullWidth maxWidth="xs">

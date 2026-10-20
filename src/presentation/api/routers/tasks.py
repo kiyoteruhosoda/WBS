@@ -96,6 +96,7 @@ def create_task(body: TaskCreateRequest, uc: TaskUseCasesDep, current_user: Curr
         project_id=body.project_id,
         assignee_user_id=body.assignee_user_id,
         assignee_user_id_given="assignee_user_id" in body.model_fields_set,
+        allocation_percent=body.allocation_percent,
     )
     return TaskResponse(**uc.create_task(dto))
 
@@ -138,6 +139,8 @@ def update_task(task_id: int, body: TaskUpdateRequest, uc: TaskUseCasesDep, curr
         project_id_given="project_id" in body.model_fields_set,
         assignee_user_id=body.assignee_user_id,
         assignee_user_id_given="assignee_user_id" in body.model_fields_set,
+        allocation_percent=body.allocation_percent,
+        allocation_percent_given="allocation_percent" in body.model_fields_set,
     )
     return TaskResponse(**uc.update_task(task_id, current_user.user_id, dto))
 

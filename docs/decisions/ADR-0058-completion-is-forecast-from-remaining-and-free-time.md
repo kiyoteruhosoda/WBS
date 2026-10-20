@@ -32,8 +32,8 @@ nolumiatask にも従事率（`engagement_rate`）があるが、あれは課題
 
 ### 2. 休みは WBS に持つ（Scheduler からは読まない）
 
-- **チームの休日**: いちばん上のプロジェクトごとに、稼働する曜日（`projects.workdays`、既定 月〜金）と休日の日付の一覧
-  （表 `project_days_off`: 日付・名前）。日本の祝日は暦（`japanese_national_holidays`）から年ごとに入れられる。直せるのは管理者。
+- **チームの休日**: いちばん上のプロジェクトごとに、稼働する曜日（表 `team_workweeks`、行が無ければ月〜金）と休日の日付の一覧
+  （表 `team_days_off`: 日付・名前）。日本の祝日は暦（`japanese_national_holidays`）から年ごとに入れられる。直せるのは管理者。
   下のプロジェクトは根の休日を使う（メンバーと同じく根にだけ置く）。
 - **各人の休み**: 人ごとの休みの日付（表 `member_days_off`: 利用者・日付、終日）。**プロジェクトをまたいで同じ**（その人が居ない日）。
   入れられるのは本人と、その人が入っているプロジェクトの管理者。見えるのは同じプロジェクトのメンバーだけで、持つのは日付だけ
@@ -143,8 +143,8 @@ B さん: B1 は A1 の終わり（11/06）の翌日から。11/07・08 は土�
 
 ## 影響
 
-- 移行で `project_members.daily_hours`・`engagement_percent`、`projects.workdays`、表 `project_days_off`・`member_days_off`、
-  `tasks.allocation_percent` を足す（#554）。今の行は既定（8 時間・100%・月〜金・休みなし・比率なし）になる。
+- 移行で `project_members.daily_hours`・`engagement_percent`、表 `team_workweeks`・`team_days_off`・`member_days_off`、
+  `tasks.allocation_percent` を足す（#554、移行 `0026`）。今の行は既定（8 時間・100%・月〜金・休みなし・比率なし）になる。
 - `GET /api/gantt`・タスクの一覧・マイルストーンの応答に見込みを足す（#555）。ガントは見込みの帯と期限超過の印を描く（#556）。
 - 人の休みは同じプロジェクトのメンバーに日付だけ見える。
 - 見込みは「今の残・今の空き」の読みで、過去の見込みとの比べ（いつから遅れ出したか）は持たない。要るなら保存の仕組みを後で足す。

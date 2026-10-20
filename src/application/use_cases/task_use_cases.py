@@ -161,6 +161,7 @@ class TaskUseCases:
             assignee_user_id=(
                 dto.assignee_user_id if dto.assignee_user_id_given else dto.user_id
             ),
+            allocation_percent=dto.allocation_percent,
         )
         self._check_assignee(dto.user_id, task)
         saved = self._repo.save(task)
@@ -189,6 +190,8 @@ class TaskUseCases:
             task.estimated_hours = dto.estimated_hours
         if dto.remaining_hours_given:
             task.remaining_hours = dto.remaining_hours
+        if dto.allocation_percent_given:
+            task.allocation_percent = dto.allocation_percent
         if dto.memo is not None:
             task.memo = dto.memo
         if dto.parent_task_id is not None and dto.parent_task_id != task.parent_task_id:
@@ -368,6 +371,7 @@ class TaskUseCases:
             "milestone_id": task.milestone_id,
             "project_id": task.project_id,
             "assignee_user_id": task.assignee_user_id,
+            "allocation_percent": task.allocation_percent,
             "assignee_name": (
                 names.get(task.assignee_user_id) if task.assignee_user_id is not None else None
             ),

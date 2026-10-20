@@ -5,28 +5,40 @@
 - ``DELETE /projects/{id}``: 空のものだけ（中身があれば 409。保管は ``PUT`` で ``status``）。いちばん上は管理者だけ
 - ``/projects/{id}/members``: いちばん上のプロジェクトのメンバー（task #544 / ADR-0055）。どの段の id でも根の名簿
 - ``GET /projects/people``: メンバー・担当者に選べる人
+- ``PUT /projects/{id}/members/{user_id}/capacity``: 1 日の工数と従事率（task #554 / ADR-0058）
+- ``/projects/{id}/team-calendar``: チームの稼働する曜日・休日と、メンバーの休み（同上）
 """
 
 from __future__ import annotations
 
-from fastapi import APIRouter, status
+from datetime import date
+from typing import Annotated
+
+from fastapi import APIRouter, Query, status
 
 from src.application.dto.project_dto import CreateProjectDTO, MoveProjectDTO, UpdateProjectDTO
 from src.application.use_cases.project_use_cases import ProjectUseCases
+from src.application.use_cases.team_calendar_use_cases import TeamCalendarUseCases
 from src.presentation.api.dependencies import (
     CurrentUserDep,
     DbDep,
     ProjectMemberUseCasesDep,
 )
 from src.presentation.api.schemas.project_schemas import (
+    JapaneseHolidaysRequest,
+    MemberLeaveRequest,
     PersonResponse,
     ProjectCreateRequest,
+    ProjectMemberCapacityRequest,
     ProjectMemberRequest,
     ProjectMemberRoleRequest,
     ProjectMembersResponse,
     ProjectMoveRequest,
     ProjectResponse,
     ProjectUpdateRequest,
+    TeamCalendarResponse,
+    TeamDayOffRequest,
+    TeamWorkdaysRequest,
 )
 
 router = APIRouter(prefix="/projects", tags=["projects"])
@@ -131,3 +143,82 @@ def remove_member(
 ) -> None:
     """外す。管理者は誰でも、メンバーは自分だけ（抜ける）。最後の管理者は 409。担当は残る。"""
     uc.remove_member(current_user.user_id, project_id, user_id)
+
+
+@router.put("/{project_id}/members/{user_id}/capacity", response_model=ProjectMembersResponse)
+def change_member_capacity(
+    project_id: int,
+    user_id: int,
+    body: ProjectMemberCapacityRequest,
+    uc: ProjectMemberUseCasesDep,
+    current_user: CurrentUserDep,
+) -> ProjectMembersResponse:
+    """1 日の工数と従事率。管理者は誰のでも、メンバーは自分のだけ（ほかは 403）。"""
+    return ProjectMembersResponse.from_view(
+        uc.change_capacity(current_user.user_id, project_id, user_id, body.daily_hours, body.engagement_percent)
+    )
+
+
+@router.get("/{project_id}/team-calendar", response_model=TeamCalendarResponse)
+def get_team_calendar(
+    project_id: int,
+    db: DbDep,
+    current_user: CurrentUserDep,
+    from_date: Annotated[date | None, Query(alias="from", description="この日から（省くと全部）")] = None,
+    to_date: Annotated[date | None, Query(alias="to", description="この日まで（省くと全部）")] = None,
+) -> TeamCalendarResponse:
+    """いちばん上のプロジェクトの稼働する曜日・休日と、メンバーの休み（日付だけ）。どの段の id でも根のもの。"""
+    view = TeamCalendarUseCases(db).view(current_user.user_id, project_id, from_date, to_date)
+    return TeamCalendarResponse.from_view(view)
+
+
+@router.put("/{project_id}/team-calendar/workdays", response_model=TeamCalendarResponse)
+def set_team_workdays(
+    project_id: int, body: TeamWorkdaysRequest, db: DbDep, current_user: CurrentUserDep
+) -> TeamCalendarResponse:
+    """稼働する曜日（管理者だけ）。"""
+    view = TeamCalendarUseCases(db).set_workdays(current_user.user_id, project_id, body.workdays)
+    return TeamCalendarResponse.from_view(view)
+
+
+@router.post("/{project_id}/team-calendar/days-off", response_model=TeamCalendarResponse)
+def add_team_day_off(
+    project_id: int, body: TeamDayOffRequest, db: DbDep, current_user: CurrentUserDep
+) -> TeamCalendarResponse:
+    """チームの休日を足す（同じ日なら名前を書き換える。管理者だけ）。"""
+    view = TeamCalendarUseCases(db).add_day_off(current_user.user_id, project_id, body.day, body.name)
+    return TeamCalendarResponse.from_view(view)
+
+
+@router.post("/{project_id}/team-calendar/days-off/japan", response_model=TeamCalendarResponse)
+def import_japanese_holidays(
+    project_id: int, body: JapaneseHolidaysRequest, db: DbDep, current_user: CurrentUserDep
+) -> TeamCalendarResponse:
+    """その年の日本の祝日をチームの休日に足す（すでにある日はそのまま。管理者だけ）。"""
+    view = TeamCalendarUseCases(db).import_japanese_holidays(current_user.user_id, project_id, body.year)
+    return TeamCalendarResponse.from_view(view)
+
+
+@router.delete("/{project_id}/team-calendar/days-off/{day}", response_model=TeamCalendarResponse)
+def remove_team_day_off(
+    project_id: int, day: date, db: DbDep, current_user: CurrentUserDep
+) -> TeamCalendarResponse:
+    view = TeamCalendarUseCases(db).remove_day_off(current_user.user_id, project_id, day)
+    return TeamCalendarResponse.from_view(view)
+
+
+@router.post("/{project_id}/members/{user_id}/leave", response_model=TeamCalendarResponse)
+def add_member_leave(
+    project_id: int, user_id: int, body: MemberLeaveRequest, db: DbDep, current_user: CurrentUserDep
+) -> TeamCalendarResponse:
+    """その人の休みを足す（本人か管理者だけ。休みはプロジェクトをまたいで同じ）。"""
+    view = TeamCalendarUseCases(db).add_leave(current_user.user_id, project_id, user_id, body.day)
+    return TeamCalendarResponse.from_view(view)
+
+
+@router.delete("/{project_id}/members/{user_id}/leave/{day}", response_model=TeamCalendarResponse)
+def remove_member_leave(
+    project_id: int, user_id: int, day: date, db: DbDep, current_user: CurrentUserDep
+) -> TeamCalendarResponse:
+    view = TeamCalendarUseCases(db).remove_leave(current_user.user_id, project_id, user_id, day)
+    return TeamCalendarResponse.from_view(view)

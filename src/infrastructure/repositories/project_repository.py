@@ -11,6 +11,8 @@ from src.infrastructure.database.models import (
     ProjectMemberModel,
     ProjectModel,
     TaskModel,
+    TeamDayOffModel,
+    TeamWorkweekModel,
 )
 from src.infrastructure.repositories.project_visibility import project_visible_to
 from src.shared.clock import utcnow
@@ -100,6 +102,8 @@ class SqlAlchemyProjectRepository(ProjectRepository):
         self._session.execute(
             delete(ProjectMemberModel).where(ProjectMemberModel.project_id == project_id)
         )
+        self._session.execute(delete(TeamDayOffModel).where(TeamDayOffModel.project_id == project_id))
+        self._session.execute(delete(TeamWorkweekModel).where(TeamWorkweekModel.project_id == project_id))
         model = self._session.get(ProjectModel, project_id)
         if model is not None:
             self._session.delete(model)

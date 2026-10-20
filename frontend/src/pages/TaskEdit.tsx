@@ -48,13 +48,15 @@ interface FormData {
   project_id: string;
   // 担当者（ADR-0055）。'' = 担当なし、'auto' = 送らない（新しいタスクは作った人になる）
   assignee: string;
+  // アサイン比率（%）。'' = 比率なし（順番に片付ける。ADR-0058）
+  allocation_percent: string;
   memo: string;
 }
 
 const defaultForm: FormData = {
   title: '', category_id: '', priority: 3, urgency: 3, status: 'TODO',
   start_date: '', due_date: '', estimated_hours: '', actual_hours: '', remaining_hours: '',
-  parent_task_id: '', milestone_id: '', project_id: '', assignee: 'auto', memo: '',
+  parent_task_id: '', milestone_id: '', project_id: '', assignee: 'auto', allocation_percent: '', memo: '',
 };
 
 const toForm = (t: Task): FormData => ({
@@ -65,7 +67,8 @@ const toForm = (t: Task): FormData => ({
   remaining_hours: t.remaining_hours_entered === null ? '' : String(t.remaining_hours_entered),
   parent_task_id: String(t.parent_task_id ?? ''),
   milestone_id: String(t.milestone_id ?? ''), project_id: String(t.project_id ?? ''),
-  assignee: t.assignee_user_id == null ? '' : String(t.assignee_user_id), memo: t.memo ?? '',
+  assignee: t.assignee_user_id == null ? '' : String(t.assignee_user_id),
+  allocation_percent: t.allocation_percent == null ? '' : String(t.allocation_percent), memo: t.memo ?? '',
 });
 
 // ユーザー設定タイムゾーンでの「今日」を YYYY-MM-DD にする（実績差分の記録日）
@@ -254,6 +257,9 @@ const TaskEdit: React.FC = () => {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['deps', id] }),
   });
 
+  const allocationInvalid = form.allocation_percent !== ''
+    && !(Number.isInteger(Number(form.allocation_percent)) && Number(form.allocation_percent) >= 1 && Number(form.allocation_percent) <= 100);
+
   const assigneeChanged = form.assignee !== 'auto'
     && (isNew || form.assignee !== (task?.assignee_user_id == null ? '' : String(task.assignee_user_id)));
 
@@ -262,6 +268,7 @@ const TaskEdit: React.FC = () => {
       setShowTitleError(true);
       return;
     }
+    if (allocationInvalid) return;
     save.mutate({
       title: form.title, category_id: form.category_id ? Number(form.category_id) : null,
       priority: form.priority, urgency: form.urgency, status: form.status,
@@ -275,6 +282,8 @@ const TaskEdit: React.FC = () => {
       ...(isChild ? {} : { project_id: form.project_id ? Number(form.project_id) : null }),
       // 担当者は変えたときだけ送る（前からの担当は、外れた人でも残す。ADR-0055）
       ...(assigneeChanged ? { assignee_user_id: form.assignee === '' ? null : Number(form.assignee) } : {}),
+      // 子を持つタスクは時間を使わない（見込みは子の束ね）ので送らない
+      ...(isParent ? {} : { allocation_percent: form.allocation_percent === '' ? null : Number(form.allocation_percent) }),
       memo: form.memo || null,
     });
   };
@@ -543,6 +552,24 @@ const TaskEdit: React.FC = () => {
             </Select>
             <Box sx={{ fontSize: 12, color: ds.textMuted, mt: '4px' }}>{t('taskEdit.assigneeHint')}</Box>
           </Box>
+
+          {/* アサイン比率（task #554、ADR-0058）。子を持つタスクは時間を使わないので出さない */}
+          {!isParent && (
+            <Box>
+              <FieldLabel>{t('taskEdit.allocation')}</FieldLabel>
+              <TextField
+                size="small" type="number" sx={{ width: 160 }}
+                value={form.allocation_percent}
+                placeholder={t('taskEdit.allocationNone')}
+                error={allocationInvalid}
+                slotProps={{ htmlInput: { min: 1, max: 100, step: 5, 'aria-label': t('taskEdit.allocation') } }}
+                onChange={e => setForm({ ...form, allocation_percent: e.target.value })}
+              />
+              <Box sx={{ fontSize: 12, color: allocationInvalid ? ds.danger : ds.textMuted, mt: '4px' }}>
+                {allocationInvalid ? t('taskEdit.allocationInvalid') : t('taskEdit.allocationHint')}
+              </Box>
+            </Box>
+          )}
 
           <Box>
             <FieldLabel>{t('taskEdit.milestone')}</FieldLabel>
