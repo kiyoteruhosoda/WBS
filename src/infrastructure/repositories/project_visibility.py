@@ -19,7 +19,6 @@ from src.infrastructure.database.models import (
     TaskModel,
 )
 
-
 #: CTE の名前の通し番号。⚠ 1 つの文の中で述語を 2 度使う（依存の両端・再帰の起点と子）と、
 #: 同じ名前の CTE がぶつかって組み立てられない（CompileError）。呼ぶたびに別の名前にする
 _cte_numbers = count()
