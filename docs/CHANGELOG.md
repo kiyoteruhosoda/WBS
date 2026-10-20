@@ -4,6 +4,8 @@
 
 ## 2026-10-20
 
+- **Tracker で締めた時間を受け取るようにした**（task #540、ADR-0056 決定 3）。`PUT /api/machine/closed-periods/{初日}` で Tracker の締めの期間ぶんを置き換え（`source=tracker`）、`DELETE` で退ける。
+  同じ期間の WBS 自身の締めの行（移る前のもの）は退けて二重に数えない。移行 0025 で `work_logs.tracker_first_day` を足した。
 - **Tracker のサーバーが利用者の担当タスクを読む口を足した**（task #539、ADR-0056）。`GET /api/machine/assigned-tasks?issuer=&subject=` は、担当が本人で本人に見えて、まだ作業できるタスクを返す。
   受けるのは assay の機械のトークンだけ（宛名 `MACHINE_AUDIENCE`、`client_id` が `MACHINE_READER_CLIENT_IDS`）。どちらかが空なら閉じる。
 - **プロジェクトをメンバーで共有し、タスクに担当者を付けられるようにした**（task #544、ADR-0055）。メンバーはいちばん上のプロジェクトに付き、その下のプロジェクト・タスク・マイルストーンが全員に見える。役割は管理者（メンバーの出し入れ・根を消す・他の下へ移す）とメンバーの 2 つ。選べるのは WBS に 1 度ログインした人。

@@ -13,3 +13,6 @@ class WorkLogSource(StrEnum):
 
     CLOSING = "closing"
     """締めの確定で打刻から作った（task #161 / ADR-0012）。開け直すと消える。"""
+
+    TRACKER = "tracker"
+    """Tracker で締めた時間を受け取った（task #540 / ADR-0056）。Tracker の期間ごとに置き換え、取り消しで消える。"""

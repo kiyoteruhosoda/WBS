@@ -23,6 +23,8 @@ class WorkLog:
     """締めで作ったとき、どの期間から作ったか（開け直しで消すため）。"""
     duration_seconds: int | None = None
     """締めで作ったときの正確な長さ（秒）。``hours`` は小数 2 桁に収めた値（ADR-0012）。"""
+    tracker_first_day: date | None = None
+    """Tracker から受け取った行の、Tracker の締めの期間の初日（ADR-0056）。"""
 
     @property
     def is_from_closing(self) -> bool:
