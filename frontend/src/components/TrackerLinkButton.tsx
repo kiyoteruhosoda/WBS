@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { Button, Tooltip } from '@mui/material';
+import { Box, Button, Tooltip } from '@mui/material';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import { useI18n } from '../i18n';
 import { trackerHostOf, trackerLinkOf } from '../tracker/trackerMove';
@@ -33,9 +33,12 @@ const TrackerLinkButton: React.FC<{ url: string }> = ({ url }) => {
           target="_blank"
           rel="noopener"
           endIcon={<OpenInNewIcon sx={{ fontSize: 16 }} />}
-          sx={{ minHeight: 44, whiteSpace: 'nowrap', flexShrink: 0, fontWeight: 700 }}
+          aria-label={t('tracker.open')}
+          sx={{ minHeight: 44, whiteSpace: 'nowrap', flexShrink: 0, fontWeight: 700, px: { xs: '10px', sm: '20px' } }}
         >
-          {t('tracker.open')}
+          {/* スマホ幅は短く（上の帯を 390px に収める。task #639） */}
+          <Box component="span" sx={{ display: { xs: 'none', sm: 'inline' } }}>{t('tracker.open')}</Box>
+          <Box component="span" sx={{ display: { xs: 'inline', sm: 'none' } }}>{t('tracker.openShort')}</Box>
         </Button>
       </Tooltip>
       <PressNoticeView notice={notice} onClose={clear} />
