@@ -75,12 +75,15 @@ export const categoryColor = (categoryId: number | null | undefined, apiColor?: 
 };
 
 export const fontFamily = "'Noto Sans JP', system-ui, sans-serif";
+// WBS の字（task #639・ADR-0061）: 見出しは太い角ゴシック、WBS 番号と日付は等幅（桁がそろう）。本文は Noto Sans JP のまま
+export const headingFont = "'Zen Kaku Gothic New', 'Noto Sans JP', system-ui, sans-serif";
+export const codeFont = "'IBM Plex Mono', ui-monospace, Menlo, monospace";
 
 const typography: ThemeOptions['typography'] = {
   fontFamily,
   fontSize: 14,
-  h5: { fontSize: 22, fontWeight: 700 },
-  h6: { fontSize: 16, fontWeight: 700 },
+  h5: { fontSize: 22, fontWeight: 700, fontFamily: headingFont },
+  h6: { fontSize: 16, fontWeight: 700, fontFamily: headingFont },
   subtitle2: { fontSize: 13, fontWeight: 700 },
   body1: { fontSize: 14 },
   body2: { fontSize: 13 },

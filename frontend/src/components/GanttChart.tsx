@@ -18,7 +18,9 @@ import { ACTUAL_DAY_COLOR, ACTUAL_STRIP_COLOR, ganttActualLayout } from '../actu
 import { dateRangeParts, displayStatus, formatDate, formatSecondsAsHours, parseDate, todayDate } from '../utils/format';
 import type { DisplayStatus } from '../utils/format';
 import { useI18n } from '../i18n';
-import { ds } from '../theme';
+import { codeFont, ds } from '../theme';
+import { WbsBranch, WbsCode } from './WbsBranch';
+import type { TreeGuide } from '../projects/wbsCode';
 import CategoryDot from './CategoryDot';
 import PriorityChip from './PriorityChip';
 import { useSchedulerMove } from '../scheduler/useSchedulerMove';
@@ -40,6 +42,8 @@ const ACTUAL_STRIP_HEIGHT = 6;
 const FORECAST_BAR_HEIGHT = 9;
 const FORECAST_COLOR = ds.primary;
 const OVERDUE_COLOR = ds.danger;
+// 枝の罫線の 1 段の字下げ（task #639）
+const BRANCH_STEP = 16;
 // 見込みの文字のための余白（日）
 const LABEL_ROOM_DAYS = 3;
 
@@ -81,6 +85,9 @@ interface Props {
   columnCalendar?: TeamCalendar | null;
   /** タスクのプロジェクトのカレンダー（プロジェクトの id → カレンダー）。列と違う日はその行だけ塗り、営業日もこれで数える */
   taskCalendars?: ReadonlyMap<number, TeamCalendar>;
+  /** WBS 番号（タスクの id → 1.3.2）と枝の罫線（タスクは木の順に渡す。task #639） */
+  codes?: ReadonlyMap<number, string>;
+  guides?: ReadonlyMap<number, TreeGuide>;
 }
 
 const isOpen = (task: Task) => task.status !== 'DONE' && task.status !== 'CANCELLED';
@@ -89,7 +96,7 @@ const isOpenLeaf = (task: Task) => !task.has_subtasks && isOpen(task);
 
 const GanttChart: React.FC<Props> = ({
   tasks, categories, showMeta = true, onToggleDone, actuals, milestones = [], onEditTask, assigneeChoices,
-  columnCalendar, taskCalendars,
+  columnCalendar, taskCalendars, codes, guides,
 }) => {
   const navigate = useNavigate();
   const { t, weekdays } = useI18n();
@@ -224,46 +231,53 @@ const GanttChart: React.FC<Props> = ({
   };
   const columns: GridColumn<Task>[] = [
     {
-      key: 'title', header: tr('gantt.taskName'), width: 240, kind: 'readonly',
+      key: 'title', header: tr('gantt.taskName'), width: 300, kind: 'readonly',
       value: (task) => task.title,
       onActivate: (task) => navigate(`/tasks/${task.id}`),
-      display: (task) => (
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0 }}>
-          <Checkbox
-            size="small" tabIndex={-1}
-            checked={task.status === 'DONE'}
-            onChange={() => onToggleDone?.(task)}
-            slotProps={{ input: { 'aria-label': tr('gantt.toggleDone', { title: task.title }) } }}
-            sx={{ p: '4px', color: ds.todoGray, '&.Mui-checked': { color: ds.success } }}
-          />
-          <CategoryDot categoryId={task.category_id} categories={categories} size={7} />
-          <Box
-            onClick={() => navigate(`/tasks/${task.id}`)}
-            sx={{
-              flex: 1, minWidth: 0, fontSize: 13, color: ds.text, cursor: 'pointer',
-              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-              textDecoration: task.status === 'DONE' ? 'line-through' : 'none',
-              '&:hover': { color: ds.primary },
-            }}
-          >
-            {task.title}
+      display: (task) => {
+        const guide = guides?.get(task.id);
+        const level = guide?.level ?? 0;
+        return (
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0, pl: `${level * BRANCH_STEP}px` }}>
+            {/* 枝の罫線（セルの左端から。子は 1 段ごとに字下げ） */}
+            {guide && <WbsBranch guide={guide} railX={(k) => 8 + (k - 1) * BRANCH_STEP + BRANCH_STEP / 2} tick={BRANCH_STEP / 2} />}
+            <Checkbox
+              size="small" tabIndex={-1}
+              checked={task.status === 'DONE'}
+              onChange={() => onToggleDone?.(task)}
+              slotProps={{ input: { 'aria-label': tr('gantt.toggleDone', { title: task.title }) } }}
+              sx={{ p: '4px', color: ds.todoGray, '&.Mui-checked': { color: ds.success } }}
+            />
+            <CategoryDot categoryId={task.category_id} categories={categories} size={7} />
+            <WbsCode code={codes?.get(task.id)} />
+            <Box
+              onClick={() => navigate(`/tasks/${task.id}`)}
+              sx={{
+                flex: 1, minWidth: 0, fontSize: 13, color: ds.text, cursor: 'pointer',
+                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                textDecoration: task.status === 'DONE' ? 'line-through' : 'none',
+                '&:hover': { color: ds.primary },
+              }}
+            >
+              {task.title}
+            </Box>
+            {(task.forecast_overdue_days ?? 0) > 0 && overdueIcon(task.forecast_overdue_days ?? 0)}
+            {showMeta && <PriorityChip priority={task.priority} />}
+            {isOpen(task) && !schedulerMove.moved && (
+              <Tooltip title={tr('task.scheduleTime')}>
+                <IconButton
+                  size="small" tabIndex={-1}
+                  aria-label={tr('task.scheduleTime')}
+                  onClick={() => navigate(scheduleTaskPath(task.id))}
+                  sx={{ p: '4px', color: ds.textSub }}
+                >
+                  <MoreTimeIcon sx={{ fontSize: 18 }} />
+                </IconButton>
+              </Tooltip>
+            )}
           </Box>
-          {(task.forecast_overdue_days ?? 0) > 0 && overdueIcon(task.forecast_overdue_days ?? 0)}
-          {showMeta && <PriorityChip priority={task.priority} />}
-          {isOpen(task) && !schedulerMove.moved && (
-            <Tooltip title={tr('task.scheduleTime')}>
-              <IconButton
-                size="small" tabIndex={-1}
-                aria-label={tr('task.scheduleTime')}
-                onClick={() => navigate(scheduleTaskPath(task.id))}
-                sx={{ p: '4px', color: ds.textSub }}
-              >
-                <MoreTimeIcon sx={{ fontSize: 18 }} />
-              </IconButton>
-            </Tooltip>
-          )}
-        </Box>
-      ),
+        );
+      },
     },
     {
       key: 'assignee', header: tr('gantt.assignee'), width: 120, kind: 'select',
@@ -290,14 +304,14 @@ const GanttChart: React.FC<Props> = ({
     {
       key: 'start', header: tr('gantt.start'), width: 88, kind: 'text',
       value: (task) => task.start_date ?? '',
-      display: (task) => (task.start_date ? formatDate(task.start_date) : '—'),
+      display: (task) => (task.start_date ? <Box component="span" sx={{ fontFamily: codeFont }}>{formatDate(task.start_date)}</Box> : '—'),
       editable: () => onEditTask !== undefined,
       parse: (raw) => parseDay(raw, thisYear),
     },
     {
       key: 'due', header: tr('gantt.due'), width: 88, kind: 'text',
       value: (task) => task.due_date ?? '',
-      display: (task) => (task.due_date ? formatDate(task.due_date) : '—'),
+      display: (task) => (task.due_date ? <Box component="span" sx={{ fontFamily: codeFont }}>{formatDate(task.due_date)}</Box> : '—'),
       editable: () => onEditTask !== undefined,
       parse: (raw) => parseDay(raw, thisYear),
     },
@@ -381,7 +395,7 @@ const GanttChart: React.FC<Props> = ({
                   bgcolor: columnBackground(d),
                   borderBottom: columnDays.daysOff.has(isoDay(d)) ? `3px solid ${calendarPalette.red}` : 'none',
                 }}>
-                  <Box sx={{ fontSize: 13, fontWeight: 700, color: ds.text }}>{d.getMonth() + 1}/{d.getDate()}</Box>
+                  <Box sx={{ fontFamily: codeFont, fontSize: 13, fontWeight: 600, color: ds.text }}>{d.getMonth() + 1}/{d.getDate()}</Box>
                   <Box sx={{ fontSize: 11, color }}>{weekdays[dow]}</Box>
                 </Box>
               );
