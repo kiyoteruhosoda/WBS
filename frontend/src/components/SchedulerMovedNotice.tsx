@@ -19,7 +19,14 @@ export const SchedulerMovedNotice: React.FC<{ url: string; bodyKey: TranslationK
     <Alert
       severity="info"
       data-testid="scheduler-moved"
-      sx={{ alignItems: 'center', '& .MuiAlert-action': { pt: 0, alignItems: 'center' }, ...sx }}
+      sx={{
+        alignItems: 'center',
+        // スマホの幅ではボタンを本文の下へ（右に置くと本文が細い列に押し込まれ、宛先が切れる。task #640）
+        flexWrap: { xs: 'wrap', sm: 'nowrap' },
+        '& .MuiAlert-message': { flex: { xs: '1 1 0', sm: '0 1 auto' }, minWidth: 0, overflowWrap: 'anywhere' },
+        '& .MuiAlert-action': { pt: 0, alignItems: 'center', ml: { xs: '34px', sm: 'auto' }, flexBasis: { xs: '100%', sm: 'auto' } },
+        ...sx,
+      }}
       action={(
         <Button
           color="inherit"

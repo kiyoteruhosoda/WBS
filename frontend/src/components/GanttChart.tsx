@@ -30,7 +30,8 @@ const DAY_WIDTH = 54;
 const ROW_HEIGHT = 48;
 const HEADER_HEIGHT = 56;
 // 左の表（担当・アサイン比率・残り時間・開始・期限・見込みの終わり。task #557 / ADR-0059）。入りきらない列は横に送る
-const LEFT_WIDTH = { xs: 260, md: 520, lg: 700 };
+// スマホの幅では日の側を広く（左は題名の列の頭だけ見せ、横に送れる。task #640）
+const LEFT_WIDTH = { xs: 168, sm: 260, md: 520, lg: 700 };
 // 表示範囲は今日を基準にクランプする（過去・未来に古いタスクがあっても今日ラインが常に見えるようにする）
 const MAX_PAST_DAYS = 30;
 const MAX_FUTURE_DAYS = 59;
