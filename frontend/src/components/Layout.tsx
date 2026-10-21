@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { Box, Button, Chip, Drawer, IconButton, ListItemText, Menu, MenuItem, useMediaQuery } from '@mui/material';
 import MenuIcon from '@mui/icons-material/Menu';
-import { ds } from '../theme';
+import { ds, headingFont } from '../theme';
 import { useI18n } from '../i18n';
 import { useAuth } from '../auth/AuthProvider';
 import AppMark from './AppMark';
@@ -92,7 +92,7 @@ const Sidebar: React.FC<{ onNavigate?: () => void }> = ({ onNavigate }) => {
     <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%', bgcolor: ds.paper }}>
       <Box sx={{ display: 'flex', alignItems: 'center', gap: '10px', height: TOPBAR_HEIGHT, px: '18px', flexShrink: 0 }}>
         <AppMark size={30} />
-        <Box sx={{ fontSize: 15, fontWeight: 700, color: ds.text }}>{t('app.name')}</Box>
+        <Box sx={{ fontFamily: headingFont, fontSize: 15, fontWeight: 900, color: ds.text }}>{t('app.name')}</Box>
       </Box>
       {/* 表示するプロジェクト（task #187）。タスク・ガント・カレンダーの期限・実績・マイルストーンが従う */}
       <ProjectScopeSelect />
@@ -233,7 +233,7 @@ const Layout: React.FC = () => {
           {/* スマホ幅では打刻ボタンに場所を譲る（題名は左のメニューで分かる） */}
           <Box sx={{
             display: { xs: 'none', sm: 'block' },
-            fontSize: 16, fontWeight: 700, color: ds.text, whiteSpace: 'nowrap',
+            fontFamily: headingFont, fontSize: 16, fontWeight: 700, color: ds.text, whiteSpace: 'nowrap',
             overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0,
           }}>
             {title}

@@ -18,15 +18,18 @@ import { getMilestones } from '../api/milestones';
 import { formatDate, formatHours, isOverdue, isDueToday } from '../utils/format';
 import type { Task, TaskMoveToProjectResult, TaskStatus } from '../types';
 import { useI18n } from '../i18n';
-import { ds } from '../theme';
+import { codeFont, ds, headingFont } from '../theme';
 import StatusChip from '../components/StatusChip';
 import PriorityChip from '../components/PriorityChip';
 import ProgressBar from '../components/ProgressBar';
 import CategoryDot from '../components/CategoryDot';
+import { WbsBranch, WbsCode } from '../components/WbsBranch';
 import ProjectScopeSelect from '../components/ProjectScopeSelect';
 import MoveToProjectDialog from '../components/tasks/MoveToProjectDialog';
 import { SearchIcon } from '../components/icons';
 import { scopeParams } from '../projects/projectScope';
+import { treeGuides, wbsCodes } from '../projects/wbsCode';
+import type { TreeGuide } from '../projects/wbsCode';
 import { getPeople, PEOPLE_KEY } from '../api/projects';
 import { useProjectScope } from '../projects/useProjectScope';
 import { useSchedulerMove } from '../scheduler/useSchedulerMove';
@@ -115,6 +118,9 @@ const TaskList: React.FC = () => {
   const rows: TaskListRow[] = grouped
     ? groupRows(groups, collapsed)
     : items.map((task) => ({ kind: 'task' as const, task, depth: 0, level: 0 }));
+  // WBS 番号は絞る前の一覧で決める（並べ替え・絞り込みで変わらない）。枝の罫線は見えている行の並びから（task #639）
+  const codes = useMemo(() => wbsCodes(all, projects ?? []), [all, projects]);
+  const guides = treeGuides(rows.map((row) => (row.kind === 'task' ? row.level : 0)));
 
   // 選べるのは見えているタスクだけ（絞り込みで隠れたものを知らずに移さない）
   const chosen = useMemo(() => items.filter((t) => selected.has(t.id)).map((t) => t.id), [items, selected]);
@@ -206,8 +212,9 @@ const TaskList: React.FC = () => {
               bgcolor: g.projectId === null ? 'transparent' : g.color ?? ds.textMuted,
               border: g.projectId === null ? `1.5px dashed ${ds.textMuted}` : 'none',
             }} />
+            {g.projectId !== null && <WbsCode code={codes.projects.get(g.projectId)} />}
             <Box sx={{
-              fontSize: 13, fontWeight: 700, color: g.archived ? ds.textMuted : ds.text,
+              fontFamily: headingFont, fontSize: 13, fontWeight: 700, color: g.archived ? ds.textMuted : ds.text,
               // スマホ幅では折り返す（1 行に詰めると表が画面より広がる）
               overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: { xs: 'normal', sm: 'nowrap' }, minWidth: 0,
             }} title={g.path ?? label}>
@@ -236,7 +243,7 @@ const TaskList: React.FC = () => {
     );
   };
 
-  const taskRow = (task: Task, depth: number, level: number) => {
+  const taskRow = (task: Task, depth: number, level: number, guide: TreeGuide) => {
     const overdue = isOverdue(task);
     const closed = task.status === 'DONE' || task.status === 'CANCELLED';
     const dueToday = isDueToday(task) && !closed;
@@ -262,18 +269,28 @@ const TaskList: React.FC = () => {
             />
           </Box>
         </TableCell>
-        <TableCell>
+        <TableCell sx={{ position: 'relative' }}>
+          {/* 枝の罫線: 親の点の真下から縦に、子の点の手前まで横に（字下げの幅と揃える） */}
+          {grouped && (
+            <WbsBranch
+              guide={guide}
+              railX={(k) => ({ xs: depth * 10 + (k - 1) * 12 + 17, sm: depth * 18 + (k - 1) * 18 + 49 })}
+              tick={{ xs: 8, sm: 14 }}
+            />
+          )}
           <Box sx={{
             display: 'flex', alignItems: 'center', gap: '8px',
             pl: grouped ? { xs: `${depth * 10 + level * 12 + 8}px`, sm: `${depth * 18 + level * 18 + 30}px` } : 0,
           }}>
             <CategoryDot categoryId={task.category_id} categories={categories} size={7} />
+            <WbsCode code={codes.tasks.get(task.id)} />
             <Box sx={{ minWidth: 0 }}>
               <Box sx={{
                 fontSize: 13, fontWeight: 500, color: task.status === 'DONE' ? ds.textMuted : ds.text,
                 textDecoration: task.status === 'DONE' ? 'line-through' : 'none',
               }}>
-                {task.parent_task_id != null && (
+                {/* 束ねた表では枝の罫線が親子を見せる。束ねない表だけ印を残す */}
+                {task.parent_task_id != null && !grouped && (
                   <Box component="span" sx={{ color: ds.textMuted, mr: '4px' }} aria-hidden>↳</Box>
                 )}
                 {task.title}
@@ -305,7 +322,7 @@ const TaskList: React.FC = () => {
         <TableCell sx={wideOnly}><PriorityChip priority={task.priority} /></TableCell>
         <TableCell>
           <Box sx={{
-            fontSize: 13, whiteSpace: 'nowrap',
+            fontSize: 13, whiteSpace: 'nowrap', fontFamily: dueToday ? undefined : codeFont,
             fontWeight: overdue || dueToday ? 700 : 400,
             color: overdue || dueToday ? ds.dangerText : ds.textSub,
           }}>
@@ -483,7 +500,7 @@ const TaskList: React.FC = () => {
                 </TableRow>
               </TableHead>
               <TableBody>
-                {rows.map((row) => (row.kind === 'group' ? groupRow(row.group) : taskRow(row.task, row.depth, row.level)))}
+                {rows.map((row, i) => (row.kind === 'group' ? groupRow(row.group) : taskRow(row.task, row.depth, row.level, guides[i])))}
                 {items.length === 0 && (
                   <TableRow>
                     <TableCell colSpan={columnCount} sx={{ textAlign: 'center', py: '32px', color: ds.textMuted, fontSize: 13 }}>

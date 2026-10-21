@@ -8,13 +8,15 @@ import { showsOnGantt } from '../forecast/forecastView';
 import { getCategories } from '../api/categories';
 import { getProjectMembers, getProjects, getTeamCalendar, projectMembersKey, PROJECTS_KEY, teamCalendarKey } from '../api/projects';
 import type { Task, TeamCalendar } from '../types';
-import { ds } from '../theme';
+import { ds, headingFont } from '../theme';
 import { useI18n } from '../i18n';
 import type { TranslationKey } from '../i18n/translations';
 import GanttChart from '../components/GanttChart';
 import { ACTUAL_DAY_COLOR } from '../actuals/actualsView';
 import { ACTUALS_KEY, getGanttActuals } from '../api/actuals';
 import { scopeParams } from '../projects/projectScope';
+import { nestBySubtask } from '../projects/taskListView';
+import { treeGuides, wbsCodes } from '../projects/wbsCode';
 import { useProjectScope } from '../projects/useProjectScope';
 
 const legend: { labelKey: TranslationKey; color: string }[] = [
@@ -106,13 +108,21 @@ const GanttPage: React.FC = () => {
     return root === undefined ? null : choicesByRoot.get(root) ?? null;
   };
 
-  const tasks = useMemo(
-    () => (data ?? [])
+  // 始まりの順に並べ、子タスクは親の直後へ（枝の罫線でつなぐ。task #639）
+  const nested = useMemo(
+    () => nestBySubtask((data ?? [])
       // 計画の日付が無くても、終わる見込みがあれば出す
       .filter(showsOnGantt)
-      .sort((a, b) => (a.start_date ?? a.due_date ?? '').localeCompare(b.start_date ?? b.due_date ?? '')),
+      .sort((a, b) => (a.start_date ?? a.due_date ?? '').localeCompare(b.start_date ?? b.due_date ?? ''))),
     [data],
   );
+  const tasks = useMemo(() => nested.map((n) => n.task), [nested]);
+  const guides = useMemo(() => {
+    const list = treeGuides(nested.map((n) => n.level));
+    return new Map(nested.map((n, i) => [n.task.id, list[i]]));
+  }, [nested]);
+  // WBS 番号は絞る前の一覧で（タスクの一覧と同じ番号）
+  const codes = useMemo(() => wbsCodes(data ?? [], projects ?? []).tasks, [data, projects]);
 
   if (isLoading) return <Box sx={{ display: 'flex', justifyContent: 'center', mt: 6 }}><CircularProgress /></Box>;
   if (error) return <Alert severity="error">{t('common.loadError')}</Alert>;
@@ -120,7 +130,7 @@ const GanttPage: React.FC = () => {
   return (
     <Box>
       <Box sx={{ display: 'flex', alignItems: 'baseline', gap: '12px', mb: '14px', flexWrap: 'wrap' }}>
-        <Box sx={{ fontSize: 16, fontWeight: 700, color: ds.text }}>{t('gantt.schedule')}</Box>
+        <Box component="h2" sx={{ m: 0, fontFamily: headingFont, fontSize: 16, fontWeight: 700, color: ds.text }}>{t('gantt.schedule')}</Box>
         <Box sx={{ fontSize: 13, color: ds.textSub }}>{t('gantt.totalTasks', { count: tasks.length })}</Box>
         <Box sx={{ flex: 1 }} />
         <Box sx={{ display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
@@ -160,6 +170,7 @@ const GanttPage: React.FC = () => {
             onEditTask={async (task, patch) => { await editTask.mutateAsync({ task, patch }); }}
             assigneeChoices={assigneeChoices}
             columnCalendar={columnCalendar} taskCalendars={taskCalendars}
+            codes={codes} guides={guides}
           />
         </>
       )}
