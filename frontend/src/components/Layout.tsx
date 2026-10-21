@@ -175,7 +175,8 @@ const ScopeBadge: React.FC = () => {
       onDelete={() => setScope('all')}
       title={t('scope.clear')}
       sx={{
-        maxWidth: { xs: 140, sm: 320 }, bgcolor: ds.primaryPale, color: ds.primary, fontWeight: 600,
+        // スマホ幅では縮む（打刻のボタンと並べても 390px に収める。task #639）
+        maxWidth: { xs: 140, sm: 320 }, minWidth: 0, flexShrink: 1, bgcolor: ds.primaryPale, color: ds.primary, fontWeight: 600,
         '& .MuiChip-label': { overflow: 'hidden', textOverflow: 'ellipsis' },
       }}
     />
