@@ -74,7 +74,7 @@ class OidcIdentityProvider(IdentityProvider):
 
     # ── 認可リクエスト ─────────────────────────────────────────────────
     def build_authorization_request(
-        self, *, state: str, nonce: str, code_verifier: str
+        self, *, state: str, nonce: str, code_verifier: str, silent: bool = False
     ) -> AuthorizationRequest:
         discovery = self._discovery.get()
         params = {
@@ -87,6 +87,10 @@ class OidcIdentityProvider(IdentityProvider):
             "code_challenge": code_challenge_from_verifier(code_verifier),
             "code_challenge_method": CODE_CHALLENGE_METHOD,
         }
+        if silent:
+            # 入っていればそのまま code、入っていなければ ``error=login_required`` で戻る
+            # （OIDC Core §3.1.2.1）。IdP は画面を出さない（ADR-0062）。
+            params["prompt"] = "none"
         separator = "&" if "?" in discovery.authorization_endpoint else "?"
         url = f"{discovery.authorization_endpoint}{separator}{urlencode(params)}"
         return AuthorizationRequest(

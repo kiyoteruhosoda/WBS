@@ -64,9 +64,10 @@ class FakeIdentityProvider(IdentityProvider):
     def display_name(self) -> str:
         return "Test IdP"
 
-    def build_authorization_request(self, *, state, nonce, code_verifier):
+    def build_authorization_request(self, *, state, nonce, code_verifier, silent=False):
+        prompt = "&prompt=none" if silent else ""
         return AuthorizationRequest(
-            authorization_url=f"{ISSUER}/auth?state={state}&nonce={nonce}",
+            authorization_url=f"{ISSUER}/auth?state={state}&nonce={nonce}{prompt}",
             state=state,
             nonce=nonce,
             code_verifier=code_verifier,
@@ -357,6 +358,76 @@ def test_an_error_from_the_idp_goes_back_to_the_login_page(sso_client) -> None:
 def test_a_callback_without_a_code_goes_back_to_the_login_page(sso_client) -> None:
     response = sso_client.get("/api/auth/callback", follow_redirects=False)
     assert response.headers["location"].startswith("/login?error=invalid_request")
+
+
+# ── 黙って確かめる（prompt=none。ADR-0062） ────────────────────────────────
+def _start_silently(client: TestClient, next_path: str | None = None) -> str:
+    query = "silent=1" + (f"&next={next_path}" if next_path else "")
+    started = client.get(f"/api/auth/login?{query}", follow_redirects=False)
+    assert started.headers["location"].endswith("&prompt=none")
+    return started.headers["location"].split("state=")[1].split("&")[0]
+
+
+def test_an_ordinary_login_does_not_ask_silently(sso_client) -> None:
+    started = sso_client.get("/api/auth/login", follow_redirects=False)
+    assert "prompt=none" not in started.headers["location"]
+
+
+def test_a_silent_check_signs_in_like_an_ordinary_login(sso_client) -> None:
+    state = _start_silently(sso_client, "/gantt")
+    response = sso_client.get(
+        f"/api/auth/callback?code=taro-code&state={state}", follow_redirects=False
+    )
+    assert response.headers["location"] == "/gantt"
+    assert response.headers["set-cookie"].startswith(f"{COOKIE}=")
+
+
+@pytest.mark.parametrize(
+    "error",
+    ["login_required", "consent_required", "interaction_required", "account_selection_required"],
+)
+def test_not_being_signed_in_to_the_idp_is_not_an_error(sso_client, error) -> None:
+    """黙って確かめて「入っていない」と返ってきたら、エラーを付けずにログイン画面へ戻す。"""
+    state = _start_silently(sso_client, "/gantt")
+    response = sso_client.get(
+        f"/api/auth/callback?error={error}&state={state}", follow_redirects=False
+    )
+    assert response.headers["location"] == "/login?sso_silent=1&next=%2Fgantt"
+
+
+def test_a_silent_check_from_the_top_carries_no_next(sso_client) -> None:
+    state = _start_silently(sso_client)
+    response = sso_client.get(
+        f"/api/auth/callback?error=login_required&state={state}", follow_redirects=False
+    )
+    assert response.headers["location"] == "/login?sso_silent=1"
+
+
+def test_other_idp_errors_are_still_shown_after_a_silent_check(sso_client) -> None:
+    state = _start_silently(sso_client)
+    response = sso_client.get(
+        f"/api/auth/callback?error=access_denied&state={state}", follow_redirects=False
+    )
+    assert response.headers["location"].startswith("/login?error=access_denied")
+
+
+def test_login_required_on_an_ordinary_login_is_still_an_error(sso_client) -> None:
+    started = sso_client.get("/api/auth/login", follow_redirects=False)
+    state = started.headers["location"].split("state=")[1].split("&")[0]
+    response = sso_client.get(
+        f"/api/auth/callback?error=login_required&state={state}", follow_redirects=False
+    )
+    assert response.headers["location"].startswith("/login?error=login_required")
+
+
+def test_a_silent_decline_from_another_browser_is_still_an_error(sso_client) -> None:
+    """このブラウザが始めた往復でなければ、黙って戻さない。"""
+    state = _start_silently(sso_client)
+    sso_client.cookies.delete(STATE_COOKIE)
+    response = sso_client.get(
+        f"/api/auth/callback?error=login_required&state={state}", follow_redirects=False
+    )
+    assert response.headers["location"].startswith("/login?error=login_required")
 
 
 # ── ログアウト ─────────────────────────────────────────────────────────────

@@ -1,12 +1,25 @@
 import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Box, Button, CircularProgress } from '@mui/material';
-import { getAuthConfig, getCurrentUser, logout as requestLogout, startLogin } from '../api/auth';
+import {
+  getAuthConfig,
+  getCurrentUser,
+  logout as requestLogout,
+  startLogin,
+  startSilentLogin,
+} from '../api/auth';
 import { setUnauthorizedHandler } from '../api/client';
 import LoginPage from '../pages/LoginPage';
 import { translate } from '../i18n';
 import { isNetworkFailure } from '../pwa/connectivity';
 import { forgetSession, lastSession, rememberSession } from './lastSession';
+import {
+  forgetSilentMarks,
+  markSilentAttempt,
+  rememberSignedOut,
+  returnPathOf,
+  shouldTrySilently,
+} from './silentSignIn';
 import type { AuthConfig, CurrentUser } from '../types';
 
 interface AuthContextValue {
@@ -26,11 +39,8 @@ const AuthContext = createContext<AuthContextValue>({
 
 export const useAuth = (): AuthContextValue => useContext(AuthContext);
 
-/** ログイン後に戻る先。ログイン画面そのものへは戻さない。 */
-const currentPath = (): string => {
-  const { pathname, search } = window.location;
-  return pathname === '/login' ? '/' : `${pathname}${search}`;
-};
+/** ログイン後に戻る先。ログイン画面そのものへは戻さない（付いている `next` を使う）。 */
+const currentPath = (): string => returnPathOf(window.location);
 
 const Centered: React.FC<{ children: React.ReactNode }> = ({ children }) => (
   <Box sx={{ minHeight: '100svh', display: 'grid', placeItems: 'center' }}>{children}</Box>
@@ -47,6 +57,9 @@ const Centered: React.FC<{ children: React.ReactNode }> = ({ children }) => (
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const queryClient = useQueryClient();
   const [sessionExpired, setSessionExpired] = useState(false);
+  // IdP へ黙って確かめに行った（ADR-0062）。行き先へ移るまで画面を描かない
+  const [silentStarted, setSilentStarted] = useState(false);
+  const [silentUnavailable, setSilentUnavailable] = useState(false);
 
   const { data: fetchedConfig, isPending: configPending, error: configError } = useQuery<AuthConfig>({
     queryKey: ['auth', 'config'],
@@ -70,10 +83,36 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const user = fetchedUser ?? (isNetworkFailure(userError) ? lastSession()?.user : undefined);
 
-  // 確かめられた人を控える（次にオフラインで開いたときに使う）
+  // 確かめられた人を控える（次にオフラインで開いたときに使う）。
+  // 入れたので黙って確かめる印も消す（次に切れたときは、また 1 回だけ試してよい）
   useEffect(() => {
-    if (fetchedConfig?.sso_enabled && fetchedUser) rememberSession({ config: fetchedConfig, user: fetchedUser });
+    if (fetchedConfig?.sso_enabled && fetchedUser) {
+      rememberSession({ config: fetchedConfig, user: fetchedUser });
+      forgetSilentMarks();
+    }
   }, [fetchedConfig, fetchedUser]);
+
+  // 入っていないと分かったら、ログイン画面を描く前に IdP へ黙って確かめに行く（ADR-0062）。
+  // 使っている途中で切れた（sessionExpired）ときは試さない ——画面が勝手に移ると、打っていたものが消える。
+  // ⚠ 印を置けたときだけ。置けないと戻ってくるたびに試してループになる
+  const silentPlanned =
+    ssoEnabled &&
+    !userPending &&
+    !user &&
+    !sessionExpired &&
+    !silentUnavailable &&
+    !isNetworkFailure(userError) &&
+    Boolean(fetchedConfig?.login_path) &&
+    shouldTrySilently(window.location);
+  useEffect(() => {
+    if (!silentPlanned || !fetchedConfig) return;
+    if (!markSilentAttempt()) {
+      setSilentUnavailable(true);
+      return;
+    }
+    setSilentStarted(true);
+    startSilentLogin(fetchedConfig, currentPath());
+  }, [silentPlanned, fetchedConfig]);
 
   // どの画面の通信で 401 が出ても、ログイン画面へ戻す。
   // ただし「まだ一度もログインしていない」ときの 401 は期限切れではないので、
@@ -89,6 +128,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const signOut = useCallback(async () => {
     const result = await requestLogout();
     forgetSession();
+    // ログイン画面が IdP へ黙って確かめに行かないように（ADR-0062）
+    rememberSignedOut();
     queryClient.clear();
     // IdP 側のセッションも切る。切らないと「ログアウト → ログイン」で
     // 何も聞かれずに同じ人で入り直してしまい、別の人に代われない。
@@ -119,7 +160,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     );
   }
 
-  if (userPending && !user) {
+  if ((userPending && !user) || silentPlanned || silentStarted) {
     return <Centered><CircularProgress /></Centered>;
   }
 

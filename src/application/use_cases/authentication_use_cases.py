@@ -201,7 +201,10 @@ class SsoLoginUseCases:
         return self._idp.display_name
 
     # ── 1. ログイン開始 ────────────────────────────────────────────────
-    def start_login(self, *, redirect_path: str | None, now: datetime) -> StartedLoginDTO:
+    def start_login(
+        self, *, redirect_path: str | None, now: datetime, silent: bool = False
+    ) -> StartedLoginDTO:
+        """``silent`` は IdP に画面を出させずに「もう入っているか」を確かめる往復（ADR-0062）。"""
         state = self._secrets.generate()
         nonce = self._secrets.generate()
         code_verifier = self._secrets.generate()
@@ -212,12 +215,13 @@ class SsoLoginUseCases:
             redirect_target=RedirectTarget.parse(redirect_path),
             now=now,
             ttl=self._transaction_ttl,
+            silent=silent,
         )
         # 中断されたログイン（コールバックが返ってこなかった往復）を溜めない
         self._transactions.delete_expired(now)
         self._transactions.add(transaction)
         request = self._idp.build_authorization_request(
-            state=state, nonce=nonce, code_verifier=code_verifier
+            state=state, nonce=nonce, code_verifier=code_verifier, silent=silent
         )
         # ``browser_binding`` は Presentation 層が短命な Cookie に載せ、コールバックで
         # 突き合わせる。DB に state があるだけだと、攻撃者が自分で始めたログインの
@@ -260,6 +264,17 @@ class SsoLoginUseCases:
             expires_at=session.expires_at,
             redirect_path=transaction.redirect_target.path,
         )
+
+    def decline_silent_login(self, *, state: str, now: datetime) -> str | None:
+        """黙って確かめた往復に、IdP が「入っていない」と答えた（ADR-0062）。
+
+        往復を使い切り、それが黙って確かめた往復なら戻り先を返す（画面はエラー無しで
+        ログイン画面へ戻す）。そうでなければ ``None``（呼ぶ側は今まで通りエラーとして扱う）。
+        """
+        transaction = self._transactions.consume(state)
+        if transaction is None or not transaction.silent or transaction.is_expired(now):
+            return None
+        return transaction.redirect_target.path
 
     # ── 3. IdP 側のログアウト ─────────────────────────────────────────
     def end_session_url(self, *, post_logout_redirect_uri: str | None) -> str | None:

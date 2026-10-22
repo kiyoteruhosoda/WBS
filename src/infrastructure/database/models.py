@@ -334,6 +334,10 @@ class LoginTransactionModel(Base):
     redirect_path: Mapped[str] = mapped_column(sa.String(512), nullable=False)
     created_at: Mapped[datetime] = mapped_column(sa.DateTime, nullable=False)
     expires_at: Mapped[datetime] = mapped_column(sa.DateTime, nullable=False, index=True)
+    #: 黙って確かめる往復か（``prompt=none``。ADR-0062）
+    silent: Mapped[bool] = mapped_column(
+        sa.Boolean, nullable=False, default=False, server_default=sa.false()
+    )
 
 class TimeEntryModel(Base):
     """打刻（下書き。締めで確定したものが ``work_logs`` になる。ADR-0008）。

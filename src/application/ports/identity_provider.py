@@ -33,8 +33,13 @@ class IdentityProvider(ABC):
         """ログイン画面のボタンに出す IdP の名前。"""
 
     @abstractmethod
-    def build_authorization_request(self, *, state: str, nonce: str, code_verifier: str) -> AuthorizationRequest:
-        """認可リクエスト URL を組み立てる。"""
+    def build_authorization_request(
+        self, *, state: str, nonce: str, code_verifier: str, silent: bool = False
+    ) -> AuthorizationRequest:
+        """認可リクエスト URL を組み立てる。
+
+        ``silent`` なら ``prompt=none`` を付け、IdP に画面を出させない（ADR-0062）。
+        """
 
     @abstractmethod
     def exchange_code(self, *, code: str, code_verifier: str, nonce: str) -> IdentityClaims:
