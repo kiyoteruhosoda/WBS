@@ -50,6 +50,13 @@ LOGIN_STATE_COOKIE_MAX_AGE = int(DEFAULT_LOGIN_TRANSACTION_TTL.total_seconds())
 LOGIN_STATE_COOKIE_CAPACITY = 3
 # state は token_urlsafe（英数字と `-` `_`）なので、区切りに使っても値と衝突しない。
 LOGIN_STATE_SEPARATOR = "."
+# 黙って確かめた往復で、IdP が「画面を出さないと進めない」と返すときの印（OIDC Core §3.1.2.6）。
+# **失敗ではない**——ふつうのログイン画面を出せばよい（ADR-0062）。
+SILENT_DECLINES = frozenset(
+    {"login_required", "consent_required", "interaction_required", "account_selection_required"}
+)
+# 黙って確かめて「入っていない」と分かったことを画面へ伝える印。画面はもう試さない。
+SILENT_DECLINED_FLAG = "sso_silent"
 
 
 @router.get("/config", response_model=AuthConfigResponse, summary="Authentication configuration")
@@ -71,8 +78,12 @@ def start_login(
     settings: AuthSettingsDep,
     sso: SsoLoginDep,
     next_path: str | None = Query(default=None, alias="next"),
+    silent: bool = False,
 ) -> RedirectResponse:
     """IdP の認可エンドポイントへ送り出す。
+
+    ``silent`` は、ログイン画面が描く前に「IdP でもう入っているか」を確かめる往復
+    （``prompt=none``。ADR-0062）。入っていればふつうのログインと同じ道で入る。
 
     ``next`` はログイン後に戻す画面。外部を指し得る値は ``RedirectTarget`` が
     既定のパスへ落とす（オープンリダイレクト対策）。
@@ -80,7 +91,7 @@ def start_login(
     併せて state を短命な Cookie にも置く。コールバックで両者が一致することを
     求めることで、この往復を始めたブラウザ以外がコールバックを使い切れなくなる。
     """
-    started = sso.start_login(redirect_path=next_path, now=utcnow())
+    started = sso.start_login(redirect_path=next_path, now=utcnow(), silent=silent)
     # 302 でないと、IdP からの GET が POST として飛ぶ実装がある
     response = RedirectResponse(started.authorization_url, status_code=status.HTTP_302_FOUND)
     response.set_cookie(
@@ -108,6 +119,13 @@ def complete_login(
     error: str | None = Query(default=None),
     error_description: str | None = Query(default=None),
 ) -> RedirectResponse:
+    if error in SILENT_DECLINES and state and _binding_matches(
+        request.cookies.get(LOGIN_STATE_COOKIE), state
+    ):
+        redirect_path = sso.decline_silent_login(state=state, now=utcnow())
+        if redirect_path is not None:
+            # 黙って確かめたら IdP に入っていなかった。エラーを付けずに画面を出す（ADR-0062）
+            return _silently_declined(redirect_path)
     if error:
         # 利用者が同意画面で断った場合などは IdP がここへエラーを返す
         return _back_to_login(error, error_description)
@@ -266,6 +284,16 @@ def _back_to_login(error: str, description: str | None) -> RedirectResponse:
     params = {"error": error}
     if description:
         params["error_description"] = description
+    return RedirectResponse(
+        f"{LOGIN_PAGE_PATH}?{urlencode(params)}", status_code=status.HTTP_302_FOUND
+    )
+
+
+def _silently_declined(redirect_path: str) -> RedirectResponse:
+    """行き先（``next``）は持ち帰る ——ボタンを押したあとに、開こうとした画面へ戻れるように。"""
+    params = {SILENT_DECLINED_FLAG: "1"}
+    if redirect_path != "/":
+        params["next"] = redirect_path
     return RedirectResponse(
         f"{LOGIN_PAGE_PATH}?{urlencode(params)}", status_code=status.HTTP_302_FOUND
     )

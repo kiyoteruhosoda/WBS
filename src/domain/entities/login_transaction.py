@@ -30,6 +30,9 @@ class LoginTransaction:
     created_at: datetime
     expires_at: datetime
     id: int | None = None
+    #: ``prompt=none`` で「IdP でもう入っているか」を黙って確かめる往復か（ADR-0062）。
+    #: 真なら、IdP が ``login_required`` などで戻しても失敗ではない。
+    silent: bool = False
 
     @classmethod
     def issue(
@@ -41,6 +44,7 @@ class LoginTransaction:
         redirect_target: RedirectTarget,
         now: datetime,
         ttl: timedelta = DEFAULT_LOGIN_TRANSACTION_TTL,
+        silent: bool = False,
     ) -> LoginTransaction:
         if not state or not nonce or not code_verifier:
             raise ValidationError("state, nonce and code_verifier are required")
@@ -51,6 +55,7 @@ class LoginTransaction:
             redirect_target=redirect_target,
             created_at=now,
             expires_at=now + ttl,
+            silent=silent,
         )
 
     def is_expired(self, now: datetime) -> bool:

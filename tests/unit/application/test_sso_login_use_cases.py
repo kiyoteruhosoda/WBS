@@ -139,9 +139,10 @@ class FakeIdentityProvider(IdentityProvider):
     def display_name(self):
         return "Test IdP"
 
-    def build_authorization_request(self, *, state, nonce, code_verifier):
+    def build_authorization_request(self, *, state, nonce, code_verifier, silent=False):
+        prompt = "&prompt=none" if silent else ""
         return AuthorizationRequest(
-            authorization_url=f"{ISSUER}/auth?state={state}&nonce={nonce}",
+            authorization_url=f"{ISSUER}/auth?state={state}&nonce={nonce}{prompt}",
             state=state,
             nonce=nonce,
             code_verifier=code_verifier,
@@ -419,3 +420,32 @@ def test_revoking_a_token_ends_the_session() -> None:
     session_auth.revoke(token=completed.session_token)
     with pytest.raises(AuthenticationError):
         session_auth.authenticate(token=completed.session_token, now=NOW)
+
+
+# ── 黙って確かめる（prompt=none。ADR-0062） ───────────────────────────────
+def test_a_silent_start_asks_without_a_screen() -> None:
+    sso, _, _, _, transactions = build()
+    started = sso.start_login(redirect_path="/gantt", now=NOW, silent=True)
+    assert started.authorization_url.endswith("&prompt=none")
+    assert transactions.transactions[0].silent is True
+
+
+def test_declining_a_silent_start_returns_where_to_go() -> None:
+    sso, _, _, _, transactions = build()
+    started = sso.start_login(redirect_path="/gantt", now=NOW, silent=True)
+    assert sso.decline_silent_login(state=started.browser_binding, now=NOW) == "/gantt"
+    # 使い切る
+    assert transactions.transactions == []
+
+
+def test_declining_an_ordinary_start_is_not_silent() -> None:
+    sso, _, _, _, _ = build()
+    started = sso.start_login(redirect_path="/gantt", now=NOW)
+    assert sso.decline_silent_login(state=started.browser_binding, now=NOW) is None
+
+
+def test_declining_an_unknown_or_expired_start_is_not_silent() -> None:
+    sso, _, _, _, _ = build()
+    assert sso.decline_silent_login(state="unknown", now=NOW) is None
+    started = sso.start_login(redirect_path="/gantt", now=NOW, silent=True)
+    assert sso.decline_silent_login(state=started.browser_binding, now=NOW + timedelta(hours=1)) is None

@@ -23,6 +23,7 @@ class SqlAlchemyLoginTransactionRepository(LoginTransactionRepository):
             redirect_path=transaction.redirect_target.path,
             created_at=transaction.created_at,
             expires_at=transaction.expires_at,
+            silent=transaction.silent,
         )
         self._session.add(model)
         self._session.commit()
@@ -65,4 +66,5 @@ class SqlAlchemyLoginTransactionRepository(LoginTransactionRepository):
             redirect_target=RedirectTarget.parse(model.redirect_path),
             created_at=model.created_at,
             expires_at=model.expires_at,
+            silent=model.silent,
         )

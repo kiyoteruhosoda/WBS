@@ -21,3 +21,13 @@ export const startLogin = (config: AuthConfig, nextPath: string): void => {
   if (!config.login_path) return;
   window.location.href = `${config.login_path}?next=${encodeURIComponent(nextPath)}`;
 };
+
+/**
+ * IdP でもう入っているかを、画面を出させずに確かめに行く（ADR-0062）。
+ * 入っていれば `startLogin` と同じ道で戻り、入っていなければ `/login?sso_silent=1`（`next` 付き）へ戻る。
+ * 履歴に残さない（「戻る」でまた確かめに行かないように）。
+ */
+export const startSilentLogin = (config: AuthConfig, nextPath: string): void => {
+  if (!config.login_path) return;
+  window.location.replace(`${config.login_path}?silent=1&next=${encodeURIComponent(nextPath)}`);
+};
