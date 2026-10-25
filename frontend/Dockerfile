@@ -1,10 +1,10 @@
-FROM node:24-alpine@sha256:44fce696f38ba8c987c4db89954051000bbd05ffd8d8659ba15ed4a8602e937f AS build
+FROM node:24-alpine@sha256:06d7adf3e0ef61a13f1d28682726366f97a15aa1888c934d3ecec86c33918b53 AS build
 WORKDIR /web
 COPY package.json ./
 RUN npm install
 COPY . .
 RUN npm run build
-FROM nginx:1.31-alpine@sha256:892bb2152464f0c5d8972593a5f5afaf8054552580b699d95f8ff4af08c2d33d
+FROM nginx:1.31-alpine@sha256:a3554c0d0b48177b1413c26e01f695334428020d9df01243fbae3e11cfd17417
 COPY --from=build /web/dist /usr/share/nginx/html
 # 起動時に envsubst で展開される (nginx 公式イメージの機構)。
 COPY nginx.conf.template /etc/nginx/templates/default.conf.template
