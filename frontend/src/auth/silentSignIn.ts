@@ -5,9 +5,11 @@
 // ここが決めるのは**試してよいか**だけ。
 //
 // 試さないとき（ループと勝手な入り直しを防ぐ）:
-// - このタブで一度試して戻ってきた後（sessionStorage の印。入れたら消す）
+// - このタブで一度試して戻ってきた後（sessionStorage の印。入れたら消す）。
+//   ただし**本人が再読み込みしたときは、もう 1 回だけ試す**（別のタブで Assay に入ってから戻ってきたとき。ADR-0063）。
+//   断られて戻る先は再読み込みではない遷移なので、ループにはならない
 // - このアプリでサインアウトした後（localStorage の印。次に入れたら消す）
-// - ログイン画面（`/login`）に `next` 以外が付いているとき（`error`・黙って断られた印 `sso_silent` など）
+// - ログイン画面（`/login`）に `next` 以外が付いているとき（`error` など。黙って断られた印 `sso_silent` は再読み込みなら構わない）
 // - 印が読み書きできないとき（1 回だけの印が置けないと、戻ってくるたびに試してループになる）
 
 const ATTEMPTED_KEY = 'wbs.sso.silentAttempted';
@@ -16,17 +18,33 @@ const SIGNED_OUT_KEY = 'wbs.sso.signedOut';
 const LOGIN_PATH = '/login';
 /** ログイン画面の URL で、付いていても試してよいもの（開こうとした画面）。 */
 const ALLOWED_LOGIN_PARAMS = new Set(['next']);
+/** 再読み込みしたときに限って、付いていても試してよいもの（前に黙って断られた印）。 */
+const SILENT_DECLINED_PARAM = 'sso_silent';
+
+/** この画面は本人の再読み込みで開かれたか。1 つの画面で 1 回だけ真（試した後にまた真にならないように） */
+let reloadAllowanceUsed = false;
+const openedByReload = (): boolean => {
+  if (reloadAllowanceUsed) return false;
+  try {
+    const [entry] = performance.getEntriesByType('navigation') as PerformanceNavigationTiming[];
+    return entry?.type === 'reload';
+  } catch {
+    return false;
+  }
+};
 
 type Place = Pick<Location, 'pathname' | 'search'>;
 
-export const shouldTrySilently = ({ pathname, search }: Place): boolean => {
+export const shouldTrySilently = ({ pathname, search }: Place, reloaded = openedByReload()): boolean => {
   if (pathname === LOGIN_PATH) {
     for (const name of new URLSearchParams(search).keys()) {
-      if (!ALLOWED_LOGIN_PARAMS.has(name)) return false;
+      if (ALLOWED_LOGIN_PARAMS.has(name) || (reloaded && name === SILENT_DECLINED_PARAM)) continue;
+      return false;
     }
   }
   try {
-    return sessionStorage.getItem(ATTEMPTED_KEY) === null && localStorage.getItem(SIGNED_OUT_KEY) === null;
+    if (localStorage.getItem(SIGNED_OUT_KEY) !== null) return false;
+    return reloaded || sessionStorage.getItem(ATTEMPTED_KEY) === null;
   } catch {
     return false;
   }
@@ -34,6 +52,7 @@ export const shouldTrySilently = ({ pathname, search }: Place): boolean => {
 
 /** これから試す。戻ってきたら、このタブではもう試さない。置けなければ偽（試さない） */
 export const markSilentAttempt = (): boolean => {
+  reloadAllowanceUsed = true;
   try {
     sessionStorage.setItem(ATTEMPTED_KEY, '1');
     return true;
