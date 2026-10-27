@@ -43,11 +43,9 @@ jobs:
         # ⚠ **鏡に無いので自前の鏡を完全な URL で指す**（forge へ移したため）。
         uses: https://git.nolumia.com/astral-sh/setup-uv@v6
         with:
-          # ⚠ **版を固定する**。省くと最新版を GitHub の API へ匿名で聞きに行き、
-          #   レート制限（60 回/時・IP ごと）に当たると 3 秒で落ちる（2026-10-01、PR #15）。
-          version: "0.12.5"
+          # 版は書かない: manifest-file の一覧（forge の写し・毎週取り込み）の最新を使う。manifest-file があれば GitHub の API へは行かない（2026-10-27）。
           # ⚠ **本体は forge から取る**（GitHub に依存しない）。置き場は astral-sh/uv の
-          #   リリース、その一覧が version-manifest.json。版を上げるときは両方に足す。
+          #   リリース、その一覧が version-manifest.json。一覧は host/astral-mirror が毎週取り込む。
           manifest-file: "https://git.nolumia.com/astral-sh/uv/raw/branch/main/version-manifest.json"
 
       - name: Install dependencies
