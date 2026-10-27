@@ -57,6 +57,18 @@ describe('IdP で入っているかを黙って確かめるか（ADR-0062）', (
     expect(shouldTrySilently(at('/login?error=access_denied'))).toBe(false);
     expect(shouldTrySilently(at('/login?sso_silent=1&next=%2Fgantt'))).toBe(false);
   });
+
+  it('断られた後でも、本人が再読み込みしたらもう 1 回試す（ADR-0063）', () => {
+    expect(markSilentAttempt()).toBe(true);
+    expect(shouldTrySilently(at('/login?sso_silent=1&next=%2Fgantt'), true)).toBe(true);
+    expect(shouldTrySilently(at('/login?sso_silent=1'), true)).toBe(true);
+  });
+
+  it('再読み込みでも、エラーが付いている・サインアウトした後は試さない', () => {
+    expect(shouldTrySilently(at('/login?error=access_denied'), true)).toBe(false);
+    rememberSignedOut();
+    expect(shouldTrySilently(at('/login?sso_silent=1'), true)).toBe(false);
+  });
 });
 
 describe('ログイン後に戻る先', () => {
