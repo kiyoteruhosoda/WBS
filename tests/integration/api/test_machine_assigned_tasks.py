@@ -87,7 +87,9 @@ def test_returns_open_tasks_assigned_to_the_user(client) -> None:
     assert set(rows) == {mine["id"], loose["id"]}
     assert rows[mine["id"]]["title"] == "画面"
     assert rows[mine["id"]]["project_path"] == "案件 / 設計"
+    assert rows[mine["id"]]["project_id"] == child["id"]  # Tracker は id で結ぶ（task #711）
     assert rows[loose["id"]]["project_path"] is None
+    assert rows[loose["id"]]["project_id"] is None
 
 
 def test_each_user_gets_only_their_own_assignments(client) -> None:

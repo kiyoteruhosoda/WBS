@@ -32,6 +32,9 @@ class AssignedTaskResponse(BaseModel):
     id: int = Field(description="WBS のタスクの id（Tracker の写しの wbs_task_id）")
     title: str
     project_path: str | None = Field(description="プロジェクトの道筋（「親 / 子」）。未分類は null")
+    project_id: int | None = Field(
+        default=None, description="WBS のプロジェクトの id（Tracker の写しの wbs_project_id。task #711）。未分類は null"
+    )
     updated_at: UtcDatetime | None = None
 
 
@@ -49,7 +52,11 @@ def list_assigned_tasks(user: MachineReaderUserDep, uc: TaskUseCasesDep) -> Assi
     return AssignedTasksResponse(
         tasks=[
             AssignedTaskResponse(
-                id=task.id or 0, title=task.title, project_path=path, updated_at=task.updated_at
+                id=task.id or 0,
+                title=task.title,
+                project_path=path,
+                project_id=task.project_id if path is not None else None,
+                updated_at=task.updated_at,
             )
             for task, path in uc.assigned_open_tasks(user.user_id)
         ]
