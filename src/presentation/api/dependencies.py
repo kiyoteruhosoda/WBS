@@ -74,9 +74,6 @@ from src.infrastructure.repositories.occurrence_completion_repository import (
 from src.infrastructure.repositories.pc_activity_repository import SqlAlchemyPcActivityRepository
 from src.infrastructure.repositories.person_directory import SqlAlchemyPersonDirectory
 from src.infrastructure.repositories.project_repository import SqlAlchemyProjectRepository
-from src.infrastructure.repositories.project_work_log_repository import (
-    SqlAlchemyProjectWorkLogRepository,
-)
 from src.infrastructure.repositories.task_repository import SqlAlchemyTaskRepository
 from src.infrastructure.repositories.time_entry_carving_repository import (
     SqlAlchemyTimeEntryCarvingRepository,
@@ -453,7 +450,6 @@ def get_actuals_use_cases(
         projects=SqlAlchemyProjectRepository(db),
         occurrences=calendar,
         breaks=SqlAlchemyWorkBreakRepository(db),
-        project_work_logs=SqlAlchemyProjectWorkLogRepository(db),
         tracked_time_moved=tracker_move.moved,
         calendar_moved=scheduler_move.moved,
     )

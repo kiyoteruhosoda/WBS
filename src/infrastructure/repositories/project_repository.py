@@ -10,7 +10,6 @@ from src.infrastructure.database.models import (
     MilestoneModel,
     ProjectMemberModel,
     ProjectModel,
-    ProjectWorkLogModel,
     TaskModel,
     TeamDayOffModel,
     TeamExtraWorkdayModel,
@@ -104,10 +103,6 @@ class SqlAlchemyProjectRepository(ProjectRepository):
         self._session.execute(
             delete(ProjectMemberModel).where(ProjectMemberModel.project_id == project_id)
         )
-        # 生きているプロジェクトだけの実績があれば has_contents で消させない。残るのは退けた行だけ
-        self._session.execute(
-            delete(ProjectWorkLogModel).where(ProjectWorkLogModel.project_id == project_id)
-        )
         self._session.execute(delete(TeamDayOffModel).where(TeamDayOffModel.project_id == project_id))
         self._session.execute(
             delete(TeamExtraWorkdayModel).where(TeamExtraWorkdayModel.project_id == project_id)
@@ -124,10 +119,7 @@ class SqlAlchemyProjectRepository(ProjectRepository):
         milestone = exists().where(
             MilestoneModel.project_id == project_id, MilestoneModel.deleted_at.is_(None)
         )
-        project_hours = exists().where(
-            ProjectWorkLogModel.project_id == project_id, ProjectWorkLogModel.deleted_at.is_(None)
-        )
-        return bool(self._session.scalar(select(or_(child, task, milestone, project_hours))))
+        return bool(self._session.scalar(select(or_(child, task, milestone))))
 
     def _to_entity(self, model: ProjectModel) -> Project:
         return Project(
