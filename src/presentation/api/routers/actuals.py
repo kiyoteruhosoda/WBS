@@ -61,6 +61,7 @@ CSV_HEADER = [
     "milestone",
     "hours",
     "seconds",
+    "project",
 ]
 
 
@@ -182,6 +183,7 @@ def render_csv(rows: list[ExportRow]) -> str:
                     )
                 ),
                 row.seconds,
+                row.project_path or "",
             ]
         )
     return buffer.getvalue()

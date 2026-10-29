@@ -259,6 +259,34 @@ class WorkLogModel(Base):
     # 利用者と組で期間を指す（置き換え・取り消しの単位）
     tracker_first_day: Mapped[date | None] = mapped_column(sa.Date, nullable=True)
 
+class ProjectWorkLogModel(Base):
+    """プロジェクトだけの実績（Tracker で締めた、WBS のタスクに結ばない時間。task #708 / ADR-0064）。
+
+    行は Tracker の締めの期間（利用者 × ``tracker_first_day``）ごとに置き換える。退けるのは論理削除。
+    """
+
+    __tablename__ = "project_work_logs"
+    __table_args__ = (
+        sa.Index("ix_project_work_logs_user_period", "user_id", "tracker_first_day"),
+        {"sqlite_autoincrement": True},
+    )
+    id: Mapped[int] = mapped_column(BigIntPK, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(
+        sa.BigInteger().with_variant(sa.Integer(), "sqlite"),
+        sa.ForeignKey("users.id", name="fk_project_work_logs_user_id"),
+        nullable=False,
+    )
+    project_id: Mapped[int] = mapped_column(
+        sa.BigInteger().with_variant(sa.Integer(), "sqlite"),
+        sa.ForeignKey("projects.id", name="fk_project_work_logs_project_id"),
+        nullable=False,
+    )
+    work_date: Mapped[date] = mapped_column(sa.Date, nullable=False)
+    duration_seconds: Mapped[int] = mapped_column(sa.Integer, nullable=False)
+    tracker_first_day: Mapped[date] = mapped_column(sa.Date, nullable=False)
+    deleted_at: Mapped[datetime | None] = mapped_column(sa.DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(sa.DateTime, default=utcnow, nullable=False)
+
 class TaskDependencyModel(Base):
     __tablename__ = "task_dependencies"
     predecessor_task_id: Mapped[int] = mapped_column(sa.BigInteger().with_variant(sa.Integer(), "sqlite"), sa.ForeignKey("tasks.id"), primary_key=True)

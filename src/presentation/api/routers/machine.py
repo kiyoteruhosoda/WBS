@@ -1,7 +1,8 @@
 """ほかのアプリのサーバーが、利用者の代わりに読み書きする口（ADR-0056）。
 
 - 担当タスク: ``GET /machine/assigned-tasks``（Tracker のタスクを選ぶ欄。task #539）
-- 締めた時間: ``PUT`` / ``DELETE /machine/closed-periods/{first_day}``（Tracker の締めの確定・取り消し。task #540）
+- 締めた時間: ``PUT`` / ``DELETE /machine/closed-periods/{first_day}``（Tracker の締めの確定・取り消し。task #540。
+  タスクの無いプロジェクトだけの時間は task #708 / ADR-0064）
 
 ⚠ **機械のトークン（``Authorization: Bearer``）だけ**を受ける。宛名は ``MACHINE_AUDIENCE``、
 読み書きしてよいアプリは ``MACHINE_READER_CLIENT_IDS``。利用者は ``issuer`` と ``subject`` で渡す。
@@ -55,7 +56,12 @@ def list_assigned_tasks(user: MachineReaderUserDep, uc: TaskUseCasesDep) -> Assi
 
 
 class ClosedTimeEntryRequest(BaseModel):
-    wbs_task_id: int
+    """1 行。``wbs_task_id``（WBS のタスクの時間）か ``wbs_project_id``（タスクの無いプロジェクトの時間）のどちらか 1 つ。"""
+
+    wbs_task_id: int | None = None
+    wbs_project_id: int | None = Field(
+        default=None, description="タスクに結ばない時間のプロジェクト（ADR-0064）。wbs_task_id と同時には持たない"
+    )
     work_date: dt.date
     seconds: int = Field(ge=0)
 
@@ -70,6 +76,9 @@ class ClosedPeriodRequest(BaseModel):
 class ClosedPeriodResponse(BaseModel):
     stored: int = Field(description="入れた行の数（同じタスク・同じ日はまとめる）")
     unknown_task_ids: list[int] = Field(description="WBS に無い・消したタスク（受け取らなかった）")
+    unknown_project_ids: list[int] = Field(
+        default_factory=list, description="WBS に無い・本人に見えないプロジェクト（受け取らなかった）"
+    )
 
 
 class ClosedPeriodRemovedResponse(BaseModel):
@@ -82,15 +91,23 @@ def put_closed_period(
 ) -> ClosedPeriodResponse:
     """Tracker で確定した期間の時間を受け取る（ADR-0056 決定 3）。何度送っても同じ結果になる。
 
-    同じ期間の、WBS 自身の締めの行（Tracker へ移る前のもの）は退ける。
+    同じ期間の、WBS 自身の締めの行（Tracker へ移る前のもの）は退ける。タスクの無い行（``wbs_project_id``）は
+    そのプロジェクトの実績に数える（ADR-0064）。
     """
     receipt = TrackerClosedTimeUseCases(db).replace(
         user.user_id,
         first_day,
         body.last_day,
-        [ClosedTimeEntry(e.wbs_task_id, e.work_date, e.seconds) for e in body.entries],
+        [
+            ClosedTimeEntry(e.wbs_task_id, e.work_date, e.seconds, wbs_project_id=e.wbs_project_id)
+            for e in body.entries
+        ],
     )
-    return ClosedPeriodResponse(stored=receipt.stored, unknown_task_ids=receipt.unknown_task_ids)
+    return ClosedPeriodResponse(
+        stored=receipt.stored,
+        unknown_task_ids=receipt.unknown_task_ids,
+        unknown_project_ids=receipt.unknown_project_ids,
+    )
 
 
 @router.delete("/closed-periods/{first_day}", response_model=ClosedPeriodRemovedResponse)
