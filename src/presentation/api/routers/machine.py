@@ -1,6 +1,7 @@
 """ほかのアプリのサーバーが、利用者の代わりに読み書きする口（ADR-0056）。
 
 - 担当タスク: ``GET /machine/assigned-tasks``（Tracker のタスクを選ぶ欄。task #539）
+- 見えるプロジェクト: ``GET /machine/projects``（Tracker でタスクを足すときのプロジェクトを選ぶ欄）
 - 締めた時間: ``PUT`` / ``DELETE /machine/closed-periods/{first_day}``（Tracker の締めの確定・取り消し。task #540）
 
 ⚠ **機械のトークン（``Authorization: Bearer``）だけ**を受ける。宛名は ``MACHINE_AUDIENCE``、
@@ -50,6 +51,33 @@ def list_assigned_tasks(user: MachineReaderUserDep, uc: TaskUseCasesDep) -> Assi
                 id=task.id or 0, title=task.title, project_path=path, updated_at=task.updated_at
             )
             for task, path in uc.assigned_open_tasks(user.user_id)
+        ]
+    )
+
+
+class MachineProjectResponse(BaseModel):
+    """プロジェクトの 1 件（Tracker・Scheduler はこの id で結び、道筋を名前として見せる）。"""
+
+    id: int = Field(description="WBS のプロジェクトの id")
+    path: str = Field(description="プロジェクトの道筋（「親 / 子」）")
+    code: str | None = Field(description="プロジェクトのコード（任意・一意ではない）")
+
+
+class MachineProjectsResponse(BaseModel):
+    projects: list[MachineProjectResponse] = Field(description="木の順")
+
+
+@router.get("/projects", response_model=MachineProjectsResponse)
+def list_projects(user: MachineReaderUserDep, uc: TaskUseCasesDep) -> MachineProjectsResponse:
+    """本人に見えて、保管していないプロジェクト（ADR-0056 決定 4）。
+
+    Tracker と Scheduler がプロジェクトを選ぶ欄に出す。利用者が WBS に居なければ 404、
+    止めた利用者は 403。トークンが合わなければ 401。
+    """
+    return MachineProjectsResponse(
+        projects=[
+            MachineProjectResponse(id=project.id or 0, path=path, code=project.code)
+            for project, path in uc.open_projects(user.user_id)
         ]
     )
 
