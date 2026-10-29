@@ -1,6 +1,7 @@
 """ほかのアプリのサーバーが、利用者の代わりに読み書きする口（ADR-0056）。
 
 - 担当タスク: ``GET /machine/assigned-tasks``（Tracker のタスクを選ぶ欄。task #539）
+- 見えるプロジェクト: ``GET /machine/projects``（Tracker でタスクを足すときのプロジェクトを選ぶ欄）
 - 締めた時間: ``PUT`` / ``DELETE /machine/closed-periods/{first_day}``（Tracker の締めの確定・取り消し。task #540）
 
 ⚠ **機械のトークン（``Authorization: Bearer``）だけ**を受ける。宛名は ``MACHINE_AUDIENCE``、
@@ -52,6 +53,20 @@ def list_assigned_tasks(user: MachineReaderUserDep, uc: TaskUseCasesDep) -> Assi
             for task, path in uc.assigned_open_tasks(user.user_id)
         ]
     )
+
+
+class MachineProjectsResponse(BaseModel):
+    paths: list[str] = Field(description="プロジェクトの道筋（「親 / 子」）。木の順")
+
+
+@router.get("/projects", response_model=MachineProjectsResponse)
+def list_projects(user: MachineReaderUserDep, uc: TaskUseCasesDep) -> MachineProjectsResponse:
+    """本人に見えて、保管していないプロジェクトの道筋（ADR-0056 決定 4）。
+
+    Tracker がタスクを足すときの候補に出すだけ（そのタスクは WBS とはつながらない）。
+    利用者が WBS に居なければ 404、止めた利用者は 403。トークンが合わなければ 401。
+    """
+    return MachineProjectsResponse(paths=uc.open_project_paths(user.user_id))
 
 
 class ClosedTimeEntryRequest(BaseModel):

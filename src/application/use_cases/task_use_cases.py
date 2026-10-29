@@ -100,6 +100,26 @@ class TaskUseCases:
         tasks = self._repo.find_all(user_id, {"assignee_user_id": user_id})
         return [(t, tree.path(t.project_id)) for t in tasks if t.is_open]
 
+    def open_project_paths(self, user_id: int) -> list[str]:
+        """自分に見えて保管していないプロジェクトの道筋（ADR-0056 決定 4。Tracker のプロジェクトを選ぶ欄へ渡す）。
+
+        木の順（親の直後に子、兄弟は並び順）。保管した枝の下は丸ごと出さない。
+        """
+        tree = self._membership.tree(user_id)
+        paths: list[str] = []
+
+        def walk(parent_id: int | None) -> None:
+            for project in tree.children_of(parent_id):
+                if project.id is None or project.is_archived:
+                    continue
+                path = tree.path(project.id)
+                if path is not None:
+                    paths.append(path)
+                walk(project.id)
+
+        walk(None)
+        return paths
+
     def resolve_project_filter(self, user_id: int, filters: dict) -> dict:
         """``project_id`` を、そのプロジェクトと子孫の id の一覧（``project_ids``）に置き換える。"""
         if filters.get("project_id") is None:
