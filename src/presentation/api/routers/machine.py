@@ -55,18 +55,31 @@ def list_assigned_tasks(user: MachineReaderUserDep, uc: TaskUseCasesDep) -> Assi
     )
 
 
+class MachineProjectResponse(BaseModel):
+    """プロジェクトの 1 件（Tracker・Scheduler はこの id で結び、道筋を名前として見せる）。"""
+
+    id: int = Field(description="WBS のプロジェクトの id")
+    path: str = Field(description="プロジェクトの道筋（「親 / 子」）")
+    code: str | None = Field(description="プロジェクトのコード（任意・一意ではない）")
+
+
 class MachineProjectsResponse(BaseModel):
-    paths: list[str] = Field(description="プロジェクトの道筋（「親 / 子」）。木の順")
+    projects: list[MachineProjectResponse] = Field(description="木の順")
 
 
 @router.get("/projects", response_model=MachineProjectsResponse)
 def list_projects(user: MachineReaderUserDep, uc: TaskUseCasesDep) -> MachineProjectsResponse:
-    """本人に見えて、保管していないプロジェクトの道筋（ADR-0056 決定 4）。
+    """本人に見えて、保管していないプロジェクト（ADR-0056 決定 4）。
 
-    Tracker がタスクを足すときの候補に出すだけ（そのタスクは WBS とはつながらない）。
-    利用者が WBS に居なければ 404、止めた利用者は 403。トークンが合わなければ 401。
+    Tracker と Scheduler がプロジェクトを選ぶ欄に出す。利用者が WBS に居なければ 404、
+    止めた利用者は 403。トークンが合わなければ 401。
     """
-    return MachineProjectsResponse(paths=uc.open_project_paths(user.user_id))
+    return MachineProjectsResponse(
+        projects=[
+            MachineProjectResponse(id=project.id or 0, path=path, code=project.code)
+            for project, path in uc.open_projects(user.user_id)
+        ]
+    )
 
 
 class ClosedTimeEntryRequest(BaseModel):
