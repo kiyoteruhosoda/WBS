@@ -135,7 +135,10 @@ class Breakdown:
 
 @dataclass(frozen=True)
 class ExportRow:
-    """書き出しの 1 行（期間 × 日 × タスク）。タスク外は ``task_id`` が None。"""
+    """書き出しの 1 行（期間 × 日 × タスク）。タスク外は ``task_id`` が None。
+
+    プロジェクトだけの確定実績（ADR-0064）は ``task_id`` が None で ``project_path`` がある。
+    """
 
     period: ReportPeriod
     work_date: date
@@ -144,6 +147,8 @@ class ExportRow:
     category_name: str | None
     milestone_name: str | None
     seconds: int
+    project_path: str | None = None
+    """プロジェクトの道筋（「親 / 子」）。未分類のタスク・タスク外は None。"""
 
 
 def _ratio(part: int, whole: int) -> float | None:

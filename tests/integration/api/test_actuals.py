@@ -398,6 +398,7 @@ def test_export_writes_period_day_task_and_hours(client) -> None:
         "milestone",
         "hours",
         "seconds",
+        "project",
     ]
     assert rows[1:] == [
         [
@@ -410,6 +411,7 @@ def test_export_writes_period_day_task_and_hours(client) -> None:
             "",
             "1.25",
             "4500",
+            "",
         ],
         [
             "2026-09-16",
@@ -421,6 +423,7 @@ def test_export_writes_period_day_task_and_hours(client) -> None:
             "",
             "0.50",
             "1800",
+            "",
         ],
     ]
 
@@ -430,5 +433,5 @@ def test_export_writes_period_day_task_and_hours(client) -> None:
     )
     tracked_rows = list(csv.reader(io.StringIO(tracked.text.lstrip("﻿"))))
     assert tracked_rows[1:] == [
-        ["2026-09-16", "2026-09-30", "2026-09-16", "", "", "", "", "0.33", "1200"],
+        ["2026-09-16", "2026-09-30", "2026-09-16", "", "", "", "", "0.33", "1200", ""],
     ]

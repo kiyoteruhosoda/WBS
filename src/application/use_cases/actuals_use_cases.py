@@ -12,6 +12,10 @@
 日付はすべて利用者のタイムゾーン。数えるのは本人の予定・打刻・実績だけ。
 どれも ``project_id`` で、そのプロジェクトと子孫のタスクの分だけに絞れる（タスク外の時間は
 どのプロジェクトにも属さないので、絞ると数えない。ADR-0024）。
+
+確定実績には、タスクの無いプロジェクトだけの時間（``project_work_logs``。Tracker で締めた時間、ADR-0064）も
+入る。期間の確定実績・プロジェクト別の積み上げ（そのプロジェクトの枝へ）・書き出しに数え、タスクごとの表と
+ガントには出ない（タスクが無いため）。
 """
 
 from __future__ import annotations
@@ -45,6 +49,7 @@ from src.domain.repositories.category_repository import CategoryRepository
 from src.domain.repositories.closing_period_repository import ClosingPeriodRepository
 from src.domain.repositories.milestone_repository import MilestoneRepository
 from src.domain.repositories.project_repository import ProjectRepository
+from src.domain.repositories.project_work_log_repository import ProjectWorkLogRepository
 from src.domain.repositories.task_repository import TaskRepository
 from src.domain.repositories.time_entry_repository import TimeEntryRepository
 from src.domain.repositories.work_break_repository import WorkBreakRepository
@@ -84,6 +89,7 @@ class ActualsUseCases:
         projects: ProjectRepository,
         occurrences: OccurrenceSource,
         breaks: WorkBreakRepository | None = None,
+        project_work_logs: ProjectWorkLogRepository | None = None,
         now: Callable[[], datetime] | None = None,
         tracked_time_moved: bool = False,
         calendar_moved: bool = False,
@@ -93,6 +99,8 @@ class ActualsUseCases:
         # （凍った値を今のものに見せない）。確定した実績（work_logs）はそのまま
         # 休み（ADR-0048）。打刻の時間から重なる分を引く。None は「休みを繋がない」（試験）
         self._breaks = breaks
+        # プロジェクトだけの確定実績（ADR-0064）。None は「繋がない」（試験）
+        self._project_work_logs = project_work_logs
         self._tasks = tasks
         self._task_repo = task_repository
         self._work_logs = work_logs
@@ -220,6 +228,9 @@ class ActualsUseCases:
         planned = self._ledger(TimeSource.PLANNED, *window)
         tracked = self._ledger(TimeSource.TRACKED, *window)
         confirmed = self._ledger(TimeSource.CONFIRMED, *window)
+        project_hours = self._project_hours(
+            user_id, window_first, window_last, project_id, unclassified
+        )
         closed_days = (
             self._closing_periods.list_first_days(user_id)
             if unit is ReportPeriodUnit.CLOSING
@@ -236,7 +247,8 @@ class ActualsUseCases:
                     planned_off_task_seconds=planned.total(p, task_only=False),
                     tracked_task_seconds=tracked.total(p, task_only=True),
                     tracked_off_task_seconds=tracked.total(p, task_only=False),
-                    confirmed_seconds=confirmed.total(p),
+                    confirmed_seconds=confirmed.total(p)
+                    + sum(sec for _, day, sec in project_hours if p.contains(day)),
                 )
                 for p in periods
             ],
@@ -302,9 +314,30 @@ class ActualsUseCases:
             key = f"{group_by.value}:{group_id}"
             return key if group_id is not None and key in known_keys else UNGROUPED_GROUP
 
-        rows = [
-            BreakdownPeriod(period=p, seconds_by_group=ledger.grouped(p, group_of)) for p in periods
-        ]
+        project_hours = (
+            self._project_hours(
+                user_id, periods[0].first_day, periods[-1].last_day, project_id, unclassified
+            )
+            if source is TimeSource.CONFIRMED
+            else []
+        )
+
+        def project_group_of(hours_project_id: int) -> str:
+            # プロジェクトだけの時間にカテゴリ・マイルストーンは無い（「分類なし」に入れる）
+            if group_by is not BreakdownGroupBy.PROJECT:
+                return UNGROUPED_GROUP
+            group_id = tree.group_under(hours_project_id, project_id)
+            key = f"{group_by.value}:{group_id}"
+            return key if group_id is not None and key in known_keys else UNGROUPED_GROUP
+
+        rows = []
+        for p in periods:
+            seconds_by_group = ledger.grouped(p, group_of)
+            for hours_project_id, day, seconds in project_hours:
+                if p.contains(day):
+                    key = project_group_of(hours_project_id)
+                    seconds_by_group[key] = seconds_by_group.get(key, 0) + seconds
+            rows.append(BreakdownPeriod(period=p, seconds_by_group=seconds_by_group))
         used = {key for row in rows for key in row.seconds_by_group}
         groups = [g for g in known if g.key in used]
         for key in (UNGROUPED_GROUP, UNASSIGNED_GROUP):
@@ -340,6 +373,7 @@ class ActualsUseCases:
         ledger = self._ledger(source, user_id, first_day, last_day, owned, scope)
         category_names = {c.id: c.name for c in self._categories.find_all(user_id)}
         milestone_names = {m.id: m.name for m in self._milestones.find_all(user_id)}
+        tree = ProjectTree(self._projects.find_all(user_id))
         rows: list[ExportRow] = []
         for task_id, day, seconds in ledger.entries():
             task = owned.get(task_id) if task_id is not None else None
@@ -361,8 +395,28 @@ class ActualsUseCases:
                         else None
                     ),
                     seconds=seconds,
+                    project_path=tree.path(task.project_id) if task is not None else None,
                 )
             )
+        if source is TimeSource.CONFIRMED:
+            for hours_project_id, day, seconds in self._project_hours(
+                user_id, first_day, last_day, project_id, unclassified
+            ):
+                half = HalfMonthPeriod.containing(day)
+                rows.append(
+                    ExportRow(
+                        period=ReportPeriod(half.first_day, half.last_day),
+                        work_date=day,
+                        task_id=None,
+                        task_title=None,
+                        category_name=None,
+                        milestone_name=None,
+                        seconds=seconds,
+                        project_path=tree.path(hours_project_id),
+                    )
+                )
+            # 日の順（同じ日はタスク → タスク外 → プロジェクトだけの順。sort は安定）
+            rows.sort(key=lambda row: row.work_date)
         return rows
 
     # ── 内側 ────────────────────────────────────────────────────────────
@@ -393,6 +447,26 @@ class ActualsUseCases:
         if not projects:
             raise NotFoundError("Project", project_id)
         return {task_id for task_id, task in owned.items() if task.project_id in projects}
+
+    def _project_hours(
+        self,
+        user_id: int,
+        first_day: date,
+        last_day: date,
+        project_id: int | None,
+        unclassified: bool,
+    ) -> list[tuple[int, date, int]]:
+        """プロジェクトだけの確定実績（プロジェクト, 日, 秒）。``project_id`` なら子孫まで、未分類なら無い。"""
+        if self._project_work_logs is None or unclassified:
+            return []
+        scope = (
+            set(self._projects.subtree_ids(user_id, project_id)) if project_id is not None else None
+        )
+        return [
+            (log.project_id, log.work_date, log.seconds)
+            for log in self._project_work_logs.find_for_user(user_id, first_day, last_day)
+            if log.seconds > 0 and (scope is None or log.project_id in scope)
+        ]
 
     def _latest_closed(self, user_id: int) -> ClosingPeriod | None:
         first_days = self._closing_periods.list_first_days(user_id)
