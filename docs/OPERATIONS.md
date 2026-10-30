@@ -134,11 +134,11 @@ OIDC_LINK_BY_EMAIL=true
 
 ## いちばん上のプロジェクトを作れる人を足したい・外したいとき
 
-相手に 1 度 WBS へログインしてもらってから、api の中で付ける（ADR-0065）。
+相手に 1 度 WBS へログインしてもらってから、api の中で付ける（ADR-0065）。⚠ 中の素の `python` にはアプリの部品が無いので `.venv/bin/python` で流す。
 
 ```bash
-kubectl -n wbs-prod exec deploy/api -- python scripts/grant_project_creator.py <メール>            # 付ける
-kubectl -n wbs-prod exec deploy/api -- python scripts/grant_project_creator.py <メール> --revoke   # 外す
+kubectl -n wbs-prod exec deploy/api -- sh -c 'cd /app && .venv/bin/python scripts/grant_project_creator.py <メール>'            # 付ける
+kubectl -n wbs-prod exec deploy/api -- sh -c 'cd /app && .venv/bin/python scripts/grant_project_creator.py <メール> --revoke'   # 外す
 ```
 
 外しても、もう作った根の管理者のまま。根を手放させたいときは、その根のメンバーの画面で管理者を替える。
