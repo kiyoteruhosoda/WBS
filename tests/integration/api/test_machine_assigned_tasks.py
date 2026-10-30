@@ -16,6 +16,7 @@ from tests.integration.api.test_auth import (  # noqa: F401 - fixture を借り�
     sign_in,
     sso_provider,
 )
+from tests.integration.api.test_project_creators import allow_project_creation
 
 AUDIENCE = "api://wbs"
 TRACKER_MACHINE = "tracker-machine"
@@ -69,8 +70,9 @@ def _as(token: str, subject: str = "taro") -> dict:
     return {"headers": {"Authorization": f"Bearer {token}"}, "params": {"issuer": ISSUER, "subject": subject}}
 
 
-def test_returns_open_tasks_assigned_to_the_user(client) -> None:
+def test_returns_open_tasks_assigned_to_the_user(client, database_path) -> None:
     sign_in(client, "taro-code")
+    allow_project_creation(database_path, "taro@example.com")
     root = client.post("/api/projects", json={"name": "案件"}).json()
     child = client.post("/api/projects", json={"name": "設計", "parent_project_id": root["id"]}).json()
     mine = client.post("/api/tasks", json={"title": "画面", "project_id": child["id"]}).json()

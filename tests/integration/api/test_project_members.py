@@ -11,6 +11,7 @@ from collections.abc import Callable, Iterator
 import pytest
 
 from src.application.dto.auth_dto import AuthenticatedUserDTO
+from src.application.use_cases.project_creator_use_cases import ProjectCreatorUseCases
 from src.infrastructure.auth.auth_settings import SINGLE_USER_ID
 from src.infrastructure.database.models import UserModel
 from src.presentation.api.dependencies import get_current_user, get_db
@@ -246,9 +247,11 @@ def test_moving_projects_keeps_or_hands_over_the_members(client, as_, other_id) 
     assert "ひとりのタスク" in _titles(client)
 
 
-def test_a_member_cannot_move_someone_elses_top_project(client, as_, other_id) -> None:
+def test_a_member_cannot_move_someone_elses_top_project(client, db, as_, other_id) -> None:
     team = _project(client, "チーム")
     client.post(f"/api/projects/{team['id']}/members", json={"user_id": other_id})
+    # 仲間も根を作れる人にする（ADR-0065）
+    ProjectCreatorUseCases(db).allow(OTHER_EMAIL)
     as_.other()
     own = _project(client, "仲間の根")
     # 仲間は自分の根を「チーム」へ入れられる（自分が管理者）

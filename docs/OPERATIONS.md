@@ -132,6 +132,17 @@ OIDC_LINK_BY_EMAIL=true
 ⚠ **移行が済んだら戻す。** 結び付いた後の人はこの枝を通らないので、戻しても入れなくなる人は
 出ない。
 
+## いちばん上のプロジェクトを作れる人を足したい・外したいとき
+
+相手に 1 度 WBS へログインしてもらってから、api の中で付ける（ADR-0065）。
+
+```bash
+kubectl -n wbs-prod exec deploy/api -- python scripts/grant_project_creator.py <メール>            # 付ける
+kubectl -n wbs-prod exec deploy/api -- python scripts/grant_project_creator.py <メール> --revoke   # 外す
+```
+
+外しても、もう作った根の管理者のまま。根を手放させたいときは、その根のメンバーの画面で管理者を替える。
+
 ## PWA のアイコンを変えたいとき
 
 1. `scripts/generate_pwa_icons.py` の配色（`GRADIENT_*`）か図柄（`MARK_BOXES`）を直す

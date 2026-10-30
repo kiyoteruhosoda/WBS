@@ -22,6 +22,10 @@ class UserModel(Base):
     timezone: Mapped[str] = mapped_column(sa.String(64), default="Asia/Tokyo", nullable=False)
     language: Mapped[str] = mapped_column(sa.String(8), default="ja", nullable=False)
     is_active: Mapped[bool] = mapped_column(sa.Boolean, default=True, nullable=False)
+    #: いちばん上のプロジェクトを作れるか（ADR-0065）
+    can_create_projects: Mapped[bool] = mapped_column(
+        sa.Boolean, nullable=False, default=False, server_default=sa.false()
+    )
     created_at: Mapped[datetime] = mapped_column(sa.DateTime, default=utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(sa.DateTime, default=utcnow, onupdate=utcnow, nullable=False)
 

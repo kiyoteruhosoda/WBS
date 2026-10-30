@@ -26,3 +26,5 @@ class AuthenticatedUserDTO:
     display_name: str
     timezone: str
     language: str
+    #: いちばん上のプロジェクトを作れるか（画面がボタンを出すか決める。確かめはサーバーが DB で行う。ADR-0065）
+    can_create_projects: bool = False

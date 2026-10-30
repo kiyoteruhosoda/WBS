@@ -20,6 +20,8 @@ class UserAccount:
     timezone: str = DEFAULT_TIMEZONE
     language: str = DEFAULT_LANGUAGE
     is_active: bool = True
+    #: いちばん上のプロジェクトを作れるか（ADR-0065）。付け外しは scripts/grant_project_creator.py
+    can_create_projects: bool = False
     identities: list[FederatedIdentity] = field(default_factory=list)
     created_at: datetime | None = None
     updated_at: datetime | None = None

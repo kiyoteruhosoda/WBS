@@ -10,7 +10,11 @@ from src.application.dto.project_dto import CreateProjectDTO, MoveProjectDTO, Up
 from src.application.dto.unset import UNSET
 from src.application.use_cases.project_membership import ProjectMembership
 from src.domain.entities.project import Project, project_code, project_name
-from src.domain.exceptions import ProjectCycleError, ProjectNotEmptyError
+from src.domain.exceptions import (
+    ProjectCreatorRequiredError,
+    ProjectCycleError,
+    ProjectNotEmptyError,
+)
 from src.domain.services.project_calendar import layer_calendar_days
 from src.domain.services.project_tree import ProjectTree
 from src.domain.value_objects.project_role import ProjectRole
@@ -23,6 +27,7 @@ from src.infrastructure.repositories.task_repository import SqlAlchemyTaskReposi
 from src.infrastructure.repositories.team_calendar_repository import (
     SqlAlchemyTeamCalendarRepository,
 )
+from src.infrastructure.repositories.user_account_repository import SqlAlchemyUserAccountRepository
 
 
 @dataclass(frozen=True)
@@ -41,6 +46,7 @@ class ProjectUseCases:
         self._session = session
         self._repo = SqlAlchemyProjectRepository(session)
         self._team_calendar = SqlAlchemyTeamCalendarRepository(session)
+        self._users = SqlAlchemyUserAccountRepository(session)
         self._membership = ProjectMembership(
             projects=self._repo,
             tasks=SqlAlchemyTaskRepository(session),
@@ -69,6 +75,9 @@ class ProjectUseCases:
     def create_project(self, dto: CreateProjectDTO) -> ProjectView:
         if dto.parent_project_id is not None:
             self._membership.visible_project(dto.user_id, dto.parent_project_id)
+        else:
+            # 新しい根を作ると作った人が管理者になるので、作れる人を絞る（ADR-0065）
+            self._require_project_creator(dto.user_id)
         tree = self._membership.tree(dto.user_id)
         project = Project(
             id=None,
@@ -83,7 +92,7 @@ class ProjectUseCases:
         )
         saved = self._repo.save(project)
         if saved.parent_project_id is None and saved.id is not None:
-            # 新しい根は作った人が管理者（ADR-0055 決定 6）
+            # 新しい根は作った人が管理者（ADR-0055 決定 6。作れる人は ADR-0065 で絞った）
             self._membership.make_manager(dto.user_id, saved.id)
         self._session.commit()
         return self.get_project(saved.id or 0, dto.user_id)
@@ -156,6 +165,11 @@ class ProjectUseCases:
             raise ProjectNotEmptyError()
         self._repo.delete(project_id)
         self._session.commit()
+
+    def _require_project_creator(self, user_id: int) -> None:
+        user = self._users.find_by_id(user_id)
+        if user is None or not user.can_create_projects:
+            raise ProjectCreatorRequiredError()
 
     def _copy_team_calendar(self, from_root_id: int, lineage: list[int], to_project_id: int) -> None:
         """下のプロジェクトを根へ出すとき、元の根の曜日と先祖から引き継いでいた休日・稼働日を写す（見込みを変えない）。"""

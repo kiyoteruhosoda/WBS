@@ -20,6 +20,7 @@ from tests.integration.api.test_machine_assigned_tasks import (
     _machine_claims,
     _make_app,
 )
+from tests.integration.api.test_project_creators import allow_project_creation
 
 URL = "/api/machine/projects"
 
@@ -34,8 +35,9 @@ def client(database_path, monkeypatch, sso_provider):  # noqa: F811
         yield test_client
 
 
-def test_returns_open_project_paths_in_tree_order(client) -> None:
+def test_returns_open_project_paths_in_tree_order(client, database_path) -> None:
     sign_in(client, "taro-code")
+    allow_project_creation(database_path, "taro@example.com")
     root = client.post("/api/projects", json={"name": "案件"}).json()
     design = client.post(
         "/api/projects", json={"name": "設計", "parent_project_id": root["id"], "code": "AC-1"}
@@ -55,8 +57,9 @@ def test_returns_open_project_paths_in_tree_order(client) -> None:
     ]
 
 
-def test_other_peoples_projects_are_not_shown(client) -> None:
+def test_other_peoples_projects_are_not_shown(client, database_path) -> None:
     sign_in(client, "taro-code")
+    allow_project_creation(database_path, "taro@example.com")
     client.post("/api/projects", json={"name": "太郎の"})
     client.cookies.clear()
     sign_in(client, "hanako-code")

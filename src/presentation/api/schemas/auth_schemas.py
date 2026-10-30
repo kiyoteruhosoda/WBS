@@ -18,6 +18,8 @@ class CurrentUserResponse(BaseModel):
     display_name: str
     timezone: str
     language: str
+    #: いちばん上のプロジェクトを作れるか（ADR-0065）
+    can_create_projects: bool = False
 
 
 class LogoutResponse(BaseModel):

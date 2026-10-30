@@ -163,6 +163,7 @@ def get_current_user_profile(current_user: CurrentUserDep) -> CurrentUserRespons
         display_name=current_user.display_name,
         timezone=current_user.timezone,
         language=current_user.language,
+        can_create_projects=current_user.can_create_projects,
     )
 
 
