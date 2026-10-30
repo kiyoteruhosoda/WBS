@@ -64,8 +64,11 @@ def create_project(body: ProjectCreateRequest, db: DbDep, current_user: CurrentU
 
 @router.get("/people", response_model=list[PersonResponse])
 def list_people(uc: ProjectMemberUseCasesDep, current_user: CurrentUserDep) -> list[PersonResponse]:
-    """メンバー・担当者に選べる人（WBS に 1 度でもログインし、止まっていない人。ADR-0055 決定 5）。"""
-    return [PersonResponse.from_person(p) for p in uc.candidates()]
+    """メンバー・担当者に選べる人（WBS に 1 度でもログインし、止まっていない人。ADR-0055 決定 5）。
+
+    管理者・印のある人には全員、ほかの人には同じ木に居る人だけ（ADR-0067）。
+    """
+    return [PersonResponse.from_person(p) for p in uc.candidates(current_user.user_id)]
 
 
 @router.get("/{project_id}", response_model=ProjectResponse)

@@ -180,6 +180,43 @@ def test_people_lists_active_users(client, db, other_id) -> None:
     assert stopped.id not in ids
 
 
+def test_people_outside_your_trees_are_hidden_unless_you_manage(client, db, as_, other_id) -> None:
+    """管理者でも印のある人でもない人には、同じ木に居ない人を返さない（task #767 / ADR-0067）。"""
+    outsider = UserModel(email="outsider@example.com", display_name="よその人", timezone="Asia/Tokyo")
+    db.add(outsider)
+    db.commit()
+
+    # どの木にも居ない仲間には自分だけ
+    as_.other()
+    people = client.get("/api/projects/people").json()
+    assert [p["id"] for p in people] == [other_id]
+    assert "outsider@example.com" not in {p["email"] for p in people}
+
+    # 同じ木のメンバーになると、その木の人は見えるが、よその人は見えない
+    as_.me()
+    root = _project(client, "根")
+    client.post(f"/api/projects/{root['id']}/members", json={"user_id": other_id})
+    as_.other()
+    people = client.get("/api/projects/people").json()
+    assert {p["id"] for p in people} == {SINGLE_USER_ID, other_id}
+    assert "outsider@example.com" not in {p["email"] for p in people}
+
+    # 管理者になると全員（メンバーを足すのに要る）
+    as_.me()
+    client.put(f"/api/projects/{root['id']}/members/{other_id}", json={"role": "manager"})
+    as_.other()
+    assert outsider.id in {p["id"] for p in client.get("/api/projects/people").json()}
+
+
+def test_people_with_the_creator_mark_see_everyone(client, db, as_, other_id) -> None:
+    outsider = UserModel(email="outsider@example.com", display_name="よその人", timezone="Asia/Tokyo")
+    db.add(outsider)
+    db.commit()
+    ProjectCreatorUseCases(db).allow(OTHER_EMAIL)
+    as_.other()
+    assert outsider.id in {p["id"] for p in client.get("/api/projects/people").json()}
+
+
 def test_assignee_defaults_to_the_creator_and_must_be_a_member(client, as_, other_id) -> None:
     root = _project(client, "根")
     task = _task(client, "設計", project_id=root["id"])
