@@ -146,3 +146,45 @@ def test_content_that_is_not_icalendar_is_refused(content: str) -> None:
     with pytest.raises(CalendarFeedError) as caught:
         _parse(content)
     assert caught.value.reason == FeedFailure.NOT_ICALENDAR
+
+
+# --- 展開の前に数えて断る（nolumiatask #748） -------------------------------------------------
+
+SECONDLY = """BEGIN:VCALENDAR
+VERSION:2.0
+BEGIN:VEVENT
+UID:flood@example.test
+DTSTART:20261001T000000Z
+DTEND:20261001T000001Z
+RRULE:FREQ=SECONDLY
+SUMMARY:flood
+END:VEVENT
+END:VCALENDAR
+"""
+
+
+def test_a_secondly_rule_is_refused_before_expanding() -> None:
+    """1 行の FREQ=SECONDLY は期間の 1 か月で 260 万回。作る前に断る（作ると 512Mi を超える）。"""
+    started = datetime.now()
+    with pytest.raises(CalendarFeedError) as caught:
+        PARSER.parse(SECONDLY.encode(), default_time_zone="Asia/Tokyo", max_occurrences=5000, **WINDOW)
+    assert caught.value.reason is FeedFailure.TOO_MANY_EVENTS
+    assert (datetime.now() - started).total_seconds() < 5
+
+
+def test_many_series_are_summed() -> None:
+    daily = "\n".join(
+        f"BEGIN:VEVENT\nUID:d{n}@example.test\nDTSTART;VALUE=DATE:20261001\nRRULE:FREQ=DAILY\nSUMMARY:d{n}\nEND:VEVENT"
+        for n in range(4)
+    )
+    text = f"BEGIN:VCALENDAR\nVERSION:2.0\n{daily}\nEND:VCALENDAR\n".encode()
+    # 4 本 × 31 日 = 124 回
+    assert len(PARSER.parse(text, default_time_zone="Asia/Tokyo", max_occurrences=124, **WINDOW)) == 124
+    with pytest.raises(CalendarFeedError):
+        PARSER.parse(text, default_time_zone="Asia/Tokyo", max_occurrences=123, **WINDOW)
+
+
+def test_the_limit_does_not_change_an_ordinary_feed() -> None:
+    assert _parse(GOOGLE) == PARSER.parse(
+        GOOGLE.encode(), default_time_zone="Asia/Tokyo", max_occurrences=5000, **WINDOW
+    )
