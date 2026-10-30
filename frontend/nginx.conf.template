@@ -13,10 +13,33 @@
 
 resolver ${WBS_RESOLVER} valid=10s ipv6=off;
 
+# ログイン前の口だけ IP ごとに絞る（nolumiatask #749。手本は deploy-repo の front nginx）。
+# ⚠ 鍵は $remote_addr ではなく Cloudflare が付ける CF-Connecting-IP。$remote_addr は docker の
+#   ゲートウェイに化けるので、それで数えると全員で 1 つの上限を分け合う。外から偽れない
+#   （Cloudflare が上書きする）。宅内から直接来る要求にはこの頭が無く、数えない。
+limit_req_zone $http_cf_connecting_ip zone=auth_ip:1m rate=10r/m;
+
 server {
     listen 80;
     root /usr/share/nginx/html;
     index index.html;
+
+    # SSO の開始。呼ぶたびに DB へ 1 行書くので、1 IP あたり毎分 10 回まで。
+    # 連打は 11 回まで通り、そこから先は即 429 で、6 秒ごとに 1 回分戻る。
+    # ⚠ 末尾の `$` があるので綴りが違う口はここに来ない。
+    location ~ ^/api/auth/login$ {
+        limit_req zone=auth_ip burst=10 nodelay;
+        limit_req_status 429;
+
+        set $api_upstream http://${WBS_API_HOST}:${WBS_API_PORT};
+        proxy_pass $api_upstream;
+
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
 
     location /api/ {
         # ⚠ 値にパスを含めないこと。`$upstream/` のように書くと location の /api/ が
