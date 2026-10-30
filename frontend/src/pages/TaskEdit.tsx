@@ -12,6 +12,7 @@ import { getWorklogs, createWorklog, deleteWorklog } from '../api/worklogs';
 import { getCategories } from '../api/categories';
 import { getMilestones } from '../api/milestones';
 import { getProjectMembers, projectMembersKey } from '../api/projects';
+import { isForbidden } from '../api/forbidden';
 import type { Milestone, Task, TaskStatus, DependencyType } from '../types';
 import { formatDate, formatHours, priorityBand, priorityBandValue, todayDate } from '../utils/format';
 import type { PriorityBand } from '../utils/format';
@@ -328,7 +329,7 @@ const TaskEdit: React.FC = () => {
           <Tab label={t('taskEdit.tabDependencies')} sx={{ minHeight: 40 }} />
         </Tabs>
       )}
-      {save.isError && <Alert severity="error" sx={{ mb: '14px' }}>{t('taskEdit.saveError')}</Alert>}
+      {save.isError && <Alert severity="error" sx={{ mb: '14px' }}>{isForbidden(save.error) ? t('move.crossTreeManagerOnly') : t('taskEdit.saveError')}</Alert>}
       {task?.archived_at && <Alert severity="info" sx={{ mb: '14px' }}>{t('taskRemoval.archivedNotice')}</Alert>}
 
       {tab === 0 && (

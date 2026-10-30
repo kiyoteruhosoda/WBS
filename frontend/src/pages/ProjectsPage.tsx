@@ -6,6 +6,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { isAxiosError } from 'axios';
+import { isForbidden } from '../api/forbidden';
 import {
   Alert, Box, Button, Chip, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle,
   FormControlLabel, IconButton, ListItemText, Menu, MenuItem, Switch, TextField, Tooltip,
@@ -95,7 +96,7 @@ const ProjectsPage: React.FC = () => {
   const [showNameError, setShowNameError] = useState(false);
   const [menu, setMenu] = useState<{ anchor: HTMLElement; node: ProjectNode } | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Project | null>(null);
-  const [moveError, setMoveError] = useState(false);
+  const [moveError, setMoveError] = useState<'failed' | 'forbidden' | null>(null);
   // メンバーの窓（ADR-0055。どの段から開いても根の名簿）
   const [membersOf, setMembersOf] = useState<Project | null>(null);
   // 稼働日と休み（task #554、ADR-0058）
@@ -141,8 +142,8 @@ const ProjectsPage: React.FC = () => {
   const move = useMutation({
     mutationFn: ({ id, parent, position }: { id: number; parent: number | null; position: number }) =>
       moveProject(id, parent, position),
-    onSuccess: () => { setMoveError(false); invalidate(); },
-    onError: () => setMoveError(true),
+    onSuccess: () => { setMoveError(null); invalidate(); },
+    onError: (error) => setMoveError(isForbidden(error) ? 'forbidden' : 'failed'),
   });
 
   const setStatus = useMutation({
@@ -202,7 +203,7 @@ const ProjectsPage: React.FC = () => {
 
       {isLoading && <Box sx={{ display: 'flex', justifyContent: 'center', mt: 6 }}><CircularProgress /></Box>}
       {error && <Alert severity="error">{t('common.loadError')}</Alert>}
-      {moveError && <Alert severity="error" sx={{ mb: '12px' }} onClose={() => setMoveError(false)}>{t('project.moveError')}</Alert>}
+      {moveError && <Alert severity="error" sx={{ mb: '12px' }} onClose={() => setMoveError(null)}>{moveError === 'forbidden' ? t('move.crossTreeManagerOnly') : t('project.moveError')}</Alert>}
 
       {data && (
         <Box
@@ -339,7 +340,7 @@ const ProjectsPage: React.FC = () => {
           {dialog?.editing ? t('project.editTitle') : t('project.newTitle')}
         </DialogTitle>
         <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: '18px', pt: '8px !important' }}>
-          {save.isError && <Alert severity="error">{t('project.saveError')}</Alert>}
+          {save.isError && <Alert severity="error">{isForbidden(save.error) ? t('move.crossTreeManagerOnly') : t('project.saveError')}</Alert>}
           <TextField
             autoFocus fullWidth size="small" label={t('project.name')} value={form.name}
             error={nameError} helperText={nameError ? t('project.nameRequired') : undefined}

@@ -7,6 +7,7 @@ import {
   TableRow, TextField, MenuItem,
 } from '@mui/material';
 import { getScopedMilestones, createMilestone, updateMilestone, deleteMilestone } from '../api/milestones';
+import { isForbidden } from '../api/forbidden';
 import { pickableProjects, scopeParams } from '../projects/projectScope';
 import { useProjectScope } from '../projects/useProjectScope';
 import type { Milestone } from '../types';
@@ -178,7 +179,7 @@ const MilestonesPage: React.FC = () => {
           {editing ? t('milestone.editTitle') : t('milestone.newTitle')}
         </DialogTitle>
         <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: '18px', pt: '8px !important' }}>
-          {save.isError && <Alert severity="error">{t('milestone.saveError')}</Alert>}
+          {save.isError && <Alert severity="error">{isForbidden(save.error) ? t('move.crossTreeManagerOnly') : t('milestone.saveError')}</Alert>}
           <TextField
             autoFocus fullWidth size="small" label={t('milestone.name')}
             value={form.name}

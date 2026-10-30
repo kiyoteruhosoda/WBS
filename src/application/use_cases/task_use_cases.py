@@ -239,6 +239,9 @@ class TaskUseCases:
 
         previous_project = task.project_id
         task.project_id = self._project_for_update(task, user_id, dto)
+        if task.project_id != previous_project:
+            # 別の木へ持ち出すのは、元と先の両方の管理者だけ（ADR-0066）。親を替えて移すときも同じ
+            self._membership.require_manager_to_cross(user_id, previous_project, task.project_id)
         previous_milestone = task.milestone_id
         if dto.milestone_id_given or dto.milestone_id is not None:
             task.milestone_id = dto.milestone_id
@@ -283,6 +286,10 @@ class TaskUseCases:
                 "a subtask follows its parent task; move the parent instead "
                 f"(task ids: {', '.join(str(i) for i in selection.stranded)})"
             )
+        for root in selection.roots:
+            # 別の木へ持ち出すのは、元と先の両方の管理者だけ（ADR-0066）。1 つでも断れば何も変えない
+            if live[root].project_id != project_id:
+                self._membership.require_manager_to_cross(user_id, live[root].project_id, project_id)
         moved: list[int] = []
         for root in selection.roots:
             if live[root].project_id == project_id:

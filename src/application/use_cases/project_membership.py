@@ -73,6 +73,22 @@ class ProjectMembership:
         if member is None or not member.is_manager:
             raise ProjectManagerRequiredError()
 
+    def require_manager_to_cross(
+        self, user_id: int, from_project_id: int | None, to_project_id: int | None
+    ) -> None:
+        """木（根）をまたいで移すなら、元と先の両方の根の管理者でなければ 403（ADR-0066）。
+
+        同じ木の中の移動はメンバーのまま。未分類（``None``）は自分のものなので、その側は確かめない。
+        """
+        tree = self.tree(user_id)
+        from_root = None if from_project_id is None else tree.root_of(from_project_id)
+        to_root = None if to_project_id is None else tree.root_of(to_project_id)
+        if from_root == to_root:
+            return
+        for root in (from_root, to_root):
+            if root is not None:
+                self.require_manager(user_id, root)
+
     def scope_ids(self, user_id: int, project_id: int) -> list[int]:
         """絞り込みに使う id（自分と子孫）。見えない・無いプロジェクトは 404。"""
         ids = self._projects.subtree_ids(user_id, project_id)
