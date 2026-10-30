@@ -61,6 +61,9 @@ class MilestoneUseCases:
         if dto.project_id is not UNSET:
             if dto.project_id is not None:
                 self._membership.visible_project(user_id, dto.project_id)
+            if moved:
+                # 別の木へ持ち出すのは、元と先の両方の管理者だけ（ADR-0066）
+                self._membership.require_manager_to_cross(user_id, m.project_id, dto.project_id)
             m.project_id = dto.project_id
         saved = self._repo.save(m)
         if moved:

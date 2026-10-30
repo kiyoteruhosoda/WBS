@@ -254,10 +254,10 @@ def test_a_member_cannot_move_someone_elses_top_project(client, db, as_, other_i
     ProjectCreatorUseCases(db).allow(OTHER_EMAIL)
     as_.other()
     own = _project(client, "仲間の根")
-    # 仲間は自分の根を「チーム」へ入れられる（自分が管理者）
+    # 仲間は自分の根でも「チーム」へは入れられない（チームの管理者ではない。ADR-0066）
     assert client.post(
         f"/api/projects/{own['id']}/move", json={"parent_project_id": team["id"]}
-    ).status_code == 200
+    ).status_code == 403
     # でも「チーム」を自分の根の下へ入れることはできない（管理者ではない）
     another = _project(client, "もう一つ")
     assert client.post(

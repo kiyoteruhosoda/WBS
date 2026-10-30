@@ -123,6 +123,9 @@ class ProjectUseCases:
         if tree.would_cycle(project_id, new_parent):
             raise ProjectCycleError()
         old_parent = project.parent_project_id
+        if new_parent is not None:
+            # 別の木の下へ入れるのは、元と先の両方の管理者だけ（ADR-0066）。下のものを根へ出すのは木を変えない
+            self._membership.require_manager_to_cross(user_id, project_id, new_parent)
         if old_parent is None and new_parent is not None:
             # 根を他の下へ入れると、この木のメンバーは消え、移った先の木のメンバーに見える（ADR-0055 決定 6）
             self._membership.require_manager(user_id, project_id)

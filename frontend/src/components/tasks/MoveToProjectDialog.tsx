@@ -7,6 +7,7 @@ import {
 } from '@mui/material';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { moveTasksToProject } from '../../api/tasks';
+import { isForbidden } from '../../api/forbidden';
 import { useI18n } from '../../i18n';
 import { ds } from '../../theme';
 import { pickableProjects } from '../../projects/projectScope';
@@ -88,7 +89,7 @@ const MoveToProjectDialog: React.FC<Props> = ({ open, plan, projects, onClose, o
           )}
           <li>{t('taskList.moveMilestoneNote')}</li>
         </Box>
-        {move.isError && <Alert severity="error" sx={{ mt: '12px' }}>{t('taskList.moveFailed')}</Alert>}
+        {move.isError && <Alert severity="error" sx={{ mt: '12px' }}>{isForbidden(move.error) ? t('move.crossTreeManagerOnly') : t('taskList.moveFailed')}</Alert>}
       </DialogContent>
       <DialogActions>
         <Button onClick={close} disabled={move.isPending}>{t('taskList.cancel')}</Button>
