@@ -7,11 +7,11 @@ from sqlalchemy.orm import Session
 from src.application.dto.task_dto import CreateTaskDTO, UpdateTaskDTO
 from src.application.ports.scheduled_time_lookup import ScheduledTimeLookup
 from src.application.use_cases.completion_forecast_use_cases import CompletionForecastUseCases
+from src.application.use_cases.ownership import owned_by
 from src.application.use_cases.project_membership import ProjectMembership
 from src.application.user_clock import UserClock
 from src.domain.entities.project import Project
 from src.domain.entities.task import Task
-from src.application.use_cases.ownership import owned_by
 from src.domain.exceptions import ConflictError, NotFoundError, ValidationError
 from src.domain.repositories.milestone_repository import MilestoneRepository
 from src.domain.repositories.task_repository import TaskRepository
