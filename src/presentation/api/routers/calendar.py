@@ -30,6 +30,7 @@ from src.application.dto.calendar_event_dto import (
     UpdateRecurringSeriesCommand,
 )
 from src.application.dto.unset import UNSET, UnsetType
+from src.domain.exceptions import ValidationError
 from src.domain.value_objects.event_alarm import EventAlarm
 from src.presentation.api.dependencies import (
     AppOrWebUserDep,
@@ -74,6 +75,16 @@ def _alarm_input(
 # ── 引く ────────────────────────────────────────────────────────────────────
 
 
+#: 予定と回を 1 度に引ける期間（日）。画面が引くのは月の表示（約 6 週）まで。上限が無いと、ログインした人が
+#: 何十年分もの回を展開させられた（nolumiatask #748）。締め・実績など内部の展開には掛けない
+MAX_PERIOD_DAYS = 400
+
+
+def _check_period(from_date: dt.date, to_date: dt.date) -> None:
+    if (to_date - from_date).days >= MAX_PERIOD_DAYS:
+        raise ValidationError(f"the period must be at most {MAX_PERIOD_DAYS} days")
+
+
 @router.get("/occurrences", response_model=list[CalendarOccurrenceResponse])
 def list_occurrences(
     from_date: FromDate,
@@ -84,6 +95,7 @@ def list_occurrences(
         str | None, Query(description="閲覧者のタイムゾーン（IANA 名）。省くと利用者の設定")
     ] = None,
 ) -> list[CalendarOccurrenceResponse]:
+    _check_period(from_date, to_date)
     views = events.list_occurrence_views(
         current_user.user_id, from_date, to_date, time_zone or current_user.timezone
     )
@@ -124,6 +136,7 @@ def list_events(
     from_date: FromDate, to_date: ToDate, current_user: CurrentUserDep, events: CalendarEventUseCasesDep
 ) -> list[CalendarEventResponse]:
     """期間に回がありうる予定（粗い絞り込み。回そのものは ``/calendar/occurrences``）。"""
+    _check_period(from_date, to_date)
     found = events.find_by_period(current_user.user_id, from_date, to_date)
     return [CalendarEventResponse.from_event(e) for e in found]
 

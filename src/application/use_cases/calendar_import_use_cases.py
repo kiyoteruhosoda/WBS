@@ -265,6 +265,7 @@ class CalendarImportUseCases:
             from_date=today - timedelta(days=WINDOW_PAST_DAYS),
             to_date=today + timedelta(days=WINDOW_FUTURE_DAYS),
             default_time_zone=self._time_zone_of(user_id),
+            max_occurrences=MAX_OCCURRENCES,
         )
         if len(occurrences) > MAX_OCCURRENCES:
             raise CalendarFeedError(FeedFailure.TOO_MANY_EVENTS)
