@@ -25,6 +25,7 @@ from src.infrastructure.repositories.project_member_repository import (
 )
 from src.infrastructure.repositories.project_repository import SqlAlchemyProjectRepository
 from src.infrastructure.repositories.task_repository import SqlAlchemyTaskRepository
+from src.infrastructure.repositories.user_account_repository import SqlAlchemyUserAccountRepository
 
 
 @dataclass(frozen=True)
@@ -54,6 +55,7 @@ class ProjectMemberUseCases:
         self._session = session
         self._members = SqlAlchemyProjectMemberRepository(session)
         self._people = people
+        self._users = SqlAlchemyUserAccountRepository(session)
         self._membership = ProjectMembership(
             projects=SqlAlchemyProjectRepository(session),
             tasks=SqlAlchemyTaskRepository(session),
@@ -61,9 +63,25 @@ class ProjectMemberUseCases:
             members=self._members,
         )
 
-    def candidates(self) -> list[Person]:
-        """メンバー・担当者に選べる人（WBS に 1 度でもログインした人。ADR-0055 決定 5）。"""
-        return self._people.choosable()
+    def candidates(self, user_id: int) -> list[Person]:
+        """メンバー・担当者に選べる人（WBS に 1 度でもログインした人。ADR-0055 決定 5）。
+
+        全員を返すのは、どこかの木の管理者か、根を作れる印のある人だけ（メンバーを足すのに要る）。
+        ほかの人には、自分と同じ木に居る人（と自分）だけを返す（ADR-0067）。
+        """
+        people = self._people.choosable()
+        if self._may_see_everyone(user_id):
+            return people
+        mates = {user_id}
+        for root in self._membership.roles_of(user_id):
+            mates |= self._membership.member_ids(root)
+        return [p for p in people if p.id in mates]
+
+    def _may_see_everyone(self, user_id: int) -> bool:
+        if any(role is ProjectRole.MANAGER for role in self._membership.roles_of(user_id).values()):
+            return True
+        user = self._users.find_by_id(user_id)
+        return user is not None and user.can_create_projects
 
     def list_members(self, user_id: int, project_id: int) -> ProjectMembersView:
         root = self._root_of(user_id, project_id)
