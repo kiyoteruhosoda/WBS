@@ -1,3 +1,4 @@
+import hmac
 import os
 import signal
 from typing import Annotated
@@ -16,7 +17,7 @@ def _require_admin_token(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Admin endpoint is disabled. Set ADMIN_TOKEN env var to enable.",
         )
-    if x_admin_token != expected:
+    if x_admin_token is None or not hmac.compare_digest(x_admin_token.encode(), expected.encode()):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid admin token.",
