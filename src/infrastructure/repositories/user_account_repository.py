@@ -40,6 +40,7 @@ class SqlAlchemyUserAccountRepository(UserAccountRepository):
                 timezone=user.timezone,
                 language=user.language,
                 is_active=user.is_active,
+                can_create_projects=user.can_create_projects,
             )
             self._session.add(model)
             self._session.flush()
@@ -52,6 +53,7 @@ class SqlAlchemyUserAccountRepository(UserAccountRepository):
             model.timezone = user.timezone
             model.language = user.language
             model.is_active = user.is_active
+            model.can_create_projects = user.can_create_projects
             model.updated_at = utcnow()
         self._sync_identities(model.id, user.identities)
         self._session.commit()
@@ -89,6 +91,7 @@ class SqlAlchemyUserAccountRepository(UserAccountRepository):
             timezone=model.timezone,
             language=model.language,
             is_active=model.is_active,
+            can_create_projects=model.can_create_projects,
             identities=identities,
             created_at=model.created_at,
             updated_at=model.updated_at,

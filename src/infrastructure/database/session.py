@@ -33,8 +33,10 @@ def seed_default_user() -> None:
         result = session.execute(text("SELECT id FROM users WHERE id=1")).fetchone()
         if not result:
             session.execute(text(
-                "INSERT INTO users (id, email, display_name, timezone, language, is_active, created_at, updated_at) "
-                "VALUES (1, 'local@example.com', 'ローカルユーザー', 'Asia/Tokyo', 'ja', 1, datetime('now'), datetime('now'))"
+                "INSERT INTO users (id, email, display_name, timezone, language, is_active, can_create_projects,"
+                " created_at, updated_at) "
+                "VALUES (1, 'local@example.com', 'ローカルユーザー', 'Asia/Tokyo', 'ja', 1, 1,"
+                " datetime('now'), datetime('now'))"
             ))
             session.commit()
 

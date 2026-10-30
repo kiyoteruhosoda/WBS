@@ -268,6 +268,8 @@ export interface CurrentUser {
   display_name: string;
   timezone: string;
   language: string;
+  /** いちばん上のプロジェクトを作れるか（ADR-0065）。オフラインの控えには無いことがある */
+  can_create_projects?: boolean;
 }
 
 export interface LogoutResult {

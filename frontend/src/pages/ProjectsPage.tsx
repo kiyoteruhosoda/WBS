@@ -23,6 +23,7 @@ import {
 import { useProjects, useProjectScope } from '../projects/useProjectScope';
 import ProjectMembersDialog from '../components/ProjectMembersDialog';
 import ProjectCalendarDialog from '../components/ProjectCalendarDialog';
+import { useAuth } from '../auth/AuthProvider';
 
 interface FormData {
   name: string;
@@ -83,7 +84,10 @@ const ProjectsPage: React.FC = () => {
   const qc = useQueryClient();
   const { data, isLoading, error } = useProjects();
   const { setScope } = useProjectScope();
+  const { user, ssoEnabled } = useAuth();
   const projects = useMemo(() => data ?? [], [data]);
+  // いちばん上を作れるのは印のある人だけ（ADR-0065）。SSO の無い配備は 1 人だけで、その人は作れる
+  const canCreateTop = !ssoEnabled || Boolean(user?.can_create_projects);
 
   const [showArchived, setShowArchived] = useState(false);
   const [dialog, setDialog] = useState<{ editing: Project | null; parent: number | null } | null>(null);
@@ -172,6 +176,9 @@ const ProjectsPage: React.FC = () => {
   const parentOptions = editingId === null ? flattenTree(tree) : parentCandidates(projects, editingId);
 
   const openTasks = (p: Project) => { setScope(p.id); navigate('/tasks'); };
+  // 「新しいプロジェクト」の既定の親。いちばん上を作れない人は、入っている木の最初の根の下に作る
+  const firstRoot = projects.find((p) => p.parent_project_id === null && p.status === 'active') ?? null;
+  const newProjectParent = canCreateTop ? null : firstRoot?.id ?? null;
 
   return (
     <Box sx={{ maxWidth: 820 }}>
@@ -184,11 +191,14 @@ const ProjectsPage: React.FC = () => {
           />
         )}
         <Box sx={{ flex: 1 }} />
-        <Button variant="contained" startIcon={<PlusIcon size={16} />} onClick={() => setDialog({ editing: null, parent: null })} sx={{ px: '18px' }}>
-          {t('project.new')}
-        </Button>
+        {(canCreateTop || firstRoot !== null) && (
+          <Button variant="contained" startIcon={<PlusIcon size={16} />} onClick={() => setDialog({ editing: null, parent: newProjectParent })} sx={{ px: '18px' }}>
+            {t('project.new')}
+          </Button>
+        )}
       </Box>
       <Box sx={{ fontSize: 13, color: ds.textSub, mb: '14px' }}>{t('project.hint')}</Box>
+      {!canCreateTop && <Box sx={{ fontSize: 13, color: ds.textSub, mb: '14px' }}>{t('project.topNeedsCreator')}</Box>}
 
       {isLoading && <Box sx={{ display: 'flex', justifyContent: 'center', mt: 6 }}><CircularProgress /></Box>}
       {error && <Alert severity="error">{t('common.loadError')}</Alert>}
@@ -345,7 +355,8 @@ const ProjectsPage: React.FC = () => {
             select fullWidth size="small" label={t('project.parent')} value={form.parent}
             onChange={(e) => setForm({ ...form, parent: e.target.value })}
           >
-            <MenuItem value="">{t('project.noParent')}</MenuItem>
+            {/* 下のものを根へ出すのは誰でもできる（メンバーはそのまま写る）。新しく根を作るのは印のある人だけ */}
+            <MenuItem value="" disabled={editingId === null && !canCreateTop}>{t('project.noParent')}</MenuItem>
             {parentOptions.map(({ project, depth }) => (
               <MenuItem key={project.id} value={String(project.id)} sx={{ pl: `${16 + depth * 14}px` }}>
                 {project.name}

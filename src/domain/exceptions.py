@@ -65,6 +65,13 @@ class ProjectManagerRequiredError(AccessDeniedError):
         super().__init__("only a manager of the top project can do this")
 
 
+class ProjectCreatorRequiredError(AccessDeniedError):
+    """いちばん上のプロジェクトを作れるのは印のある人だけ（ADR-0065）。"""
+
+    def __init__(self) -> None:
+        super().__init__("only people allowed to create projects can create a top project")
+
+
 class LastProjectManagerError(ConflictError):
     """最後の管理者を外す・メンバーに下げると、だれもメンバーを出し入れできなくなる（ADR-0055）。"""
 

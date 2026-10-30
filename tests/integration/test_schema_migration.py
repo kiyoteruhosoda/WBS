@@ -818,3 +818,45 @@ def test_0019_keeps_existing_auto_entries_as_fill_and_receives_their_client_refs
             )
     finally:
         engine.dispose()
+
+
+def test_0032_lets_top_project_managers_and_the_default_user_create_projects(tmp_path):
+    # task #734 / ADR-0065: 今の根の管理者と既定の利用者は作れるまま、ほかの人は作れなくなる
+    url = _url(tmp_path, "creators.db")
+    engine = sa.create_engine(url)
+    try:
+        with engine.begin() as connection:
+            command.upgrade(alembic_config(connection), "0031")
+        with engine.begin() as connection:
+            for user_id, email in ((1, "local@example.com"), (2, "lead@example.com"),
+                                   (3, "member@example.com"), (4, "sub@example.com")):
+                connection.exec_driver_sql(
+                    "INSERT INTO users (id, email, display_name, timezone, language, is_active, "
+                    f"created_at, updated_at) VALUES ({user_id}, '{email}', 'x', 'Asia/Tokyo', 'ja', 1, "
+                    "'2026-01-01', '2026-01-01')"
+                )
+            connection.exec_driver_sql(
+                "INSERT INTO projects (id, user_id, parent_project_id, name, status, sort_order, "
+                "created_at, updated_at) VALUES "
+                "(1, 2, NULL, '根', 'active', 0, '2026-01-01', '2026-01-01'), "
+                "(2, 2, 1, '子', 'active', 0, '2026-01-01', '2026-01-01')"
+            )
+            # 4 は下のプロジェクトにだけ管理者の行がある（根ではないので数えない）
+            connection.exec_driver_sql(
+                "INSERT INTO project_members (project_id, user_id, role, daily_hours, engagement_percent, "
+                "created_at) VALUES "
+                "(1, 2, 'manager', 8, 100, '2026-01-01'), (1, 3, 'member', 8, 100, '2026-01-01'), "
+                "(2, 4, 'manager', 8, 100, '2026-01-01')"
+            )
+        with engine.begin() as connection:
+            command.upgrade(alembic_config(connection), "0032")
+        with engine.connect() as connection:
+            rows = connection.exec_driver_sql("SELECT id, can_create_projects FROM users ORDER BY id").all()
+        assert [(r[0], bool(r[1])) for r in rows] == [(1, True), (2, True), (3, False), (4, False)]
+
+        with engine.begin() as connection:
+            command.downgrade(alembic_config(connection), "0031")
+        columns = {c["name"] for c in sa.inspect(engine).get_columns("users")}
+        assert "can_create_projects" not in columns
+    finally:
+        engine.dispose()

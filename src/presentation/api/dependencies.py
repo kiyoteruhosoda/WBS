@@ -295,6 +295,7 @@ def get_current_user(
             display_name=user.display_name,
             timezone=user.timezone,
             language=user.language,
+            can_create_projects=user.can_create_projects,
         )
     return session_auth.authenticate(
         token=request.cookies.get(settings.cookie_name), now=utcnow()

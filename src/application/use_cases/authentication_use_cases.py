@@ -321,4 +321,5 @@ def _to_dto(user: UserAccount) -> AuthenticatedUserDTO:
         display_name=user.display_name,
         timezone=user.timezone,
         language=user.language,
+        can_create_projects=user.can_create_projects,
     )
