@@ -35,7 +35,11 @@ class InboxUseCases:
 
     def convert_to_task(self, item_id: int, user_id: int, dto: ConvertInboxItemDTO) -> dict:
         item = self._owned(item_id, user_id)
+        from src.application.use_cases.task_use_cases import TaskUseCases
         from src.domain.entities.task import Task
+        uc = TaskUseCases(self._session)
+        if dto.category_id is not None:
+            uc.check_category(user_id, dto.category_id)
         task = Task(
             id=None,
             user_id=item.user_id,
@@ -53,8 +57,6 @@ class InboxUseCases:
         item.converted_at = utcnow()
         self._repo.save(item)
         self._session.commit()
-        from src.application.use_cases.task_use_cases import TaskUseCases
-        uc = TaskUseCases(self._session)
         return uc._enrich(saved_task)
 
     def _owned(self, item_id: int, user_id: int) -> InboxItem:
