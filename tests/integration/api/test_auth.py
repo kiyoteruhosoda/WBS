@@ -469,6 +469,25 @@ def test_another_users_category_is_not_found(sso_client) -> None:
     assert sso_client.delete(f"/api/categories/{category_id}").status_code == 404
 
 
+def test_another_users_category_cannot_be_put_on_a_task(sso_client) -> None:
+    """作る・直す・メモから作るのどれも、ほかの人の分類は無いものとして断る（task #762）。"""
+    sign_in(sso_client, "taro-code")
+    theirs = sso_client.post("/api/categories", json={"name": "太郎の分類"}).json()["id"]
+
+    _sign_in_as_other_user(sso_client)
+    mine = sso_client.post("/api/categories", json={"name": "花子の分類"}).json()["id"]
+    assert sso_client.post("/api/tasks", json={"title": "x", "category_id": theirs}).status_code == 404
+
+    task = sso_client.post("/api/tasks", json={"title": "x", "category_id": mine}).json()
+    assert sso_client.put(f"/api/tasks/{task['id']}", json={"category_id": theirs}).status_code == 404
+    # 選び直していなければ通る
+    assert sso_client.put(f"/api/tasks/{task['id']}", json={"category_id": mine}).status_code == 200
+
+    item = sso_client.post("/api/inbox", json={"title": "メモ"}).json()["id"]
+    assert sso_client.post(f"/api/inbox/{item}/convert", json={"category_id": theirs}).status_code == 404
+    assert sso_client.post(f"/api/inbox/{item}/convert", json={"category_id": mine}).status_code == 201
+
+
 def test_another_users_milestone_is_not_found(sso_client) -> None:
     sign_in(sso_client, "taro-code")
     milestone_id = sso_client.post("/api/milestones", json={"name": "太郎の節目"}).json()["id"]

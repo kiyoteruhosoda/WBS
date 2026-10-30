@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from src.application.dto.task_dto import CreateTaskDTO, UpdateTaskDTO
 from src.application.ports.scheduled_time_lookup import ScheduledTimeLookup
 from src.application.use_cases.completion_forecast_use_cases import CompletionForecastUseCases
+from src.application.use_cases.ownership import owned_by
 from src.application.use_cases.project_membership import ProjectMembership
 from src.application.user_clock import UserClock
 from src.domain.entities.project import Project
@@ -19,6 +20,7 @@ from src.domain.services.project_tree import ProjectTree
 from src.domain.services.task_branch_selection import TaskBranchSelection
 from src.domain.services.task_progress_board import TaskProgressBoard
 from src.domain.value_objects.task_status import TaskStatus
+from src.infrastructure.repositories.category_repository import SqlAlchemyCategoryRepository
 from src.infrastructure.repositories.milestone_repository import SqlAlchemyMilestoneRepository
 from src.infrastructure.repositories.person_directory import SqlAlchemyPersonDirectory
 from src.infrastructure.repositories.project_member_repository import (
@@ -61,6 +63,7 @@ class TaskUseCases:
     ) -> None:
         self._repo: TaskRepository = SqlAlchemyTaskRepository(session)
         self._milestones: MilestoneRepository = SqlAlchemyMilestoneRepository(session)
+        self._categories = SqlAlchemyCategoryRepository(session)
         self._membership = ProjectMembership(
             projects=SqlAlchemyProjectRepository(session),
             tasks=self._repo,
@@ -178,6 +181,8 @@ class TaskUseCases:
             self._membership.visible_project(dto.user_id, project_id)
         if dto.milestone_id is not None:
             self._check_milestone(dto.user_id, dto.milestone_id, project_id)
+        if dto.category_id is not None:
+            self.check_category(dto.user_id, dto.category_id)
         task = Task(
             id=None,
             user_id=dto.user_id,
@@ -211,6 +216,9 @@ class TaskUseCases:
         if dto.title is not None:
             task.title = dto.title
         if dto.category_id is not None:
+            # 選び直したときだけ確かめる。チームのタスクには付けた人の分類が付いたままのことがある
+            if dto.category_id != task.category_id:
+                self.check_category(user_id, dto.category_id)
             task.category_id = dto.category_id
         if dto.priority is not None:
             task.priority = dto.priority
@@ -322,6 +330,13 @@ class TaskUseCases:
         if dto.project_id is not None:
             self._membership.visible_project(user_id, dto.project_id)
         return dto.project_id
+
+    def check_category(self, user_id: int, category_id: int) -> None:
+        """分類は作った本人のもの（task #762）。ほかの人の分類は無いものとして断る。"""
+        owned_by(
+            self._categories.find_by_id(category_id), user_id,
+            resource="Category", resource_id=category_id,
+        )
 
     def _owned_task(self, task_id: int, user_id: int) -> Task:
         task = self._repo.find_by_id_for_user(task_id, user_id)
