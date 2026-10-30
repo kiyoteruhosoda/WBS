@@ -169,6 +169,15 @@ def test_all_day_event_stays_on_its_day_for_another_viewer(client) -> None:
     assert occurrence["start"] == "2026-10-06T04:00:00Z"  # NY の 10/6 0:00
 
 
+def test_a_period_longer_than_the_limit_is_refused(client) -> None:
+    """何十年分もの回を展開させない（nolumiatask #748）。400 日までは今までどおり引ける。"""
+    _weekly(client)
+    assert client.get("/api/calendar/occurrences", params={"from": "2026-01-01", "to": "2027-02-04"}).status_code == 200
+    for path in ("/api/calendar/occurrences", "/api/calendar/events"):
+        res = client.get(path, params={"from": "2026-01-01", "to": "2126-01-01"})
+        assert res.status_code == 422, (path, res.text)
+
+
 def test_bad_input_is_422(client) -> None:
     for body in (
         {"title": "", "start": "2026-10-05T00:00:00Z", "duration_minutes": 60},

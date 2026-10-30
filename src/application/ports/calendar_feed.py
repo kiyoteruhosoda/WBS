@@ -55,10 +55,19 @@ class CalendarFeedFetcher(Protocol):
 
 class CalendarFeedParser(Protocol):
     def parse(
-        self, content: bytes, *, from_date: date, to_date: date, default_time_zone: str
+        self,
+        content: bytes,
+        *,
+        from_date: date,
+        to_date: date,
+        default_time_zone: str,
+        max_occurrences: int | None = None,
     ) -> list[ImportedOccurrence]:
         """``[from_date, to_date]`` に掛かる回。時刻のゾーンが書かれていない回は
-        ``default_time_zone`` の壁時計とみなす。読めなければ ``CalendarFeedError``。"""
+        ``default_time_zone`` の壁時計とみなす。読めなければ ``CalendarFeedError``。
+
+        ``max_occurrences`` を超える回があれば、**展開する前に** ``TOO_MANY_EVENTS`` で断る
+        （1 行の ``FREQ=SECONDLY`` で何百万件も作らせない。nolumiatask #748）。"""
         ...
 
 
