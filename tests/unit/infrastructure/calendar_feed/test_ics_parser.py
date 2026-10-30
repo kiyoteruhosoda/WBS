@@ -6,6 +6,7 @@ Google（X-WR-TIMEZONE・繰り返し・消した回）・Outlook（Windows の�
 
 from __future__ import annotations
 
+import time
 from datetime import date, datetime
 
 import pytest
@@ -188,3 +189,41 @@ def test_the_limit_does_not_change_an_ordinary_feed() -> None:
     assert _parse(GOOGLE) == PARSER.parse(
         GOOGLE.encode(), default_time_zone="Asia/Tokyo", max_occurrences=5000, **WINDOW
     )
+
+
+def _feed(*events: str) -> bytes:
+    return ("BEGIN:VCALENDAR\r\nVERSION:2.0\r\n" + "".join(events) + "END:VCALENDAR\r\n").encode()
+
+
+def _event(*lines: str) -> str:
+    return "BEGIN:VEVENT\r\nUID:1@x\r\nSUMMARY:a\r\n" + "".join(f"{line}\r\n" for line in lines) + "END:VEVENT\r\n"
+
+
+@pytest.mark.parametrize(
+    "lines",
+    [
+        # 期間の前を 50 年分回らせる（1 回も期間に入らない）
+        ("DTSTART:19700101T000000Z", "RRULE:FREQ=SECONDLY;UNTIL=20200101T000000Z"),
+        # dateutil が読めない UNTIL。数え上げをすり抜けて展開へ進んでいた
+        ("DTSTART;TZID=Asia/Tokyo:20260301T000000", "RRULE:FREQ=SECONDLY;UNTIL=20270101T000000"),
+        # 毎日の繰り返しに、1 日の中の時刻を掛けて増やす
+        ("DTSTART:19700101T000000Z", "RRULE:FREQ=DAILY;BYHOUR=0,1,2,3,4,5,6,7,8,9;BYMINUTE=0,1,2,3,4,5,6,7,8,9;BYSECOND=0,1,2,3,4,5,6,7,8,9"),
+    ],
+)
+def test_a_rule_that_only_makes_work_is_refused_without_running_it(lines: tuple[str, ...]) -> None:
+    started = time.monotonic()
+    with pytest.raises(CalendarFeedError) as caught:
+        PARSER.parse(_feed(_event(*lines)), default_time_zone="Asia/Tokyo", max_occurrences=5000, **WINDOW)
+    assert caught.value.reason is FeedFailure.TOO_MANY_EVENTS
+    assert time.monotonic() - started < 1
+
+
+def test_many_old_events_outside_the_window_are_not_counted() -> None:
+    events = [_event(f"DTSTART:2010{m:02d}{d:02d}T{h:02d}0000Z") for m in range(1, 13) for d in range(1, 11) for h in range(24)]
+    assert len(events) > 2000
+    assert PARSER.parse(_feed(*events), default_time_zone="Asia/Tokyo", max_occurrences=2000, **WINDOW) == []
+
+
+def test_an_old_weekly_rule_still_reads() -> None:
+    lines = ("DTSTART;TZID=Asia/Tokyo:20150105T090000", "RRULE:FREQ=WEEKLY;BYDAY=MO")
+    assert PARSER.parse(_feed(_event(*lines)), default_time_zone="Asia/Tokyo", max_occurrences=5000, **WINDOW)
