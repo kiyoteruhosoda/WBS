@@ -807,3 +807,22 @@ class PcActivitySpanModel(Base):
     user_id: Mapped[int] = mapped_column(sa.BigInteger().with_variant(sa.Integer(), "sqlite"), sa.ForeignKey("users.id"), nullable=False)
     started_at: Mapped[datetime] = mapped_column(sa.DateTime, nullable=False)
     ended_at: Mapped[datetime] = mapped_column(sa.DateTime, nullable=False)
+
+
+class MachineOperationLogModel(Base):
+    """機械が書いた操作の記録（どのアプリが・誰の分を・何を。task #802 / ADR-0068）。読むだけの口は残さない。
+
+    書いた内容と同じトランザクションで入れるので、「書けたのに記録が無い」は起きない。断った操作はアプリログまで。
+    """
+
+    __tablename__ = "machine_operation_logs"
+    __table_args__ = (
+        sa.Index("ix_machine_operation_logs_occurred_at", "occurred_at"),
+        {"sqlite_autoincrement": True},
+    )
+    id: Mapped[int] = mapped_column(BigIntPK, primary_key=True, autoincrement=True)
+    occurred_at: Mapped[datetime] = mapped_column(sa.DateTime, nullable=False)
+    client_id: Mapped[str] = mapped_column(sa.String(128), nullable=False)
+    user_id: Mapped[int] = mapped_column(sa.BigInteger().with_variant(sa.Integer(), "sqlite"), sa.ForeignKey("users.id"), nullable=False)
+    operation: Mapped[str] = mapped_column(sa.String(128), nullable=False)
+    detail: Mapped[str | None] = mapped_column(sa.String(255), nullable=True)

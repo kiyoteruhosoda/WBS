@@ -2,6 +2,10 @@
 
 完了した重要な変更の要約（新しいものを上に）。詳しい経緯は `history/` を参照。
 
+## 2026-10-31（機械が書いた操作を記録する。task #802・ADR-0068）
+
+- Tracker の機械が締めの時間を書き換える口（`PUT`・`DELETE /api/machine/closed-periods/{first_day}`）は、どのアプリが・誰の分を・何をを新しい表 `machine_operation_logs` に残す（移行 0033）。書いた内容と同じトランザクションで入れる。読む口はアプリログ（`machine_reader_call`）まで。
+
 ## 2026-10-30（.ics の上限のすり抜けを塞ぐ。nolumiatask #748 の続き）
 
 - 数え上げも展開も繰り返しの始まりから順に回すので、`DTSTART:1970` の `FREQ=SECONDLY` は期間に入る前に何十億回も回っていた。手間を先に見積もり（フィード全体で 200 万回）、超えれば回さずに `too_many_events` で断る。

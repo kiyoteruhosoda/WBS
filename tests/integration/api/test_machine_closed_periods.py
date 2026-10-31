@@ -6,12 +6,13 @@ WBS 自身の締めの行を二重に数えないこと。
 
 from __future__ import annotations
 
+import sqlite3
 from datetime import date
 
 from src.infrastructure.database.models import TaskModel, WorkLogModel
 from src.presentation.api.dependencies import get_db
 from tests.integration.api.test_auth import ISSUER, sign_in, sso_provider  # noqa: F401
-from tests.integration.api.test_machine_assigned_tasks import _as, client  # noqa: F401
+from tests.integration.api.test_machine_assigned_tasks import TRACKER_MACHINE, _as, client  # noqa: F401
 
 URL = "/api/machine/closed-periods/2026-10-16"
 
@@ -95,3 +96,35 @@ def test_only_the_tracker_machine_may_write(client) -> None:  # noqa: F811
     task_id = _task(client, "設計")
     res = _put(client, [{"wbs_task_id": task_id, "work_date": "2026-10-16", "seconds": 60}], token="other-machine")
     assert res.status_code == 401
+
+
+def _operation_logs(database_path) -> list[tuple]:
+    query = "SELECT client_id, user_id, operation, detail FROM machine_operation_logs ORDER BY id"
+    with sqlite3.connect(database_path) as connection:
+        return connection.execute(query).fetchall()
+
+
+def test_writes_leave_the_client_and_the_operation_in_the_log(client, database_path) -> None:  # noqa: F811
+    """どのアプリが・誰の分を・何を、が同じ表で引ける（task #802 / ADR-0068）。"""
+    task_id = _task(client, "設計")
+
+    assert _put(client, [{"wbs_task_id": task_id, "work_date": "2026-10-16", "seconds": 60}]).status_code == 200
+    assert client.delete(URL, **_as("tracker")).status_code == 200
+
+    (put, delete) = _operation_logs(database_path)
+    assert put[0] == TRACKER_MACHINE
+    assert put[2:] == ("PUT /api/machine/closed-periods/{first_day}", "first_day=2026-10-16 stored=1")
+    assert delete[0] == TRACKER_MACHINE
+    assert delete[2:] == ("DELETE /api/machine/closed-periods/{first_day}", "first_day=2026-10-16 removed=1")
+    assert put[1] == delete[1]
+
+
+def test_refused_writes_and_reads_are_not_in_the_log(client, database_path) -> None:  # noqa: F811
+    task_id = _task(client, "設計")
+
+    entry = {"wbs_task_id": task_id, "work_date": "2026-10-16", "seconds": 60}
+    assert _put(client, [entry], token="other-machine").status_code == 401
+    assert _put(client, [{"wbs_task_id": task_id, "work_date": "2026-11-16", "seconds": 60}]).status_code >= 400
+    assert client.get("/api/machine/assigned-tasks", **_as("tracker")).status_code == 200
+
+    assert _operation_logs(database_path) == []

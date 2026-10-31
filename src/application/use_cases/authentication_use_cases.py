@@ -16,6 +16,8 @@ OIDC の認可コードフロー（PKCE 付き）を 2 つのユースケース�
 
 from __future__ import annotations
 
+import logging
+from dataclasses import replace
 from datetime import datetime, timedelta
 
 from src.application.dto.auth_dto import (
@@ -39,6 +41,8 @@ from src.domain.value_objects.federated_identity import FederatedIdentity
 from src.domain.value_objects.identity_claims import IdentityClaims
 from src.domain.value_objects.provisioning_policy import ProvisioningPolicy
 from src.domain.value_objects.redirect_target import RedirectTarget
+
+logger = logging.getLogger(__name__)
 
 
 class SessionAuthenticationUseCases:
@@ -160,7 +164,8 @@ class MachineReaderAuthenticationUseCases:
         if "sub_type" not in claims:
             # 人のログインのトークン（宛名が合っても）はこの口を通さない
             raise AuthenticationError("Only machine tokens are accepted here")
-        if str(claims.get("client_id") or "") not in self._accepted_client_ids:
+        client_id = str(claims.get("client_id") or "")
+        if client_id not in self._accepted_client_ids:
             raise AuthenticationError("Machine token was issued to an application not accepted here")
         if issuer != self._idp.federated_issuer or not subject.strip():
             raise NotFoundError("user", subject)
@@ -169,7 +174,8 @@ class MachineReaderAuthenticationUseCases:
             raise NotFoundError("user", subject)
         if not user.is_active:
             raise AccessDeniedError(f"User account is deactivated: {user.email}")
-        return _to_dto(user)
+        logger.info("machine_reader_call", extra={"client_id": client_id, "user_id": user.id})
+        return replace(_to_dto(user), machine_client_id=client_id)
 
 
 class SsoLoginUseCases:
