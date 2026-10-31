@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -30,3 +31,8 @@ class AuthenticatedUserDTO:
     can_create_projects: bool = False
     #: 機械の口から来たときの、呼んだアプリの ``client_id``（ADR-0068）。人のログインでは ``None``
     machine_client_id: str | None = None
+
+    @property
+    def id_hash(self) -> str:
+        """ログ用の利用者の識別子。ID もメールアドレスもそのままログへ載せない（task #812）。"""
+        return hashlib.sha256(str(self.user_id).encode()).hexdigest()[:16]

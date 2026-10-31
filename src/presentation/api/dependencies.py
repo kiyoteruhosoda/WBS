@@ -112,6 +112,16 @@ def get_auth_settings(request: Request) -> AuthSettings:
 AuthSettingsDep = Annotated[AuthSettings, Depends(get_auth_settings)]
 
 
+def _log_as(request: Request, user: AuthenticatedUserDTO) -> AuthenticatedUserDTO:
+    """アクセスログの行に載せる、誰の要求か（task #812）。
+
+    ⚠ ``ContextVar`` では戻らない。この依存関数はスレッドで走り、ミドルウェアも別のタスクなので、
+    置いた値がログを出す側へ届かない。``request.state`` は要求ごとの 1 つの辞書で、どちらからも同じものが見える。
+    """
+    request.state.user_id_hash = user.id_hash
+    return user
+
+
 def get_machine_reader_user(
     request: Request,
     db: DbDep,
@@ -131,12 +141,13 @@ def get_machine_reader_user(
     provider = request.app.state.identity_provider
     if provider is None:
         raise AuthenticationError("SSO is not configured")
-    return MachineReaderAuthenticationUseCases(
+    user = MachineReaderAuthenticationUseCases(
         identity_provider=provider,
         users=SqlAlchemyUserAccountRepository(db),
         audience=settings.machine_audience,
         accepted_client_ids=settings.machine_reader_client_ids,
     ).authenticate(token=token.strip(), issuer=issuer, subject=subject)
+    return _log_as(request, user)
 
 
 MachineReaderUserDep = Annotated[AuthenticatedUserDTO, Depends(get_machine_reader_user)]
@@ -289,16 +300,20 @@ def get_current_user(
         user = SqlAlchemyUserAccountRepository(db).find_by_id(SINGLE_USER_ID)
         if user is None:
             raise AuthenticationError("Default user is missing; run the database migration")
-        return AuthenticatedUserDTO(
-            user_id=user.id,
-            email=user.email,
-            display_name=user.display_name,
-            timezone=user.timezone,
-            language=user.language,
-            can_create_projects=user.can_create_projects,
+        return _log_as(
+            request,
+            AuthenticatedUserDTO(
+                user_id=user.id,
+                email=user.email,
+                display_name=user.display_name,
+                timezone=user.timezone,
+                language=user.language,
+                can_create_projects=user.can_create_projects,
+            ),
         )
-    return session_auth.authenticate(
-        token=request.cookies.get(settings.cookie_name), now=utcnow()
+    return _log_as(
+        request,
+        session_auth.authenticate(token=request.cookies.get(settings.cookie_name), now=utcnow()),
     )
 
 CurrentUserDep = Annotated[AuthenticatedUserDTO, Depends(get_current_user)]
@@ -328,11 +343,12 @@ def get_app_or_web_user(
     provider = request.app.state.identity_provider
     if provider is None:
         raise AuthenticationError("SSO is not configured")
-    return AppTokenAuthenticationUseCases(
+    user = AppTokenAuthenticationUseCases(
         identity_provider=provider,
         users=SqlAlchemyUserAccountRepository(db),
         accepted_client_ids=settings.app_client_ids,
     ).authenticate(token=token.strip())
+    return _log_as(request, user)
 
 AppOrWebUserDep = Annotated[AuthenticatedUserDTO, Depends(get_app_or_web_user)]
 

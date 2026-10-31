@@ -2,6 +2,10 @@
 
 完了した重要な変更の要約（新しいものを上に）。詳しい経緯は `history/` を参照。
 
+## 2026-10-31（アクセスログに誰の要求かを残す。task #812）
+
+- `http_request` の行に `user_id_hash`（利用者の番号のハッシュ）を足した。未認証の要求は空。ID やメールアドレスはそのまま載せない。
+
 ## 2026-10-31（機械が書いた操作を記録する。task #802・ADR-0068）
 
 - Tracker の機械が締めの時間を書き換える口（`PUT`・`DELETE /api/machine/closed-periods/{first_day}`）は、どのアプリが・誰の分を・何をを新しい表 `machine_operation_logs` に残す（移行 0033）。書いた内容と同じトランザクションで入れる。読む口はアプリログ（`machine_reader_call`）まで。

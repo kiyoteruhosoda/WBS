@@ -4,6 +4,11 @@ IdP だけは差し替える（``get_identity_provider`` を上書き）。そ�
 発行、セッションの永続化、認可の掛かり方——は本番と同じ経路を通す。
 """
 
+import asyncio
+import hashlib
+import logging
+
+import httpx
 import pytest
 from fastapi.testclient import TestClient
 
@@ -542,3 +547,65 @@ def test_dependencies_on_another_users_task_are_not_reachable(sso_client) -> Non
         f"/api/tasks/{own}/dependencies", json={"predecessor_task_id": first}
     ).status_code == 404
     assert sso_client.delete(f"/api/tasks/{first}/dependencies/{second}").status_code == 404
+
+
+@pytest.fixture
+def access_lines():
+    """アクセスログの行。⚠ アプリを作ると持ち手が消えるので、試験の引数では ``sso_client`` の後に書く。"""
+    lines: list[logging.LogRecord] = []
+
+    class Collect(logging.Handler):
+        def emit(self, record: logging.LogRecord) -> None:
+            lines.append(record)
+
+    handler = Collect()
+    logger = logging.getLogger("access")
+    logger.disabled = False
+    logger.setLevel(logging.INFO)
+    logger.addHandler(handler)
+    yield lines
+    logger.removeHandler(handler)
+
+
+def _id_hash(user_id: int) -> str:
+    return hashlib.sha256(str(user_id).encode()).hexdigest()[:16]
+
+
+def test_the_access_log_names_the_signed_in_user_only_by_hash(sso_client, access_lines) -> None:
+    sign_in(sso_client)
+    user_id = sso_client.get("/api/auth/me").json()["user_id"]
+    sso_client.cookies.clear()
+    assert sso_client.get("/api/auth/me").status_code == 401
+
+    lines = [line for line in access_lines if line.path == "/api/auth/me"]
+    assert [(line.status_code, line.user_id_hash) for line in lines] == [
+        (200, _id_hash(user_id)),
+        (401, None),
+    ]
+    assert "taro@example.com" not in str(vars(lines[0]))
+
+
+def test_the_access_log_does_not_mix_users_of_concurrent_requests(sso_client, access_lines) -> None:
+    sessions: dict[str | None, str | None] = {None: None}
+    for code in ("taro-code", "hanako-code"):
+        sign_in(sso_client, code)
+        user_id = sso_client.get("/api/auth/me").json()["user_id"]
+        sessions[_id_hash(user_id)] = sso_client.cookies[COOKIE]
+        sso_client.cookies.clear()
+
+    async def send_all() -> list[tuple[str | None, str]]:
+        transport = httpx.ASGITransport(app=sso_client.app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+
+            async def send(expected: str | None) -> tuple[str | None, str]:
+                session = sessions[expected]
+                headers = {"Cookie": f"{COOKIE}={session}"} if session else {}
+                response = await client.get("/api/auth/me", headers=headers)
+                return expected, response.headers["X-Request-Id"]
+
+            return await asyncio.gather(*(send(expected) for expected in list(sessions) * 20))
+
+    sent = asyncio.run(send_all())
+
+    logged = {line.request_id: line.user_id_hash for line in access_lines}
+    assert [logged[request_id] for _, request_id in sent] == [expected for expected, _ in sent]
