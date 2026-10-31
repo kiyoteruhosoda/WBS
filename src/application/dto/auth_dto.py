@@ -28,3 +28,5 @@ class AuthenticatedUserDTO:
     language: str
     #: いちばん上のプロジェクトを作れるか（画面がボタンを出すか決める。確かめはサーバーが DB で行う。ADR-0065）
     can_create_projects: bool = False
+    #: 機械の口から来たときの、呼んだアプリの ``client_id``（ADR-0068）。人のログインでは ``None``
+    machine_client_id: str | None = None

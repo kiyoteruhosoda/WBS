@@ -6,6 +6,7 @@
 
 ⚠ **機械のトークン（``Authorization: Bearer``）だけ**を受ける。宛名は ``MACHINE_AUDIENCE``、
 読み書きしてよいアプリは ``MACHINE_READER_CLIENT_IDS``。利用者は ``issuer`` と ``subject`` で渡す。
+書く口は ``machine_operation_logs`` に残し、読む口はアプリログまで（task #802 / ADR-0068）。
 """
 
 from __future__ import annotations
@@ -119,7 +120,7 @@ def put_closed_period(
 
     同じ期間の、WBS 自身の締めの行（Tracker へ移る前のもの）は退ける。
     """
-    receipt = TrackerClosedTimeUseCases(db).replace(
+    receipt = TrackerClosedTimeUseCases(db, client_id=user.machine_client_id or "").replace(
         user.user_id,
         first_day,
         body.last_day,
@@ -133,4 +134,5 @@ def delete_closed_period(
     first_day: dt.date, user: MachineReaderUserDep, db: DbDep
 ) -> ClosedPeriodRemovedResponse:
     """Tracker で締めを開け直した期間の時間を退ける。受け取っていなければ 0（何度送ってもよい）。"""
-    return ClosedPeriodRemovedResponse(removed=TrackerClosedTimeUseCases(db).remove(user.user_id, first_day))
+    use_cases = TrackerClosedTimeUseCases(db, client_id=user.machine_client_id or "")
+    return ClosedPeriodRemovedResponse(removed=use_cases.remove(user.user_id, first_day))

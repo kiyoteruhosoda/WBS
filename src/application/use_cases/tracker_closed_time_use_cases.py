@@ -5,6 +5,8 @@
 - 取り消し: Tracker で締めを開け直したら、その期間の行を退ける
 
 退けるのは論理削除（``deleted_at``）。WBS に無い・消したタスクの行は受け取らず、id を返す。
+
+どちらも、呼んだアプリと操作を ``machine_operation_logs`` へ同じトランザクションで残す（task #802 / ADR-0068）。
 """
 
 from __future__ import annotations
@@ -19,8 +21,10 @@ from src.application.use_cases.closing_use_cases import hours_of
 from src.domain.entities.work_log import WorkLog
 from src.domain.exceptions import ValidationError
 from src.domain.value_objects.work_log_source import WorkLogSource
+from src.infrastructure.database.models import MachineOperationLogModel
 from src.infrastructure.repositories.task_repository import SqlAlchemyTaskRepository
 from src.infrastructure.repositories.work_log_repository import SqlAlchemyWorkLogRepository
+from src.shared.clock import utcnow
 
 #: 1 期間に受け取る行の上限（毎日 × タスク。区切りは月まで）
 MAX_ENTRIES = 5000
@@ -42,8 +46,9 @@ class ClosedTimeReceipt:
 
 
 class TrackerClosedTimeUseCases:
-    def __init__(self, session: Session) -> None:
+    def __init__(self, session: Session, *, client_id: str) -> None:
         self._session = session
+        self._client_id = client_id
         self._tasks = SqlAlchemyTaskRepository(session)
         self._work_logs = SqlAlchemyWorkLogRepository(session)
 
@@ -85,6 +90,9 @@ class TrackerClosedTimeUseCases:
                 )
             )
             stored += 1
+        self._log_operation(
+            user_id, "PUT /api/machine/closed-periods/{first_day}", f"first_day={first_day} stored={stored}"
+        )
         self._session.commit()
         return ClosedTimeReceipt(
             stored=stored, unknown_task_ids=sorted(t for t, ok in known.items() if not ok)
@@ -92,8 +100,22 @@ class TrackerClosedTimeUseCases:
 
     def remove(self, user_id: int, first_day: date) -> int:
         removed = self._work_logs.remove_tracker_period(user_id, first_day)
+        self._log_operation(
+            user_id, "DELETE /api/machine/closed-periods/{first_day}", f"first_day={first_day} removed={removed}"
+        )
         self._session.commit()
         return removed
+
+    def _log_operation(self, user_id: int, operation: str, detail: str) -> None:
+        self._session.add(
+            MachineOperationLogModel(
+                occurred_at=utcnow(),
+                client_id=self._client_id,
+                user_id=user_id,
+                operation=operation,
+                detail=detail,
+            )
+        )
 
 
 __all__ = [
