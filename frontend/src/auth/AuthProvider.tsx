@@ -11,7 +11,7 @@ import {
 import { setUnauthorizedHandler } from '../api/client';
 import LoginPage from '../pages/LoginPage';
 import { translate } from '../i18n';
-import { isNetworkFailure } from '../pwa/connectivity';
+import { isNetworkFailure, isServerFailure } from '../pwa/connectivity';
 import { forgetSession, lastSession, rememberSession } from './lastSession';
 import {
   forgetSilentMarks,
@@ -81,7 +81,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     staleTime: 5 * 60_000,
   });
 
-  const user = fetchedUser ?? (isNetworkFailure(userError) ? lastSession()?.user : undefined);
+  // 確かめられない（つながらない・サーバーが落ちている）だけなら、ログインは切れていない。控えで中身を描く（ADR-0069）
+  const userUnconfirmed = isNetworkFailure(userError) || isServerFailure(userError);
+  const user = fetchedUser ?? (userUnconfirmed ? lastSession()?.user : undefined);
 
   // 確かめられた人を控える（次にオフラインで開いたときに使う）。
   // 入れたので黙って確かめる印も消す（次に切れたときは、また 1 回だけ試してよい）
@@ -101,7 +103,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     !user &&
     !sessionExpired &&
     !silentUnavailable &&
-    !isNetworkFailure(userError) &&
+    !userUnconfirmed &&
     Boolean(fetchedConfig?.login_path) &&
     shouldTrySilently(window.location);
   useEffect(() => {

@@ -18,7 +18,11 @@ from fastapi.responses import RedirectResponse
 from src.domain.entities.login_transaction import DEFAULT_LOGIN_TRANSACTION_TTL
 from src.domain.exceptions import AccessDeniedError, AuthenticationError, ValidationError
 from src.domain.value_objects.logout_notice import InvalidLogoutTokenError
-from src.infrastructure.auth.auth_settings import AuthSettings
+from src.infrastructure.auth.auth_settings import (
+    LOGOUT_COOKIE_NAME,
+    REFRESH_COOKIE_NAME,
+    AuthSettings,
+)
 from src.presentation.api.dependencies import (
     AuthSettingsDep,
     BackchannelLogoutDep,
@@ -30,7 +34,9 @@ from src.presentation.api.schemas.auth_schemas import (
     AuthConfigResponse,
     CurrentUserResponse,
     LogoutResponse,
+    RefreshResponse,
 )
+from src.presentation.api.session_cookies import clear_session_cookies, set_session_cookies
 from src.shared.clock import utcnow
 
 logger = logging.getLogger(__name__)
@@ -149,8 +155,8 @@ def complete_login(
         return _back_to_login("access_denied", str(exc))
 
     response = RedirectResponse(completed.redirect_path, status_code=status.HTTP_302_FOUND)
-    # セッション Cookie を先に載せる（使い終えた一時 Cookie の掃除はその後）
-    _set_session_cookie(response, settings, completed.session_token)
+    # ログインの Cookie を先に載せる（使い終えた一時 Cookie の掃除はその後）
+    set_session_cookies(response, settings, completed.session)
     _clear_login_state_cookie(response, settings)
     return response
 
@@ -167,6 +173,22 @@ def get_current_user_profile(current_user: CurrentUserDep) -> CurrentUserRespons
     )
 
 
+@router.post("/refresh", response_model=RefreshResponse, summary="Refresh the tokens")
+def refresh(
+    request: Request,
+    response: Response,
+    settings: AuthSettingsDep,
+    session_auth: SessionAuthDep,
+) -> RefreshResponse:
+    """リフレッシュトークンの Cookie でトークンを更新する（ADR-0069）。
+
+    ⚠ **本文でトークンを受け取らない・返さない。** 返すのは寿命だけで、トークンは Cookie で運ぶ。
+    """
+    issued = session_auth.refresh(token=request.cookies.get(REFRESH_COOKIE_NAME), now=utcnow())
+    set_session_cookies(response, settings, issued)
+    return RefreshResponse(expires_in=int(settings.access_token_ttl.total_seconds()))
+
+
 @router.post("/logout", response_model=LogoutResponse, summary="Sign out")
 def logout(
     request: Request,
@@ -175,14 +197,13 @@ def logout(
     session_auth: SessionAuthDep,
     sso: SsoLoginDep,
 ) -> LogoutResponse:
-    """こちら側のセッションを消し、IdP 側も切るための URL を返す。
+    """このログインだけを終わらせ（ほかの端末は続く）、IdP 側も切るための URL を返す。
 
     IdP へのリダイレクトは画面側に任せる（XHR でリダイレクトを返しても、
     ブラウザが勝手に追いかけてしまい、応答を読む前に画面が飛ぶ）。
     """
-    token = request.cookies.get(settings.cookie_name)
-    session_auth.revoke(token=token)
-    _clear_session_cookie(response, settings)
+    session_auth.revoke(logout_token=request.cookies.get(LOGOUT_COOKIE_NAME), now=utcnow())
+    clear_session_cookies(response, settings)
     return LogoutResponse(
         end_session_url=sso.end_session_url(
             post_logout_redirect_uri=settings.post_logout_redirect_uri
@@ -297,30 +318,4 @@ def _silently_declined(redirect_path: str) -> RedirectResponse:
         params["next"] = redirect_path
     return RedirectResponse(
         f"{LOGIN_PAGE_PATH}?{urlencode(params)}", status_code=status.HTTP_302_FOUND
-    )
-
-
-def _set_session_cookie(response: Response, settings: AuthSettings, token: str) -> None:
-    max_age = int(settings.session_ttl.total_seconds())
-    response.set_cookie(
-        key=settings.cookie_name,
-        value=token,
-        max_age=max_age,
-        # JavaScript から読めないようにする（XSS でセッションを持ち出されない）
-        httponly=True,
-        # 既定は https 前提。localhost の開発時だけ AUTH_COOKIE_SECURE=false にする
-        secure=settings.cookie_secure,
-        # lax なら IdP からのトップレベル遷移では送られ、他サイトの埋め込みでは送られない
-        samesite=settings.cookie_samesite,
-        path="/",
-    )
-
-
-def _clear_session_cookie(response: Response, settings: AuthSettings) -> None:
-    response.delete_cookie(
-        key=settings.cookie_name,
-        httponly=True,
-        secure=settings.cookie_secure,
-        samesite=settings.cookie_samesite,
-        path="/",
     )

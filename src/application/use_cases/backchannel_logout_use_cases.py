@@ -3,10 +3,8 @@
 この口が呼ばれるのは**利用者のブラウザからではない**。IdP のサーバーが直接叩く
 サーバー間の経路で、届いた ``logout_token`` の署名だけが相手の証明になる。
 
-やることは 1 つ ——**宛名の合うセッションの行を消す**。このアプリのセッションは
-DB の行で、毎リクエストで引き直している（ADR-0002）ので、消した時点で効く。
-手元に控えの無いトークンを配っていないぶん、他の RP のように「失効の記録を残して
-次の更新で弾く」手当ては要らない。
+やることは 1 つ ——**宛名の合うログインの控え（``refresh_sessions``）を消す**。更新は控えの無いログインへ
+トークンを出さないので、遅くともアクセストークンの寿命で入れなくなる（ADR-0069）。
 
 ⚠ **利用者そのもの（``users.is_active``）には触らない。** 止めたのは IdP であって、
 このアプリの管理者ではない。IdP で戻せば、そのまま入り直せる。
@@ -19,15 +17,15 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 
 from src.application.ports.identity_provider import IdentityProvider
-from src.domain.repositories.auth_session_repository import AuthSessionRepository
 from src.domain.repositories.logout_delivery_repository import LogoutDeliveryRepository
+from src.domain.repositories.refresh_session_repository import RefreshSessionRepository
 from src.domain.value_objects.logout_notice import LogoutNotice
 
 logger = logging.getLogger(__name__)
 
-#: 配送の記録を残しておく既定の長さ。**セッションの寿命より長ければよい**
-#: ——それを過ぎれば、再送が落とせるセッションはもう自力で期限切れになっている。
-DEFAULT_DELIVERY_RETENTION = timedelta(days=1)
+#: 配送の記録を残しておく既定の長さ。呼ぶ側はリフレッシュトークンの寿命を渡す。**控えの寿命より長ければよい**
+#: ——それを過ぎれば、再送が落とせる控えはもう自力で期限切れになっている。
+DEFAULT_DELIVERY_RETENTION = timedelta(days=14)
 
 
 @dataclass(frozen=True)
@@ -45,7 +43,7 @@ class ReceiveBackchannelLogout:
         self,
         *,
         identity_provider: IdentityProvider,
-        sessions: AuthSessionRepository,
+        sessions: RefreshSessionRepository,
         deliveries: LogoutDeliveryRepository,
         delivery_retention: timedelta = DEFAULT_DELIVERY_RETENTION,
     ) -> None:

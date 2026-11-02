@@ -52,6 +52,7 @@ def test_the_file_names_the_app_and_its_signing_key(database_path, monkeypatch) 
 def test_the_file_needs_no_sign_in(database_path, monkeypatch) -> None:
     # Android と Google の検証は Cookie も資格情報も持たずに取りに来る
     monkeypatch.setenv("AUTH_MODE", "oidc")
+    monkeypatch.setenv("SESSION_SIGNING_KEY", "test-signing-key-test-signing-key-0123")
     monkeypatch.setenv("OIDC_ISSUER", "https://idp.example.com/realms/wbs")
     monkeypatch.setenv("OIDC_CLIENT_ID", "wbs")
     monkeypatch.setenv("OIDC_REDIRECT_URI", "https://wbs.example.com/api/auth/callback")

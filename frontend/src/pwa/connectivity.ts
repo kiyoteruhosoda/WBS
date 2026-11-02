@@ -14,6 +14,13 @@ export const isNetworkFailure = (error: unknown): boolean => {
   return e.isAxiosError === true;
 };
 
+/** サーバーが答えられない失敗（5xx）か。⚠ ログイン切れではない（Cookie は残っていて、戻れば続く。ADR-0069） */
+export const isServerFailure = (error: unknown): boolean => {
+  if (error == null || typeof error !== 'object') return false;
+  const status = (error as { response?: { status?: unknown } }).response?.status;
+  return typeof status === 'number' && status >= 500;
+};
+
 /** 画面に「オフラインです」を出すか */
 export const isOffline = (facts: { deviceOnline: boolean; lastRequestFailed: boolean }): boolean =>
   !facts.deviceOnline || facts.lastRequestFailed;

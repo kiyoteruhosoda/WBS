@@ -20,10 +20,6 @@ def _create_with_legacy_path(engine: sa.Engine) -> None:
     if "language" not in user_columns:
         with engine.begin() as conn:
             conn.execute(text("ALTER TABLE users ADD COLUMN language VARCHAR(8) NOT NULL DEFAULT 'ja'"))
-    auth_session_columns = {c["name"] for c in inspector.get_columns("auth_sessions")}
-    if "idp_session_id" not in auth_session_columns:
-        with engine.begin() as conn:
-            conn.execute(text("ALTER TABLE auth_sessions ADD COLUMN idp_session_id VARCHAR(255)"))
     # 手書きの列補完は tasks.remaining_hours を落としていたが、0004 で列として戻した（ADR-0010）。
     # create_all はいまのモデルから作るので、ここでは落とさない。
 

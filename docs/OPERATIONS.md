@@ -2,6 +2,26 @@
 
 操作手順だけを置く。なぜそうなっているかは `decisions/`（ADR）、過去の経緯は `CHANGELOG.md`。
 
+## ログインのトークンの署名鍵を用意したいとき（`AUTH_MODE=oidc` では必須）
+
+無いと起動しない（ADR-0069）。k8s では、ホストの上で乱数を作ってその場で封印する（平文を残さない）:
+
+```bash
+head -c 48 /dev/urandom | base64 -w0 | sudo KUBECONFIG=/etc/rancher/k3s/k3s.yaml kubeseal --raw \
+  --namespace <namespace> --name wbs-session --scope strict \
+  --controller-namespace kube-system --controller-name sealed-secrets-controller
+```
+
+出た暗号文を SealedSecret の `signing-key` に書き、`/run/session/signing-key` へ読み取り専用で置いて `SESSION_SIGNING_KEY_FILE=/run/session/signing-key` を渡す。
+
+⚠ **鍵を替えると全員が 1 回ログインし直す。** ログアウトの札とリフレッシュトークンも読めなくなる（控えの行は期限で消える）。
+
+## ログインの寿命を短くして確かめたいとき
+
+`ACCESS_TOKEN_EXPIRES_SECONDS` と `REFRESH_TOKEN_EXPIRES_SECONDS` を設定して配り直す（既定は 300 と 1209600）。⚠ 使い回しの見分けの 30 秒は固定（`REUSE_GRACE`）なので、リフレッシュの寿命は 30 秒より長くする。
+
+使い回しの記録は `kubectl -n <namespace> logs deploy/api | grep refresh_token.reused`。
+
 ## IdP で止めた人を、このアプリでも止まるようにしたいとき
 
 ADR-0003 の二段（受け口・定期照合）を有効にする。⚠ **IdP 側の 3 手が要る。**

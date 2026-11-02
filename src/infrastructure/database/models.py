@@ -300,17 +300,19 @@ class FederatedIdentityModel(Base):
     subject: Mapped[str] = mapped_column(sa.String(255), nullable=False)
     created_at: Mapped[datetime] = mapped_column(sa.DateTime, default=utcnow, nullable=False)
 
-class AuthSessionModel(Base):
-    """ログイン中のセッション。生のトークンは持たずハッシュだけを置く。"""
+class RefreshSessionModel(Base):
+    """ログインごとの控え（ADR-0069）。行が無ければそのログインは終わっている。"""
 
-    __tablename__ = "auth_sessions"
-    id: Mapped[int] = mapped_column(BigIntPK, primary_key=True, autoincrement=True)
+    __tablename__ = "refresh_sessions"
+    id: Mapped[str] = mapped_column(sa.String(32), primary_key=True)
     user_id: Mapped[int] = mapped_column(sa.BigInteger().with_variant(sa.Integer(), "sqlite"), sa.ForeignKey("users.id"), nullable=False, index=True)
-    token_hash: Mapped[str] = mapped_column(sa.String(64), unique=True, nullable=False)
-    issued_at: Mapped[datetime] = mapped_column(sa.DateTime, nullable=False)
+    # リフレッシュトークンの ``jti``。トークンそのものは持たない（DB が漏れてもログインを再現できない）
+    current_jti: Mapped[str] = mapped_column(sa.String(32), nullable=False)
+    previous_jti: Mapped[str | None] = mapped_column(sa.String(32), nullable=True)
+    rotated_at: Mapped[datetime | None] = mapped_column(sa.DateTime, nullable=True)
     expires_at: Mapped[datetime] = mapped_column(sa.DateTime, nullable=False, index=True)
-    last_seen_at: Mapped[datetime] = mapped_column(sa.DateTime, nullable=False)
-    # このセッションを始めた IdP 側のログイン（ID トークンの ``sid``）。
+    created_at: Mapped[datetime] = mapped_column(sa.DateTime, nullable=False)
+    # このログインを始めた IdP 側のログイン（ID トークンの ``sid``）。
     # ⚠ 出さない IdP があるので NULL 可。その IdP では**利用者単位でしか**止められない。
     idp_session_id: Mapped[str | None] = mapped_column(sa.String(255), nullable=True, index=True)
 

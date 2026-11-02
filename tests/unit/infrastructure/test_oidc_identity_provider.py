@@ -43,7 +43,6 @@ def _settings(**overrides) -> AuthSettings:
         "provider_name": "Test IdP",
         "post_logout_redirect_uri": None,
         "http_timeout_seconds": 5.0,
-        "session_ttl": timedelta(hours=12),
         "cookie_name": "wbs_session",
         "cookie_secure": True,
         "cookie_samesite": "lax",

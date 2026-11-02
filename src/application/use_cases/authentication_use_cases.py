@@ -8,7 +8,9 @@ OIDC の認可コードフロー（PKCE 付き）を 2 つのユースケース�
   （ADR-0018。打刻アプリ task #167）
 
 分けているのは、リクエストごとの本人確認に IdP を要らなくするため。ログイン後の
-毎リクエストは自前のセッションだけで済み、IdP が落ちていても操作を続けられる。
+毎リクエストは自前のトークンだけで済み、IdP が落ちていても操作を続けられる。
+
+⚠ **アクセストークンの検証は DB を引かない。止める判定は更新の 1 点に集めてある**（ADR-0069）。
 
 プロトコルの詳細（ディスカバリ・JWKS・署名検証）は ``IdentityProvider`` の向こう側。
 ここが知っているのは「誰を通すか」「誰を作るか」「セッションをどう始めて終えるか」。
@@ -23,19 +25,21 @@ from datetime import datetime, timedelta
 from src.application.dto.auth_dto import (
     AuthenticatedUserDTO,
     CompletedLoginDTO,
+    IssuedSessionDTO,
     StartedLoginDTO,
 )
 from src.application.ports.identity_provider import IdentityProvider
 from src.application.ports.secret_generator import SecretGenerator
-from src.domain.entities.auth_session import DEFAULT_SESSION_TTL, AuthSession
+from src.application.ports.session_tokens import SessionTokens
 from src.domain.entities.login_transaction import (
     DEFAULT_LOGIN_TRANSACTION_TTL,
     LoginTransaction,
 )
+from src.domain.entities.refresh_session import RefreshSession, RefreshStanding, new_identifier
 from src.domain.entities.user_account import UserAccount
 from src.domain.exceptions import AccessDeniedError, AuthenticationError, NotFoundError
-from src.domain.repositories.auth_session_repository import AuthSessionRepository
 from src.domain.repositories.login_transaction_repository import LoginTransactionRepository
+from src.domain.repositories.refresh_session_repository import RefreshSessionRepository
 from src.domain.repositories.user_account_repository import UserAccountRepository
 from src.domain.value_objects.federated_identity import FederatedIdentity
 from src.domain.value_objects.identity_claims import IdentityClaims
@@ -46,38 +50,98 @@ logger = logging.getLogger(__name__)
 
 
 class SessionAuthenticationUseCases:
-    """発行済みセッショントークンから利用者を決める。"""
+    """自前のトークンから利用者を決める・トークンを更新する・ログインを終わらせる（ADR-0069）。"""
 
-    def __init__(self, *, users: UserAccountRepository, sessions: AuthSessionRepository) -> None:
+    def __init__(
+        self,
+        *,
+        users: UserAccountRepository,
+        sessions: RefreshSessionRepository,
+        tokens: SessionTokens,
+    ) -> None:
         self._users = users
         self._sessions = sessions
+        self._tokens = tokens
 
     def authenticate(self, *, token: str | None, now: datetime) -> AuthenticatedUserDTO:
-        if not token:
-            raise AuthenticationError("Not authenticated")
-        session = self._sessions.find_by_token(token)
-        if session is None:
-            raise AuthenticationError("Session not found")
-        if session.is_expired(now):
-            self._sessions.delete_by_token(token)
-            raise AuthenticationError("Session has expired")
-        user = self._users.find_by_id(session.user_id)
-        if user is None:
-            self._sessions.delete_by_token(token)
-            raise AuthenticationError("Session refers to a user that no longer exists")
-        if not user.is_active:
-            # 利用停止は「次のログインから」ではなく即時に効かせる
-            self._sessions.delete_by_token(token)
-            raise AccessDeniedError(f"User account is deactivated: {user.email}")
-        # 最終アクセス時刻は分解能ぶんだけ間引いて書く（毎リクエストの書き込みを避ける）
-        if session.needs_touch(now):
-            session.touch(now)
-            self._sessions.update(session)
-        return _to_dto(user)
+        """⚠ **DB を引かない。** 止まっている利用者・消えた控えは、ここでは分からない。
+        分かるのは次の更新のときで、それまでの上限がアクセストークンの寿命になる。
 
-    def revoke(self, *, token: str | None) -> None:
-        if token:
-            self._sessions.delete_by_token(token)
+        ⚠ **この緩さを引き受けられるのは、更新の側（:meth:`refresh`）が引き締めているからである。**
+        """
+        contents = self._tokens.read_access(token, now=now) if token else None
+        if contents is None:
+            raise AuthenticationError("Not authenticated")
+        return contents.user
+
+    def refresh(self, *, token: str | None, now: datetime) -> IssuedSessionDTO:
+        """リフレッシュトークンから新しいトークンを出す。断るときは :class:`AuthenticationError`（401）。
+
+        ⚠ **止める判定はここに集めてある。** 控えが消えた（ログアウト・停止の通知・定期照合・使い回し）・
+        期限切れ・利用者が止まっている・消えた、のどれでも出さない。
+        """
+        contents = self._tokens.read_refresh(token, now=now) if token else None
+        if contents is None:
+            raise AuthenticationError("Invalid refresh token")
+        session = self._sessions.find(contents.session_id)
+        if session is None or session.user_id != contents.user_id:
+            raise AuthenticationError("The sign-in has ended")
+        if session.is_expired(now):
+            self._sessions.delete(session.id)
+            raise AuthenticationError("The sign-in has expired")
+        user = self._users.find_by_id(session.user_id)
+        if user is None or not user.is_active:
+            self._sessions.delete(session.id)
+            raise AuthenticationError("The user can no longer sign in")
+        standing = session.standing_of(contents.jti, now)
+        if standing is RefreshStanding.REUSED:
+            # 盗まれた 1 本で今の 1 本も止まる（どちらが本人か分からない）。ほかの端末は巻き込まない
+            self._sessions.delete(session.id)
+            logger.warning(
+                "使い終わったリフレッシュトークンが出されたので、そのログインを終わらせました",
+                extra={"event": "refresh_token.reused", "user_id_hash": _to_dto(user).id_hash},
+            )
+            raise AuthenticationError("The refresh token has already been used")
+
+        access = self._tokens.access_token(_to_dto(user), session_id=session.id, now=now)
+        new_jti = new_identifier()
+        # ⚠ 直前の 1 本は必ず断られる（条件が今の 1 本）。負けた側も同じ: アクセストークンだけを返す
+        rotated = standing is RefreshStanding.CURRENT and self._sessions.rotate(
+            session.id,
+            expected_jti=contents.jti,
+            new_jti=new_jti,
+            now=now,
+            expires_at=now + self._tokens.refresh_lifetime,
+        )
+        if not rotated:
+            return IssuedSessionDTO(access_token=access)
+        return IssuedSessionDTO(
+            access_token=access,
+            refresh_token=self._tokens.refresh_token(
+                user.id, session_id=session.id, jti=new_jti, now=now
+            ),
+            logout_token=self._tokens.logout_token(user.id, session_id=session.id, now=now),
+        )
+
+    def reissue_access(self, *, token: str | None, now: datetime) -> str | None:
+        """利用者の設定を変えた直後に、新しい値でアクセストークンを出し直す。
+
+        ⚠ **新しいトークンを出す経路なので DB を引く。** 引かないと、止められた人が更新を断られた後も
+        設定を保存し続けるだけで入っていられる。
+        """
+        contents = self._tokens.read_access(token, now=now) if token else None
+        if contents is None or self._sessions.find(contents.session_id) is None:
+            return None
+        user = self._users.find_by_id(contents.user.user_id)
+        if user is None or not user.is_active:
+            return None
+        return self._tokens.access_token(_to_dto(user), session_id=contents.session_id, now=now)
+
+    def revoke(self, *, logout_token: str | None, now: datetime) -> None:
+        """このログインだけを終わらせる（ほかの端末は続く）。読めない札は何もしない。"""
+        session_id = self._tokens.read_logout(logout_token, now=now) if logout_token else None
+        if session_id is not None:
+            self._sessions.delete(session_id)
 
 
 class AppTokenAuthenticationUseCases:
@@ -186,11 +250,11 @@ class SsoLoginUseCases:
         *,
         identity_provider: IdentityProvider,
         users: UserAccountRepository,
-        sessions: AuthSessionRepository,
+        sessions: RefreshSessionRepository,
+        tokens: SessionTokens,
         transactions: LoginTransactionRepository,
         secrets: SecretGenerator,
         policy: ProvisioningPolicy,
-        session_ttl: timedelta = DEFAULT_SESSION_TTL,
         transaction_ttl: timedelta = DEFAULT_LOGIN_TRANSACTION_TTL,
     ) -> None:
         self._idp = identity_provider
@@ -199,7 +263,7 @@ class SsoLoginUseCases:
         self._transactions = transactions
         self._secrets = secrets
         self._policy = policy
-        self._session_ttl = session_ttl
+        self._tokens = tokens
         self._transaction_ttl = transaction_ttl
 
     @property
@@ -253,21 +317,27 @@ class SsoLoginUseCases:
         user = self._resolve_user(claims)
         user.ensure_can_sign_in()
 
-        token = self._secrets.generate()
+        # 期限の切れた控えはここで掃除する（定期実行を持たない）
         self._sessions.delete_expired(now)
-        session = AuthSession.issue(
-            user_id=user.id,
-            token=token,
-            now=now,
-            ttl=self._session_ttl,
-            # IdP 側のログイン（``sid``）を覚えておく。停止の通知が「その端末の
-            # ログインだけ」を指して届いたときに、そこだけを終わらせられる。
-            idp_session_id=claims.session_id,
+        session_id, jti = new_identifier(), new_identifier()
+        self._sessions.add(
+            RefreshSession(
+                id=session_id,
+                user_id=user.id,
+                current_jti=jti,
+                expires_at=now + self._tokens.refresh_lifetime,
+                created_at=now,
+                # IdP 側のログイン（``sid``）を覚えておく。停止の通知が「その端末の
+                # ログインだけ」を指して届いたときに、そこだけを終わらせられる。
+                idp_session_id=claims.session_id,
+            )
         )
-        self._sessions.add(session)
         return CompletedLoginDTO(
-            session_token=token,
-            expires_at=session.expires_at,
+            session=IssuedSessionDTO(
+                access_token=self._tokens.access_token(_to_dto(user), session_id=session_id, now=now),
+                refresh_token=self._tokens.refresh_token(user.id, session_id=session_id, jti=jti, now=now),
+                logout_token=self._tokens.logout_token(user.id, session_id=session_id, now=now),
+            ),
             redirect_path=transaction.redirect_target.path,
         )
 

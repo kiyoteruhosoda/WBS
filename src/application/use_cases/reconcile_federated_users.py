@@ -22,8 +22,8 @@ from dataclasses import dataclass, replace
 
 from src.application.ports.roster_gateway import RosterGateway
 from src.domain.entities.identity_link import IdentityLink
-from src.domain.repositories.auth_session_repository import AuthSessionRepository
 from src.domain.repositories.identity_link_repository import IdentityLinkRepository
+from src.domain.repositories.refresh_session_repository import RefreshSessionRepository
 from src.domain.value_objects.roster import Roster, RosterState
 
 logger = logging.getLogger(__name__)
@@ -47,7 +47,7 @@ class ReconcileFederatedUsers:
     #: 何も確かめないまま「異常なし」で終わる。
     issuer: str
     links: IdentityLinkRepository
-    sessions: AuthSessionRepository
+    sessions: RefreshSessionRepository
     roster: RosterGateway
 
     def execute(self) -> ReconciliationOutcome:

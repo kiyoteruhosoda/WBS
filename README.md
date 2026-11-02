@@ -115,7 +115,7 @@ python -c "import urllib.request; print(urllib.request.urlopen('<jwks_uri>').sta
 
 ### 4. IdP で止めた人を、このアプリでも止める
 
-⚠ **ここを設定しないと、IdP で止めた人がセッションの寿命（既定 12 時間）のあいだ
+⚠ **ここを設定しないと、IdP で止めた人がリフレッシュトークンの寿命（既定 14 日）のあいだ
 入れたままになります。** 「届いたら止める」（back-channel logout の受け口）と
 「毎時聞き直して止める」（定期照合）の二段で塞ぎます（ADR-0003）。
 

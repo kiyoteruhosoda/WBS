@@ -37,11 +37,9 @@ from src.application.use_cases.work_break_use_cases import WorkBreakUseCases
 from src.application.user_clock import UserClock
 from src.domain.exceptions import AuthenticationError
 from src.infrastructure.auth.auth_settings import SINGLE_USER_ID, AuthMode, AuthSettings
+from src.infrastructure.auth.jwt_session_tokens import JwtSessionTokens
 from src.infrastructure.calendar_feed.ics_parser import IcsCalendarParser
 from src.infrastructure.database.session import get_db_session
-from src.infrastructure.repositories.auth_session_repository import (
-    SqlAlchemyAuthSessionRepository,
-)
 from src.infrastructure.repositories.auto_time_entry_receipt_repository import (
     SqlAlchemyAutoTimeEntryReceiptRepository,
 )
@@ -74,6 +72,9 @@ from src.infrastructure.repositories.occurrence_completion_repository import (
 from src.infrastructure.repositories.pc_activity_repository import SqlAlchemyPcActivityRepository
 from src.infrastructure.repositories.person_directory import SqlAlchemyPersonDirectory
 from src.infrastructure.repositories.project_repository import SqlAlchemyProjectRepository
+from src.infrastructure.repositories.refresh_session_repository import (
+    SqlAlchemyRefreshSessionRepository,
+)
 from src.infrastructure.repositories.task_repository import SqlAlchemyTaskRepository
 from src.infrastructure.repositories.time_entry_carving_repository import (
     SqlAlchemyTimeEntryCarvingRepository,
@@ -194,10 +195,21 @@ def get_identity_provider(request: Request) -> IdentityProvider:
 IdentityProviderDep = Annotated[IdentityProvider, Depends(get_identity_provider)]
 
 
-def get_session_authentication_use_cases(db: DbDep) -> SessionAuthenticationUseCases:
+def _session_tokens(settings: AuthSettings) -> JwtSessionTokens:
+    return JwtSessionTokens(
+        signing_key=settings.session_signing_key,
+        access_lifetime=settings.access_token_ttl,
+        refresh_lifetime=settings.refresh_token_ttl,
+    )
+
+
+def get_session_authentication_use_cases(
+    db: DbDep, settings: AuthSettingsDep
+) -> SessionAuthenticationUseCases:
     return SessionAuthenticationUseCases(
         users=SqlAlchemyUserAccountRepository(db),
-        sessions=SqlAlchemyAuthSessionRepository(db),
+        sessions=SqlAlchemyRefreshSessionRepository(db),
+        tokens=_session_tokens(settings),
     )
 
 SessionAuthDep = Annotated[
@@ -211,23 +223,24 @@ def get_sso_login_use_cases(
     return SsoLoginUseCases(
         identity_provider=identity_provider,
         users=SqlAlchemyUserAccountRepository(db),
-        sessions=SqlAlchemyAuthSessionRepository(db),
+        sessions=SqlAlchemyRefreshSessionRepository(db),
+        tokens=_session_tokens(settings),
         transactions=SqlAlchemyLoginTransactionRepository(db),
         secrets=UrlSafeSecretGenerator(),
         policy=settings.policy,
-        session_ttl=settings.session_ttl,
     )
 
 SsoLoginDep = Annotated[SsoLoginUseCases, Depends(get_sso_login_use_cases)]
 
 
 def get_receive_backchannel_logout(
-    db: DbDep, identity_provider: IdentityProviderDep
+    db: DbDep, settings: AuthSettingsDep, identity_provider: IdentityProviderDep
 ) -> ReceiveBackchannelLogout:
     return ReceiveBackchannelLogout(
         identity_provider=identity_provider,
-        sessions=SqlAlchemyAuthSessionRepository(db),
+        sessions=SqlAlchemyRefreshSessionRepository(db),
         deliveries=SqlAlchemyLogoutDeliveryRepository(db),
+        delivery_retention=settings.refresh_token_ttl,
     )
 
 BackchannelLogoutDep = Annotated[
@@ -327,7 +340,7 @@ def get_app_or_web_user(
     ⚠ **これを付けた口だけが assay のアクセストークンを受け取る**（打刻の Start / Stop /
     現在、ADR-0018。この先の通知の読み取り ``GET /calendar/alarms``、ADR-0021。WinTrack の口。
     wbstimer が今日の打刻を直す期間の一覧と 1 件の修正、PC を使っていた時間、ADR-0049）。ほかの口は
-    :func:`get_current_user`（Web のセッション Cookie だけ）のまま。
+    :func:`get_current_user`（Web のアクセストークンの Cookie だけ）のまま。
 
     - ``Authorization`` ヘッダーが**無ければ** :func:`get_current_user` と同じ
     - **あれば Bearer だけで決め、Cookie へ落とさない。** 壊れたトークンを持ってきたアプリが、
