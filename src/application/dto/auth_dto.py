@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import hashlib
 from dataclasses import dataclass
-from datetime import datetime
 
 
 @dataclass(frozen=True)
@@ -14,9 +13,20 @@ class StartedLoginDTO:
 
 
 @dataclass(frozen=True)
+class IssuedSessionDTO:
+    """Cookie へ載せるトークン。
+
+    ⚠ ``refresh_token`` が ``None`` なら更新の Cookie に触らない（同時に走った更新の負けた側。ADR-0069）。
+    """
+
+    access_token: str
+    refresh_token: str | None = None
+    logout_token: str | None = None
+
+
+@dataclass(frozen=True)
 class CompletedLoginDTO:
-    session_token: str
-    expires_at: datetime
+    session: IssuedSessionDTO
     redirect_path: str
 
 

@@ -14,7 +14,16 @@ from datetime import timedelta
 
 from src.domain.value_objects.provisioning_policy import ProvisioningPolicy
 
-DEFAULT_COOKIE_NAME = "wbs_session"
+DEFAULT_COOKIE_NAME = "wbs_access_token"
+#: リフレッシュトークンとログアウトの札の Cookie（ADR-0069）。経路を絞るので、名前は設定にしない
+REFRESH_COOKIE_NAME = "wbs_refresh_token"
+LOGOUT_COOKIE_NAME = "wbs_logout_token"
+#: アクセストークンの寿命。⚠ **この値が「止めたら効くまで」の上限時間そのものになる**（ADR-0069）
+DEFAULT_ACCESS_TOKEN_EXPIRES_SECONDS = 300.0
+#: リフレッシュトークンの寿命。振り替えのたびに延びるので、使い続ける限り切れない
+DEFAULT_REFRESH_TOKEN_EXPIRES_SECONDS = 14 * 24 * 3600.0
+#: 署名鍵の短さの下限（HS256 の鍵は SHA-256 の出力と同じ 32 バイト以上）
+MIN_SIGNING_KEY_LENGTH = 32
 DEFAULT_SCOPES = "openid email profile"
 SINGLE_USER_ID = 1
 # Set-Cookie の SameSite に書ける値。ここで弾かないと、誤記に気づくのが
@@ -44,11 +53,15 @@ class AuthSettings:
     provider_name: str
     post_logout_redirect_uri: str | None
     http_timeout_seconds: float
-    session_ttl: timedelta
     cookie_name: str
     cookie_secure: bool
     cookie_samesite: str
     policy: ProvisioningPolicy
+    #: アクセストークン・リフレッシュトークンの寿命（ADR-0069）。
+    access_token_ttl: timedelta = timedelta(seconds=DEFAULT_ACCESS_TOKEN_EXPIRES_SECONDS)
+    refresh_token_ttl: timedelta = timedelta(seconds=DEFAULT_REFRESH_TOKEN_EXPIRES_SECONDS)
+    #: このアプリのトークンの署名鍵。⚠ **プロセスをまたいで同じでなければならない**（ADR-0069）。
+    session_signing_key: str = ""
     #: IdP へ**こちらから**問い合わせるときの名乗り（サービスアカウントの ``client_id``）。
     #: ⚠ ログイン用の ``client_id`` とは別の登録。**空なら定期照合は走らない。**
     machine_client_id: str = ""
@@ -131,6 +144,28 @@ def _env_samesite(key: str, *, cookie_secure: bool) -> str:
     return value
 
 
+def _load_signing_key() -> str:
+    """署名鍵を読む。本番はファイルの場所（``SESSION_SIGNING_KEY_FILE``）で渡す。⚠ 値をログへ出さない。"""
+    value = os.getenv("SESSION_SIGNING_KEY", "").strip()
+    if value:
+        return value
+    path = os.getenv("SESSION_SIGNING_KEY_FILE", "").strip()
+    if not path:
+        return ""
+    try:
+        with open(path, encoding="utf-8") as handle:
+            return handle.read().strip()
+    except OSError as exc:
+        raise AuthConfigurationError(f"SESSION_SIGNING_KEY_FILE could not be read: {path}") from exc
+
+
+def _env_seconds(key: str, default: float) -> timedelta:
+    seconds = _env_float(key, default)
+    if seconds <= 0:
+        raise AuthConfigurationError(f"{key} must be positive (got {seconds})")
+    return timedelta(seconds=seconds)
+
+
 def load_auth_settings() -> AuthSettings:
     raw_mode = os.getenv("AUTH_MODE", AuthMode.SINGLE_USER.value).strip().lower()
     try:
@@ -164,6 +199,14 @@ def load_auth_settings() -> AuthSettings:
                 f"OIDC_ISSUER must use https (got {issuer!r}); http is only allowed for localhost"
             )
 
+    signing_key = _load_signing_key()
+    if mode is AuthMode.OIDC and len(signing_key) < MIN_SIGNING_KEY_LENGTH:
+        # ⚠ 起動で落とす。乱数で埋めると、再起動のたびに全員のログインが切れる
+        raise AuthConfigurationError(
+            "AUTH_MODE=oidc requires SESSION_SIGNING_KEY_FILE "
+            f"(a signing key of at least {MIN_SIGNING_KEY_LENGTH} characters)"
+        )
+
     cookie_secure = _env_bool("AUTH_COOKIE_SECURE", True)
     return AuthSettings(
         mode=mode,
@@ -175,7 +218,13 @@ def load_auth_settings() -> AuthSettings:
         provider_name=os.getenv("OIDC_PROVIDER_NAME", "SSO").strip() or "SSO",
         post_logout_redirect_uri=os.getenv("AUTH_POST_LOGOUT_REDIRECT_URI") or None,
         http_timeout_seconds=_env_float("OIDC_HTTP_TIMEOUT_SECONDS", 10.0),
-        session_ttl=timedelta(hours=_env_float("AUTH_SESSION_TTL_HOURS", 12.0)),
+        access_token_ttl=_env_seconds(
+            "ACCESS_TOKEN_EXPIRES_SECONDS", DEFAULT_ACCESS_TOKEN_EXPIRES_SECONDS
+        ),
+        refresh_token_ttl=_env_seconds(
+            "REFRESH_TOKEN_EXPIRES_SECONDS", DEFAULT_REFRESH_TOKEN_EXPIRES_SECONDS
+        ),
+        session_signing_key=signing_key,
         cookie_name=os.getenv("AUTH_COOKIE_NAME", DEFAULT_COOKIE_NAME).strip() or DEFAULT_COOKIE_NAME,
         cookie_secure=cookie_secure,
         cookie_samesite=_env_samesite("AUTH_COOKIE_SAMESITE", cookie_secure=cookie_secure),

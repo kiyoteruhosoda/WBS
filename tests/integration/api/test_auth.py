@@ -20,7 +20,7 @@ from src.domain.value_objects.logout_notice import LOGOUT_EVENT, InvalidLogoutTo
 from src.presentation.api.dependencies import get_identity_provider
 
 ISSUER = "https://idp.example.com/realms/wbs"
-COOKIE = "wbs_session"
+COOKIE = "wbs_access_token"
 # 認可コードフロー 1 往復のあいだだけ生きる、ブラウザ結び付け用の Cookie
 STATE_COOKIE = "sso_login_state"
 
@@ -30,6 +30,7 @@ OIDC_ENV = {
     "OIDC_CLIENT_ID": "wbs",
     "OIDC_CLIENT_SECRET": "s3cret",
     "OIDC_REDIRECT_URI": "https://wbs.example.com/api/auth/callback",
+    "SESSION_SIGNING_KEY": "test-signing-key-test-signing-key-0123",
     # TestClient は http で話すので、Secure 付きの Cookie は保持されない
     "AUTH_COOKIE_SECURE": "false",
 }
@@ -441,8 +442,7 @@ def test_logout_ends_the_session_and_offers_the_idp_logout(sso_client) -> None:
     response = sso_client.post("/api/auth/logout")
     assert response.status_code == 200
     assert response.json()["end_session_url"] == f"{ISSUER}/logout"
-    # Cookie を消しても、サーバ側のセッションが残っていれば戻れてしまう。
-    # 消えていることを、Cookie を送り直して確かめる。
+    # Cookie が消えている（控えていたトークンの確かめは test_refresh_sessions）。
     assert sso_client.get("/api/tasks").status_code == 401
 
 

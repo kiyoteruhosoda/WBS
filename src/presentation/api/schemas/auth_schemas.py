@@ -25,3 +25,9 @@ class CurrentUserResponse(BaseModel):
 class LogoutResponse(BaseModel):
     # IdP 側のセッションも切るための遷移先。IdP が対応していなければ null。
     end_session_url: str | None = None
+
+
+class RefreshResponse(BaseModel):
+    """⚠ トークンは載せない（Cookie で運ぶ）。アクセストークンの寿命（秒）だけ。"""
+
+    expires_in: int

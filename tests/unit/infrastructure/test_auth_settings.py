@@ -11,6 +11,7 @@ OIDC_ENV = {
     "OIDC_ISSUER": "https://idp.example.com/realms/wbs",
     "OIDC_CLIENT_ID": "wbs",
     "OIDC_REDIRECT_URI": "https://wbs.example.com/api/auth/callback",
+    "SESSION_SIGNING_KEY": "k" * 32,
 }
 
 
@@ -18,7 +19,7 @@ OIDC_ENV = {
 def clean_auth_env(monkeypatch):
     for key in list(OIDC_ENV) + [
         "OIDC_CLIENT_SECRET", "OIDC_SCOPES", "OIDC_PROVIDER_NAME", "OIDC_AUTO_PROVISION",
-        "OIDC_ALLOWED_EMAIL_DOMAINS", "OIDC_REQUIRE_VERIFIED_EMAIL", "AUTH_SESSION_TTL_HOURS",
+        "OIDC_ALLOWED_EMAIL_DOMAINS", "OIDC_REQUIRE_VERIFIED_EMAIL", "ACCESS_TOKEN_EXPIRES_SECONDS", "REFRESH_TOKEN_EXPIRES_SECONDS", "SESSION_SIGNING_KEY_FILE",
         "AUTH_COOKIE_NAME", "AUTH_COOKIE_SECURE", "AUTH_COOKIE_SAMESITE",
         "AUTH_POST_LOGOUT_REDIRECT_URI", "OIDC_HTTP_TIMEOUT_SECONDS", "APP_CLIENT_IDS",
         "ANDROID_APP_PACKAGE", "ANDROID_APP_CERT_FINGERPRINTS",
@@ -84,17 +85,60 @@ def test_allowed_domains_are_split_and_normalised(monkeypatch) -> None:
     assert load_auth_settings().policy.allowed_email_domains == ("example.com", "partner.example")
 
 
-def test_cookie_and_session_settings_can_be_overridden(monkeypatch) -> None:
+def test_cookie_and_token_settings_can_be_overridden(monkeypatch) -> None:
     _use_oidc(
         monkeypatch,
         AUTH_COOKIE_NAME="my_session",
         AUTH_COOKIE_SECURE="false",
-        AUTH_SESSION_TTL_HOURS="1.5",
+        ACCESS_TOKEN_EXPIRES_SECONDS="60",
+        REFRESH_TOKEN_EXPIRES_SECONDS="600",
     )
     settings = load_auth_settings()
     assert settings.cookie_name == "my_session"
     assert settings.cookie_secure is False
-    assert settings.session_ttl.total_seconds() == 5400
+    assert settings.access_token_ttl.total_seconds() == 60
+    assert settings.refresh_token_ttl.total_seconds() == 600
+
+
+def test_the_token_lifetimes_default_to_five_minutes_and_fourteen_days(monkeypatch) -> None:
+    _use_oidc(monkeypatch)
+    settings = load_auth_settings()
+    assert settings.access_token_ttl.total_seconds() == 300
+    assert settings.refresh_token_ttl.total_seconds() == 14 * 24 * 3600
+
+
+def test_a_lifetime_must_be_positive(monkeypatch) -> None:
+    _use_oidc(monkeypatch, ACCESS_TOKEN_EXPIRES_SECONDS="0")
+    with pytest.raises(AuthConfigurationError):
+        load_auth_settings()
+
+
+@pytest.mark.parametrize("key", ["", "short"])
+def test_sso_does_not_start_without_a_long_enough_signing_key(monkeypatch, key) -> None:
+    """⚠ 起動で落とす。乱数で埋めると、再起動のたびに全員のログインが切れる。"""
+    _use_oidc(monkeypatch, SESSION_SIGNING_KEY=key)
+    with pytest.raises(AuthConfigurationError):
+        load_auth_settings()
+
+
+def test_the_signing_key_is_read_from_its_file(monkeypatch, tmp_path) -> None:
+    key_file = tmp_path / "signing-key"
+    key_file.write_text("f" * 40 + "\n", encoding="utf-8")
+    _use_oidc(monkeypatch, SESSION_SIGNING_KEY="", SESSION_SIGNING_KEY_FILE=str(key_file))
+    assert load_auth_settings().session_signing_key == "f" * 40
+
+
+def test_an_unreadable_key_file_names_only_the_path(monkeypatch, tmp_path) -> None:
+    missing = tmp_path / "missing"
+    _use_oidc(monkeypatch, SESSION_SIGNING_KEY="", SESSION_SIGNING_KEY_FILE=str(missing))
+    with pytest.raises(AuthConfigurationError, match="could not be read"):
+        load_auth_settings()
+
+
+def test_single_user_mode_needs_no_signing_key(monkeypatch) -> None:
+    monkeypatch.setenv("AUTH_MODE", "single_user")
+    monkeypatch.delenv("SESSION_SIGNING_KEY", raising=False)
+    assert load_auth_settings().session_signing_key == ""
 
 
 def test_the_cookie_is_secure_by_default(monkeypatch) -> None:

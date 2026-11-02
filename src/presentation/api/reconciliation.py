@@ -28,11 +28,11 @@ from src.infrastructure.auth.admin_api_token import AdminApiTokenSource
 from src.infrastructure.auth.auth_settings import AuthConfigurationError, AuthSettings
 from src.infrastructure.auth.http_roster_gateway import HttpRosterGateway
 from src.infrastructure.database.session import get_db_session
-from src.infrastructure.repositories.auth_session_repository import (
-    SqlAlchemyAuthSessionRepository,
-)
 from src.infrastructure.repositories.identity_link_repository import (
     SqlAlchemyIdentityLinkRepository,
+)
+from src.infrastructure.repositories.refresh_session_repository import (
+    SqlAlchemyRefreshSessionRepository,
 )
 from src.infrastructure.scheduling.interval_worker import IntervalWorker
 
@@ -88,7 +88,7 @@ def _reconcile(
             # ⚠ ログインで結び付けたときと**同じ綴り**（受け口も同じ）。
             issuer=settings.issuer,
             links=SqlAlchemyIdentityLinkRepository(session),
-            sessions=SqlAlchemyAuthSessionRepository(session),
+            sessions=SqlAlchemyRefreshSessionRepository(session),
             roster=roster,
         ).execute()
     except MachineNotBoundToApplicationError:

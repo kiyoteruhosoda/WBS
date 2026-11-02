@@ -181,12 +181,11 @@ def test_legacy_db_is_brought_to_baseline_then_stamped(tmp_path):
     with engine.connect() as connection:
         user = connection.exec_driver_sql("SELECT email, language FROM users WHERE id = 1").one()
         task = connection.exec_driver_sql("SELECT title FROM tasks WHERE id = 7").one()
-        indexes = {i["name"] for i in sa.inspect(connection).get_indexes("auth_sessions")}
     engine.dispose()
     assert tuple(user) == ("taro@example.com", "ja")
     assert task.title == "残す"
-    # 手書きの補完は列だけ足して索引を作っていなかった。baseline の形に揃える。
-    assert "ix_auth_sessions_idp_session_id" in indexes
+    # auth_sessions は baseline の形へ揃えてから、後の移行が消す（ADR-0069）
+    assert "auth_sessions" not in _schema(legacy_url)
 
 
 def test_legacy_db_that_cannot_be_matched_is_left_untouched(tmp_path):

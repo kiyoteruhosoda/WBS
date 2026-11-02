@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isNetworkFailure, isOffline } from './connectivity';
+import { isNetworkFailure, isOffline, isServerFailure } from './connectivity';
 
 describe('つながっていない失敗', () => {
   it('応答の無い axios の失敗はつながっていない', () => {
@@ -20,5 +20,15 @@ describe('つながっていない失敗', () => {
     expect(isOffline({ deviceOnline: true, lastRequestFailed: false })).toBe(false);
     expect(isOffline({ deviceOnline: false, lastRequestFailed: false })).toBe(true);
     expect(isOffline({ deviceOnline: true, lastRequestFailed: true })).toBe(true);
+  });
+});
+
+describe('isServerFailure', () => {
+  it('5xx だけを、サーバーが答えられない失敗とする（ログイン切れと取り違えない）', () => {
+    expect(isServerFailure({ response: { status: 503 } })).toBe(true);
+    expect(isServerFailure({ response: { status: 500 } })).toBe(true);
+    expect(isServerFailure({ response: { status: 401 } })).toBe(false);
+    expect(isServerFailure({ isAxiosError: true })).toBe(false);
+    expect(isServerFailure(null)).toBe(false);
   });
 });

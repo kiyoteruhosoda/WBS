@@ -9,7 +9,6 @@
 だから「4 経路とも」を機械で見張る。
 """
 
-from datetime import timedelta
 
 import httpx
 import pytest
@@ -55,7 +54,6 @@ def _settings() -> AuthSettings:
         provider_name="Test IdP",
         post_logout_redirect_uri=None,
         http_timeout_seconds=5.0,
-        session_ttl=timedelta(hours=12),
         cookie_name="wbs_session",
         cookie_secure=True,
         cookie_samesite="lax",
