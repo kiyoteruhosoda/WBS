@@ -4,7 +4,7 @@ COPY package.json ./
 RUN npm install
 COPY . .
 RUN npm run build
-FROM nginx:1.31-alpine@sha256:a3554c0d0b48177b1413c26e01f695334428020d9df01243fbae3e11cfd17417
+FROM nginx:1.31-alpine@sha256:785835ea65db4bba6f021acc0f3be91b0fef76a53fe41f8588c6698d2aed0606
 COPY --from=build /web/dist /usr/share/nginx/html
 # 起動時に envsubst で展開される (nginx 公式イメージの機構)。
 COPY nginx.conf.template /etc/nginx/templates/default.conf.template
