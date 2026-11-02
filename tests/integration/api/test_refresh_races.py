@@ -15,6 +15,7 @@ import socket
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime
 
 import httpx
 import jwt
@@ -187,7 +188,11 @@ def test_a_token_used_after_the_grace_ends_that_sign_in(server, database_url, re
 
     engine = sa.create_engine(database_url)
     with engine.begin() as connection:
-        long_ago = _row(database_url, _session_id(first))["rotated_at"] - REUSE_GRACE * 2
+        # 振り替えの時刻を猶予より前へ動かす。SQLite の素の SELECT は文字列で返す
+        rotated_at = _row(database_url, _session_id(first))["rotated_at"]
+        if isinstance(rotated_at, str):
+            rotated_at = datetime.fromisoformat(rotated_at)
+        long_ago = rotated_at - REUSE_GRACE * 2
         connection.execute(
             sa.text("UPDATE refresh_sessions SET rotated_at = :at WHERE id = :id"),
             {"at": long_ago, "id": _session_id(first)},

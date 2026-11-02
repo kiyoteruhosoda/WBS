@@ -147,7 +147,7 @@ def test_the_cookie_is_secure_by_default(monkeypatch) -> None:
 
 
 def test_a_non_numeric_ttl_is_refused(monkeypatch) -> None:
-    _use_oidc(monkeypatch, AUTH_SESSION_TTL_HOURS="soon")
+    _use_oidc(monkeypatch, ACCESS_TOKEN_EXPIRES_SECONDS="soon")
     with pytest.raises(AuthConfigurationError):
         load_auth_settings()
 

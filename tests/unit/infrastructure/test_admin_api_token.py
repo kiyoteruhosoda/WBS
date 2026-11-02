@@ -46,6 +46,7 @@ def private_key(tmp_path):
 def settings(monkeypatch, private_key):
     path, _ = private_key
     monkeypatch.setenv("AUTH_MODE", "oidc")
+    monkeypatch.setenv("SESSION_SIGNING_KEY", "test-signing-key-test-signing-key-0123")
     monkeypatch.setenv("OIDC_ISSUER", ISSUER)
     monkeypatch.setenv("OIDC_CLIENT_ID", "wbs")
     monkeypatch.setenv("OIDC_REDIRECT_URI", "https://wbs.example.com/api/auth/callback")
