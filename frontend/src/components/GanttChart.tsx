@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef } from 'react';
-import { Box, Checkbox, IconButton, Tooltip } from '@mui/material';
+import { Box, Checkbox, Tooltip } from '@mui/material';
 import WarningAmberIcon from '@mui/icons-material/WarningAmber';
 import FlagOutlinedIcon from '@mui/icons-material/FlagOutlined';
 import { useTheme } from '@mui/material/styles';

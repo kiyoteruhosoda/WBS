@@ -14,7 +14,7 @@ import { getMilestones } from '../api/milestones';
 import { getProjectMembers, projectMembersKey } from '../api/projects';
 import { isForbidden } from '../api/forbidden';
 import type { Milestone, Task, TaskStatus, DependencyType } from '../types';
-import { formatDate, formatHours, priorityBand, priorityBandValue, todayDate } from '../utils/format';
+import { formatDate, priorityBand, priorityBandValue, todayDate } from '../utils/format';
 import type { PriorityBand } from '../utils/format';
 import { useI18n } from '../i18n';
 import { ds } from '../theme';
