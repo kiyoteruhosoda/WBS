@@ -1,5 +1,5 @@
-// 実績の見える化: 予定 vs 実績・計画 vs 実績（task #162、ADR-0017）。
-// /actuals はタスクごとの表。/actuals/review は「残を見直す」ものだけ（締めの直後の行き先）。
+// 実績の見える化: 計画 vs 確定した実績（task #162、ADR-0017。予定と打刻は task #543・ADR-0070 で外した）。
+// /actuals はタスクごとの表。/actuals/review は「残を見直す」ものだけ。
 import React from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Box, Tab, Tabs } from '@mui/material';
@@ -8,10 +8,6 @@ import TaskActualsPanel from '../components/actuals/TaskActualsPanel';
 import PeriodsPanel from '../components/actuals/PeriodsPanel';
 import BreakdownPanel from '../components/actuals/BreakdownPanel';
 import ExportPanel from '../components/actuals/ExportPanel';
-import { TrackerMovedNotice } from '../components/TrackerMovedNotice';
-import { useTrackerMove } from '../tracker/useTrackerMove';
-import { SchedulerMovedNotice } from '../components/SchedulerMovedNotice';
-import { useSchedulerMove } from '../scheduler/useSchedulerMove';
 
 type View = 'tasks' | 'review' | 'periods' | 'breakdown' | 'export';
 const VIEWS: View[] = ['tasks', 'review', 'periods', 'breakdown', 'export'];
@@ -24,15 +20,9 @@ const ActualsPage: React.FC = () => {
   // 「残を見直す」はタスクの表を見直しが要るものに絞った形
   const tab = view === 'review' ? 'tasks' : view;
   const go = (next: View) => navigate(next === 'tasks' ? '/actuals' : `/actuals/${next}`);
-  // 打刻を Tracker へ移した後は、打刻から数える時間をサーバが出さない（task #526 / ADR-0053）
-  const trackerMove = useTrackerMove();
-  // 予定を Scheduler へ移した後は、予定から数える時間（予定した時間）をサーバが出さない（0。task #535 / ADR-0054）
-  const schedulerMove = useSchedulerMove();
 
   return (
     <Box>
-      {trackerMove.moved && <TrackerMovedNotice url={trackerMove.url} bodyKey="tracker.actualsBody" sx={{ mb: '14px' }} />}
-      {schedulerMove.moved && <SchedulerMovedNotice url={schedulerMove.url} bodyKey="scheduler.actualsBody" sx={{ mb: '14px' }} />}
       <Tabs value={tab} onChange={(_, v: View) => go(v)} sx={{ mb: '14px', minHeight: 40 }}>
         <Tab value="tasks" label={t('actuals.tabTasks')} />
         <Tab value="periods" label={t('actuals.tabPeriods')} />

@@ -1,9 +1,9 @@
-"""実績の見える化: 予定 vs 実績・計画 vs 実績（task #162 / ADR-0017）。
+"""実績の見える化: 計画 vs 実績（task #162 / ADR-0017。予定と打刻は task #543 / ADR-0070 で外した）。
 
-- ``GET /actuals/tasks``: タスクごとの見積・予定済み・実績・残と、残を見直してほしい理由
-  （``review_only=true`` で見直しが要るものだけ。締めの直後に開く）
+- ``GET /actuals/tasks``: タスクごとの見積・実績・残と、残を見直してほしい理由
+  （``review_only=true`` で見直しが要るものだけ。Tracker の締めが届いた後に開く）
 - ``GET /actuals/gantt``: ガントの実績の帯（確定した実績の最初〜最後の日と、日ごとの実績）
-- ``GET /actuals/periods``: 期間ごと（締めの期間・週・月）の予定と打刻の差・タスク外の割合・確定実績
+- ``GET /actuals/periods``: 期間ごと（半月・週・月）の確定実績
 - ``GET /actuals/breakdown``: カテゴリ別・マイルストーン別・プロジェクト別（枝ごと）の積み上げ
 - ``GET /actuals/export.csv``: 期間 × 日 × タスク × 時間（外の工数の仕組みへ貼る用）
 
@@ -21,7 +21,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Query, Response
 
-from src.application.dto.actuals_dto import BreakdownGroupBy, ExportRow, TimeSource
+from src.application.dto.actuals_dto import BreakdownGroupBy, ExportRow
 from src.domain.value_objects.report_period import ReportPeriodUnit
 from src.presentation.api.dependencies import ActualsUseCasesDep, CurrentUserDep
 from src.presentation.api.schemas.actuals_schemas import (
@@ -41,14 +41,14 @@ ToDate = Annotated[
 ]
 ProjectScope = Annotated[
     int | None,
-    Query(description="このプロジェクトと、その子孫のプロジェクトのタスクの分だけ（タスク外は数えない）"),
+    Query(description="このプロジェクトと、その子孫のプロジェクトのタスクの分だけ"),
 ]
 Unclassified = Annotated[
-    bool, Query(description="true ならプロジェクトの無い（未分類の）タスクの分だけ（タスク外は数えない）")
+    bool, Query(description="true ならプロジェクトの無い（未分類の）タスクの分だけ")
 ]
 Unit = Annotated[
     ReportPeriodUnit,
-    Query(description="期間の単位: closing（締めの期間）/ week（月曜始まり）/ month"),
+    Query(description="期間の単位: closing（半月: 1〜15 日と 16 日〜末日）/ week（月曜始まり）/ month"),
 ]
 
 CSV_HEADER = [
@@ -118,7 +118,6 @@ def get_breakdown(
     current_user: CurrentUserDep,
     unit: Unit = ReportPeriodUnit.CLOSING,
     group_by: BreakdownGroupBy = BreakdownGroupBy.CATEGORY,
-    source: TimeSource = TimeSource.CONFIRMED,
     from_date: FromDate = None,
     to_date: ToDate = None,
     project_id: ProjectScope = None,
@@ -129,7 +128,6 @@ def get_breakdown(
             current_user.user_id,
             unit,
             group_by,
-            source,
             from_date,
             to_date,
             project_id,
@@ -148,13 +146,12 @@ def export_actuals(
     current_user: CurrentUserDep,
     from_date: Annotated[dt.date, Query(alias="from", description="初日（利用者の日付、含む）")],
     to_date: Annotated[dt.date, Query(alias="to", description="末日（利用者の日付、含む）")],
-    source: TimeSource = TimeSource.CONFIRMED,
     project_id: ProjectScope = None,
     unclassified: Unclassified = False,
 ) -> Response:
-    """期間（締めの期間）× 日 × タスク × 時間。表計算ソフトで文字化けしないよう BOM を付ける。"""
-    rows = uc.export(current_user.user_id, from_date, to_date, source, project_id, unclassified)
-    filename = f"actuals-{source.value}-{from_date.isoformat()}-{to_date.isoformat()}.csv"
+    """期間（半月）× 日 × タスク × 時間（確定実績）。表計算ソフトで文字化けしないよう BOM を付ける。"""
+    rows = uc.export(current_user.user_id, from_date, to_date, project_id, unclassified)
+    filename = f"actuals-{from_date.isoformat()}-{to_date.isoformat()}.csv"
     return Response(
         content="﻿" + render_csv(rows),
         media_type="text/csv; charset=utf-8",
@@ -172,7 +169,7 @@ def render_csv(rows: list[ExportRow]) -> str:
                 row.period.first_day.isoformat(),
                 row.period.last_day.isoformat(),
                 row.work_date.isoformat(),
-                row.task_id if row.task_id is not None else "",
+                row.task_id,
                 row.task_title or "",
                 row.category_name or "",
                 row.milestone_name or "",

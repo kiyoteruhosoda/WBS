@@ -2,7 +2,8 @@
 // 画面に依らない計算だけを置く。
 import type { TeamCalendar, WeekdayCode } from '../types';
 
-const WEEKDAYS_SUNDAY_FIRST: readonly WeekdayCode[] = ['SU', 'MO', 'TU', 'WE', 'TH', 'FR', 'SA'];
+/** 曜日の符号を `Date.getDay()` の順（日曜が 0）に並べたもの。 */
+export const WEEKDAYS_SUNDAY_FIRST: readonly WeekdayCode[] = ['SU', 'MO', 'TU', 'WE', 'TH', 'FR', 'SA'];
 const MON_TO_FRI: readonly WeekdayCode[] = ['MO', 'TU', 'WE', 'TH', 'FR'];
 
 export interface ProjectDays {

@@ -1,12 +1,9 @@
-"""実績の見える化の API（task #162 / ADR-0017）。
+"""実績の見える化の API（task #162 / ADR-0017。予定と打刻は task #543 / ADR-0070 で外した）。
 
-- 期間ごと: 予定（タスクに結んだ / 結んでいない）と打刻（タスク / 未割当）の差・タスク外の割合・確定実績
-- 期間の区切りは利用者のタイムゾーン（Asia/Tokyo）の 0:00。日をまたぐ打刻は 0:00 で割る
-- 他人の予定・打刻・実績は数えない
-- タスクごと: 残を見直してほしい理由（見積超過・残 0・残が決まらない・確定の後に直していない）
+- 期間ごと: 確定実績（半月・週・月。区切りは利用者の日付）
+- 他人の実績は数えない
+- タスクごと: 残を見直してほしい理由（見積超過・残 0・残が決まらない・Tracker の締めが届いた後に直していない）
 - ガントの実績の帯・カテゴリ別の積み上げ・CSV の書き出し
-
-日付は 2026 年 9 月（「今」より前。打刻は未来の時刻を受けないため）。
 """
 
 from __future__ import annotations
@@ -19,18 +16,7 @@ from decimal import Decimal
 
 import pytest
 
-from src.domain.entities.calendar_event import CalendarEvent
-from src.domain.value_objects.event_schedule import SingleEventSchedule
-from src.domain.value_objects.time_zone import TimeZoneId
-from src.infrastructure.database.models import (
-    TaskModel,
-    TimeEntryModel,
-    UserModel,
-    WorkLogModel,
-)
-from src.infrastructure.repositories.calendar_event_repository import (
-    SqlAlchemyCalendarEventRepository,
-)
+from src.infrastructure.database.models import TaskModel, UserModel, WorkLogModel
 from src.presentation.api.dependencies import get_db
 
 
@@ -51,7 +37,7 @@ def tokyo(client, db) -> None:
 
 @pytest.fixture
 def stranger(db) -> dict:
-    """他人と、その人のタスク・予定・打刻・実績（どれも同じ日付に置く）。"""
+    """他人と、その人のタスク・実績（同じ日付に置く）。"""
     other = UserModel(email="other-actuals@example.com", display_name="他人", timezone="Asia/Tokyo")
     db.add(other)
     db.flush()
@@ -59,26 +45,8 @@ def stranger(db) -> dict:
     db.add(task)
     db.flush()
     db.add(
-        TimeEntryModel(
-            user_id=other.id,
-            started_at=datetime(2026, 9, 2, 1, 0),
-            ended_at=datetime(2026, 9, 2, 5, 0),
-            task_id=task.id,
-        )
-    )
-    db.add(
         WorkLogModel(
             user_id=other.id, task_id=task.id, work_date=date(2026, 9, 2), hours=Decimal("4")
-        )
-    )
-    SqlAlchemyCalendarEventRepository(db).save(
-        CalendarEvent.create_single(
-            user_id=other.id,
-            title="他人の予定",
-            time_zone=TimeZoneId("Asia/Tokyo"),
-            schedule=SingleEventSchedule(datetime(2026, 9, 2, 1, 0), 240),
-            created_at=datetime(2026, 9, 1, 0, 0),
-            task_id=task.id,
         )
     )
     db.commit()
@@ -89,19 +57,6 @@ def _task(client, title: str, **fields) -> dict:
     res = client.post("/api/tasks", json={"title": title, **fields})
     assert res.status_code == 201, res.text
     return res.json()
-
-
-def _entry(client, start: str, end: str, task_id: int | None = None) -> None:
-    res = client.post(
-        "/api/time-entries", json={"started_at": start, "ended_at": end, "task_id": task_id}
-    )
-    assert res.status_code == 201, res.text
-
-
-def _event(client, start: str, minutes: int, task_id: int | None = None) -> None:
-    body = {"title": "作業", "start": start, "duration_minutes": minutes, "task_id": task_id}
-    res = client.post("/api/calendar/events", json=body)
-    assert res.status_code == 201, res.text
 
 
 def _work_log(client, task_id: int, work_date: str, hours: float) -> None:
@@ -120,16 +75,9 @@ def _get(client, path: str, **params) -> dict:
 # ── 期間ごと ─────────────────────────────────────────────────────────────
 
 
-def test_periods_compare_planned_and_tracked_time_per_closing_period(client, stranger) -> None:
+def test_periods_sum_confirmed_work_per_half_month(client, stranger) -> None:
     design = _task(client, "設計")
-    # 予定: 9/3 10:00〜11:00（タスク）・9/4 10:00〜10:30（タスクに結ばない）。終日は数えない
-    _event(client, "2026-09-03T01:00:00Z", 60, design["id"])
-    _event(client, "2026-09-04T01:00:00Z", 30)
-    _event(client, "2026-09-06T15:00:00Z", 1440, design["id"])  # 東京の 9/7 終日
-    # 打刻: 9/2 10:00〜10:30 の未割当、9/15 23:00〜9/16 1:00 は 0:00 で 2 つの期間へ割る
-    _entry(client, "2026-09-02T01:00:00Z", "2026-09-02T01:30:00Z")
-    _entry(client, "2026-09-15T14:00:00Z", "2026-09-15T16:00:00Z", design["id"])
-    # 確定実績（手で書いた）: 9/16 に 1.5 時間
+    _work_log(client, design["id"], "2026-09-15", 1)
     _work_log(client, design["id"], "2026-09-16", 1.5)
 
     body = _get(
@@ -138,52 +86,32 @@ def test_periods_compare_planned_and_tracked_time_per_closing_period(client, str
 
     assert body["unit"] == "closing"
     assert body["time_zone"] == "Asia/Tokyo"
-    first, second = body["periods"]
-    assert (first["first_day"], first["last_day"]) == ("2026-09-01", "2026-09-15")
-    assert (second["first_day"], second["last_day"]) == ("2026-09-16", "2026-09-30")
-    assert first["closed"] is False
-    assert first["planned_task_seconds"] == 3600
-    assert first["planned_off_task_seconds"] == 1800
-    assert first["planned_seconds"] == 5400
-    assert first["tracked_task_seconds"] == 3600
-    assert first["tracked_off_task_seconds"] == 1800
-    assert first["tracked_seconds"] == 5400
-    assert first["difference_seconds"] == 0
-    assert first["planned_off_task_ratio"] == pytest.approx(0.3333)
-    assert first["tracked_off_task_ratio"] == pytest.approx(0.3333)
-    assert first["confirmed_seconds"] == 0
-
-    assert second["planned_seconds"] == 0
-    assert second["tracked_task_seconds"] == 3600
-    assert second["tracked_off_task_seconds"] == 0
-    assert second["difference_seconds"] == 3600
-    assert second["planned_off_task_ratio"] is None
-    assert second["tracked_off_task_ratio"] == 0
-    assert second["confirmed_seconds"] == 5400
+    assert body["periods"] == [
+        {"first_day": "2026-09-01", "last_day": "2026-09-15", "confirmed_seconds": 3600},
+        {"first_day": "2026-09-16", "last_day": "2026-09-30", "confirmed_seconds": 5400},
+    ]
 
 
-def test_week_and_month_boundaries_follow_the_users_midnight(client) -> None:
+def test_week_and_month_periods(client) -> None:
     task = _task(client, "実装")
-    # 東京の日曜 9/13 23:30〜月曜 9/14 0:30 → 週は 9/7〜13 に 30 分、9/14〜20 に 30 分
-    _entry(client, "2026-09-13T14:30:00Z", "2026-09-13T15:30:00Z", task["id"])
-    # 東京の 9/1 0:30（UTC では 8/31）→ 9 月に数える
-    _entry(client, "2026-08-31T15:30:00Z", "2026-08-31T16:00:00Z", task["id"])
+    _work_log(client, task["id"], "2026-09-13", 0.5)  # 日曜
+    _work_log(client, task["id"], "2026-09-14", 0.5)  # 月曜
+    _work_log(client, task["id"], "2026-09-01", 1)
 
     weeks = _get(
         client, "/api/actuals/periods", unit="week", **{"from": "2026-09-07", "to": "2026-09-14"}
     )
-    assert [(p["first_day"], p["tracked_seconds"]) for p in weeks["periods"]] == [
+    assert [(p["first_day"], p["confirmed_seconds"]) for p in weeks["periods"]] == [
         ("2026-09-07", 1800),
         ("2026-09-14", 1800),
     ]
-    assert all(p["closed"] is None for p in weeks["periods"])
 
     months = _get(
         client, "/api/actuals/periods", unit="month", **{"from": "2026-08-15", "to": "2026-09-01"}
     )
-    assert [(p["first_day"], p["last_day"], p["tracked_seconds"]) for p in months["periods"]] == [
+    assert [(p["first_day"], p["last_day"], p["confirmed_seconds"]) for p in months["periods"]] == [
         ("2026-08-01", "2026-08-31", 0),
-        ("2026-09-01", "2026-09-30", 3600 + 1800),
+        ("2026-09-01", "2026-09-30", 3600 + 1800 + 1800),
     ]
 
 
@@ -192,8 +120,6 @@ def test_someone_elses_time_is_not_counted(client, stranger) -> None:
         client, "/api/actuals/periods", unit="closing", **{"from": "2026-09-01", "to": "2026-09-15"}
     )
     (period,) = body["periods"]
-    assert period["planned_seconds"] == 0
-    assert period["tracked_seconds"] == 0
     assert period["confirmed_seconds"] == 0
 
     breakdown = _get(client, "/api/actuals/breakdown", **{"from": "2026-09-01", "to": "2026-09-15"})
@@ -206,21 +132,6 @@ def test_someone_elses_time_is_not_counted(client, stranger) -> None:
     assert _get(client, "/api/actuals/gantt") == []
     assert stranger["task_id"] not in [
         r["task"]["id"] for r in _get(client, "/api/actuals/tasks")["rows"]
-    ]
-
-
-def test_closed_flag_follows_the_closing_periods(client) -> None:
-    task = _task(client, "設計")
-    _entry(client, "2026-09-02T01:00:00Z", "2026-09-02T02:00:00Z", task["id"])
-    res = client.post("/api/closing-periods/2026-09-01/close")
-    assert res.status_code == 200, res.text
-
-    body = _get(
-        client, "/api/actuals/periods", unit="closing", **{"from": "2026-09-01", "to": "2026-09-30"}
-    )
-    assert [(p["closed"], p["confirmed_seconds"]) for p in body["periods"]] == [
-        (True, 3600),
-        (False, 0),
     ]
 
 
@@ -278,16 +189,31 @@ def test_task_rows_carry_estimate_actual_remaining_and_review_reasons(client) ->
     assert "超過" not in _rows(client, review_only=True)
 
 
-def test_a_remaining_left_untouched_after_closing_is_asked_again(client) -> None:
+def _tracker_log(db, task_id: int, first_day: date, work_date: date, seconds: int, at: datetime) -> None:
+    """Tracker の締めから届いた実績（ADR-0056。届いた瞬間は ``at``）。"""
+    db.add(
+        WorkLogModel(
+            user_id=1, task_id=task_id, work_date=work_date, hours=Decimal(seconds) / 3600,
+            source="tracker", duration_seconds=seconds, tracker_first_day=first_day,
+            created_at=at, updated_at=at,
+        )
+    )
+
+
+def test_a_remaining_left_untouched_after_trackers_closing_is_asked_again(client, db) -> None:
     task = _task(client, "設計", estimated_hours=8, remaining_hours=6)
     untouched = _task(client, "手付かず", estimated_hours=8, remaining_hours=6)
-    _entry(client, "2026-09-02T01:00:00Z", "2026-09-02T03:00:00Z", task["id"])
-    res = client.post("/api/closing-periods/2026-09-01/close")
-    assert res.status_code == 200, res.text
+    db.query(TaskModel).update({TaskModel.updated_at: datetime(2026, 9, 1)})
+    # 前の期間と、直近の期間（こちらが「直近の締め」）
+    _tracker_log(db, task["id"], date(2026, 8, 16), date(2026, 8, 20), 1800, datetime(2026, 9, 1, 1))
+    _tracker_log(db, task["id"], date(2026, 9, 1), date(2026, 9, 2), 3600, datetime(2026, 9, 16, 1))
+    _tracker_log(db, task["id"], date(2026, 9, 1), date(2026, 9, 3), 3600, datetime(2026, 9, 16, 2))
+    db.commit()
 
     body = _get(client, "/api/actuals/tasks")
-    assert body["latest_closed_period"]["first_day"] == "2026-09-01"
-    assert body["latest_closed_period"]["closed_at"].endswith("Z")
+    assert body["latest_closed_period"] == {
+        "first_day": "2026-09-01", "last_day": "2026-09-03", "closed_at": "2026-09-16T02:00:00Z",
+    }
     rows = {r["task"]["title"]: r for r in body["rows"]}
     assert rows["設計"]["review_reasons"] == ["stale_remaining"]
     assert rows["設計"]["latest_closed_hours"] == 2
@@ -298,6 +224,14 @@ def test_a_remaining_left_untouched_after_closing_is_asked_again(client) -> None
     res = client.patch(f"/api/tasks/{task['id']}", json={"remaining_hours": 4})
     assert res.status_code == 200, res.text
     assert _rows(client)["設計"]["review_reasons"] == []
+
+
+def test_without_a_closing_from_tracker_there_is_no_latest_period(client) -> None:
+    task = _task(client, "設計", estimated_hours=8, remaining_hours=6)
+    _work_log(client, task["id"], "2026-09-02", 2)
+    body = _get(client, "/api/actuals/tasks")
+    assert body["latest_closed_period"] is None
+    assert body["rows"][0]["latest_closed_hours"] == 0
 
 
 def test_parent_tasks_are_not_asked_for_a_remaining(client) -> None:
@@ -327,31 +261,29 @@ def test_gantt_spans_cover_all_logs_and_days_only_the_asked_range(client) -> Non
     assert span["days"] == [{"date": "2026-09-10", "seconds": 9000}]
 
 
-def test_breakdown_stacks_by_category_and_keeps_off_task_time_apart(client) -> None:
+def test_breakdown_stacks_by_category(client) -> None:
     work = client.post("/api/categories", json={"name": "仕事", "color": "#0017C1"}).json()
     in_work = _task(client, "設計", category_id=work["id"])
     loose = _task(client, "雑務")
-    _entry(client, "2026-09-02T01:00:00Z", "2026-09-02T02:00:00Z", in_work["id"])
-    _entry(client, "2026-09-02T02:00:00Z", "2026-09-02T02:30:00Z", loose["id"])
-    _entry(client, "2026-09-16T01:00:00Z", "2026-09-16T01:15:00Z")
+    _work_log(client, in_work["id"], "2026-09-02", 1)
+    _work_log(client, loose["id"], "2026-09-02", 0.5)
+    _work_log(client, loose["id"], "2026-09-16", 0.25)
 
     body = _get(
         client,
         "/api/actuals/breakdown",
         unit="closing",
         group_by="category",
-        source="tracked",
         **{"from": "2026-09-01", "to": "2026-09-30"},
     )
 
     assert body["groups"] == [
         {"key": f"category:{work['id']}", "name": "仕事", "color": "#0017C1"},
         {"key": "none", "name": None, "color": None},
-        {"key": "unassigned", "name": None, "color": None},
     ]
     assert [p["seconds_by_group"] for p in body["periods"]] == [
         {f"category:{work['id']}": 3600, "none": 1800},
-        {"unassigned": 900},
+        {"none": 900},
     ]
 
 
@@ -367,7 +299,7 @@ def test_breakdown_by_milestone_uses_confirmed_work_logs(client) -> None:
         **{"from": "2026-09-01", "to": "2026-09-15"},
     )
 
-    assert body["source"] == "confirmed"
+    assert "source" not in body
     assert body["groups"] == [
         {"key": f"milestone:{release['id']}", "name": "リリース", "color": None}
     ]
@@ -379,7 +311,6 @@ def test_export_writes_period_day_task_and_hours(client) -> None:
     task = _task(client, "設計, 第 1 版", category_id=work["id"])
     _work_log(client, task["id"], "2026-09-15", 1.25)
     _work_log(client, task["id"], "2026-09-16", 0.5)
-    _entry(client, "2026-09-16T01:00:00Z", "2026-09-16T01:20:00Z")
 
     res = client.get("/api/actuals/export.csv", params={"from": "2026-09-01", "to": "2026-09-30"})
 
@@ -422,13 +353,4 @@ def test_export_writes_period_day_task_and_hours(client) -> None:
             "0.50",
             "1800",
         ],
-    ]
-
-    tracked = client.get(
-        "/api/actuals/export.csv",
-        params={"from": "2026-09-16", "to": "2026-09-16", "source": "tracked"},
-    )
-    tracked_rows = list(csv.reader(io.StringIO(tracked.text.lstrip("﻿"))))
-    assert tracked_rows[1:] == [
-        ["2026-09-16", "2026-09-30", "2026-09-16", "", "", "", "", "0.33", "1200"],
     ]

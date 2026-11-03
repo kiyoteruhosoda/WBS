@@ -17,13 +17,15 @@ from src.presentation.api.schemas.types import UtcDatetime
 
 
 class ClosedPeriodResponse(BaseModel):
+    """Tracker から直近に届いた締めの期間（初日・届いた実績の最後の日・届いた時刻）。"""
+
     first_day: date
     last_day: date
     closed_at: UtcDatetime
 
 
 class TaskActualsRowResponse(BaseModel):
-    """タスク 1 行。見積・予定済み・実績・残は ``task`` の欄（タスクの一覧と同じ値）。
+    """タスク 1 行。見積・実績・残は ``task`` の欄（タスクの一覧と同じ値）。
 
     ``review_reasons``: 残を見直してほしい理由（``over_estimate`` / ``no_remaining`` /
     ``unknown_remaining`` / ``stale_remaining``）。空なら見直さなくてよい。
@@ -86,25 +88,11 @@ class GanttActualSpanResponse(BaseModel):
 
 
 class PeriodComparisonResponse(BaseModel):
-    """1 期間。``planned_*`` は予定の回（終日は除く）、``tracked_*`` は打刻、``confirmed`` は確定実績。
-
-    ``*_off_task_*`` はタスク外（タスクに結ばない予定・未割当の打刻）。割合は 0〜1、分母 0 なら null。
-    ``difference_seconds`` = 打刻 − 予定。``closed`` は締めの期間のときだけ（確定済みか）。
-    """
+    """1 期間の確定実績（秒）。"""
 
     first_day: date
     last_day: date
-    closed: bool | None
-    planned_seconds: int
-    planned_task_seconds: int
-    planned_off_task_seconds: int
-    tracked_seconds: int
-    tracked_task_seconds: int
-    tracked_off_task_seconds: int
     confirmed_seconds: int
-    difference_seconds: int
-    planned_off_task_ratio: float | None
-    tracked_off_task_ratio: float | None
 
 
 class PeriodReportResponse(BaseModel):
@@ -121,17 +109,7 @@ class PeriodReportResponse(BaseModel):
                 PeriodComparisonResponse(
                     first_day=p.period.first_day,
                     last_day=p.period.last_day,
-                    closed=p.closed,
-                    planned_seconds=p.planned_seconds,
-                    planned_task_seconds=p.planned_task_seconds,
-                    planned_off_task_seconds=p.planned_off_task_seconds,
-                    tracked_seconds=p.tracked_seconds,
-                    tracked_task_seconds=p.tracked_task_seconds,
-                    tracked_off_task_seconds=p.tracked_off_task_seconds,
                     confirmed_seconds=p.confirmed_seconds,
-                    difference_seconds=p.difference_seconds,
-                    planned_off_task_ratio=p.planned_off_task_ratio,
-                    tracked_off_task_ratio=p.tracked_off_task_ratio,
                 )
                 for p in report.periods
             ],
@@ -139,8 +117,8 @@ class PeriodReportResponse(BaseModel):
 
 
 class BreakdownGroupResponse(BaseModel):
-    """``key`` は ``category:<id>`` / ``milestone:<id>`` / ``project:<id>`` / ``none``（未分類）/
-    ``unassigned``（タスク外）。プロジェクトは枝ごとの合計（子孫の分を含む）。"""
+    """``key`` は ``category:<id>`` / ``milestone:<id>`` / ``project:<id>`` / ``none``（未分類）。
+    プロジェクトは枝ごとの合計（子孫の分を含む）。"""
 
     key: str
     name: str | None
@@ -156,7 +134,6 @@ class BreakdownPeriodResponse(BaseModel):
 class BreakdownResponse(BaseModel):
     unit: str
     group_by: str
-    source: str
     time_zone: str
     groups: list[BreakdownGroupResponse]
     periods: list[BreakdownPeriodResponse]
@@ -166,7 +143,6 @@ class BreakdownResponse(BaseModel):
         return cls(
             unit=breakdown.unit.value,
             group_by=breakdown.group_by.value,
-            source=breakdown.source.value,
             time_zone=breakdown.time_zone,
             groups=[
                 BreakdownGroupResponse(key=g.key, name=g.name, color=g.color)

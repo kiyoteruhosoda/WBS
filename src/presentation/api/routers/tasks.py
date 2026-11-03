@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from datetime import date
 from typing import Annotated
 
 from fastapi import APIRouter, Query, status
@@ -44,13 +43,6 @@ def list_tasks(
             pattern=r"^(me|none|[0-9]+)$",
         ),
     ] = None,
-    scheduled_until: Annotated[
-        date | None,
-        Query(
-            description="画面で選んでいる期間の終わり（利用者の日付）。終わりの無い繰り返しの予定は、"
-            "予定済みの時間にこの日まで数える。省くと今月末まで（ADR-0051）"
-        ),
-    ] = None,
 ) -> list[TaskResponse]:
     filters: dict = {}
     if status_filter:
@@ -73,7 +65,7 @@ def list_tasks(
         filters["assignee_user_id"] = int(assignee)
     return [
         TaskResponse(**t)
-        for t in uc.list_tasks(current_user.user_id, filters, scheduled_until=scheduled_until)
+        for t in uc.list_tasks(current_user.user_id, filters)
     ]
 
 
@@ -154,28 +146,24 @@ def patch_task(task_id: int, body: TaskUpdateRequest, uc: TaskUseCasesDep, curre
 def preview_task_removal(
     task_id: int, uc: TaskRemovalUseCasesDep, current_user: CurrentUserDep
 ) -> TaskRemovalResponse:
-    """消すとどうなるか（打刻・実績・WinTrack の規則の数と、消すかアーカイブするか）。ADR-0046。"""
+    """消すとどうなるか（確定した実績と、消すかアーカイブするか）。ADR-0046。"""
     preview = uc.preview(task_id, current_user.user_id)
     return TaskRemovalResponse(
         task_id=preview.task_id,
         title=preview.title,
         action=preview.action.value,
-        time_entries=preview.time_entries,
-        tracked_seconds=preview.tracked_seconds,
         work_log_hours=preview.work_log_hours,
-        tracking_rules=preview.tracking_rules,
-        blocked_by=preview.blocked_by,
         archived=preview.archived,
     )
 
 
 @router.post("/{task_id}/archive", status_code=status.HTTP_204_NO_CONTENT)
 def archive_task(task_id: int, uc: TaskRemovalUseCasesDep, current_user: CurrentUserDep) -> None:
-    """アーカイブする（一覧と付け替え先に出なくなる。実績と締めの表には残る）。計測中なら 409。"""
+    """アーカイブする（一覧と付け替え先に出なくなる。実績の表には残る）。"""
     uc.archive(task_id, current_user.user_id)
 
 
 @router.delete("/{task_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_task(task_id: int, uc: TaskRemovalUseCasesDep, current_user: CurrentUserDep) -> None:
-    """消す。打刻か実績があれば 409（アーカイブする）。計測中なら 409。"""
+    """消す。確定した実績があれば 409（アーカイブする）。"""
     uc.delete(task_id, current_user.user_id)

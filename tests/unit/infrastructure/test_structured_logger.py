@@ -1,4 +1,4 @@
-"""ログの設定（task #495）。取り込んだカレンダーの URL を、通信の道具の標準の行でログに出さない。"""
+"""ログの設定（task #495）。通信の道具の標準の行で、問い合わせ先の URL（秘密を含みうる）をログに出さない。"""
 
 from __future__ import annotations
 
@@ -8,8 +8,6 @@ from collections.abc import Iterator
 import httpx
 import pytest
 
-from src.application.ports.calendar_feed import CalendarFeedError
-from src.infrastructure.calendar_feed.http_fetcher import HttpCalendarFeedFetcher
 from src.infrastructure.logging.structured_logger import QUIET_URL_LOGGERS, setup_logging
 
 # Google の「iCal 形式の非公開アドレス」の形（private- の部分を知っていれば誰でも読める）
@@ -46,7 +44,8 @@ def collected(tmp_path) -> Iterator[_Collect]:
 
 
 def _fetch(handler) -> None:
-    HttpCalendarFeedFetcher(transport=httpx.MockTransport(handler)).fetch(URL)
+    with httpx.Client(transport=httpx.MockTransport(handler), follow_redirects=True) as client:
+        client.get(URL)
 
 
 def _assert_no_url(lines: list[str]) -> None:
@@ -55,15 +54,14 @@ def _assert_no_url(lines: list[str]) -> None:
     assert SECRET_QUERY not in joined
 
 
-def test_reading_a_feed_does_not_log_its_url(collected: _Collect) -> None:
+def test_a_request_does_not_log_its_url(collected: _Collect) -> None:
     _fetch(lambda request: httpx.Response(200, content=ICS))
     _assert_no_url(collected.lines)
 
 
 @pytest.mark.parametrize("status", [404, 403, 500])
 def test_a_failed_read_does_not_log_its_url(collected: _Collect, status: int) -> None:
-    with pytest.raises(CalendarFeedError):
-        _fetch(lambda request: httpx.Response(status))
+    _fetch(lambda request: httpx.Response(status))
     _assert_no_url(collected.lines)
 
 

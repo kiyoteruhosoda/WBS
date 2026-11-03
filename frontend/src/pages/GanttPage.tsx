@@ -49,7 +49,6 @@ const GanttPage: React.FC = () => {
     mutationFn: (task: Task) => (task.status === 'DONE' ? reopenTask(task) : completeTask(task)),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['tasks'] });
-      qc.invalidateQueries({ queryKey: ['today'] });
       qc.invalidateQueries({ queryKey: ['kpi'] });
       qc.invalidateQueries({ queryKey: ['milestones'] });
     },
@@ -61,7 +60,6 @@ const GanttPage: React.FC = () => {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['tasks'] });
       qc.invalidateQueries({ queryKey: ['milestones'] });
-      qc.invalidateQueries({ queryKey: ['today'] });
     },
   });
 

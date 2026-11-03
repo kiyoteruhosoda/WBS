@@ -5,8 +5,6 @@ import FlagOutlinedIcon from '@mui/icons-material/FlagOutlined';
 import { useTheme } from '@mui/material/styles';
 import { DEFAULT_PROJECT_DAYS, projectDaysOf, workingDaysBetween, worksOn } from '../calendar/projectCalendarDays';
 import type { ProjectDays } from '../calendar/projectCalendarDays';
-import MoreTimeIcon from '@mui/icons-material/MoreTime';
-import { scheduleTaskPath } from '../calendar/taskScheduling';
 import { useNavigate } from 'react-router-dom';
 import type { Task, Category, Milestone, TeamCalendar } from '../types';
 import { forecastGapKey, milestoneForecastIsPartial, taskForecastSpan } from '../forecast/forecastView';
@@ -23,7 +21,6 @@ import { WbsBranch, WbsCode } from './WbsBranch';
 import type { TreeGuide } from '../projects/wbsCode';
 import CategoryDot from './CategoryDot';
 import PriorityChip from './PriorityChip';
-import { useSchedulerMove } from '../scheduler/useSchedulerMove';
 
 const DAY_WIDTH = 54;
 // 計画の帯・見込みの帯・実績の帯の 3 段が入る高さ（task #556）
@@ -104,8 +101,6 @@ const GanttChart: React.FC<Props> = ({
   // 行の中では `t` をタスクの変数に使っているので、訳は別名で持つ
   const tr = t;
   const today = todayDate();
-  // 予定を Scheduler へ移した後は「時間を取る」を出さない（task #535 / ADR-0054）
-  const schedulerMove = useSchedulerMove();
   // 期限か見込みのあるマイルストーンだけ（上に並べる）
   const milestoneRows = useMemo(
     () => milestones
@@ -264,18 +259,6 @@ const GanttChart: React.FC<Props> = ({
             </Box>
             {(task.forecast_overdue_days ?? 0) > 0 && overdueIcon(task.forecast_overdue_days ?? 0)}
             {showMeta && <PriorityChip priority={task.priority} />}
-            {isOpen(task) && !schedulerMove.moved && (
-              <Tooltip title={tr('task.scheduleTime')}>
-                <IconButton
-                  size="small" tabIndex={-1}
-                  aria-label={tr('task.scheduleTime')}
-                  onClick={() => navigate(scheduleTaskPath(task.id))}
-                  sx={{ p: '4px', color: ds.textSub }}
-                >
-                  <MoreTimeIcon sx={{ fontSize: 18 }} />
-                </IconButton>
-              </Tooltip>
-            )}
           </Box>
         );
       },
