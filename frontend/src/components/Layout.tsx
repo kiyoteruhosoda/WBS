@@ -6,55 +6,38 @@ import { ds, headingFont } from '../theme';
 import { useI18n } from '../i18n';
 import { useAuth } from '../auth/AuthProvider';
 import AppMark from './AppMark';
-import TimerButton from './TimerButton';
-import TrackerLinkButton from './TrackerLinkButton';
-import { useTrackerMove } from '../tracker/useTrackerMove';
-import { useSchedulerMove } from '../scheduler/useSchedulerMove';
-import ClosingNotice from './closing/ClosingNotice';
 import OfflineNotice from './OfflineNotice';
-import InPageAlarm from './InPageAlarm';
-import AlarmSoundButton from './AlarmSoundButton';
 import ProjectScopeSelect from './ProjectScopeSelect';
 import { useProjectScope } from '../projects/useProjectScope';
 import type { TranslationKey } from '../i18n/translations';
 import {
-  CheckListIcon, BarsIcon, CalendarIcon, InboxIcon,
-  PlusIcon, TodayIcon, SlidersIcon, FolderIcon, FlagIcon, ClosingIcon, GridIcon, TreeIcon, SwapIcon,
+  CheckListIcon, BarsIcon, InboxIcon, PlusIcon, SlidersIcon, FolderIcon, FlagIcon, GridIcon, TreeIcon,
 } from './icons';
 
 const SIDEBAR_WIDTH = 224;
 const TOPBAR_HEIGHT = 58;
 
 const navItems: { labelKey: TranslationKey; path: string; icon: React.FC<{ size?: number; strokeWidth?: number }> }[] = [
-  { labelKey: 'nav.today', path: '/', icon: TodayIcon },
   { labelKey: 'nav.tasks', path: '/tasks', icon: CheckListIcon },
   { labelKey: 'nav.gantt', path: '/gantt', icon: BarsIcon },
-  { labelKey: 'nav.calendar', path: '/calendar', icon: CalendarIcon },
-  { labelKey: 'nav.closing', path: '/closing', icon: ClosingIcon },
   { labelKey: 'nav.actuals', path: '/actuals', icon: GridIcon },
   { labelKey: 'nav.inbox', path: '/inbox', icon: InboxIcon },
   { labelKey: 'nav.projects', path: '/projects', icon: TreeIcon },
   { labelKey: 'nav.categories', path: '/categories', icon: FolderIcon },
   { labelKey: 'nav.milestones', path: '/milestones', icon: FlagIcon },
-  { labelKey: 'nav.trackingRules', path: '/tracking-rules', icon: SwapIcon },
   { labelKey: 'nav.settings', path: '/settings', icon: SlidersIcon },
 ];
 
 const pageTitles: { pattern: RegExp; titleKey: TranslationKey }[] = [
-  { pattern: /^\/$/, titleKey: 'nav.today' },
   { pattern: /^\/tasks\/new$/, titleKey: 'title.taskNew' },
   { pattern: /^\/tasks\/\d+$/, titleKey: 'title.taskEdit' },
   { pattern: /^\/tasks$/, titleKey: 'nav.tasks' },
   { pattern: /^\/gantt$/, titleKey: 'nav.gantt' },
-  { pattern: /^\/calendar$/, titleKey: 'nav.calendar' },
-  { pattern: /^\/calendar\/settings$/, titleKey: 'calendar.settingsTitle' },
-  { pattern: /^\/closing$/, titleKey: 'nav.closing' },
   { pattern: /^\/actuals(\/\w+)?$/, titleKey: 'nav.actuals' },
   { pattern: /^\/inbox$/, titleKey: 'nav.inbox' },
   { pattern: /^\/projects$/, titleKey: 'nav.projects' },
   { pattern: /^\/categories$/, titleKey: 'nav.categories' },
   { pattern: /^\/milestones$/, titleKey: 'nav.milestones' },
-  { pattern: /^\/tracking-rules(\/new)?$/, titleKey: 'nav.trackingRules' },
   { pattern: /^\/settings$/, titleKey: 'settings.title' },
 ];
 
@@ -156,14 +139,14 @@ const AccountButton: React.FC = () => {
 };
 
 /** プロジェクトの絞り込みに従う画面（ここで絞り込み中と出す。task #187） */
-const SCOPED_PATHS = /^\/(tasks|gantt|calendar|actuals|milestones)(\/|$)/;
+const SCOPED_PATHS = /^\/(tasks|gantt|actuals|milestones)(\/|$)/;
 
 /** 絞り込み中の印。外すと全部に戻る。 */
 const ScopeBadge: React.FC = () => {
   const { t } = useI18n();
   const location = useLocation();
   const { scope, setScope, projects } = useProjectScope();
-  if (scope === 'all' || !SCOPED_PATHS.test(location.pathname) || /^\/(tasks\/(new|\d+)|calendar\/settings)$/.test(location.pathname)) {
+  if (scope === 'all' || !SCOPED_PATHS.test(location.pathname) || /^\/tasks\/(new|\d+)$/.test(location.pathname)) {
     return null;
   }
   const name = scope === 'none' ? t('scope.none') : projects.find((p) => p.id === scope)?.path;
@@ -175,7 +158,7 @@ const ScopeBadge: React.FC = () => {
       onDelete={() => setScope('all')}
       title={t('scope.clear')}
       sx={{
-        // スマホ幅では縮む（打刻のボタンと並べても 390px に収める。task #639）
+        // スマホ幅では縮む（390px に収める。task #639）
         maxWidth: { xs: 140, sm: 320 }, minWidth: 0, flexShrink: 1, bgcolor: ds.primaryPale, color: ds.primary, fontWeight: 600,
         '& .MuiChip-label': { overflow: 'hidden', textOverflow: 'ellipsis' },
       }}
@@ -189,10 +172,6 @@ const Layout: React.FC = () => {
   const location = useLocation();
   const isDesktop = useMediaQuery('(min-width:1024px)');
   const { t } = useI18n();
-  // 打刻を Tracker へ移した後は、打刻ボタンと締めの知らせを出さない（task #526 / ADR-0053）
-  const trackerMove = useTrackerMove();
-  // 予定を Scheduler へ移した後は、画面の中の予定の知らせと音の入り切りを出さない（Scheduler が知らせる。task #535 / ADR-0054）
-  const schedulerMove = useSchedulerMove();
 
   const titleKey = pageTitles.find((p) => p.pattern.test(location.pathname))?.titleKey;
   const title = titleKey ? t(titleKey) : t('app.name');
@@ -231,7 +210,7 @@ const Layout: React.FC = () => {
               <MenuIcon />
             </IconButton>
           )}
-          {/* スマホ幅では打刻ボタンに場所を譲る（題名は左のメニューで分かる） */}
+          {/* スマホ幅では題名を出さない（題名は左のメニューで分かる） */}
           <Box sx={{
             display: { xs: 'none', sm: 'block' },
             fontFamily: headingFont, fontSize: 16, fontWeight: 700, color: ds.text, whiteSpace: 'nowrap',
@@ -241,10 +220,6 @@ const Layout: React.FC = () => {
           </Box>
           <ScopeBadge />
           <Box sx={{ flex: 1 }} />
-          {/* 打刻（task #154）。どの画面でも上部に出す。Tracker へ移した後は Tracker への案内（task #526） */}
-          {trackerMove.moved ? <TrackerLinkButton url={trackerMove.url} /> : <TimerButton />}
-          {/* 予定の通知の音の入り切り（task #520） */}
-          {!schedulerMove.moved && <AlarmSoundButton />}
           {isDesktop ? (
             <Button
               variant="contained"
@@ -269,9 +244,6 @@ const Layout: React.FC = () => {
         <Box component="main" sx={{ flex: 1, p: { xs: '16px', md: '24px' } }}>
           {/* つながっていない（task #192 / ADR-0028）。殻は出ているがデータは読めない */}
           <OfflineNotice />
-          {!schedulerMove.moved && <InPageAlarm />}
-          {/* 未確定の締めの期間の知らせ（task #161 / ADR-0012） */}
-          {!trackerMove.moved && <ClosingNotice />}
           <Outlet />
         </Box>
       </Box>

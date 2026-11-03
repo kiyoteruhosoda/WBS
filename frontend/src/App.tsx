@@ -5,23 +5,15 @@ import { ThemeProvider } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
 import { theme } from './theme';
 import Layout from './components/Layout';
-import Today from './pages/Today';
 import TaskList from './pages/TaskList';
 import TaskEdit from './pages/TaskEdit';
 import GanttPage from './pages/GanttPage';
 import ActualsPage from './pages/ActualsPage';
-import CalendarPage from './pages/CalendarPage';
-import CalendarSettingsPage from './pages/CalendarSettingsPage';
-import ClosingPage from './pages/ClosingPage';
 import Inbox from './pages/Inbox';
 import CategoriesPage from './pages/CategoriesPage';
-import TrackingRulesPage from './pages/TrackingRulesPage';
 import MilestonesPage from './pages/MilestonesPage';
 import ProjectsPage from './pages/ProjectsPage';
 import Settings from './pages/Settings';
-import AppReturnPage from './pages/AppReturnPage';
-import { MovedToTrackerGate } from './components/TrackerMovedNotice';
-import { MovedToSchedulerGate } from './components/SchedulerMovedNotice';
 import { I18nProvider } from './i18n';
 import { AuthProvider } from './auth/AuthProvider';
 import AppUpdatePrompt from './components/AppUpdatePrompt';
@@ -47,31 +39,24 @@ const SignedInApp: React.FC = () => (
     <I18nProvider>
       <Routes>
         <Route path="/" element={<Layout />}>
-          {/* 「今日」が最初の画面（ダッシュボードはここへ寄せた。ADR-0015）。古い /today は寄せ先へ */}
-          <Route index element={<Today />} />
-          <Route path="today" element={<Navigate to="/" replace />} />
+          {/* 最初の画面はタスク（「今日」は外した。task #543・ADR-0070） */}
+          <Route index element={<Navigate to="/tasks" replace />} />
           <Route path="tasks" element={<TaskList />} />
           <Route path="tasks/new" element={<TaskEdit />} />
           <Route path="tasks/:id" element={<TaskEdit />} />
           <Route path="gantt" element={<GanttPage />} />
-          {/* 実績の見える化。/actuals/review は締めの直後に「残を見直す」（task #162） */}
+          {/* 実績の見える化。/actuals/review は Tracker の締めが届いた後に「残を見直す」（task #162） */}
           <Route path="actuals" element={<ActualsPage />} />
           <Route path="actuals/:view" element={<ActualsPage />} />
-          {/* カレンダーとその設定は Scheduler へ移したら Scheduler の同じ画面への案内に替える（task #535 / ADR-0054） */}
-          <Route path="calendar" element={<MovedToSchedulerGate><CalendarPage /></MovedToSchedulerGate>} />
-          <Route path="calendar/settings" element={<MovedToSchedulerGate><CalendarSettingsPage /></MovedToSchedulerGate>} />
-          {/* 締めと規則は Tracker へ移したら Tracker の同じ画面への案内に替える（task #526 / ADR-0053） */}
-          <Route path="closing" element={<MovedToTrackerGate><ClosingPage /></MovedToTrackerGate>} />
           <Route path="inbox" element={<Inbox />} />
           <Route path="projects" element={<ProjectsPage />} />
           <Route path="categories" element={<CategoriesPage />} />
-          {/* PC の自動記録の規則（ADR-0043）。new は WinTrack が欄を埋めて開く。key で作り直して欄を読み直す */}
-          <Route path="tracking-rules" element={<MovedToTrackerGate><TrackingRulesPage key="list" /></MovedToTrackerGate>} />
-          <Route path="tracking-rules/new" element={<MovedToTrackerGate><TrackingRulesPage key="new" /></MovedToTrackerGate>} />
           <Route path="milestones" element={<MilestonesPage />} />
           <Route path="settings" element={<Settings />} />
           {/* ログイン済みで /login に来た場合（コールバック後の戻り先など）は最初の画面へ */}
           <Route path="login" element={<Navigate to="/" replace />} />
+          {/* 外した画面（今日・カレンダー・締め・規則など）の古いブックマークは最初の画面へ */}
+          <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
       </Routes>
     </I18nProvider>
@@ -83,11 +68,7 @@ const App: React.FC = () => (
     <ThemeProvider theme={theme}>
       <CssBaseline />
       <BrowserRouter>
-        <Routes>
-          {/* 打刻アプリのログインの戻り先（ADR-0019）。ログインの外に置く（未ログインの PC で開いてもログイン画面へ飛ばさない） */}
-          <Route path="/app/oauth2redirect" element={<AppReturnPage />} />
-          <Route path="*" element={<SignedInApp />} />
-        </Routes>
+        <SignedInApp />
       </BrowserRouter>
       {/* 新しい版の知らせ（ADR-0028）。ログイン画面でも出す */}
       <AppUpdatePrompt watch={watchForUpdate} />

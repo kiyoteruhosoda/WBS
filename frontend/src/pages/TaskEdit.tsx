@@ -14,18 +14,14 @@ import { getMilestones } from '../api/milestones';
 import { getProjectMembers, projectMembersKey } from '../api/projects';
 import { isForbidden } from '../api/forbidden';
 import type { Milestone, Task, TaskStatus, DependencyType } from '../types';
-import { formatDate, formatHours, priorityBand, priorityBandValue, todayDate } from '../utils/format';
+import { formatDate, priorityBand, priorityBandValue, todayDate } from '../utils/format';
 import type { PriorityBand } from '../utils/format';
 import { useI18n } from '../i18n';
 import { ds } from '../theme';
 import { PlusIcon, TrashIcon } from '../components/icons';
-import MoreTimeIcon from '@mui/icons-material/MoreTime';
-import { scheduleTaskPath } from '../calendar/taskScheduling';
 import TaskRemovalDialog from '../components/tasks/TaskRemovalDialog';
 import { milestoneReachable, parseScope, pickableProjects } from '../projects/projectScope';
 import { useProjectScope } from '../projects/useProjectScope';
-import { useDayOffReason } from '../calendar/useDayOffReason';
-import { useSchedulerMove } from '../scheduler/useSchedulerMove';
 
 const STATUSES: TaskStatus[] = ['TODO', 'DOING', 'WAITING', 'DONE', 'CANCELLED'];
 const DEP_TYPES: DependencyType[] = ['FS', 'SS', 'FF', 'SF'];
@@ -96,16 +92,6 @@ const FieldLabel: React.FC<{ children: React.ReactNode; required?: boolean }> = 
 };
 
 // 優先度・緊急度のラジオpill（高/中/低）
-/** 開始・期限が休みの日に当たったときの知らせ（止めはしない。ADR-0029） */
-const DayOffHint: React.FC<{ reasons: string }> = ({ reasons }) => {
-  const { t } = useI18n();
-  return (
-    <Box role="status" sx={{ mt: '4px', fontSize: 12, color: ds.warnText }}>
-      {t('taskEdit.onDayOff', { reasons })}
-    </Box>
-  );
-};
-
 const PillRadio: React.FC<{ value: PriorityBand; onChange: (v: PriorityBand) => void }> = ({ value, onChange }) => {
   const { t } = useI18n();
   return (
@@ -144,14 +130,9 @@ const TaskEdit: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const isNew = id === undefined || id === 'new';
   const navigate = useNavigate();
-  // 予定を Scheduler へ移した後は「予定済みの時間」と「時間を取る」を出さない（task #535 / ADR-0054）
-  const schedulerMove = useSchedulerMove();
   const qc = useQueryClient();
   const { t } = useI18n();
   const [form, setForm] = useState<FormData>(defaultForm);
-  // 開始・期限が休みの日なら知らせる（タスクだけ。2026-10-02 の決定）
-  const startDayOff = useDayOffReason(form.start_date);
-  const dueDayOff = useDayOffReason(form.due_date);
   const [tab, setTab] = useState(0);
   const [showTitleError, setShowTitleError] = useState(false);
   const [memoPreview, setMemoPreview] = useState(false);
@@ -230,7 +211,6 @@ const TaskEdit: React.FC = () => {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['tasks'] });
-      qc.invalidateQueries({ queryKey: ['today'] });
       qc.invalidateQueries({ queryKey: ['kpi'] });
       qc.invalidateQueries({ queryKey: ['worklogs', id] });
       qc.invalidateQueries({ queryKey: ['task'] });
@@ -415,7 +395,6 @@ const TaskEdit: React.FC = () => {
                 value={form.start_date}
                 onChange={e => setForm({ ...form, start_date: e.target.value })}
               />
-              {startDayOff && <DayOffHint reasons={startDayOff} />}
             </Box>
             <Box sx={{ flex: '1 1 200px' }}>
               <FieldLabel>{t('taskEdit.dueDate')}</FieldLabel>
@@ -424,7 +403,6 @@ const TaskEdit: React.FC = () => {
                 value={form.due_date}
                 onChange={e => setForm({ ...form, due_date: e.target.value })}
               />
-              {dueDayOff && <DayOffHint reasons={dueDayOff} />}
             </Box>
           </Box>
 
@@ -474,35 +452,6 @@ const TaskEdit: React.FC = () => {
               )}
             </Box>
           </Box>
-
-          {/* 予定済みの時間と、まだ取っていない分（task #159） */}
-          {!isNew && task && !schedulerMove.moved && (
-            <Box
-              data-testid="task-scheduled-hours"
-              sx={{
-                display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap',
-                p: '10px 12px', border: `1px solid ${ds.border}`, borderRadius: '8px',
-              }}
-            >
-              <Box sx={{ flex: '1 1 200px' }}>
-                <Box sx={{ fontSize: 13, fontWeight: 700, color: ds.text }}>{t('taskEdit.scheduledHours')}</Box>
-                <Box sx={{ fontSize: 13, color: ds.textSub }}>
-                  {t('taskEdit.scheduledSummary', {
-                    scheduled: formatHours(task.scheduled_hours),
-                    unscheduled: formatHours(task.unscheduled_hours),
-                  })}
-                </Box>
-              </Box>
-              {task.status !== 'DONE' && task.status !== 'CANCELLED' && (
-                <Button
-                  variant="outlined" size="small" startIcon={<MoreTimeIcon />}
-                  onClick={() => navigate(scheduleTaskPath(task.id))}
-                >
-                  {t('task.scheduleTime')}
-                </Button>
-              )}
-            </Box>
-          )}
 
           {/* プロジェクト（task #187）。子タスクは親と同じで、ここでは選べない */}
           <Box>

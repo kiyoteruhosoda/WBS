@@ -16,7 +16,7 @@ import {
   setTeamWorkdays, teamCalendarKey,
 } from '../api/projects';
 import type { Project, TeamCalendar, WeekdayCode } from '../types';
-import { WEEKDAY_CODES } from '../calendar/eventForm';
+import { WEEKDAYS_SUNDAY_FIRST as WEEKDAY_CODES } from '../calendar/projectCalendarDays';
 import { useI18n } from '../i18n';
 import { ds } from '../theme';
 import { todayDate } from '../utils/format';

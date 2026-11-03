@@ -4,11 +4,8 @@ import {
   Alert, Autocomplete, Box, Button, CircularProgress, MenuItem, TextField,
 } from '@mui/material';
 import { getAppInfo, getSettings, updateSettings } from '../api/settings';
-import { useClockStyle } from '../preferences/clockStyle';
-import type { ClockStyle } from '../clock/clockFace';
 import { useI18n } from '../i18n';
 import { ds } from '../theme';
-import PushSettings from '../components/PushSettings';
 
 const card = {
   bgcolor: ds.paper,
@@ -44,8 +41,6 @@ const Settings: React.FC = () => {
   const [language, setLanguage] = useState('ja');
   const [timezone, setTimezone] = useState('Asia/Tokyo');
   const [saved, setSaved] = useState(false);
-  // 時刻の表記は端末ごと（選んだらすぐ効く。保存のボタンは要らない）
-  const clock = useClockStyle();
 
   useEffect(() => {
     if (!settings) return;
@@ -100,17 +95,6 @@ const Settings: React.FC = () => {
               <TextField {...params} label={t('settings.timezone')} helperText={t('settings.timezoneHelp')} />
             )}
           />
-          <TextField
-            select
-            label={t('settings.clockStyle')}
-            value={clock.style}
-            onChange={(e) => clock.setStyle(e.target.value as ClockStyle)}
-            helperText={t('settings.clockStyleHelp')}
-            sx={{ maxWidth: 360 }}
-          >
-            <MenuItem value="24h">{t('settings.clockStyle.24h')}</MenuItem>
-            <MenuItem value="12h">{t('settings.clockStyle.12h')}</MenuItem>
-          </TextField>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
             <Button
               variant="contained"
@@ -125,8 +109,6 @@ const Settings: React.FC = () => {
           </Box>
         </Box>
       </Box>
-
-      <PushSettings />
 
       <Box sx={card}>
         <Box sx={sectionHeader}>{t('settings.appInfo')}</Box>

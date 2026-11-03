@@ -1,10 +1,10 @@
 import client from './client';
 import type {
-  Breakdown, BreakdownGroupBy, GanttActualSpan, PeriodReport, ReportUnit, TaskActuals, TimeSource,
+  Breakdown, BreakdownGroupBy, GanttActualSpan, PeriodReport, ReportUnit, TaskActuals,
 } from '../types/actuals';
 import type { ProjectFilterParams } from '../projects/projectScope';
 
-/** 実績の見える化（task #162、ADR-0017）。打刻・締め・残を書いたら読み直させる。 */
+/** 実績の見える化（task #162、ADR-0017）。実績・残を書いたら読み直させる。 */
 export const ACTUALS_KEY = ['actuals'] as const;
 
 export interface RangeParams {
@@ -32,20 +32,20 @@ export const getPeriodReport = async (
 };
 
 export const getBreakdown = async (
-  unit: ReportUnit, groupBy: BreakdownGroupBy, source: TimeSource, range: RangeParams = {},
+  unit: ReportUnit, groupBy: BreakdownGroupBy, range: RangeParams = {},
   project: ProjectFilterParams = {},
 ): Promise<Breakdown> => {
   const { data } = await client.get<Breakdown>('/actuals/breakdown', {
-    params: { unit, group_by: groupBy, source, ...range, ...project },
+    params: { unit, group_by: groupBy, ...range, ...project },
   });
   return data;
 };
 
 /** CSV の書き出し口（同一オリジンなので、リンクで開けばセッションの Cookie が付く）。 */
 export const exportCsvUrl = (
-  from: string, to: string, source: TimeSource, project: ProjectFilterParams = {},
+  from: string, to: string, project: ProjectFilterParams = {},
 ): string => {
-  const params = new URLSearchParams({ from, to, source });
+  const params = new URLSearchParams({ from, to });
   if (project.project_id !== undefined) params.set('project_id', String(project.project_id));
   if (project.unclassified) params.set('unclassified', 'true');
   return `/api/actuals/export.csv?${params.toString()}`;

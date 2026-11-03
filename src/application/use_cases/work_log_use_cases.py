@@ -52,11 +52,9 @@ class WorkLogUseCases:
 
     @staticmethod
     def _ensure_not_from_closing(work_log: WorkLog) -> None:
-        """締めで作った実績は直接は直させない（打刻を直すには期間を開け直す。ADR-0012）。"""
+        """WBS の締めで作った実績（Tracker へ移す前のもの）は直させない（ADR-0012。締めは Tracker へ移した）。"""
         if work_log.is_from_closing:
-            raise ConflictError(
-                "This work log was created by closing a period; reopen the period to change it"
-            )
+            raise ConflictError("This work log was created by closing a period; it cannot be changed")
 
     def _owned(self, work_log_id: int, user_id: int) -> WorkLog:
         return owned_by(

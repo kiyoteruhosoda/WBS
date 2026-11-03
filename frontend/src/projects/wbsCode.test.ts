@@ -9,7 +9,7 @@ const p = (id: number, name: string, parent: number | null = null, extra: Partia
 const task = (id: number, projectId: number | null, parent: number | null = null): Task => ({
   id, user_id: 1, title: `t${id}`, category_id: null, priority: 3, urgency: 3, status: 'TODO', start_date: null, due_date: null,
   estimated_hours: null, remaining_hours: null, remaining_hours_entered: null, actual_hours: 0, has_subtasks: false,
-  rollup_actual_hours: 0, rollup_remaining_hours: null, progress_percent: null, scheduled_hours: null, unscheduled_hours: null,
+  rollup_actual_hours: 0, rollup_remaining_hours: null, progress_percent: null,
   priority_score: 0, memo: null, parent_task_id: parent, milestone_id: null, project_id: projectId, project_path: null,
   completed_at: null, deleted_at: null, created_at: '2026-09-01T00:00:00Z', updated_at: '2026-09-01T00:00:00Z',
 });

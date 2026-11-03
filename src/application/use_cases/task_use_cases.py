@@ -1,11 +1,8 @@
 from __future__ import annotations
 
-from datetime import date, timedelta
-
 from sqlalchemy.orm import Session
 
 from src.application.dto.task_dto import CreateTaskDTO, UpdateTaskDTO
-from src.application.ports.scheduled_time_lookup import ScheduledTimeLookup
 from src.application.use_cases.completion_forecast_use_cases import CompletionForecastUseCases
 from src.application.use_cases.ownership import owned_by
 from src.application.use_cases.project_membership import ProjectMembership
@@ -29,13 +26,6 @@ from src.infrastructure.repositories.project_member_repository import (
 from src.infrastructure.repositories.project_repository import SqlAlchemyProjectRepository
 from src.infrastructure.repositories.task_repository import SqlAlchemyTaskRepository
 
-SCHEDULED_TIME_HORIZON_DAYS = 365
-"""「予定済みの時間」に数える先の長さ（今日から何日先まで）。終わりのある予定はここまで数える。
-
-終わりの無い繰り返しは、ここまで数えると 1 年分が積まれて残を大きく超える（15 分 × 毎平日で 65h）。
-そちらは画面の期間の終わり（無ければ今月末）までにする（ADR-0051）。
-"""
-
 
 def _forecast_fields(forecast: CompletionForecast, task: Task) -> dict:
     """終わる見込み（ADR-0058）。見込みを出さないときは ``forecast_gap`` に理由。"""
@@ -48,18 +38,11 @@ def _forecast_fields(forecast: CompletionForecast, task: Task) -> dict:
     }
 
 
-def _end_of_month(day: date) -> date:
-    first_of_next = (day.replace(day=28) + timedelta(days=4)).replace(day=1)
-    return first_of_next - timedelta(days=1)
-
-
 class TaskUseCases:
     def __init__(
         self,
         session: Session,
         clock: UserClock | None = None,
-        *,
-        scheduled_time: ScheduledTimeLookup | None = None,
     ) -> None:
         self._repo: TaskRepository = SqlAlchemyTaskRepository(session)
         self._milestones: MilestoneRepository = SqlAlchemyMilestoneRepository(session)
@@ -75,25 +58,19 @@ class TaskUseCases:
         self._people = SqlAlchemyPersonDirectory(session, require_identity=False)
         self._clock = clock or UserClock(session)
         self._forecasts = CompletionForecastUseCases(session, self._clock)
-        # 予定の口が無ければ「予定済みの時間」は出さない（null）。
-        self._scheduled_time = scheduled_time
 
-    def list_tasks(
-        self, user_id: int, filters: dict, *, scheduled_until: date | None = None
-    ) -> list[dict]:
+    def list_tasks(self, user_id: int, filters: dict) -> list[dict]:
         """``filters`` の ``project_id`` は**子孫のプロジェクトも含めて**絞る（ADR-0024）。
 
-        アーカイブしたタスク（ADR-0046）は出さない。``scheduled_until`` は画面で選んでいる期間の
-        終わりで、終わりの無い繰り返しをそこまで数える（無ければ今月末。ADR-0051）。
+        アーカイブしたタスク（ADR-0046）は出さない。
         """
         filters = self.resolve_project_filter(user_id, filters)
         tasks = [t for t in self._repo.find_all(user_id, filters) if not t.is_archived]
         board = self.progress_board(user_id)
-        scheduled = self.scheduled_minutes(user_id, scheduled_until)
         tree = self._membership.tree(user_id)
         names = self._assignee_names(tasks)
         forecast = self._forecasts.forecast(user_id)
-        return [self._enrich(t, board, scheduled, tree, names, forecast) for t in tasks]
+        return [self._enrich(t, board, tree, names, forecast) for t in tasks]
 
     def assigned_open_tasks(self, user_id: int) -> list[tuple[Task, str | None]]:
         """担当が自分で、自分に見えて、まだ作業できるタスクと、その道筋（ADR-0056。Tracker の選ぶ欄へ渡す）。
@@ -131,30 +108,6 @@ class TaskUseCases:
         resolved = {k: v for k, v in filters.items() if k != "project_id"}
         resolved["project_ids"] = self._membership.scope_ids(user_id, filters["project_id"])
         return resolved
-
-    def scheduled_minutes(
-        self, user_id: int, until: date | None = None
-    ) -> dict[int, int] | None:
-        """タスクごとの「予定済みの時間」（分）。予定の口が無ければ None。
-
-        今日（利用者の日付）以降に始まる、そのタスクに結ばれた回の長さの合計（ADR-0014）。
-        今日の回は、もう過ぎたものも数える。先は ``SCHEDULED_TIME_HORIZON_DAYS`` 日まで。
-        終わりの無い繰り返しだけは ``until``（無ければ今月末）までにする（ADR-0051）。
-        """
-        if self._scheduled_time is None:
-            return None
-        today = self._clock.today(user_id)
-        try:
-            horizon = today + timedelta(days=SCHEDULED_TIME_HORIZON_DAYS)
-        except OverflowError:
-            horizon = date.max
-        return self._scheduled_time.scheduled_minutes_by_task(
-            user_id,
-            today,
-            horizon,
-            self._clock.zone_name(user_id),
-            endless_until=until if until is not None else _end_of_month(today),
-        )
 
     def progress_board(self, user_id: int) -> TaskProgressBoard:
         # 親の進捗は子孫の積み上げなので、絞り込みに関わらず利用者のタスク全部から作る
@@ -375,7 +328,6 @@ class TaskUseCases:
         self,
         task: Task,
         board: TaskProgressBoard | None = None,
-        scheduled: dict[int, int] | None = None,
         tree: ProjectTree | None = None,
         names: dict[int, str] | None = None,
         forecast: CompletionForecast | None = None,
@@ -387,15 +339,10 @@ class TaskUseCases:
             names = self._assignee_names([task])
         if board is None:
             board = self.progress_board(task.user_id)
-        if scheduled is None:
-            scheduled = self.scheduled_minutes(task.user_id)
         if tree is None:
             tree = self._membership.tree(task.user_id)
         actual = board.actual_hours(task.id)
         remaining = task.remaining_hours_from(actual)
-        scheduled_hours = (
-            round(scheduled.get(task.id or 0, 0) / 60, 2) if scheduled is not None else None
-        )
         # 進捗率の式に入れる実績と残（子を持つなら子孫の積み上げ。ADR-0010）
         figures = board.figures(task)
         # 期限の近さは利用者の日付で決まる。サーバ（UTC）の today を使うと
@@ -422,13 +369,6 @@ class TaskUseCases:
             "rollup_actual_hours": figures.actual_hours,
             "rollup_remaining_hours": figures.remaining_hours,
             "progress_percent": figures.progress_percent(done=task.status == TaskStatus.DONE),
-            "scheduled_hours": scheduled_hours,
-            # 残のうち、まだ予定に取っていない分（残 − 予定済み、0 未満は 0）
-            "unscheduled_hours": (
-                round(max(remaining - scheduled_hours, 0.0), 2)
-                if remaining is not None and scheduled_hours is not None
-                else None
-            ),
             "priority_score": priority_score,
             "memo": task.memo,
             "parent_task_id": task.parent_task_id,

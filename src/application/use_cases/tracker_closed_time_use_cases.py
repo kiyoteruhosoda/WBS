@@ -14,10 +14,10 @@ from __future__ import annotations
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import date
+from decimal import ROUND_HALF_UP, Decimal
 
 from sqlalchemy.orm import Session
 
-from src.application.use_cases.closing_use_cases import hours_of
 from src.domain.entities.work_log import WorkLog
 from src.domain.exceptions import ValidationError
 from src.domain.value_objects.work_log_source import WorkLogSource
@@ -25,6 +25,13 @@ from src.infrastructure.database.models import MachineOperationLogModel
 from src.infrastructure.repositories.task_repository import SqlAlchemyTaskRepository
 from src.infrastructure.repositories.work_log_repository import SqlAlchemyWorkLogRepository
 from src.shared.clock import utcnow
+
+HOURS_QUANTUM = Decimal("0.01")
+
+
+def hours_of(seconds: int) -> Decimal:
+    """``work_logs.hours`` へ入れる値（小数 2 桁。正確な長さは ``duration_seconds``）。"""
+    return (Decimal(seconds) / Decimal(3600)).quantize(HOURS_QUANTUM, rounding=ROUND_HALF_UP)
 
 #: 1 期間に受け取る行の上限（毎日 × タスク。区切りは月まで）
 MAX_ENTRIES = 5000

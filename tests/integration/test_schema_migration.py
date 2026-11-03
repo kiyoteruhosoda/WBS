@@ -859,3 +859,57 @@ def test_0032_lets_top_project_managers_and_the_default_user_create_projects(tmp
         assert "can_create_projects" not in columns
     finally:
         engine.dispose()
+
+
+MOVED_TABLES = {
+    "time_entries", "time_entry_carvings", "auto_time_entry_receipts", "work_breaks",
+    "pc_activity_days", "pc_activity_spans", "tracking_rules", "tracking_rule_books", "closing_periods",
+    "calendars", "calendar_days_off", "calendar_imports", "calendar_imported_occurrences",
+    "calendar_view_presets", "calendar_events", "calendar_event_exceptions", "calendar_event_moves",
+    "calendar_event_completions", "push_subscriptions", "push_preferences", "push_dispatches",
+}
+
+
+def test_0035_drops_what_moved_to_tracker_and_scheduler_but_keeps_work_logs(tmp_path):
+    # task #543 / ADR-0070: 移した表は消える。WBS の締めで作った実績の行は残る（期間の番号の列だけ消える）
+    url = _url(tmp_path, "moved.db")
+    engine = sa.create_engine(url)
+    try:
+        with engine.begin() as connection:
+            command.upgrade(alembic_config(connection), "0034")
+        assert _tables(url) >= MOVED_TABLES
+        with engine.begin() as connection:
+            connection.exec_driver_sql(
+                "INSERT INTO users (id, email, display_name, timezone, language, is_active, "
+                "created_at, updated_at) VALUES "
+                "(1, 'taro@example.com', '太郎', 'Asia/Tokyo', 'ja', 1, '2026-01-01', '2026-01-01')"
+            )
+            connection.exec_driver_sql(
+                "INSERT INTO tasks (id, user_id, title, priority, urgency, status, "
+                "created_at, updated_at) VALUES (1, 1, 't', 3, 3, 'TODO', '2026-01-01', '2026-01-01')"
+            )
+            connection.exec_driver_sql(
+                "INSERT INTO closing_periods (id, user_id, first_day, last_day, time_zone, starts_at, "
+                "ends_at, closed_at) VALUES (1, 1, '2026-09-01', '2026-09-15', 'Asia/Tokyo', "
+                "'2026-08-31 15:00:00', '2026-09-15 15:00:00', '2026-09-16 00:00:00')"
+            )
+            connection.exec_driver_sql(
+                "INSERT INTO work_logs (id, user_id, task_id, work_date, hours, created_at, updated_at, "
+                "source, closing_period_id, duration_seconds) VALUES "
+                "(1, 1, 1, '2026-09-02', 1.5, '2026-09-16', '2026-09-16', 'closing', 1, 5400)"
+            )
+        with engine.begin() as connection:
+            command.upgrade(alembic_config(connection), "0035")
+        assert MOVED_TABLES.isdisjoint(_tables(url))
+        assert "closing_period_id" not in {c["name"] for c in sa.inspect(engine).get_columns("work_logs")}
+        with engine.connect() as connection:
+            row = connection.exec_driver_sql("SELECT source, duration_seconds FROM work_logs").one()
+        assert tuple(row) == ("closing", 5400)
+
+        # 戻すと空の表ができる（中身は戻らない）
+        with engine.begin() as connection:
+            command.downgrade(alembic_config(connection), "0034")
+        assert _tables(url) >= MOVED_TABLES
+        assert "closing_period_id" in {c["name"] for c in sa.inspect(engine).get_columns("work_logs")}
+    finally:
+        engine.dispose()

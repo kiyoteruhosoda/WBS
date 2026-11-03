@@ -7,11 +7,9 @@ import {
   TableContainer, OutlinedInput, InputAdornment, TextField, IconButton, Tooltip,
   Checkbox, Button, ToggleButton, ToggleButtonGroup, Snackbar, Chip,
 } from '@mui/material';
-import MoreTimeIcon from '@mui/icons-material/MoreTime';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import AddIcon from '@mui/icons-material/Add';
-import { scheduleTaskPath } from '../calendar/taskScheduling';
 import { getTasks } from '../api/tasks';
 import { getCategories } from '../api/categories';
 import { getMilestones } from '../api/milestones';
@@ -32,7 +30,6 @@ import { treeGuides, wbsCodes } from '../projects/wbsCode';
 import type { TreeGuide } from '../projects/wbsCode';
 import { getPeople, PEOPLE_KEY } from '../api/projects';
 import { useProjectScope } from '../projects/useProjectScope';
-import { useSchedulerMove } from '../scheduler/useSchedulerMove';
 import {
   followingIds, groupRows, groupTaskIds, groupTasksByProject, planProjectMove, sortTasks,
   type TaskGroupNode, type TaskListRow, type TaskSortKey,
@@ -50,7 +47,7 @@ const readGrouped = (): boolean => {
   }
 };
 
-/** スマホ幅では隠す列（題名・期限・ステータスと打刻の予定だけ残す）。 */
+/** スマホ幅では隠す列（題名・期限・ステータスだけ残す）。 */
 const wideOnly = { display: { xs: 'none', sm: 'table-cell' } } as const;
 /** プロジェクトの列は PC 幅だけ（狭い幅では題名の下に道筋を出す）。 */
 const desktopOnly = { display: { xs: 'none', md: 'table-cell' } } as const;
@@ -58,8 +55,6 @@ const desktopOnly = { display: { xs: 'none', md: 'table-cell' } } as const;
 const TaskList: React.FC = () => {
   const navigate = useNavigate();
   const { t } = useI18n();
-  // 予定を Scheduler へ移した後は「予定済み」の列と「時間を取る」を出さない（サーバも null で返す。task #535 / ADR-0054）
-  const schedulerMove = useSchedulerMove();
   const [statusFilter, setStatusFilter] = useState<TaskStatus[]>([]);
   const [categoryId, setCategoryId] = useState<string>('');
   const [milestoneId, setMilestoneId] = useState<string>('');
@@ -161,7 +156,7 @@ const TaskList: React.FC = () => {
     setNotice(detached > 0 ? `${moved} ${t('taskList.movedDetached', { count: detached })}` : moved);
   };
 
-  const columnCount = (grouped ? 8 : 9) - (schedulerMove.moved ? 2 : 0);
+  const columnCount = grouped ? 6 : 7;
   const sortLabel = (key: TaskSortKey, label: string) => (
     <TableSortLabel
       active={sortKey === key}
@@ -338,29 +333,6 @@ const TaskList: React.FC = () => {
           />
         </TableCell>
         <TableCell><StatusChip task={task} /></TableCell>
-        {!schedulerMove.moved && <TableCell sx={wideOnly}>
-          <Box sx={{ fontSize: 13, color: ds.textSub, whiteSpace: 'nowrap' }}>
-            {formatHours(task.scheduled_hours)}
-          </Box>
-          {task.unscheduled_hours != null && task.unscheduled_hours > 0 && !closed && (
-            <Box sx={{ fontSize: 11, color: ds.textMuted, whiteSpace: 'nowrap' }}>
-              {t('taskList.unscheduled', { hours: formatHours(task.unscheduled_hours) })}
-            </Box>
-          )}
-        </TableCell>}
-        {!schedulerMove.moved && <TableCell padding="checkbox">
-          {!closed && (
-            <Tooltip title={t('task.scheduleTime')}>
-              <IconButton
-                size="small"
-                aria-label={t('task.scheduleTime')}
-                onClick={(e) => { e.stopPropagation(); navigate(scheduleTaskPath(task.id)); }}
-              >
-                <MoreTimeIcon fontSize="small" />
-              </IconButton>
-            </Tooltip>
-          )}
-        </TableCell>}
       </TableRow>
     );
   };
@@ -495,8 +467,6 @@ const TaskList: React.FC = () => {
                   <TableCell>{sortLabel('due_date', t('taskList.due'))}</TableCell>
                   <TableCell sx={{ ...wideOnly, minWidth: 140 }}>{t('taskList.progress')}</TableCell>
                   <TableCell>{t('taskList.status')}</TableCell>
-                  {!schedulerMove.moved && <TableCell sx={wideOnly}>{t('taskList.scheduled')}</TableCell>}
-                  {!schedulerMove.moved && <TableCell padding="checkbox" />}
                 </TableRow>
               </TableHead>
               <TableBody>

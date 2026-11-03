@@ -1,6 +1,6 @@
 # ADR-0053: 打刻まわりを Tracker へ移す間の関所（切り替えの 503 と移転モード。Tracker の ADR-0053 の段 0・1）
 
-- 状態: 承認
+- 状態: 置換（ADR-0070 による。2026-11-03 に関所・中継・移した表を外した）
 - 日付: 2026-10-19
 - 関連: task #526（とくに AC3「移したあと、WBS 側の同じ記録は書き換えられない」）・目的 #522、
   **Tracker の ADR-0053 決定 3**（forge `kyon/nolumiatracker` の `docs/decisions/ADR-0053-nolumiatracker-is-split-out-of-wbs.md`。設計の正本）、

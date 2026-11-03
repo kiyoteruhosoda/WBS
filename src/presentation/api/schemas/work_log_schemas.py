@@ -30,7 +30,6 @@ class WorkLogResponse(BaseModel):
     hours: float
     memo: str | None = None
     source: WorkLogSource = WorkLogSource.MANUAL
-    closing_period_id: int | None = None
     duration_seconds: int | None = None
     """締めで作った行（``source=closing``）の正確な長さ（秒）。``hours`` は小数 2 桁に収めた値。"""
     deleted_at: UtcDatetime | None = None

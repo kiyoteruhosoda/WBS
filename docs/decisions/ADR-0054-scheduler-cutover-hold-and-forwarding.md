@@ -1,6 +1,6 @@
 # ADR-0054: 予定まわりを Scheduler へ移す間の関所（切り替えの 503 と移転モード。Scheduler の ADR-0054 の段 0・1）
 
-- 状態: 承認
+- 状態: 置換（ADR-0070 による。2026-11-03 に関所・中継・移した表を外した）
 - 日付: 2026-10-19
 - 関連: task #535・段 2 #533・目的 #522、
   **Scheduler の ADR-0054 決定 3**（forge `kyon/nolumiascheduler-server` の `docs/decisions/ADR-0054-nolumiascheduler-server-is-split-out-of-wbs.md`。設計の正本）、

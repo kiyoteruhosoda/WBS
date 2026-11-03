@@ -1,31 +1,30 @@
-"""実績の見える化: 予定 vs 実績・計画 vs 実績（task #162 / ADR-0017）。
+"""実績の見える化: 計画 vs 実績（task #162 / ADR-0017）。
 
-確定した実績（``work_logs``）を計画（タスクの見積・残）と予定（カレンダーの回）へ返す。
+確定した実績（``work_logs``。Tracker から届いたもの・手で書いたもの）を計画（タスクの見積・残）へ返す。
+予定（カレンダーの回）と打刻は Scheduler・Tracker へ移したので数えない（task #543 / ADR-0070）。
 
-- タスクごと（``task_board``）: 見積・予定済み・実績・残を 1 行に。締めの後に**残を見直す**
+- タスクごと（``task_board``）: 見積・実績・残を 1 行に。締めの後に**残を見直す**
   タスクを理由つきで挙げる（残は自動で減らさない。ADR-0010）
 - ガントの実績の帯（``gantt``）: タスクごとの実績の最初と最後の日・日ごとの実績
-- 期間ごと（``periods``）: 予定した時間と打刻の差、タスク外の割合、確定実績
+- 期間ごと（``periods``）: 確定実績
 - 積み上げ（``breakdown``）: カテゴリ別・マイルストーン別・プロジェクト別（子の枝を積み上げる）
 - 書き出し（``export``）: 期間 × 日 × タスク × 時間
 
-日付はすべて利用者のタイムゾーン。数えるのは本人の予定・打刻・実績だけ。
-どれも ``project_id`` で、そのプロジェクトと子孫のタスクの分だけに絞れる（タスク外の時間は
-どのプロジェクトにも属さないので、絞ると数えない。ADR-0024）。
+日付はすべて利用者のタイムゾーン。数えるのは本人の実績だけ。
+どれも ``project_id`` で、そのプロジェクトと子孫のタスクの分だけに絞れる（ADR-0024）。
 """
 
 from __future__ import annotations
 
-from collections.abc import Callable
-from datetime import date, datetime
+from datetime import date
 
 from src.application.dto.actuals_dto import (
-    UNASSIGNED_GROUP,
     UNGROUPED_GROUP,
     Breakdown,
     BreakdownGroup,
     BreakdownGroupBy,
     BreakdownPeriod,
+    ClosedPeriod,
     ExportRow,
     GanttActualDay,
     GanttActualSpan,
@@ -33,24 +32,18 @@ from src.application.dto.actuals_dto import (
     PeriodReport,
     TaskActualsBoard,
     TaskActualsRow,
-    TimeSource,
 )
-from src.application.ports.occurrence_source import OccurrenceSource
 from src.application.use_cases.task_use_cases import TaskUseCases
 from src.application.user_clock import UserClock
-from src.domain.entities.closing_period import ClosingPeriod
 from src.domain.entities.task import Task
+from src.domain.entities.work_log import WorkLog
 from src.domain.exceptions import NotFoundError, ValidationError
 from src.domain.repositories.category_repository import CategoryRepository
-from src.domain.repositories.closing_period_repository import ClosingPeriodRepository
 from src.domain.repositories.milestone_repository import MilestoneRepository
 from src.domain.repositories.project_repository import ProjectRepository
 from src.domain.repositories.task_repository import TaskRepository
-from src.domain.repositories.time_entry_repository import TimeEntryRepository
-from src.domain.repositories.work_break_repository import WorkBreakRepository
 from src.domain.repositories.work_log_repository import WorkLogRepository
 from src.domain.services.daily_ledger import DailyLedger
-from src.domain.services.daily_time_allocation import allocate_by_local_day, whole_seconds
 from src.domain.services.project_tree import ProjectTree
 from src.domain.services.remaining_review import remaining_review_reasons
 from src.domain.value_objects.half_month_period import HalfMonthPeriod
@@ -60,7 +53,6 @@ from src.domain.value_objects.report_period import (
     recent_report_periods,
     report_periods_between,
 )
-from src.shared.clock import utcnow
 
 DEFAULT_PERIOD_COUNT = 6
 """範囲を指さないとき、今の期間で終わる何期間を並べるか。"""
@@ -77,36 +69,17 @@ class ActualsUseCases:
         tasks: TaskUseCases,
         task_repository: TaskRepository,
         work_logs: WorkLogRepository,
-        time_entries: TimeEntryRepository,
-        closing_periods: ClosingPeriodRepository,
         categories: CategoryRepository,
         milestones: MilestoneRepository,
         projects: ProjectRepository,
-        occurrences: OccurrenceSource,
-        breaks: WorkBreakRepository | None = None,
-        now: Callable[[], datetime] | None = None,
-        tracked_time_moved: bool = False,
-        calendar_moved: bool = False,
     ) -> None:
         self._clock = clock
-        # 打刻を Tracker へ移した（task #526 / ADR-0053）。打刻から数える時間（TRACKED）は出さない
-        # （凍った値を今のものに見せない）。確定した実績（work_logs）はそのまま
-        # 休み（ADR-0048）。打刻の時間から重なる分を引く。None は「休みを繋がない」（試験）
-        self._breaks = breaks
         self._tasks = tasks
         self._task_repo = task_repository
         self._work_logs = work_logs
-        self._time_entries = time_entries
-        self._closing_periods = closing_periods
         self._categories = categories
         self._milestones = milestones
         self._projects = projects
-        self._occurrences = occurrences
-        # 既定は作るときに引く（試験でモジュールの utcnow を差し替えられるように）
-        self._now = now or utcnow
-        self._tracked_time_moved = tracked_time_moved
-        # 予定を Scheduler へ移した（task #535 / ADR-0054）。予定から数える時間（PLANNED）は出さない（0）
-        self._calendar_moved = calendar_moved
 
     # ── タスクごと ──────────────────────────────────────────────────────
 
@@ -118,7 +91,7 @@ class ActualsUseCases:
         project_id: int | None = None,
         unclassified: bool = False,
     ) -> TaskActualsBoard:
-        """タスクごとの見積・予定済み・実績・残と、残を見直してほしい理由。"""
+        """タスクごとの見積・実績・残と、残を見直してほしい理由。"""
         filters: dict = {}
         if project_id is not None:
             filters["project_id"] = project_id
@@ -132,12 +105,10 @@ class ActualsUseCases:
             ledger.add(log.task_id, log.work_date, log.seconds)
         spans = ledger.span_by_task()
 
-        latest = self._latest_closed(user_id)
+        latest, latest_logs = _latest_closed(logs)
         latest_seconds: dict[int, int] = {}
-        if latest is not None:
-            for log in logs:
-                if log.closing_period_id == latest.id:
-                    latest_seconds[log.task_id] = latest_seconds.get(log.task_id, 0) + log.seconds
+        for log in latest_logs:
+            latest_seconds[log.task_id] = latest_seconds.get(log.task_id, 0) + log.seconds
 
         rows: list[TaskActualsRow] = []
         for row in task_rows:
@@ -211,34 +182,16 @@ class ActualsUseCases:
         project_id: int | None = None,
         unclassified: bool = False,
     ) -> PeriodReport:
-        """期間ごとの予定と実際の時間の差・タスク外の割合。"""
+        """期間ごとの確定実績。"""
         periods = self._resolve_periods(user_id, unit, first_day, last_day)
-        window_first, window_last = periods[0].first_day, periods[-1].last_day
         owned = self._owned_tasks(user_id)
         scope = self._task_scope(user_id, project_id, unclassified, owned)
-        window = (user_id, window_first, window_last, owned, scope)
-        planned = self._ledger(TimeSource.PLANNED, *window)
-        tracked = self._ledger(TimeSource.TRACKED, *window)
-        confirmed = self._ledger(TimeSource.CONFIRMED, *window)
-        closed_days = (
-            self._closing_periods.list_first_days(user_id)
-            if unit is ReportPeriodUnit.CLOSING
-            else None
-        )
+        confirmed = self._ledger(user_id, periods[0].first_day, periods[-1].last_day, scope)
         return PeriodReport(
             unit=unit,
             time_zone=self._clock.zone_name(user_id),
             periods=[
-                PeriodComparison(
-                    period=p,
-                    closed=(p.first_day in closed_days) if closed_days is not None else None,
-                    planned_task_seconds=planned.total(p, task_only=True),
-                    planned_off_task_seconds=planned.total(p, task_only=False),
-                    tracked_task_seconds=tracked.total(p, task_only=True),
-                    tracked_off_task_seconds=tracked.total(p, task_only=False),
-                    confirmed_seconds=confirmed.total(p),
-                )
-                for p in periods
+                PeriodComparison(period=p, confirmed_seconds=confirmed.total(p)) for p in periods
             ],
         )
 
@@ -249,7 +202,6 @@ class ActualsUseCases:
         user_id: int,
         unit: ReportPeriodUnit,
         group_by: BreakdownGroupBy,
-        source: TimeSource,
         first_day: date | None = None,
         last_day: date | None = None,
         project_id: int | None = None,
@@ -263,9 +215,7 @@ class ActualsUseCases:
         periods = self._resolve_periods(user_id, unit, first_day, last_day)
         owned = self._owned_tasks(user_id)
         scope = self._task_scope(user_id, project_id, unclassified, owned)
-        ledger = self._ledger(
-            source, user_id, periods[0].first_day, periods[-1].last_day, owned, scope
-        )
+        ledger = self._ledger(user_id, periods[0].first_day, periods[-1].last_day, scope)
         tree = ProjectTree(self._projects.find_all(user_id))
 
         # 並びはリポジトリの順（カテゴリは並び順、マイルストーンは期限の近い順、プロジェクトは木の順）
@@ -295,9 +245,7 @@ class ActualsUseCases:
             return tree.group_under(task.project_id, project_id)
 
         def group_of(task_id: int | None) -> str:
-            if task_id is None:
-                return UNASSIGNED_GROUP
-            task = owned.get(task_id)
+            task = owned.get(task_id) if task_id is not None else None
             group_id = None if task is None else group_id_of(task)
             key = f"{group_by.value}:{group_id}"
             return key if group_id is not None and key in known_keys else UNGROUPED_GROUP
@@ -307,13 +255,11 @@ class ActualsUseCases:
         ]
         used = {key for row in rows for key in row.seconds_by_group}
         groups = [g for g in known if g.key in used]
-        for key in (UNGROUPED_GROUP, UNASSIGNED_GROUP):
-            if key in used:
-                groups.append(BreakdownGroup(key=key, name=None, color=None))
+        if UNGROUPED_GROUP in used:
+            groups.append(BreakdownGroup(key=UNGROUPED_GROUP, name=None, color=None))
         return Breakdown(
             unit=unit,
             group_by=group_by,
-            source=source,
             time_zone=self._clock.zone_name(user_id),
             groups=groups,
             periods=rows,
@@ -326,23 +272,24 @@ class ActualsUseCases:
         user_id: int,
         first_day: date,
         last_day: date,
-        source: TimeSource,
         project_id: int | None = None,
         unclassified: bool = False,
     ) -> list[ExportRow]:
-        """期間（締めの期間）× 日 × タスク × 時間。日の順・タスクの順（タスク外は後ろ）。"""
+        """期間（半月）× 日 × タスク × 時間。日の順・タスクの順。"""
         if last_day < first_day:
             raise ValidationError("the end of the range must not be before its start")
         if (last_day - first_day).days + 1 > MAX_EXPORT_DAYS:
             raise ValidationError(f"the range must be at most {MAX_EXPORT_DAYS} days")
         owned = self._owned_tasks(user_id)
         scope = self._task_scope(user_id, project_id, unclassified, owned)
-        ledger = self._ledger(source, user_id, first_day, last_day, owned, scope)
+        ledger = self._ledger(user_id, first_day, last_day, scope)
         category_names = {c.id: c.name for c in self._categories.find_all(user_id)}
         milestone_names = {m.id: m.name for m in self._milestones.find_all(user_id)}
         rows: list[ExportRow] = []
         for task_id, day, seconds in ledger.entries():
-            task = owned.get(task_id) if task_id is not None else None
+            if task_id is None:
+                continue
+            task = owned.get(task_id)
             half = HalfMonthPeriod.containing(day)
             rows.append(
                 ExportRow(
@@ -394,56 +341,37 @@ class ActualsUseCases:
             raise NotFoundError("Project", project_id)
         return {task_id for task_id, task in owned.items() if task.project_id in projects}
 
-    def _latest_closed(self, user_id: int) -> ClosingPeriod | None:
-        first_days = self._closing_periods.list_first_days(user_id)
-        if not first_days:
-            return None
-        return self._closing_periods.find_by_first_day(user_id, max(first_days))
-
     def _ledger(
-        self,
-        source: TimeSource,
-        user_id: int,
-        first_day: date,
-        last_day: date,
-        owned: dict[int, Task],
-        scope: set[int] | None = None,
+        self, user_id: int, first_day: date, last_day: date, scope: set[int] | None = None
     ) -> DailyLedger:
-        """``first_day``〜``last_day``（利用者の日付）の時間を（タスク, 日）ごとに。
+        """``first_day``〜``last_day``（利用者の日付）の確定実績を（タスク, 日）ごとに。
 
-        ``scope`` があれば、その中のタスクの分だけ（タスク外の時間も数えない）。
+        ``scope`` があれば、その中のタスクの分だけ。
         """
         ledger = ScopedLedger(scope)
-        if source is TimeSource.CONFIRMED:
-            for log in self._work_logs.find_for_user(user_id, first_day, last_day):
-                ledger.add(log.task_id, log.work_date, log.seconds)
-            return ledger
-        if source is TimeSource.PLANNED:
-            if self._calendar_moved:
-                return ledger
-            # 回はその始まりの日に数える（日をまたぐ回も割らない）。終日の回は作業の時間ではない（ADR-0014）。
-            # プライベートのカレンダーの予定は計画に数えない（ADR-0033）
-            for occurrence in self._occurrences.list_occurrence_views(
-                user_id, first_day, last_day, self._clock.zone_name(user_id)
-            ):
-                if occurrence.is_all_day or occurrence.is_private:
-                    continue
-                task_id = occurrence.task_id if occurrence.task_id in owned else None
-                ledger.add(task_id, occurrence.date, occurrence.duration_minutes * 60)
-            return ledger
-        if self._tracked_time_moved:
-            return ledger
-        # 打刻: 日をまたぐ打刻は利用者の 0:00 で割る（締めと同じ割り方）。タスクが空・消えた・他人のものはタスク外。
-        # 重なる休みの時間は引く（締めの確定と同じ計算。ADR-0048）
-        start, end = self._clock.utc_window(user_id, first_day, last_day)
-        entries = self._time_entries.find_overlapping(user_id, start, end)
-        breaks = self._breaks.find_overlapping(user_id, start, end) if self._breaks else []
-        allocated = allocate_by_local_day(
-            entries, start, end, self._clock.zone(user_id), self._now(), breaks
-        )
-        for (task_id, day), length in allocated.items():
-            ledger.add(task_id if task_id in owned else None, day, whole_seconds(length))
+        for log in self._work_logs.find_for_user(user_id, first_day, last_day):
+            ledger.add(log.task_id, log.work_date, log.seconds)
         return ledger
+
+
+def _latest_closed(logs: list[WorkLog]) -> tuple[ClosedPeriod | None, list[WorkLog]]:
+    """Tracker から直近に届いた締めの期間と、その実績の行（ADR-0056。届いていなければ None と空）。"""
+    delivered = [log for log in logs if log.tracker_first_day is not None]
+    if not delivered:
+        return None, []
+    first_day = max(log.tracker_first_day for log in delivered if log.tracker_first_day)
+    latest = [log for log in delivered if log.tracker_first_day == first_day]
+    stamps = [s for log in latest for s in (log.updated_at or log.created_at,) if s is not None]
+    if not stamps:
+        return None, []
+    return (
+        ClosedPeriod(
+            first_day=first_day,
+            last_day=max(log.work_date for log in latest),
+            closed_at=max(stamps),
+        ),
+        latest,
+    )
 
 
 class ScopedLedger(DailyLedger):

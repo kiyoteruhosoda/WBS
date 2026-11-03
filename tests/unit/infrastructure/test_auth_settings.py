@@ -21,8 +21,7 @@ def clean_auth_env(monkeypatch):
         "OIDC_CLIENT_SECRET", "OIDC_SCOPES", "OIDC_PROVIDER_NAME", "OIDC_AUTO_PROVISION",
         "OIDC_ALLOWED_EMAIL_DOMAINS", "OIDC_REQUIRE_VERIFIED_EMAIL", "ACCESS_TOKEN_EXPIRES_SECONDS", "REFRESH_TOKEN_EXPIRES_SECONDS", "SESSION_SIGNING_KEY_FILE",
         "AUTH_COOKIE_NAME", "AUTH_COOKIE_SECURE", "AUTH_COOKIE_SAMESITE",
-        "AUTH_POST_LOGOUT_REDIRECT_URI", "OIDC_HTTP_TIMEOUT_SECONDS", "APP_CLIENT_IDS",
-        "ANDROID_APP_PACKAGE", "ANDROID_APP_CERT_FINGERPRINTS",
+        "AUTH_POST_LOGOUT_REDIRECT_URI", "OIDC_HTTP_TIMEOUT_SECONDS", "MACHINE_READER_CLIENT_IDS",
     ]:
         monkeypatch.delenv(key, raising=False)
 
@@ -152,33 +151,19 @@ def test_a_non_numeric_ttl_is_refused(monkeypatch) -> None:
         load_auth_settings()
 
 
-def test_app_tokens_are_closed_by_default(monkeypatch) -> None:
-    # 宣言が無ければ、どのアプリのトークンも受け取らない（ADR-0018）
+def test_machine_readers_are_closed_by_default(monkeypatch) -> None:
+    # 宣言が無ければ、どのアプリの機械のトークンも受け取らない（ADR-0056）
     _use_oidc(monkeypatch)
-    assert load_auth_settings().app_client_ids == frozenset()
+    assert load_auth_settings().machine_reader_client_ids == frozenset()
 
 
 @pytest.mark.parametrize("raw", [" app-1 , app-2 ,", '["app-1", "app-2"]'], ids=["comma", "json"])
-def test_app_client_ids_are_read_as_a_list(monkeypatch, raw: str) -> None:
-    _use_oidc(monkeypatch, APP_CLIENT_IDS=raw)
-    assert load_auth_settings().app_client_ids == frozenset({"app-1", "app-2"})
+def test_machine_reader_client_ids_are_read_as_a_list(monkeypatch, raw: str) -> None:
+    _use_oidc(monkeypatch, MACHINE_READER_CLIENT_IDS=raw)
+    assert load_auth_settings().machine_reader_client_ids == frozenset({"app-1", "app-2"})
 
 
-def test_a_broken_app_client_ids_list_is_refused(monkeypatch) -> None:
-    _use_oidc(monkeypatch, APP_CLIENT_IDS='["app-1"')
+def test_a_broken_machine_reader_client_ids_list_is_refused(monkeypatch) -> None:
+    _use_oidc(monkeypatch, MACHINE_READER_CLIENT_IDS='["app-1"')
     with pytest.raises(AuthConfigurationError):
         load_auth_settings()
-
-
-def test_app_links_are_off_by_default(monkeypatch) -> None:
-    settings = load_auth_settings()
-    assert settings.android_app_package == ""
-    assert settings.android_app_cert_fingerprints == ()
-
-
-def test_app_links_values_are_read(monkeypatch) -> None:
-    monkeypatch.setenv("ANDROID_APP_PACKAGE", " com.nolumia.wbstimer ")
-    monkeypatch.setenv("ANDROID_APP_CERT_FINGERPRINTS", '["BB:00", "AA:00"]')
-    settings = load_auth_settings()
-    assert settings.android_app_package == "com.nolumia.wbstimer"
-    assert settings.android_app_cert_fingerprints == ("AA:00", "BB:00")

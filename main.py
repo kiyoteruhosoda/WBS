@@ -7,7 +7,6 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from prometheus_fastapi_instrumentator import Instrumentator
 
-from src.application.ports.calendar_feed import CalendarFeedError
 from src.domain.exceptions import (
     AccessDeniedError,
     AuthenticationError,
@@ -18,28 +17,14 @@ from src.domain.exceptions import (
 from src.infrastructure.auth.auth_settings import AuthMode, load_auth_settings
 from src.infrastructure.auth.oidc_identity_provider import OidcIdentityProvider
 from src.infrastructure.build_info import load_build_info
-from src.infrastructure.calendar_feed.http_fetcher import HttpCalendarFeedFetcher
-from src.infrastructure.calendar_feed.url_cipher import load_feed_url_cipher
 from src.infrastructure.database.session import init_engine
 from src.infrastructure.logging.structured_logger import setup_logging
-from src.infrastructure.push.push_settings import load_push_settings
-from src.infrastructure.push.web_push_sender import WebPushSender
-from src.infrastructure.scheduler_move.http_scheduler_relay import HttpSchedulerRelay
-from src.infrastructure.scheduler_move.scheduler_move_settings import load_scheduler_move_settings
-from src.infrastructure.tracker_move.http_tracker_relay import HttpTrackerRelay
-from src.infrastructure.tracker_move.tracker_move_settings import load_tracker_move_settings
-from src.presentation.api.calendar_feed_refresh import start_calendar_feed_refresh_worker
-from src.presentation.api.push_dispatch import start_push_dispatch_worker
 from src.presentation.api.reconciliation import start_reconciliation_worker
 from src.presentation.api.routers import (
     actuals,
     admin,
-    app_links,
     auth,
-    calendar,
-    calendars,
     categories,
-    closing_periods,
     dashboard,
     gantt,
     health,
@@ -47,25 +32,13 @@ from src.presentation.api.routers import (
     machine,
     milestones,
     ops,
-    pc_activity,
     projects,
-    push,
-    reviews,
-    scheduler_move,
     settings,
     tasks,
-    time_entries,
-    today,
-    tracker_move,
-    tracking_rules,
-    wintrack_releases,
-    work_breaks,
     worklogs,
 )
 from src.presentation.api.routers import dependencies as dep_router
 from src.presentation.middleware.logging_middleware import RequestLoggingMiddleware
-from src.presentation.middleware.scheduler_move_middleware import SchedulerMoveMiddleware
-from src.presentation.middleware.tracker_move_middleware import TrackerMoveMiddleware
 from src.shared.clock import utcnow
 
 
@@ -73,16 +46,6 @@ def create_app(database_url: str | None = None, db_path: str | None = None) -> F
     setup_logging()
     build_info = load_build_info()
     auth_settings = load_auth_settings()
-    # 端末への通知（ADR-0031）。⚠ 鍵が無ければ送らない（購読も受け取らない）。既定は閉じる
-    push_sender = WebPushSender(load_push_settings())
-    # カレンダーの取り込み（ADR-0037）。⚠ 購読の URL を封じる鍵が無ければ購読できない（既定は閉じる）
-    calendar_feed_fetcher = HttpCalendarFeedFetcher()
-    calendar_feed_cipher = load_feed_url_cipher()
-    # 打刻まわりを Tracker へ移す（task #526 / ADR-0053）。⚠ 設定が無ければ今までどおり（既定は切）
-    tracker_move_settings = load_tracker_move_settings()
-    # 予定まわりを Scheduler へ移す（task #535 / ADR-0054）。⚠ 設定が無ければ今までどおり（既定は切）
-    scheduler_move_settings = load_scheduler_move_settings()
-
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         url = database_url
@@ -92,34 +55,11 @@ def create_app(database_url: str | None = None, db_path: str | None = None) -> F
         # IdP で止まった人を拾い直す定期照合。⚠ **停止の受け口が取りこぼしたぶん**を
         #   埋めるための 2 段目で、`MACHINE_CLIENT_ID` が無ければ何も起こさない。
         worker = start_reconciliation_worker(auth_settings)
-        # 時刻の来た通知を 60 秒ごとに送る係。鍵が無ければ何も起こさない
-        push_worker = start_push_dispatch_worker(
-            push_sender,
-            tracked_time_moved=tracker_move_settings.moved,
-            calendar_moved=scheduler_move_settings.moved,
-        )
-        # 購読しているカレンダーを読み込み直す係。鍵が無ければ何も起こさない。
-        # 予定を Scheduler へ移す間と移した後は動かさない（WBS の予定の表に書かない。ADR-0054）
-        feed_worker = (
-            None
-            if scheduler_move_settings.frozen
-            else start_calendar_feed_refresh_worker(
-                app.state.calendar_feed_fetcher, app.state.calendar_feed_cipher
-            )
-        )
         try:
             yield
         finally:
-            if feed_worker is not None:
-                feed_worker.stop()
             if worker is not None:
                 worker.stop()
-            if push_worker is not None:
-                push_worker.stop()
-            if app.state.tracker_relay is not None:
-                await app.state.tracker_relay.aclose()
-            if app.state.scheduler_relay is not None:
-                await app.state.scheduler_relay.aclose()
 
     app = FastAPI(
         title="Task Scheduler",
@@ -130,19 +70,6 @@ def create_app(database_url: str | None = None, db_path: str | None = None) -> F
     app.state.build_info = build_info
     app.state.startup_time = utcnow()  # ops.py が now との差を取るので形を揃える
     app.state.auth_settings = auth_settings
-    app.state.push_sender = push_sender
-    app.state.calendar_feed_fetcher = calendar_feed_fetcher
-    app.state.calendar_feed_cipher = calendar_feed_cipher
-    app.state.tracker_move_settings = tracker_move_settings
-    app.state.tracker_relay = (
-        HttpTrackerRelay(tracker_move_settings.forward_url) if tracker_move_settings.moved else None
-    )
-    app.state.scheduler_move_settings = scheduler_move_settings
-    app.state.scheduler_relay = (
-        HttpSchedulerRelay(scheduler_move_settings.forward_url)
-        if scheduler_move_settings.moved
-        else None
-    )
     # IdP アダプタはディスカバリ文書と JWKS を手元に貯めるので、リクエストごとに
     # 作らず 1 つだけ持つ。SSO 無効時は None（依存が 404 を返す目印になる）。
     app.state.identity_provider = (
@@ -165,26 +92,15 @@ def create_app(database_url: str | None = None, db_path: str | None = None) -> F
     async def access_denied_handler(request: Request, exc: AccessDeniedError) -> JSONResponse:
         return JSONResponse(status_code=403, content={"type": "about:blank", "title": "Forbidden", "status": 403, "detail": str(exc), "instance": str(request.url.path)})
 
-    @app.exception_handler(CalendarFeedError)
-    async def calendar_feed_error_handler(request: Request, exc: CalendarFeedError) -> JSONResponse:
-        # 外の iCalendar を読めなかった（ADR-0037）。画面は reason を言葉に直す
-        return JSONResponse(status_code=422, content={"type": "about:blank", "title": "Calendar Feed Error", "status": 422, "detail": exc.reason.value, "reason": exc.reason.value, "instance": str(request.url.path)})
-
     @app.exception_handler(ConflictError)
     async def conflict_handler(request: Request, exc: ConflictError) -> JSONResponse:
         return JSONResponse(status_code=409, content={"type": "about:blank", "title": "Conflict", "status": 409, "detail": str(exc), "instance": str(request.url.path)})
 
     Instrumentator(excluded_handlers=["/metrics"]).instrument(app).expose(app, include_in_schema=False)
-    # 打刻まわりの口の関所（503・409・中継）。アクセスログの内側に置く（中継した答えも記録に残る）
-    app.add_middleware(TrackerMoveMiddleware)
-    # 予定まわりの口の関所（同じ形。道が重ならないので、打刻の関所とは互いに触らない）
-    app.add_middleware(SchedulerMoveMiddleware)
     app.add_middleware(RequestLoggingMiddleware)
     # /health はコンテナ内部の healthcheck 用、/api/health は nginx プロキシ経由の
     # 外形監視用（nginx は /api/ プレフィックスを剥がさずそのまま転送する）。
     app.include_router(health.router)
-    # App Links の検証ファイル（ADR-0019）。画面の nginx がこの 1 本だけ裏へ渡す
-    app.include_router(app_links.router)
     app.include_router(health.router, prefix="/api")
     app.include_router(ops.router)
     # フロントエンドは nginx 経由の /api/ しか届かないため、/info 等も /api 配下に公開する
@@ -193,29 +109,15 @@ def create_app(database_url: str | None = None, db_path: str | None = None) -> F
     app.include_router(auth.router, prefix="/api")
     app.include_router(tasks.router, prefix="/api")
     app.include_router(worklogs.router, prefix="/api")
-    app.include_router(time_entries.router, prefix="/api")
-    app.include_router(tracking_rules.router, prefix="/api")
-    app.include_router(wintrack_releases.router, prefix="/api")
-    app.include_router(work_breaks.router, prefix="/api")
-    app.include_router(pc_activity.router, prefix="/api")
-    app.include_router(closing_periods.router, prefix="/api")
     app.include_router(milestones.router, prefix="/api")
     app.include_router(categories.router, prefix="/api")
     app.include_router(projects.router, prefix="/api")
     app.include_router(dep_router.router, prefix="/api")
     app.include_router(inbox.router, prefix="/api")
     app.include_router(dashboard.router, prefix="/api")
-    app.include_router(today.router, prefix="/api")
     app.include_router(gantt.router, prefix="/api")
     app.include_router(actuals.router, prefix="/api")
-    app.include_router(reviews.router, prefix="/api")
     app.include_router(settings.router, prefix="/api")
-    app.include_router(push.router, prefix="/api")
-    app.include_router(calendar.router, prefix="/api")
-    app.include_router(calendars.router, prefix="/api")
-    app.include_router(calendars.presets_router, prefix="/api")
-    app.include_router(tracker_move.router, prefix="/api")
-    app.include_router(scheduler_move.router, prefix="/api")
     # ほかのアプリのサーバー（Tracker）が利用者の代わりに読み書きする口（ADR-0056）
     app.include_router(machine.router, prefix="/api")
     return app

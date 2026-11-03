@@ -8,9 +8,9 @@ DDD を意識し、Domain 層に状態遷移・スコア算出などの業務ル
 
 - タスク、カテゴリ、マイルストーン、作業ログ、依存関係、Inbox のスキーマ初期化
 - タスク CRUD、論理削除、DONE 遷移時の完了時刻・残工数更新
-- 進捗率、期限超過日数、優先度スコア、今日のタスク抽出
+- 進捗率、期限超過日数、優先度スコア、終わる見込み
 - DFS による依存関係の循環検出
-- Dashboard / Today / Gantt / Weekly review 用 API
+- Dashboard / Gantt / 実績の見える化の API（「今日」と週次レビューは外した。ADR-0070）
 - React 18 + TypeScript + MUI + Vite + React Query + Router のフロントエンド基盤
 - web / api / db の Docker Compose 分離
 - `app` / `migrate` / `reset` モードの起動スクリプト

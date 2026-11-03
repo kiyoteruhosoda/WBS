@@ -34,7 +34,6 @@ const RemainingEditor: React.FC<{ row: TaskActualsRow; onSaved: (ok: boolean) =>
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ACTUALS_KEY });
       qc.invalidateQueries({ queryKey: ['tasks'] });
-      qc.invalidateQueries({ queryKey: ['today'] });
       onSaved(true);
     },
     onError: () => onSaved(false),
@@ -93,7 +92,6 @@ const TaskActualsCards: React.FC<{ rows: TaskActualsRow[]; onSaved: (ok: boolean
         const remaining = task.has_subtasks ? task.rollup_remaining_hours : task.remaining_hours;
         const figures: [string, string][] = [
           [t('actuals.colEstimate'), formatHours(task.estimated_hours)],
-          [t('actuals.colScheduled'), formatHours(task.scheduled_hours)],
           [t('actuals.colActual'), formatHours(actual)],
           [t('actuals.colRemaining'), formatHours(remaining)],
           [t('actuals.colProgress'), task.progress_percent === null ? '—' : `${task.progress_percent}%`],
@@ -177,11 +175,10 @@ const TaskActualsPanel: React.FC<Props> = ({ reviewOnly, onReviewOnlyChange }) =
         <TableContainer sx={{ bgcolor: ds.paper, border: `1px solid ${ds.border}`, borderRadius: '10px' }}>
           <Table size="small">
             <TableHead>
-              {/* 見出しは折り返さない（狭い画面で「予定済み」が 1 文字ずつ縦に並び、行が 3 倍の高さになる） */}
+              {/* 見出しは折り返さない（狭い画面で 1 文字ずつ縦に並び、行が 3 倍の高さになる） */}
               <TableRow sx={{ '& th': { whiteSpace: 'nowrap' } }}>
                 <TableCell>{t('actuals.colTask')}</TableCell>
                 <TableCell align="right">{t('actuals.colEstimate')}</TableCell>
-                <TableCell align="right" title={t('actuals.scheduledHelp')}>{t('actuals.colScheduled')}</TableCell>
                 <TableCell align="right">{t('actuals.colActual')}</TableCell>
                 <TableCell align="right">{t('actuals.colRemaining')}</TableCell>
                 <TableCell align="right">{t('actuals.colProgress')}</TableCell>
@@ -205,7 +202,6 @@ const TaskActualsPanel: React.FC<Props> = ({ reviewOnly, onReviewOnlyChange }) =
                       {task.title}
                     </TableCell>
                     <TableCell align="right">{formatHours(task.estimated_hours)}</TableCell>
-                    <TableCell align="right">{formatHours(task.scheduled_hours)}</TableCell>
                     <TableCell align="right">{formatHours(actual)}</TableCell>
                     <TableCell align="right">{formatHours(remaining)}</TableCell>
                     <TableCell align="right">{task.progress_percent === null ? '—' : `${task.progress_percent}%`}</TableCell>

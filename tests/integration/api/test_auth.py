@@ -181,7 +181,7 @@ def test_config_reports_single_user_mode(client) -> None:
         ("get", "/api/categories"),
         ("get", "/api/milestones"),
         ("get", "/api/gantt"),
-        ("get", "/api/reviews/weekly"),
+        ("get", "/api/actuals/tasks"),
         ("get", "/api/auth/me"),
         ("post", "/api/tasks"),
     ],

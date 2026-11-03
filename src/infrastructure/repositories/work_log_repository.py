@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import date
 
-from sqlalchemy import Select, delete, select
+from sqlalchemy import Select, select
 from sqlalchemy.orm import Session
 
 from src.domain.entities.work_log import WorkLog
@@ -39,7 +39,6 @@ class SqlAlchemyWorkLogRepository(WorkLogRepository):
                 hours=work_log.hours,
                 memo=work_log.memo,
                 source=work_log.source.value,
-                closing_period_id=work_log.closing_period_id,
                 duration_seconds=work_log.duration_seconds,
                 tracker_first_day=work_log.tracker_first_day,
             )
@@ -62,24 +61,6 @@ class SqlAlchemyWorkLogRepository(WorkLogRepository):
         if model:
             model.deleted_at = utcnow()
             self._session.flush()
-
-    def find_by_closing_period(self, closing_period_id: int) -> list[WorkLog]:
-        stmt = (
-            select(WorkLogModel)
-            .where(
-                WorkLogModel.closing_period_id == closing_period_id,
-                WorkLogModel.deleted_at.is_(None),
-            )
-            .order_by(WorkLogModel.work_date, WorkLogModel.task_id, WorkLogModel.id)
-        )
-        return [self._to_entity(m) for m in self._session.scalars(stmt)]
-
-    def delete_by_closing_period(self, closing_period_id: int) -> int:
-        result = self._session.execute(
-            delete(WorkLogModel).where(WorkLogModel.closing_period_id == closing_period_id)
-        )
-        self._session.flush()
-        return result.rowcount or 0
 
     def remove_tracker_period(self, user_id: int, first_day: date) -> int:
         stmt = select(WorkLogModel).where(
@@ -139,7 +120,6 @@ class SqlAlchemyWorkLogRepository(WorkLogRepository):
             created_at=model.created_at,
             updated_at=model.updated_at,
             source=WorkLogSource(model.source),
-            closing_period_id=model.closing_period_id,
             duration_seconds=model.duration_seconds,
             tracker_first_day=model.tracker_first_day,
         )
