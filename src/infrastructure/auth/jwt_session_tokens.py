@@ -1,7 +1,7 @@
-"""このアプリが自分で出すトークンを JWT（HS256）で作る・読む（ADR-0069）。
+"""このアプリが自分で出すトークンを JWT（HS256）で作る・読む（ADR-0069・ADR-0071）。
 
-⚠ **``type`` で 3 種類を分ける。** ログアウトの札で更新できたり、リフレッシュトークンで API を
-叩けたりしないように、読むときに必ず見る。
+出すのはアクセストークンだけ。⚠ **読むときは ``type`` を必ず見る。** 以前出していたリフレッシュトークン・
+ログアウトの札（``refresh`` / ``logout``）が手元に残っていても、API を叩けないように。
 
 期限は ``now`` と比べる（ライブラリに時計を持たせない。時刻の口は ``src/shared/clock.py`` 1 つ）。
 """
@@ -14,18 +14,13 @@ from typing import Any
 import jwt
 
 from src.application.dto.auth_dto import AuthenticatedUserDTO
-from src.application.ports.session_tokens import (
-    AccessTokenContents,
-    RefreshTokenContents,
-    SessionTokens,
-)
+from src.application.ports.session_tokens import AccessTokenContents, SessionTokens
+from src.domain.value_objects.continued_sign_in import ContinuedSignIn
 
 _ALGORITHM = "HS256"
 #: 発行者と宛先。別のアプリや環境のトークンは鍵で落ちるが、鍵を取り違えても混ざらないように名乗る
 _NAME = "wbs"
 TYPE_ACCESS = "access"
-TYPE_REFRESH = "refresh"
-TYPE_LOGOUT = "logout"
 CLAIM_SESSION = "rsid"
 
 
@@ -35,14 +30,11 @@ def _timestamp(moment: datetime) -> int:
 
 
 class JwtSessionTokens(SessionTokens):
-    def __init__(self, *, signing_key: str, access_lifetime: timedelta, refresh_lifetime: timedelta) -> None:
+    def __init__(self, *, signing_key: str, access_lifetime: timedelta, carry: timedelta) -> None:
         self._key = signing_key
         self._access_lifetime = access_lifetime
-        self._refresh_lifetime = refresh_lifetime
-
-    @property
-    def refresh_lifetime(self) -> timedelta:
-        return self._refresh_lifetime
+        #: 期限切れのトークンから続けるログインを読む長さ（ADR-0071。Cookie を残す長さと同じ）
+        self._carry = carry
 
     def access_token(self, user: AuthenticatedUserDTO, *, session_id: str, now: datetime) -> str:
         return self._encode(
@@ -58,20 +50,6 @@ class JwtSessionTokens(SessionTokens):
             },
             now,
             self._access_lifetime,
-        )
-
-    def refresh_token(self, user_id: int, *, session_id: str, jti: str, now: datetime) -> str:
-        return self._encode(
-            {"sub": str(user_id), "type": TYPE_REFRESH, CLAIM_SESSION: session_id, "jti": jti},
-            now,
-            self._refresh_lifetime,
-        )
-
-    def logout_token(self, user_id: int, *, session_id: str, now: datetime) -> str:
-        return self._encode(
-            {"sub": str(user_id), "type": TYPE_LOGOUT, CLAIM_SESSION: session_id},
-            now,
-            self._refresh_lifetime,
         )
 
     def read_access(self, token: str, *, now: datetime) -> AccessTokenContents | None:
@@ -90,17 +68,11 @@ class JwtSessionTokens(SessionTokens):
             session_id=str(claims[CLAIM_SESSION]),
         )
 
-    def read_refresh(self, token: str, *, now: datetime) -> RefreshTokenContents | None:
-        claims = self._decode(token, TYPE_REFRESH, now)
-        if claims is None or not isinstance(claims.get("jti"), str):
+    def continuation_of(self, token: str, *, now: datetime) -> ContinuedSignIn | None:
+        claims = self._decode(token, TYPE_ACCESS, now - self._carry)
+        if claims is None:
             return None
-        return RefreshTokenContents(
-            user_id=int(claims["sub"]), session_id=str(claims[CLAIM_SESSION]), jti=claims["jti"]
-        )
-
-    def read_logout(self, token: str, *, now: datetime) -> str | None:
-        claims = self._decode(token, TYPE_LOGOUT, now)
-        return None if claims is None else str(claims[CLAIM_SESSION])
+        return ContinuedSignIn(user_id=int(claims["sub"]), session_id=str(claims[CLAIM_SESSION]))
 
     def _encode(self, claims: dict[str, Any], now: datetime, lifetime: timedelta) -> str:
         return jwt.encode(

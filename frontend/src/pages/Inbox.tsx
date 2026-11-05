@@ -7,6 +7,7 @@ import {
 } from '@mui/material';
 import { getInbox, createInboxItem, convertInboxItem, deleteInboxItem } from '../api/inbox';
 import { getCategories } from '../api/categories';
+import { useSessionDraft } from '../auth/sessionDraft';
 
 import { formatDate } from '../utils/format';
 import { useI18n } from '../i18n';
@@ -16,8 +17,12 @@ import { PlusIcon, TrashIcon, SwapIcon } from '../components/icons';
 const Inbox: React.FC = () => {
   const qc = useQueryClient();
   const { t } = useI18n();
-  const [title, setTitle] = useState('');
-  const [memo, setMemo] = useState('');
+  // 書きかけはログインの往復をまたいで残す（ADR-0071）
+  const [capture, setCapture] = useSessionDraft<{ title: string; memo: string }>('inbox');
+  const title = capture?.title ?? '';
+  const memo = capture?.memo ?? '';
+  const setTitle = (value: string) => setCapture((c) => ({ title: value, memo: c?.memo ?? '' }));
+  const setMemo = (value: string) => setCapture((c) => ({ title: c?.title ?? '', memo: value }));
   const [convertId, setConvertId] = useState<number | null>(null);
   const [convTitle, setConvTitle] = useState('');
   const [convDue, setConvDue] = useState('');
@@ -28,7 +33,7 @@ const Inbox: React.FC = () => {
 
   const add = useMutation({
     mutationFn: () => createInboxItem({ title, memo: memo || undefined }),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['inbox'] }); setTitle(''); setMemo(''); },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['inbox'] }); setCapture(null); },
   });
 
   const del = useMutation({

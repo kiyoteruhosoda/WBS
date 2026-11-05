@@ -13,6 +13,7 @@ import LoginPage from '../pages/LoginPage';
 import { translate } from '../i18n';
 import { isNetworkFailure, isServerFailure } from '../pwa/connectivity';
 import { forgetSession, lastSession, rememberSession } from './lastSession';
+import { clearSessionDrafts } from './sessionDraft';
 import {
   forgetSilentMarks,
   markSilentAttempt,
@@ -116,7 +117,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     startSilentLogin(fetchedConfig, currentPath());
   }, [silentPlanned, fetchedConfig]);
 
-  // どの画面の通信で 401 が出ても、ログイン画面へ戻す。
+  // どの画面の通信で 401 が出ても（続ける往復も断られたら。ADR-0071）、ログイン画面へ戻す。
+  // 書きかけは sessionStorage に残してあり、入り直して同じ画面を開けば戻る。
   // ただし「まだ一度もログインしていない」ときの 401 は期限切れではないので、
   // 本人が判明したあと（＝セッションがあった）に受けた 401 だけを期限切れとして扱う。
   const hadSession = Boolean(user);
@@ -132,6 +134,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     forgetSession();
     // ログイン画面が IdP へ黙って確かめに行かないように（ADR-0062）
     rememberSignedOut();
+    // 書きかけも消す（同じタブで別の人が入ることがある。ADR-0071）
+    clearSessionDrafts();
     queryClient.clear();
     // IdP 側のセッションも切る。切らないと「ログアウト → ログイン」で
     // 何も聞かれずに同じ人で入り直してしまい、別の人に代われない。

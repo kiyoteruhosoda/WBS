@@ -295,15 +295,14 @@ class FederatedIdentityModel(Base):
     created_at: Mapped[datetime] = mapped_column(sa.DateTime, default=utcnow, nullable=False)
 
 class RefreshSessionModel(Base):
-    """ログインごとの控え（ADR-0069）。行が無ければそのログインは終わっている。"""
+    """ログインごとの控え（ADR-0069・ADR-0071）。行が無ければそのログインは終わっている。
+
+    ⚠ 表の名前は ADR-0069 のときのまま。リフレッシュトークンはもう出さない（ADR-0071）。
+    """
 
     __tablename__ = "refresh_sessions"
     id: Mapped[str] = mapped_column(sa.String(32), primary_key=True)
     user_id: Mapped[int] = mapped_column(sa.BigInteger().with_variant(sa.Integer(), "sqlite"), sa.ForeignKey("users.id"), nullable=False, index=True)
-    # リフレッシュトークンの ``jti``。トークンそのものは持たない（DB が漏れてもログインを再現できない）
-    current_jti: Mapped[str] = mapped_column(sa.String(32), nullable=False)
-    previous_jti: Mapped[str | None] = mapped_column(sa.String(32), nullable=True)
-    rotated_at: Mapped[datetime | None] = mapped_column(sa.DateTime, nullable=True)
     expires_at: Mapped[datetime] = mapped_column(sa.DateTime, nullable=False, index=True)
     created_at: Mapped[datetime] = mapped_column(sa.DateTime, nullable=False)
     # このログインを始めた IdP 側のログイン（ID トークンの ``sid``）。
@@ -338,6 +337,11 @@ class LoginTransactionModel(Base):
     silent: Mapped[bool] = mapped_column(
         sa.Boolean, nullable=False, default=False, server_default=sa.false()
     )
+    #: 何のための往復か（``login`` / ``renew``。ADR-0071）。⚠ ネイティブ ENUM にしない
+    purpose: Mapped[str] = mapped_column(sa.String(16), nullable=False, default="login", server_default="login")
+    #: 続ける往復で、続けるログインの利用者と控え（ADR-0071）。外部キーは張らない（往復は 10 分で消える）
+    continued_user_id: Mapped[int | None] = mapped_column(sa.BigInteger().with_variant(sa.Integer(), "sqlite"), nullable=True)
+    continued_session_id: Mapped[str | None] = mapped_column(sa.String(32), nullable=True)
 
 
 

@@ -13,4 +13,7 @@ class LoginTransactionRepository(ABC):
     def consume(self, state: str) -> LoginTransaction | None:
         """``state`` に対応する往復を取り出し、同時に消す（1 回きり）。"""
     @abstractmethod
+    def find(self, state: str) -> LoginTransaction | None:
+        """``state`` に対応する往復を読む（消さない）。戻りをどの後始末に回すかを決めるためだけに使う。"""
+    @abstractmethod
     def delete_expired(self, now: datetime) -> int: ...

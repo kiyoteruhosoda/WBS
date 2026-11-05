@@ -3,22 +3,22 @@
 IdP との通信はプロバイダを差し替えて止める。ここで確かめたいのは、**届いた通知が
 実際にセッションを終わらせること**と、終わらせる範囲を間違えないことである。
 
-止まったかは**更新が断られること**で見る。アクセストークンは DB を引かないので、手元の 1 枚は寿命まで
-通るが、次の更新は通らない（ADR-0069）。
+止まったかは**ログインの控えが消えたこと**で見る。アクセストークンは DB を引かないので、手元の 1 枚は寿命まで
+通る。切れたら画面が IdP へ問い合わせ直し、IdP が「入っていない」と答えて終わる（ADR-0071）。
 """
 
 import pytest
 from fastapi.testclient import TestClient
 
-from src.infrastructure.auth.auth_settings import REFRESH_COOKIE_NAME
 from tests.integration.api.test_auth import (  # noqa: F401 - fixture を借りる
+    COOKIE,
     sign_in,
+    sign_in_alive,
     sso_client,
     sso_provider,
 )
 
 LOGOUT = "/api/auth/backchannel-logout"
-REFRESH_PATH = "/api/auth/refresh"
 
 
 def post_logout(client: TestClient, logout_token: str) -> int:
@@ -28,24 +28,24 @@ def post_logout(client: TestClient, logout_token: str) -> int:
 
 def test_a_stop_from_the_idp_ends_the_session(sso_client) -> None:  # noqa: F811
     sign_in(sso_client)
-    assert sso_client.post("/api/auth/refresh").status_code == 200
+    assert sign_in_alive(sso_client)
 
     assert post_logout(sso_client, "taro|taro-session|delivery-1") == 200
 
-    # ⚠ **次の更新はもう通らない**（控えの行が消えている）。
-    assert sso_client.post("/api/auth/refresh").status_code == 401
+    # ⚠ **控えの行が消えている**（設定の出し直しもログアウトももう効かない）。
+    assert not sign_in_alive(sso_client)
 
 
 def test_a_stop_without_a_sid_ends_every_session_of_that_user(sso_client) -> None:  # noqa: F811
     sign_in(sso_client)
     assert post_logout(sso_client, "taro||delivery-1") == 200
-    assert sso_client.post("/api/auth/refresh").status_code == 401
+    assert not sign_in_alive(sso_client)
 
 
 def test_a_stop_for_another_person_leaves_this_session_alone(sso_client) -> None:  # noqa: F811
     sign_in(sso_client)
     assert post_logout(sso_client, "hanako|hanako-session|delivery-1") == 200
-    assert sso_client.post("/api/auth/refresh").status_code == 200
+    assert sign_in_alive(sso_client)
 
 
 def test_a_stop_for_another_login_of_the_same_person_leaves_this_one_alone(sso_client) -> None:  # noqa: F811
@@ -55,7 +55,7 @@ def test_a_stop_for_another_login_of_the_same_person_leaves_this_one_alone(sso_c
     """
     sign_in(sso_client)
     assert post_logout(sso_client, "taro|another-device|delivery-1") == 200
-    assert sso_client.post("/api/auth/refresh").status_code == 200
+    assert sign_in_alive(sso_client)
 
 
 def test_a_replayed_notice_does_not_end_a_session_started_afterwards(sso_client) -> None:  # noqa: F811
@@ -66,13 +66,13 @@ def test_a_replayed_notice_does_not_end_a_session_started_afterwards(sso_client)
     """
     sign_in(sso_client)
     assert post_logout(sso_client, "taro|taro-session|delivery-1") == 200
-    assert sso_client.post("/api/auth/refresh").status_code == 401
+    assert not sign_in_alive(sso_client)
 
     sign_in(sso_client)  # IdP で戻され、入り直した
-    assert sso_client.post("/api/auth/refresh").status_code == 200
+    assert sign_in_alive(sso_client)
 
     assert post_logout(sso_client, "taro|taro-session|delivery-1") == 200  # 同じ jti の再送
-    assert sso_client.post("/api/auth/refresh").status_code == 200
+    assert sign_in_alive(sso_client)
 
 
 def test_a_new_notice_for_the_same_login_still_lands(sso_client) -> None:  # noqa: F811
@@ -85,7 +85,7 @@ def test_a_new_notice_for_the_same_login_still_lands(sso_client) -> None:  # noq
     assert post_logout(sso_client, "taro|taro-session|delivery-1") == 200
     sign_in(sso_client)
     assert post_logout(sso_client, "taro|taro-session|delivery-2") == 200
-    assert sso_client.post("/api/auth/refresh").status_code == 401
+    assert not sign_in_alive(sso_client)
 
 
 @pytest.mark.parametrize(
@@ -108,18 +108,18 @@ def test_a_forged_token_is_refused_and_leaves_the_session(sso_client, sso_provid
     sso_provider.rejected.add("taro|taro-session|delivery-1")
 
     assert post_logout(sso_client, "taro|taro-session|delivery-1") == 400
-    assert sso_client.post("/api/auth/refresh").status_code == 200
+    assert sign_in_alive(sso_client)
 
 
 def test_the_notice_needs_no_cookie(sso_client) -> None:  # noqa: F811
     """⚠ 送ってくるのは IdP のサーバーで、ブラウザではない（Cookie は付かない）。"""
     sign_in(sso_client)
-    cookie = sso_client.cookies.get(REFRESH_COOKIE_NAME, path=REFRESH_PATH)
+    cookie = sso_client.cookies.get(COOKIE)
     assert cookie  # 前提: ログインできている
     sso_client.cookies.clear()
 
     assert post_logout(sso_client, "taro|taro-session|delivery-1") == 200
 
-    sso_client.cookies.set(REFRESH_COOKIE_NAME, cookie, path=REFRESH_PATH)
-    assert sso_client.post("/api/auth/refresh").status_code == 401
+    sso_client.cookies.set(COOKIE, cookie)
+    assert not sign_in_alive(sso_client)
 

@@ -5,8 +5,9 @@ from datetime import datetime
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
-from src.domain.entities.login_transaction import LoginTransaction
+from src.domain.entities.login_transaction import LoginPurpose, LoginTransaction
 from src.domain.repositories.login_transaction_repository import LoginTransactionRepository
+from src.domain.value_objects.continued_sign_in import ContinuedSignIn
 from src.domain.value_objects.redirect_target import RedirectTarget
 from src.infrastructure.database.models import LoginTransactionModel
 
@@ -24,12 +25,20 @@ class SqlAlchemyLoginTransactionRepository(LoginTransactionRepository):
             created_at=transaction.created_at,
             expires_at=transaction.expires_at,
             silent=transaction.silent,
+            purpose=transaction.purpose.value,
+            continued_user_id=transaction.continued.user_id if transaction.continued else None,
+            continued_session_id=transaction.continued.session_id if transaction.continued else None,
         )
         self._session.add(model)
         self._session.commit()
         self._session.refresh(model)
         transaction.id = model.id
         return transaction
+
+    def find(self, state: str) -> LoginTransaction | None:
+        stmt = select(LoginTransactionModel).where(LoginTransactionModel.state == state)
+        model = self._session.scalars(stmt).first()
+        return None if model is None else self._to_entity(model)
 
     def consume(self, state: str) -> LoginTransaction | None:
         stmt = select(LoginTransactionModel).where(LoginTransactionModel.state == state)
@@ -67,4 +76,13 @@ class SqlAlchemyLoginTransactionRepository(LoginTransactionRepository):
             created_at=model.created_at,
             expires_at=model.expires_at,
             silent=model.silent,
+            # 知らない値（戻した後の行など）はふつうのログインとして読む
+            purpose=LoginPurpose.RENEW if model.purpose == LoginPurpose.RENEW.value else LoginPurpose.LOGIN,
+            continued=_continued_of(model),
         )
+
+
+def _continued_of(model: LoginTransactionModel) -> ContinuedSignIn | None:
+    if model.continued_user_id is None or model.continued_session_id is None:
+        return None
+    return ContinuedSignIn(user_id=model.continued_user_id, session_id=model.continued_session_id)

@@ -18,22 +18,8 @@ class RefreshSessionRepository(ABC):
     def delete_expired(self, now: datetime) -> int: ...
 
     @abstractmethod
-    def rotate(
-        self,
-        session_id: str,
-        *,
-        expected_jti: str,
-        new_jti: str,
-        now: datetime,
-        expires_at: datetime,
-    ) -> bool:
-        """今の 1 本を ``new_jti`` へ振り替える。振り替えられなかったら偽。
-
-        ⚠ **読んでから書かない。** 同時に来た更新のうち勝つのは 1 本だけで、それを決めるのはこの
-        更新の条件（今の 1 本が ``expected_jti`` で、前の振り替えから ``REUSE_GRACE`` が過ぎている）である。
-
-        ⚠ **直前の 1 本は「いま今の 1 本であるもの」を入れる。** MariaDB は ``SET`` を左から評価する。
-        """
+    def extend(self, session_id: str, *, idp_session_id: str | None, expires_at: datetime) -> bool:
+        """続けたログインの期限を延ばし、IdP 側のログインを付け替える（ADR-0071）。行が無ければ偽。"""
 
     @abstractmethod
     def delete_for_identity(

@@ -19,7 +19,7 @@ OIDC_ENV = {
 def clean_auth_env(monkeypatch):
     for key in list(OIDC_ENV) + [
         "OIDC_CLIENT_SECRET", "OIDC_SCOPES", "OIDC_PROVIDER_NAME", "OIDC_AUTO_PROVISION",
-        "OIDC_ALLOWED_EMAIL_DOMAINS", "OIDC_REQUIRE_VERIFIED_EMAIL", "ACCESS_TOKEN_EXPIRES_SECONDS", "REFRESH_TOKEN_EXPIRES_SECONDS", "SESSION_SIGNING_KEY_FILE",
+        "OIDC_ALLOWED_EMAIL_DOMAINS", "OIDC_REQUIRE_VERIFIED_EMAIL", "ACCESS_TOKEN_EXPIRES_SECONDS", "SESSION_SIGNING_KEY_FILE",
         "AUTH_COOKIE_NAME", "AUTH_COOKIE_SECURE", "AUTH_COOKIE_SAMESITE",
         "AUTH_POST_LOGOUT_REDIRECT_URI", "OIDC_HTTP_TIMEOUT_SECONDS", "MACHINE_READER_CLIENT_IDS",
     ]:
@@ -90,20 +90,18 @@ def test_cookie_and_token_settings_can_be_overridden(monkeypatch) -> None:
         AUTH_COOKIE_NAME="my_session",
         AUTH_COOKIE_SECURE="false",
         ACCESS_TOKEN_EXPIRES_SECONDS="60",
-        REFRESH_TOKEN_EXPIRES_SECONDS="600",
     )
     settings = load_auth_settings()
     assert settings.cookie_name == "my_session"
     assert settings.cookie_secure is False
     assert settings.access_token_ttl.total_seconds() == 60
-    assert settings.refresh_token_ttl.total_seconds() == 600
 
 
-def test_the_token_lifetimes_default_to_five_minutes_and_fourteen_days(monkeypatch) -> None:
+def test_the_token_lives_five_minutes_and_the_sign_in_is_kept_thirty_days(monkeypatch) -> None:
     _use_oidc(monkeypatch)
     settings = load_auth_settings()
     assert settings.access_token_ttl.total_seconds() == 300
-    assert settings.refresh_token_ttl.total_seconds() == 14 * 24 * 3600
+    assert settings.sign_in_carry.total_seconds() == 30 * 24 * 3600
 
 
 def test_a_lifetime_must_be_positive(monkeypatch) -> None:

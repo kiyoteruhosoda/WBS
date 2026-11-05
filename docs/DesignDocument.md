@@ -406,7 +406,7 @@ CREATE TABLE inbox_items (
 | テーブル | 役割 | 主な列 |
 | --- | --- | --- |
 | `federated_identities` | IdP 上の本人と `users` の対応。1 人が複数 IdP に属せる | `user_id` / `issuer` / `subject`（`(issuer, subject)` に一意制約） |
-| `refresh_sessions` | ログインごとの控え（ADR-0069）。トークンは保存しない | `user_id` / `current_jti` / `previous_jti` / `rotated_at` / `expires_at` / `idp_session_id` |
+| `refresh_sessions` | ログインごとの控え（ADR-0069・ADR-0071）。トークンは保存しない。続けるたびに期限を延ばす | `user_id` / `expires_at` / `idp_session_id` |
 | `auth_login_transactions` | 認可コードフロー 1 往復ぶんの一時データ。コールバックで使い切って消す | `state`（一意） / `nonce` / `code_verifier` / `redirect_path` / `expires_at` |
 
 利用者の同一性を `(issuer, subject)` で決める理由は

@@ -4,6 +4,7 @@ import {
   markSilentAttempt,
   rememberSignedOut,
   returnPathOf,
+  signedOutHere,
   shouldTrySilently,
 } from './silentSignIn';
 
@@ -77,5 +78,24 @@ describe('ログイン後に戻る先', () => {
     expect(returnPathOf(at('/login'))).toBe('/');
     expect(returnPathOf(at('/login?next=%2F%2Fevil.example'))).toBe('/');
     expect(returnPathOf(at('/tasks?project=3'))).toBe('/tasks?project=3');
+  });
+});
+
+describe('サインアウトした印（ADR-0071。切れたログインを続ける問い合わせもしない）', () => {
+  it('サインアウトするまでは無く、入り直すと消える', () => {
+    expect(signedOutHere()).toBe(false);
+    rememberSignedOut();
+    expect(signedOutHere()).toBe(true);
+    forgetSilentMarks();
+    expect(signedOutHere()).toBe(false);
+  });
+
+  it('読めなければ、した扱い（問い合わせない）', () => {
+    vi.stubGlobal('localStorage', {
+      getItem: () => {
+        throw new Error('blocked');
+      },
+    });
+    expect(signedOutHere()).toBe(true);
   });
 });

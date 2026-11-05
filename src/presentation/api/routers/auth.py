@@ -3,6 +3,10 @@
 ブラウザの遷移で使う口（``/login`` と ``/callback``）は JSON ではなくリダイレクトを
 返す。失敗もログイン画面へ戻し、画面側でメッセージを出す（コールバックに JSON の
 エラーを出しても、利用者にはただの生テキストにしか見えない）。
+
+切れたログインは、画面が見えない枠で ``/renew`` を開いて IdP へ ``prompt=none`` で問い合わせて続ける
+（ADR-0071）。戻りは ``/callback`` で、往復の目的（``renew``）を見て結果の頁 ``/renewed`` へ送る。
+リフレッシュトークンの口（``/refresh``）はもう無い。
 """
 
 from __future__ import annotations
@@ -15,14 +19,13 @@ from fastapi import APIRouter, HTTPException, Query, Request, Response, status
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import RedirectResponse
 
-from src.domain.entities.login_transaction import DEFAULT_LOGIN_TRANSACTION_TTL
+from src.application.dto.auth_dto import StartedLoginDTO
+from src.application.use_cases.authentication_use_cases import SsoLoginUseCases
+from src.domain.entities.login_transaction import DEFAULT_LOGIN_TRANSACTION_TTL, LoginPurpose
 from src.domain.exceptions import AccessDeniedError, AuthenticationError, ValidationError
 from src.domain.value_objects.logout_notice import InvalidLogoutTokenError
-from src.infrastructure.auth.auth_settings import (
-    LOGOUT_COOKIE_NAME,
-    REFRESH_COOKIE_NAME,
-    AuthSettings,
-)
+from src.infrastructure.auth.auth_settings import AuthSettings
+from src.presentation.api import renewal
 from src.presentation.api.dependencies import (
     AuthSettingsDep,
     BackchannelLogoutDep,
@@ -34,7 +37,6 @@ from src.presentation.api.schemas.auth_schemas import (
     AuthConfigResponse,
     CurrentUserResponse,
     LogoutResponse,
-    RefreshResponse,
 )
 from src.presentation.api.session_cookies import clear_session_cookies, set_session_cookies
 from src.shared.clock import utcnow
@@ -98,21 +100,32 @@ def start_login(
     求めることで、この往復を始めたブラウザ以外がコールバックを使い切れなくなる。
     """
     started = sso.start_login(redirect_path=next_path, now=utcnow(), silent=silent)
-    # 302 でないと、IdP からの GET が POST として飛ぶ実装がある
-    response = RedirectResponse(started.authorization_url, status_code=status.HTTP_302_FOUND)
-    response.set_cookie(
-        key=LOGIN_STATE_COOKIE,
-        value=_remember_binding(
-            request.cookies.get(LOGIN_STATE_COOKIE), started.browser_binding
-        ),
-        max_age=LOGIN_STATE_COOKIE_MAX_AGE,
-        httponly=True,
-        secure=settings.cookie_secure,
-        # IdP からのトップレベル遷移で戻ってくるので lax でなければ届かない
-        samesite=settings.cookie_samesite,
-        path="/",
-    )
-    return response
+    return _to_idp(request, settings, started)
+
+
+@router.get("/renew", include_in_schema=False)
+def start_renewal(
+    request: Request, settings: AuthSettingsDep, sso: SsoLoginDep, session_auth: SessionAuthDep
+) -> RedirectResponse:
+    """切れたログインを画面を出さずに続ける往復を始める（ADR-0071）。**画面は見えない枠で開く。**
+
+    常に ``prompt=none``。手元に残った期限切れのアクセストークンから「誰の・どのログインか」を読み、
+    往復に写す（同じ人が戻ってきたときだけ引き継ぐ）。SSO が無効な配備では ``/login`` と同じく 404。
+    """
+    now = utcnow()
+    continued = session_auth.continuation_of(token=request.cookies.get(settings.cookie_name), now=now)
+    try:
+        started = sso.start_renewal(continued=continued, now=now)
+    except AuthenticationError:
+        logger.warning("続ける往復を始められませんでした", extra={"event": "auth.sso.renewal_failed"})
+        return _renewal_result(renewal.RenewalResult.FAILED)
+    return renewal.allow_same_origin_framing(_to_idp(request, settings, started))
+
+
+@router.get("/renewed", include_in_schema=False)
+def renewal_result() -> Response:
+    """続ける往復の結果の頁（画面は枠の URL の ``result`` を読む）。"""
+    return renewal.result_page()
 
 
 @router.get("/callback", summary="SSO callback", response_class=RedirectResponse)
@@ -125,6 +138,8 @@ def complete_login(
     error: str | None = Query(default=None),
     error_description: str | None = Query(default=None),
 ) -> RedirectResponse:
+    if state and sso.purpose_of(state) is LoginPurpose.RENEW:
+        return _complete_renewal(request, settings, sso, code=code, state=state, error=error)
     if error in SILENT_DECLINES and state and _binding_matches(
         request.cookies.get(LOGIN_STATE_COOKIE), state
     ):
@@ -173,22 +188,6 @@ def get_current_user_profile(current_user: CurrentUserDep) -> CurrentUserRespons
     )
 
 
-@router.post("/refresh", response_model=RefreshResponse, summary="Refresh the tokens")
-def refresh(
-    request: Request,
-    response: Response,
-    settings: AuthSettingsDep,
-    session_auth: SessionAuthDep,
-) -> RefreshResponse:
-    """リフレッシュトークンの Cookie でトークンを更新する（ADR-0069）。
-
-    ⚠ **本文でトークンを受け取らない・返さない。** 返すのは寿命だけで、トークンは Cookie で運ぶ。
-    """
-    issued = session_auth.refresh(token=request.cookies.get(REFRESH_COOKIE_NAME), now=utcnow())
-    set_session_cookies(response, settings, issued)
-    return RefreshResponse(expires_in=int(settings.access_token_ttl.total_seconds()))
-
-
 @router.post("/logout", response_model=LogoutResponse, summary="Sign out")
 def logout(
     request: Request,
@@ -202,7 +201,7 @@ def logout(
     IdP へのリダイレクトは画面側に任せる（XHR でリダイレクトを返しても、
     ブラウザが勝手に追いかけてしまい、応答を読む前に画面が飛ぶ）。
     """
-    session_auth.revoke(logout_token=request.cookies.get(LOGOUT_COOKIE_NAME), now=utcnow())
+    session_auth.revoke(token=request.cookies.get(settings.cookie_name), now=utcnow())
     clear_session_cookies(response, settings)
     return LogoutResponse(
         end_session_url=sso.end_session_url(
@@ -273,6 +272,67 @@ def _logout_token_of(body: bytes) -> str:
     if len(values) != 1 or not values[0].strip():
         raise InvalidLogoutTokenError("the body must carry exactly one logout_token")
     return values[0].strip()
+
+
+def _to_idp(request: Request, settings: AuthSettings, started: StartedLoginDTO) -> RedirectResponse:
+    """IdP の認可エンドポイントへ送り、state を短命な Cookie に置く。"""
+    # 302 でないと、IdP からの GET が POST として飛ぶ実装がある
+    response = RedirectResponse(started.authorization_url, status_code=status.HTTP_302_FOUND)
+    response.set_cookie(
+        key=LOGIN_STATE_COOKIE,
+        value=_remember_binding(
+            request.cookies.get(LOGIN_STATE_COOKIE), started.browser_binding
+        ),
+        max_age=LOGIN_STATE_COOKIE_MAX_AGE,
+        httponly=True,
+        secure=settings.cookie_secure,
+        # IdP からのトップレベル遷移で戻ってくるので lax でなければ届かない
+        samesite=settings.cookie_samesite,
+        path="/",
+    )
+    return response
+
+
+def _complete_renewal(
+    request: Request,
+    settings: AuthSettings,
+    sso: SsoLoginUseCases,
+    *,
+    code: str | None,
+    state: str,
+    error: str | None,
+) -> RedirectResponse:
+    """続ける往復の戻り（ADR-0071）。Cookie を載せて結果の頁へ送る。
+
+    「入っていない」「許可が無い」は失敗ではない（画面を出さずに試しただけ）。
+    """
+    if not _binding_matches(request.cookies.get(LOGIN_STATE_COOKIE), state):
+        return _renewal_result(renewal.RenewalResult.FAILED)
+    if error in SILENT_DECLINES and sso.decline_renewal(state=state, now=utcnow()):
+        logger.info("IdP に入っていないので続けません", extra={"event": "auth.sso.renewal_declined"})
+        return _renewal_result(renewal.RenewalResult.DECLINED, settings)
+    if error or not code:
+        logger.warning("続ける往復が壊れました", extra={"event": "auth.sso.renewal_failed"})
+        return _renewal_result(renewal.RenewalResult.FAILED, settings)
+    try:
+        issued = sso.complete_renewal(code=code, state=state, now=utcnow())
+    except (AuthenticationError, AccessDeniedError, ValidationError):
+        logger.warning("続ける往復が壊れました", extra={"event": "auth.sso.renewal_failed"})
+        return _renewal_result(renewal.RenewalResult.FAILED, settings)
+    if issued is None:
+        return _renewal_result(renewal.RenewalResult.DECLINED, settings)
+    response = _renewal_result(renewal.RenewalResult.RENEWED, settings)
+    set_session_cookies(response, settings, issued)
+    logger.info("ログインを続けました", extra={"event": "auth.sso.renewed"})
+    return response
+
+
+def _renewal_result(result: renewal.RenewalResult, settings: AuthSettings | None = None) -> RedirectResponse:
+    """結果の頁へ送る（使い終えた往復の Cookie は落とし、自分の枠にだけ入れてよい印を付ける）。"""
+    response = RedirectResponse(renewal.result_location(result), status_code=status.HTTP_302_FOUND)
+    if settings is not None:
+        _clear_login_state_cookie(response, settings)
+    return renewal.allow_same_origin_framing(response)
 
 
 def _remember_binding(cookie_value: str | None, state: str) -> str:

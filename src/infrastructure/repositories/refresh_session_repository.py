@@ -3,10 +3,10 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, cast
 
-from sqlalchemy import CursorResult, and_, delete, or_, select, update
+from sqlalchemy import CursorResult, delete, select, update
 from sqlalchemy.orm import Session
 
-from src.domain.entities.refresh_session import REUSE_GRACE, RefreshSession
+from src.domain.entities.refresh_session import RefreshSession
 from src.domain.repositories.refresh_session_repository import RefreshSessionRepository
 from src.domain.value_objects.federated_identity import FederatedIdentity
 from src.infrastructure.database.models import FederatedIdentityModel, RefreshSessionModel
@@ -21,9 +21,6 @@ class SqlAlchemyRefreshSessionRepository(RefreshSessionRepository):
             RefreshSessionModel(
                 id=refresh_session.id,
                 user_id=refresh_session.user_id,
-                current_jti=refresh_session.current_jti,
-                previous_jti=refresh_session.previous_jti,
-                rotated_at=refresh_session.rotated_at,
                 expires_at=refresh_session.expires_at,
                 created_at=refresh_session.created_at,
                 idp_session_id=refresh_session.idp_session_id,
@@ -46,36 +43,13 @@ class SqlAlchemyRefreshSessionRepository(RefreshSessionRepository):
         self._session.commit()
         return result.rowcount or 0
 
-    def rotate(
-        self,
-        session_id: str,
-        *,
-        expected_jti: str,
-        new_jti: str,
-        now: datetime,
-        expires_at: datetime,
-    ) -> bool:
-        settled = now - REUSE_GRACE
+    def extend(self, session_id: str, *, idp_session_id: str | None, expires_at: datetime) -> bool:
         result = self._execute(
             update(RefreshSessionModel)
-            .where(
-                and_(
-                    RefreshSessionModel.id == session_id,
-                    RefreshSessionModel.current_jti == expected_jti,
-                    or_(RefreshSessionModel.rotated_at.is_(None), RefreshSessionModel.rotated_at < settled),
-                )
-            )
-            # ⚠ **順番を固定する。** MariaDB は SET を左から評価する（標準 SQL と違う）。``values()`` は列の定義順に
-            #   並べるので、current_jti が先だと previous_jti に新しい値が入り、直前の 1 本が使い回しに見える。
-            .ordered_values(
-                (RefreshSessionModel.previous_jti, RefreshSessionModel.current_jti),
-                (RefreshSessionModel.current_jti, new_jti),
-                (RefreshSessionModel.rotated_at, now),
-                (RefreshSessionModel.expires_at, expires_at),
-            ),
+            .where(RefreshSessionModel.id == session_id)
+            .values(idp_session_id=idp_session_id, expires_at=expires_at),
             execution_options={"synchronize_session": False},
         )
-        # ⚠ **行のロックを応答まで持ち越さない。** 同じログインの更新が同時に来ると、後の更新は確定までこの行を待つ。
         self._session.commit()
         return result.rowcount == 1
 
@@ -118,9 +92,6 @@ class SqlAlchemyRefreshSessionRepository(RefreshSessionRepository):
         return RefreshSession(
             id=model.id,
             user_id=model.user_id,
-            current_jti=model.current_jti,
-            previous_jti=model.previous_jti,
-            rotated_at=model.rotated_at,
             expires_at=model.expires_at,
             created_at=model.created_at,
             idp_session_id=model.idp_session_id,
