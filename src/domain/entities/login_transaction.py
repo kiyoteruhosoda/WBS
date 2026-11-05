@@ -4,11 +4,22 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+from enum import StrEnum
 
 from src.domain.exceptions import ValidationError
+from src.domain.value_objects.continued_sign_in import ContinuedSignIn
 from src.domain.value_objects.redirect_target import RedirectTarget
 
 DEFAULT_LOGIN_TRANSACTION_TTL = timedelta(minutes=10)
+
+
+class LoginPurpose(StrEnum):
+    """往復を何のために始めたか。戻り先の URI は 1 つなので、``/callback`` はこれを見て後始末を選ぶ。"""
+
+    #: 入るための往復（ボタン・ログイン画面の黙った確かめ）
+    LOGIN = "login"
+    #: 切れたログインを画面を出さずに続けるための往復（見えない枠の中。ADR-0071）
+    RENEW = "renew"
 
 
 @dataclass
@@ -33,6 +44,10 @@ class LoginTransaction:
     #: ``prompt=none`` で「IdP でもう入っているか」を黙って確かめる往復か（ADR-0062）。
     #: 真なら、IdP が ``login_required`` などで戻しても失敗ではない。
     silent: bool = False
+    purpose: LoginPurpose = LoginPurpose.LOGIN
+    #: 続ける往復で、続けるログイン（手元の期限切れのトークンから読んだもの）。分からなければ ``None``
+    #: （そのときは新しいログインとして入る）。⚠ 戻ってきた人と突き合わせるためにある（ADR-0071）
+    continued: ContinuedSignIn | None = None
 
     @classmethod
     def issue(
@@ -45,6 +60,8 @@ class LoginTransaction:
         now: datetime,
         ttl: timedelta = DEFAULT_LOGIN_TRANSACTION_TTL,
         silent: bool = False,
+        purpose: LoginPurpose = LoginPurpose.LOGIN,
+        continued: ContinuedSignIn | None = None,
     ) -> LoginTransaction:
         if not state or not nonce or not code_verifier:
             raise ValidationError("state, nonce and code_verifier are required")
@@ -56,6 +73,8 @@ class LoginTransaction:
             created_at=now,
             expires_at=now + ttl,
             silent=silent,
+            purpose=purpose,
+            continued=continued,
         )
 
     def is_expired(self, now: datetime) -> bool:

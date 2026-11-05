@@ -2,6 +2,12 @@
 
 完了した重要な変更の要約（新しいものを上に）。詳しい経緯は `history/` を参照。
 
+## 2026-11-05（SSO のログインはリフレッシュトークンを持たず、切れたら IdP へ問い合わせて続ける。task #889・ADR-0071）
+
+- アクセストークン（5 分）が切れたら、画面が見えない枠で `/api/auth/renew` を開き、IdP へ `prompt=none` で問い合わせて続ける。画面は切り替わらない。IdP で入っていなければログイン画面を出す（受信箱の書きかけは残る）。
+- リフレッシュトークン・ログアウトの札を出さなくなり、`POST /api/auth/refresh` を外した。手元の古い札は入る・続けるたびに落とす。今のログインはそのまま続く。
+- ⚠ 移行 0036 で `refresh_sessions` の `current_jti`・`previous_jti`・`rotated_at` を消し、`auth_login_transactions` に `purpose`・`continued_user_id`・`continued_session_id` を足した。`REFRESH_TOKEN_EXPIRES_SECONDS` は読まなくなった。CI の `refresh-on-mariadb` を外した。
+
 ## 2026-11-03（Tracker・Scheduler へ移したものと「今日」・週次レビューを外す。task #543・ADR-0070）
 
 - 打刻・休み・PC を使っていた時間・自動記録の規則・締め・予定・カレンダー・アラーム・端末への通知・「今日」・週次レビューの口を外した（404）。移転モードの関所と中継も外した（中継は 11/02 22:21 以降 0 件）。

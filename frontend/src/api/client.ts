@@ -1,4 +1,7 @@
 import axios, { type AxiosError, type InternalAxiosRequestConfig } from 'axios';
+import { oneAtATime, renewInFrame } from '../auth/silentRenewal';
+import { forgetSilentMarks, markSilentAttempt, signedOutHere } from '../auth/silentSignIn';
+import { continueSession, type ContinuationOutcome } from './sessionContinuation';
 
 const client = axios.create({
   baseURL: '/api',
@@ -13,62 +16,70 @@ type UnauthorizedHandler = () => void;
 let onUnauthorized: UnauthorizedHandler | null = null;
 
 /**
- * ログイン切れ（更新も断られた 401）を受け取ったときの後始末を登録する。
- * 画面のどこで起きても、ログイン画面へ戻せるようにするための一本道。
+ * ログイン切れ（続けることも断られた 401）を受け取ったときの後始末を登録する。
+ * 画面のどこで起きても、ログイン画面へ戻せるようにするための一本道（書きかけは `sessionDraft` が残す）。
  */
 export const setUnauthorizedHandler = (handler: UnauthorizedHandler | null): void => {
   onUnauthorized = handler;
 };
 
-const REFRESH_PATH = '/auth/refresh';
+const ME_PATH = '/auth/me';
 
-type RefreshOutcome =
-  | { kind: 'refreshed' }
-  /** 更新の口が断った。ログインは終わっている */
-  | { kind: 'expired' }
-  /** 更新の口に届かない・口が落ちている。⚠ ログアウト扱いにしない（Cookie は残っていて、戻れば続く） */
-  | { kind: 'unavailable'; error: unknown };
-
-let refreshing: Promise<RefreshOutcome> | null = null;
-
-const sendRefresh = async (): Promise<RefreshOutcome> => {
+/** 今の Cookie でまだ通るか（ほかのタブが先に続けていたか）。届かなければ投げる。 */
+const stillSignedIn = async (): Promise<boolean> => {
   try {
-    await client.post(REFRESH_PATH);
-    return { kind: 'refreshed' };
+    await client.get(ME_PATH, { probe: true } as RetriableConfig);
+    return true;
   } catch (error) {
     const status = (error as AxiosError).response?.status;
-    if (status !== undefined && status < 500) return { kind: 'expired' };
-    return { kind: 'unavailable', error };
+    if (status !== undefined && status < 500) return false;
+    throw error;
   }
 };
 
+let continuing: Promise<ContinuationOutcome> | null = null;
+
 /**
- * トークンを更新する。⚠ **同時に 401 になった要求は 1 本の更新を待つ**（ADR-0069）。
+ * ログインを続ける（ADR-0071）。SSO で入ったログインはリフレッシュトークンを持たないので、
+ * 見えない枠で IdP へ `prompt=none` で問い合わせる。⚠ **同時に 401 になった要求は 1 本を待つ。**
  * トークンは行きも帰りも Cookie なので、ここでは何も持ち回さない。
  */
-const tryRefresh = (): Promise<RefreshOutcome> => {
-  refreshing ??= sendRefresh().finally(() => {
-    refreshing = null;
+const tryContinue = (): Promise<ContinuationOutcome> => {
+  continuing ??= continueSession({
+    signedOutHere,
+    oneAtATime,
+    stillSignedIn,
+    renewInFrame: () => renewInFrame(),
+    onRenewed: forgetSilentMarks,
+    onDeclined: () => {
+      markSilentAttempt();
+    },
+  }).finally(() => {
+    continuing = null;
   });
-  return refreshing;
+  return continuing;
 };
 
-type RetriableConfig = InternalAxiosRequestConfig & { refreshedOnce?: boolean };
+type RetriableConfig = InternalAxiosRequestConfig & {
+  /** 続けたあとの再試行 */
+  continuedOnce?: boolean;
+  /** 続けるかを確かめる問い合わせ（{@link stillSignedIn}）。答えは呼んだ側が読む */
+  probe?: boolean;
+};
 
 client.interceptors.response.use(
   (response) => response,
   async (error: AxiosError) => {
     const config = error.config as RetriableConfig | undefined;
-    // 更新そのものの失敗は tryRefresh が読む
-    if (config?.url === REFRESH_PATH) throw error;
     if (error.response?.status !== 401) throw error;
-    if (!config || config.refreshedOnce) {
+    if (config?.probe) throw error;
+    if (!config || config.continuedOnce) {
       onUnauthorized?.();
       throw error;
     }
-    const outcome = await tryRefresh();
-    if (outcome.kind === 'refreshed') {
-      return client.request({ ...config, refreshedOnce: true } as RetriableConfig);
+    const outcome = await tryContinue();
+    if (outcome.kind === 'continued') {
+      return client.request({ ...config, continuedOnce: true } as RetriableConfig);
     }
     if (outcome.kind === 'unavailable') throw outcome.error;
     onUnauthorized?.();

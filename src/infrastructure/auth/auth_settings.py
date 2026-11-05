@@ -15,13 +15,15 @@ from datetime import timedelta
 from src.domain.value_objects.provisioning_policy import ProvisioningPolicy
 
 DEFAULT_COOKIE_NAME = "wbs_access_token"
-#: リフレッシュトークンとログアウトの札の Cookie（ADR-0069）。経路を絞るので、名前は設定にしない
+#: 以前出していたリフレッシュトークンとログアウトの札の Cookie（ADR-0069）。もう出さず、手元に残っていれば落とす（ADR-0071）
 REFRESH_COOKIE_NAME = "wbs_refresh_token"
 LOGOUT_COOKIE_NAME = "wbs_logout_token"
 #: アクセストークンの寿命。⚠ **この値が「止めたら効くまで」の上限時間そのものになる**（ADR-0069）
 DEFAULT_ACCESS_TOKEN_EXPIRES_SECONDS = 300.0
-#: リフレッシュトークンの寿命。振り替えのたびに延びるので、使い続ける限り切れない
-DEFAULT_REFRESH_TOKEN_EXPIRES_SECONDS = 14 * 24 * 3600.0
+#: ログインの控えと、アクセストークンの Cookie を残す長さ（ADR-0071）。トークン自体は 5 分で切れる。
+#: 切れた後も Cookie を残すのは、画面を出さずに続ける往復が「誰の・どのログインか」を読むため。
+#: IdP のログイン状態の最も長いもの（30 日）に揃える。続けるたびに控えの期限も延びる
+SIGN_IN_CARRY = timedelta(days=30)
 #: 署名鍵の短さの下限（HS256 の鍵は SHA-256 の出力と同じ 32 バイト以上）
 MIN_SIGNING_KEY_LENGTH = 32
 DEFAULT_SCOPES = "openid email profile"
@@ -57,9 +59,10 @@ class AuthSettings:
     cookie_secure: bool
     cookie_samesite: str
     policy: ProvisioningPolicy
-    #: アクセストークン・リフレッシュトークンの寿命（ADR-0069）。
+    #: アクセストークンの寿命（ADR-0069）。切れたら画面が IdP へ画面を出さずに問い合わせる（ADR-0071）
     access_token_ttl: timedelta = timedelta(seconds=DEFAULT_ACCESS_TOKEN_EXPIRES_SECONDS)
-    refresh_token_ttl: timedelta = timedelta(seconds=DEFAULT_REFRESH_TOKEN_EXPIRES_SECONDS)
+    #: ログインの控えとアクセストークンの Cookie を残す長さ（ADR-0071）
+    sign_in_carry: timedelta = SIGN_IN_CARRY
     #: このアプリのトークンの署名鍵。⚠ **プロセスをまたいで同じでなければならない**（ADR-0069）。
     session_signing_key: str = ""
     #: IdP へ**こちらから**問い合わせるときの名乗り（サービスアカウントの ``client_id``）。
@@ -212,9 +215,6 @@ def load_auth_settings() -> AuthSettings:
         http_timeout_seconds=_env_float("OIDC_HTTP_TIMEOUT_SECONDS", 10.0),
         access_token_ttl=_env_seconds(
             "ACCESS_TOKEN_EXPIRES_SECONDS", DEFAULT_ACCESS_TOKEN_EXPIRES_SECONDS
-        ),
-        refresh_token_ttl=_env_seconds(
-            "REFRESH_TOKEN_EXPIRES_SECONDS", DEFAULT_REFRESH_TOKEN_EXPIRES_SECONDS
         ),
         session_signing_key=signing_key,
         cookie_name=os.getenv("AUTH_COOKIE_NAME", DEFAULT_COOKIE_NAME).strip() or DEFAULT_COOKIE_NAME,

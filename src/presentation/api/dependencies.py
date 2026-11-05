@@ -133,7 +133,7 @@ def _session_tokens(settings: AuthSettings) -> JwtSessionTokens:
     return JwtSessionTokens(
         signing_key=settings.session_signing_key,
         access_lifetime=settings.access_token_ttl,
-        refresh_lifetime=settings.refresh_token_ttl,
+        carry=settings.sign_in_carry,
     )
 
 
@@ -162,6 +162,7 @@ def get_sso_login_use_cases(
         transactions=SqlAlchemyLoginTransactionRepository(db),
         secrets=UrlSafeSecretGenerator(),
         policy=settings.policy,
+        sign_in_carry=settings.sign_in_carry,
     )
 
 SsoLoginDep = Annotated[SsoLoginUseCases, Depends(get_sso_login_use_cases)]
@@ -174,7 +175,8 @@ def get_receive_backchannel_logout(
         identity_provider=identity_provider,
         sessions=SqlAlchemyRefreshSessionRepository(db),
         deliveries=SqlAlchemyLogoutDeliveryRepository(db),
-        delivery_retention=settings.refresh_token_ttl,
+        # 控えが残る長さまで覚える。短いと、古い通知の再送が入り直した後のログインを落とす（ADR-0071）
+        delivery_retention=settings.sign_in_carry,
     )
 
 BackchannelLogoutDep = Annotated[

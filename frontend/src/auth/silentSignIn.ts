@@ -61,6 +61,15 @@ export const markSilentAttempt = (): boolean => {
   }
 };
 
+/** サインアウトした印があるか（切れたログインを続ける問い合わせもしない。ADR-0071）。読めなければ真 */
+export const signedOutHere = (): boolean => {
+  try {
+    return localStorage.getItem(SIGNED_OUT_KEY) !== null;
+  } catch {
+    return true;
+  }
+};
+
 /** サインアウトした。次に入るまで黙って入り直さない */
 export const rememberSignedOut = (): void => {
   try {

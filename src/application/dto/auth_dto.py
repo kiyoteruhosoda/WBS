@@ -14,14 +14,9 @@ class StartedLoginDTO:
 
 @dataclass(frozen=True)
 class IssuedSessionDTO:
-    """Cookie へ載せるトークン。
-
-    ⚠ ``refresh_token`` が ``None`` なら更新の Cookie に触らない（同時に走った更新の負けた側。ADR-0069）。
-    """
+    """Cookie へ載せるトークン。アクセストークンだけ（リフレッシュトークンはもう出さない。ADR-0071）。"""
 
     access_token: str
-    refresh_token: str | None = None
-    logout_token: str | None = None
 
 
 @dataclass(frozen=True)

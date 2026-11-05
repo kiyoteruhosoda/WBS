@@ -67,43 +67,6 @@ jobs:
       - name: Test
         run: uv run pytest -v --tb=short
 
-  refresh-on-mariadb:
-    name: 更新の同時実行（MariaDB）
-    # 本番と stg は SQLite だが、雛形の ADR-0092 の不具合（SET の評価順・振り替えの連鎖）は MariaDB で出たので、
-    # 同じ形の更新を本物の MariaDB でも流す（task #819）。⚠ データはメモリに置く（ディスクを減らさない）。
-    runs-on: [self-hosted, nolumialab]
-    timeout-minutes: 15
-    services:
-      mariadb:
-        image: mariadb:10.11
-        env:
-          MARIADB_DATABASE: refresh
-          MARIADB_USER: refresh
-          MARIADB_PASSWORD: refresh
-          MARIADB_ROOT_PASSWORD: root
-        options: >-
-          --tmpfs /var/lib/mysql:rw,size=512m
-          --health-cmd="healthcheck.sh --connect --innodb_initialized"
-          --health-interval=5s
-          --health-timeout=5s
-          --health-retries=20
-    env:
-      UV_PYTHON_INSTALL_MIRROR: "https://git.nolumia.com/astral-sh/python-build-standalone/releases/download"
-      REFRESH_TEST_MARIADB_URL: "mysql+pymysql://refresh:refresh@mariadb:3306/refresh?charset=utf8mb4"
-    steps:
-      - uses: actions/checkout@v6
-
-      - name: Set up uv
-        uses: https://git.nolumia.com/astral-sh/setup-uv@v6
-        with:
-          manifest-file: "https://git.nolumia.com/astral-sh/uv/raw/branch/main/version-manifest.json"
-
-      - name: Install dependencies
-        run: uv sync
-
-      - name: 同時に走る更新を MariaDB で流す
-        run: uv run pytest tests/integration/api/test_refresh_races.py -v --tb=short -k mariadb
-
   frontend:
     name: Frontend
     # ⚠ **自前の台で回す**。台の既定のジョブイメージ（node 入り）で走る。`container:` は書かない。

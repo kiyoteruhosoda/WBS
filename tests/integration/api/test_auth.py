@@ -9,7 +9,9 @@ import hashlib
 import logging
 
 import httpx
+import jwt
 import pytest
+import sqlalchemy as sa
 from fastapi.testclient import TestClient
 
 from src.application.ports.identity_provider import AuthorizationRequest, IdentityProvider
@@ -17,6 +19,7 @@ from src.domain.exceptions import AuthenticationError
 from src.domain.value_objects.federated_identity import FederatedIdentity
 from src.domain.value_objects.identity_claims import IdentityClaims
 from src.domain.value_objects.logout_notice import LOGOUT_EVENT, InvalidLogoutTokenError
+from src.infrastructure.database.session import get_engine
 from src.presentation.api.dependencies import get_identity_provider
 
 ISSUER = "https://idp.example.com/realms/wbs"
@@ -149,6 +152,23 @@ def sign_in(client: TestClient, code: str = "taro-code") -> None:
     started = client.get("/api/auth/login", follow_redirects=False)
     state = started.headers["location"].split("state=")[1].split("&")[0]
     client.get(f"/api/auth/callback?code={code}&state={state}", follow_redirects=False)
+
+
+def sign_in_alive(client: TestClient) -> bool:
+    """手元のアクセストークンが指すログインの控えが、まだ残っているか（ADR-0071）。
+
+    アクセストークンは DB を引かないので寿命まで通る。止まったかは控えの行で見る（行が無ければ、
+    設定の出し直しもログアウトも効かず、切れたら IdP へ問い合わせ直すことになる）。
+    """
+    token = client.cookies.get(COOKIE)
+    if not token:
+        return False
+    session_id = jwt.decode(token, options={"verify_signature": False})["rsid"]
+    with get_engine().connect() as connection:
+        row = connection.execute(
+            sa.text("SELECT 1 FROM refresh_sessions WHERE id = :id"), {"id": session_id}
+        ).first()
+    return row is not None
 
 
 # ── 設定の公開 ─────────────────────────────────────────────────────────────
@@ -442,7 +462,7 @@ def test_logout_ends_the_session_and_offers_the_idp_logout(sso_client) -> None:
     response = sso_client.post("/api/auth/logout")
     assert response.status_code == 200
     assert response.json()["end_session_url"] == f"{ISSUER}/logout"
-    # Cookie が消えている（控えていたトークンの確かめは test_refresh_sessions）。
+    # Cookie が消えている（控えの確かめは test_sign_in_sessions）。
     assert sso_client.get("/api/tasks").status_code == 401
 
 

@@ -10,13 +10,13 @@ from src.application.use_cases.authentication_use_cases import (
     SessionAuthenticationUseCases,
     SsoLoginUseCases,
 )
-from src.domain.entities.login_transaction import LoginTransaction
-from src.domain.entities.refresh_session import REUSE_GRACE
+from src.domain.entities.login_transaction import LoginPurpose, LoginTransaction
 from src.domain.entities.user_account import UserAccount
 from src.domain.exceptions import AccessDeniedError, AuthenticationError
 from src.domain.repositories.login_transaction_repository import LoginTransactionRepository
 from src.domain.repositories.refresh_session_repository import RefreshSessionRepository
 from src.domain.repositories.user_account_repository import UserAccountRepository
+from src.domain.value_objects.continued_sign_in import ContinuedSignIn
 from src.domain.value_objects.federated_identity import FederatedIdentity
 from src.domain.value_objects.identity_claims import IdentityClaims
 from src.domain.value_objects.logout_notice import InvalidLogoutTokenError
@@ -69,14 +69,11 @@ class InMemorySessions(RefreshSessionRepository):
         self.sessions = [s for s in self.sessions if not s.is_expired(now)]
         return before - len(self.sessions)
 
-    def rotate(self, session_id, *, expected_jti, new_jti, now, expires_at):
+    def extend(self, session_id, *, idp_session_id, expires_at):
         session = self.find(session_id)
-        if session is None or session.current_jti != expected_jti:
+        if session is None:
             return False
-        if session.rotated_at is not None and now - session.rotated_at <= REUSE_GRACE:
-            return False
-        session.previous_jti, session.current_jti = session.current_jti, new_jti
-        session.rotated_at, session.expires_at = now, expires_at
+        session.idp_session_id, session.expires_at = idp_session_id, expires_at
         return True
 
     def delete_for_identity(self, identity, *, idp_session_id=None):
@@ -107,6 +104,9 @@ class InMemoryTransactions(LoginTransactionRepository):
     def add(self, transaction):
         self.transactions.append(transaction)
         return transaction
+
+    def find(self, state):
+        return next((t for t in self.transactions if t.state == state), None)
 
     def consume(self, state):
         found = next((t for t in self.transactions if t.state == state), None)
@@ -178,7 +178,7 @@ class FakeIdentityProvider(IdentityProvider):
 TOKENS = JwtSessionTokens(
     signing_key="unit-test-signing-key-unit-test-signing-key",
     access_lifetime=timedelta(minutes=5),
-    refresh_lifetime=timedelta(days=14),
+    carry=timedelta(days=30),
 )
 
 
@@ -194,6 +194,7 @@ def build(idp=None, users=None, policy=None):
         transactions=transactions,
         secrets=CountingSecrets(),
         policy=policy or ProvisioningPolicy(),
+        sign_in_carry=timedelta(days=30),
     )
     session_auth = SessionAuthenticationUseCases(users=users_repo, sessions=sessions, tokens=TOKENS)
     return sso, session_auth, users_repo, sessions, transactions
@@ -249,7 +250,8 @@ def test_completing_a_login_creates_the_user_and_a_session() -> None:
     assert users.users[0].identities == [FederatedIdentity(issuer=ISSUER, subject="abc")]
     assert len(sessions.sessions) == 1
     assert sessions.sessions[0].user_id == users.users[0].id
-    assert completed.session.refresh_token and completed.session.logout_token
+    assert sessions.sessions[0].expires_at == NOW + timedelta(days=30)
+    assert completed.session.access_token
 
 
 def test_the_stored_verifier_and_nonce_are_handed_to_the_idp() -> None:
@@ -416,95 +418,36 @@ def test_a_token_signed_with_another_key_is_refused() -> None:
     other = JwtSessionTokens(
         signing_key="another-signing-key-another-signing-key",
         access_lifetime=timedelta(minutes=5),
-        refresh_lifetime=timedelta(days=14),
+        carry=timedelta(days=30),
     )
-    forged = other.refresh_token(1, session_id=sessions.sessions[0].id, jti="x", now=NOW)
+    user = session_auth.authenticate(token=issued.access_token, now=NOW)
+    forged = other.access_token(user, session_id=sessions.sessions[0].id, now=NOW)
     with pytest.raises(AuthenticationError):
-        session_auth.refresh(token=forged, now=NOW)
+        session_auth.authenticate(token=forged, now=NOW)
+    assert session_auth.continuation_of(token=forged, now=NOW) is None
+    session_auth.revoke(token=forged, now=NOW)
     assert len(sessions.sessions) == 1
 
 
-def test_the_access_token_ends_at_its_lifetime_and_the_refresh_token_carries_on() -> None:
-    session_auth, _, _, issued = _signed_in()
+def test_the_access_token_ends_at_its_lifetime_but_still_tells_whose_sign_in_it_was() -> None:
+    session_auth, users, sessions, issued = _signed_in()
     later = NOW + timedelta(minutes=5)
     with pytest.raises(AuthenticationError):
         session_auth.authenticate(token=issued.access_token, now=later)
-    refreshed = session_auth.refresh(token=issued.refresh_token, now=later)
-    assert session_auth.authenticate(token=refreshed.access_token, now=later).email == "taro@example.com"
+    continued = session_auth.continuation_of(token=issued.access_token, now=later)
+    assert continued == ContinuedSignIn(user_id=users.users[0].id, session_id=sessions.sessions[0].id)
 
 
-def test_rotating_extends_the_sign_in_past_the_old_expiry() -> None:
-    session_auth, _, sessions, issued = _signed_in()
-    token = issued.refresh_token
-    moment = NOW
-    for _ in range(4):
-        moment += timedelta(days=10)
-        token = session_auth.refresh(token=token, now=moment).refresh_token
-        assert token is not None
-    assert sessions.sessions[0].expires_at == moment + timedelta(days=14)
-
-
-def test_kinds_of_token_do_not_stand_in_for_each_other() -> None:
-    session_auth, _, sessions, issued = _signed_in()
-    for wrong in (issued.access_token, issued.logout_token):
-        with pytest.raises(AuthenticationError):
-            session_auth.refresh(token=wrong, now=NOW)
-    with pytest.raises(AuthenticationError):
-        session_auth.authenticate(token=issued.refresh_token, now=NOW)
-    session_auth.revoke(logout_token=issued.refresh_token, now=NOW)
-    assert len(sessions.sessions) == 1
-
-
-def test_a_refresh_within_the_grace_returns_only_an_access_token() -> None:
+def test_the_continuation_is_read_only_while_the_cookie_is_kept() -> None:
     session_auth, _, _, issued = _signed_in()
-    first = session_auth.refresh(token=issued.refresh_token, now=NOW)
-    assert first.refresh_token is not None
-    again = session_auth.refresh(token=first.refresh_token, now=NOW + timedelta(seconds=1))
-    late = session_auth.refresh(token=issued.refresh_token, now=NOW + timedelta(seconds=2))
-    assert again.refresh_token is None and again.access_token
-    assert late.refresh_token is None and late.access_token
+    assert session_auth.continuation_of(token=issued.access_token, now=NOW + timedelta(days=29)) is not None
+    assert session_auth.continuation_of(token=issued.access_token, now=NOW + timedelta(days=31)) is None
 
 
-def test_a_reused_token_ends_only_that_sign_in() -> None:
+def test_revoking_ends_the_sign_in_even_after_the_token_expired() -> None:
     session_auth, _, sessions, issued = _signed_in()
-    first = session_auth.refresh(token=issued.refresh_token, now=NOW)
-    with pytest.raises(AuthenticationError):
-        session_auth.refresh(token=issued.refresh_token, now=NOW + timedelta(seconds=31))
+    session_auth.revoke(token=issued.access_token, now=NOW + timedelta(hours=2))
     assert sessions.sessions == []
-    with pytest.raises(AuthenticationError):
-        session_auth.refresh(token=first.refresh_token, now=NOW + timedelta(seconds=32))
-
-
-def test_an_expired_sign_in_is_refused_and_discarded() -> None:
-    session_auth, _, sessions, issued = _signed_in()
-    # トークンの寿命より控えが先に切れた形（控えの期限でも止まること）
-    sessions.sessions[0].expires_at = NOW + timedelta(hours=1)
-    with pytest.raises(AuthenticationError):
-        session_auth.refresh(token=issued.refresh_token, now=NOW + timedelta(hours=1))
-    assert sessions.sessions == []
-
-
-def test_deactivating_a_user_stops_the_next_refresh() -> None:
-    session_auth, users, sessions, issued = _signed_in()
-    users.users[0].is_active = False
-    with pytest.raises(AuthenticationError):
-        session_auth.refresh(token=issued.refresh_token, now=NOW)
-    assert sessions.sessions == []
-
-
-def test_a_refresh_for_an_ended_sign_in_is_refused() -> None:
-    session_auth, _, sessions, issued = _signed_in()
-    sessions.sessions.clear()
-    with pytest.raises(AuthenticationError):
-        session_auth.refresh(token=issued.refresh_token, now=NOW)
-
-
-def test_revoking_ends_the_sign_in() -> None:
-    session_auth, _, sessions, issued = _signed_in()
-    session_auth.revoke(logout_token=issued.logout_token, now=NOW)
-    assert sessions.sessions == []
-    with pytest.raises(AuthenticationError):
-        session_auth.refresh(token=issued.refresh_token, now=NOW)
 
 
 def test_reissuing_the_access_token_needs_a_live_sign_in() -> None:
@@ -537,6 +480,82 @@ def test_declining_an_ordinary_start_is_not_silent() -> None:
     sso, _, _, _, _ = build()
     started = sso.start_login(redirect_path="/gantt", now=NOW)
     assert sso.decline_silent_login(state=started.browser_binding, now=NOW) is None
+
+
+# ── 続ける（見えない枠の中の prompt=none。ADR-0071） ─────────────────────
+def _renewal(sso, transactions, continued):
+    started = sso.start_renewal(continued=continued, now=NOW)
+    return started, transactions.transactions[-1]
+
+
+def test_a_renewal_asks_without_a_screen_and_remembers_whose_sign_in_it_continues() -> None:
+    sso, session_auth, users, sessions, transactions = build()
+    login(sso)
+    issued = sso.complete_login(code="auth-code", state=transactions.transactions[0].state, now=NOW).session
+    continued = session_auth.continuation_of(token=issued.access_token, now=NOW + timedelta(hours=1))
+    started, transaction = _renewal(sso, transactions, continued)
+    assert started.authorization_url.endswith("&prompt=none")
+    assert transaction.purpose is LoginPurpose.RENEW
+    assert transaction.continued == continued
+    assert sso.purpose_of(transaction.state) is LoginPurpose.RENEW
+
+
+def test_a_renewal_extends_the_same_sign_in() -> None:
+    sso, session_auth, users, sessions, transactions = build()
+    login(sso)
+    issued = sso.complete_login(code="auth-code", state=transactions.transactions[0].state, now=NOW).session
+    continued = session_auth.continuation_of(token=issued.access_token, now=NOW)
+    later = NOW + timedelta(days=3)
+    started = sso.start_renewal(continued=continued, now=later)
+    renewed = sso.complete_renewal(code="auth-code", state=started.browser_binding, now=later)
+    assert renewed is not None
+    assert len(sessions.sessions) == 1
+    assert sessions.sessions[0].expires_at == later + timedelta(days=30)
+    assert session_auth.authenticate(token=renewed.access_token, now=later).email == "taro@example.com"
+
+
+def test_a_renewal_for_someone_else_is_declined() -> None:
+    sso, _, users, sessions, transactions = build()
+    login(sso)
+    sso.complete_login(code="auth-code", state=transactions.transactions[0].state, now=NOW)
+    started = sso.start_renewal(continued=ContinuedSignIn(user_id=999, session_id="x"), now=NOW)
+    assert sso.complete_renewal(code="auth-code", state=started.browser_binding, now=NOW) is None
+    assert len(sessions.sessions) == 1
+
+
+def test_a_renewal_for_a_stopped_user_is_declined() -> None:
+    sso, _, users, _, transactions = build()
+    login(sso)
+    sso.complete_login(code="auth-code", state=transactions.transactions[0].state, now=NOW)
+    users.users[0].is_active = False
+    started = sso.start_renewal(continued=None, now=NOW)
+    assert sso.complete_renewal(code="auth-code", state=started.browser_binding, now=NOW) is None
+
+
+def test_a_renewal_does_not_create_an_account() -> None:
+    sso, _, users, _, _ = build()
+    started = sso.start_renewal(continued=None, now=NOW)
+    assert sso.complete_renewal(code="auth-code", state=started.browser_binding, now=NOW) is None
+    assert users.users == []
+
+
+def test_a_login_state_cannot_complete_a_renewal_and_back() -> None:
+    sso, _, _, _, _ = build()
+    login_started = sso.start_login(redirect_path=None, now=NOW)
+    with pytest.raises(AuthenticationError):
+        sso.complete_renewal(code="auth-code", state=login_started.browser_binding, now=NOW)
+    renewal_started = sso.start_renewal(continued=None, now=NOW)
+    with pytest.raises(AuthenticationError):
+        sso.complete_login(code="auth-code", state=renewal_started.browser_binding, now=NOW)
+
+
+def test_declining_a_renewal_uses_it_up() -> None:
+    sso, _, _, _, transactions = build()
+    started = sso.start_renewal(continued=None, now=NOW)
+    assert sso.decline_renewal(state=started.browser_binding, now=NOW) is True
+    assert transactions.transactions == []
+    login_started = sso.start_login(redirect_path=None, now=NOW, silent=True)
+    assert sso.decline_renewal(state=login_started.browser_binding, now=NOW) is False
 
 
 def test_declining_an_unknown_or_expired_start_is_not_silent() -> None:
