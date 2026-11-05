@@ -110,10 +110,8 @@ def start_renewal(
     """切れたログインを画面を出さずに続ける往復を始める（ADR-0071）。**画面は見えない枠で開く。**
 
     常に ``prompt=none``。手元に残った期限切れのアクセストークンから「誰の・どのログインか」を読み、
-    往復に写す（同じ人が戻ってきたときだけ引き継ぐ）。SSO が無効なら結果の頁（``failed``）へ送る。
+    往復に写す（同じ人が戻ってきたときだけ引き継ぐ）。SSO が無効な配備では ``/login`` と同じく 404。
     """
-    if not settings.sso_enabled:
-        return _renewal_result(renewal.RenewalResult.FAILED)
     now = utcnow()
     continued = session_auth.continuation_of(token=request.cookies.get(settings.cookie_name), now=now)
     try:

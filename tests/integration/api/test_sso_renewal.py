@@ -160,6 +160,6 @@ def test_an_ordinary_login_still_lands_on_the_screen(sso_client) -> None:  # noq
     assert response.headers["location"] == "/tasks"
 
 
-def test_the_renewal_in_single_user_mode_fails_quietly(client) -> None:
-    response = client.get(RENEW, follow_redirects=False)
-    assert response.headers["location"] == f"{RESULT}?result=failed"
+def test_the_renewal_in_single_user_mode_is_not_found(client) -> None:
+    """``/login`` と同じ。画面は枠が結果の頁へ着かないので ``failed`` と読む。"""
+    assert client.get(RENEW, follow_redirects=False).status_code == 404
