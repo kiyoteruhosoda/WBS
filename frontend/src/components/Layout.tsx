@@ -9,6 +9,7 @@ import AppMark from './AppMark';
 import OfflineNotice from './OfflineNotice';
 import ProjectScopeSelect from './ProjectScopeSelect';
 import { useProjectScope } from '../projects/useProjectScope';
+import { BELOW_UPDATE_BAR } from '../pwa/updateBarHeight';
 import type { TranslationKey } from '../i18n/translations';
 import {
   CheckListIcon, BarsIcon, InboxIcon, PlusIcon, SlidersIcon, FolderIcon, FlagIcon, GridIcon, TreeIcon,
@@ -183,7 +184,8 @@ const Layout: React.FC = () => {
           component="nav"
           sx={{
             width: SIDEBAR_WIDTH, flexShrink: 0, borderRight: `1px solid ${ds.border}`,
-            position: 'sticky', top: 0, height: '100svh',
+            // 新しい版の知らせ（帯）が出ている間は、その真下に付く（ADR-0072）
+            position: 'sticky', top: BELOW_UPDATE_BAR, height: `calc(100svh - ${BELOW_UPDATE_BAR})`,
           }}
         >
           <Sidebar />
@@ -202,7 +204,8 @@ const Layout: React.FC = () => {
             height: TOPBAR_HEIGHT, flexShrink: 0, bgcolor: ds.paper,
             borderBottom: `1px solid ${ds.border}`,
             display: 'flex', alignItems: 'center', gap: { xs: 1, sm: 2 }, px: { xs: '8px', sm: '20px' },
-            position: 'sticky', top: 0, zIndex: 10,
+            // 新しい版の知らせ（帯）が出ている間は、その真下に付く（ADR-0072）
+            position: 'sticky', top: BELOW_UPDATE_BAR, zIndex: 10,
           }}
         >
           {!isDesktop && (

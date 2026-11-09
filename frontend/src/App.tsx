@@ -67,11 +67,12 @@ const App: React.FC = () => (
   <QueryClientProvider client={queryClient}>
     <ThemeProvider theme={theme}>
       <CssBaseline />
+      {/* 新しい版の知らせはどの画面でもいちばん上の帯に出す（ADR-0072）。ログイン画面でも出す。
+          帯がヘッダーの上に来るよう、画面より前に置く */}
+      <AppUpdatePrompt watch={watchForUpdate} />
       <BrowserRouter>
         <SignedInApp />
       </BrowserRouter>
-      {/* 新しい版の知らせ（ADR-0028）。ログイン画面でも出す */}
-      <AppUpdatePrompt watch={watchForUpdate} />
     </ThemeProvider>
   </QueryClientProvider>
 );
