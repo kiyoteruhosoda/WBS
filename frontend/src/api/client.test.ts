@@ -133,7 +133,7 @@ describe('continuing via a hidden frame on 401 (ADR-0071)', () => {
     expect(renewInFrame).not.toHaveBeenCalled();
   });
 
-  it('returns a 503 failure when the check endpoint gives 503 (so the UI doesn't mistake it for expiry)', async () => {
+  it('returns a 503 failure when the check endpoint gives 503 (so the UI does not mistake it for expiry)', async () => {
     fake({ '/tasks': [401], '/auth/me': [503] });
     await expect(client.get('/tasks')).rejects.toMatchObject({ response: { status: 503 } });
   });

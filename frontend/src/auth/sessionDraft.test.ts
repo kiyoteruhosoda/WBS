@@ -16,7 +16,7 @@ beforeEach(() => {
 });
 
 describe('drafts (ADR-0071)', () => {
-  it('clears only this app's drafts on sign-out', () => {
+  it('clears only the drafts of this app on sign-out', () => {
     window.sessionStorage.setItem('wbs.draft:inbox', '{"title":"a","memo":""}');
     window.sessionStorage.setItem('wbs.sso.silentAttempted', '1');
     clearSessionDrafts();

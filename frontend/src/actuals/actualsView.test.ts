@@ -30,7 +30,7 @@ describe('Gantt actuals bar', () => {
     expect(layout.cells).toEqual([{ idx: 2, seconds: 1800 }, { idx: 4, seconds: 7200 }]);
   });
 
-  it('shows no bar when it doesn't overlap the range', () => {
+  it('shows no bar when it does not overlap the range', () => {
     expect(ganttActualLayout({ ...span, last_date: '2026-08-30', days: [] }, start, 10).strip).toBeNull();
     expect(ganttActualLayout(undefined, start, 10)).toEqual({ strip: null, cells: [] });
   });

@@ -49,7 +49,7 @@ describe('duration format', () => {
     expect(formatSignedSecondsAsHours(0)).toBe('±0h');
   });
 
-  it('today's time entries are H:MM (seconds truncated)', () => {
+  it('time entries of today are H:MM (seconds truncated)', () => {
     expect(formatClockDuration(0)).toBe('0:00');
     expect(formatClockDuration(59)).toBe('0:00');
     expect(formatClockDuration(3600 + 5 * 60 + 59)).toBe('1:05');

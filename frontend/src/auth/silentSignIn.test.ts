@@ -48,7 +48,7 @@ describe('whether to silently check the IdP sign-in (ADR-0062)', () => {
     expect(shouldTrySilently(at('/login'))).toBe(true);
   });
 
-  it('does not try without storage (the one-shot marker can't be stored, which would loop)', () => {
+  it('does not try without storage (the one-shot marker cannot be stored, which would loop)', () => {
     vi.stubGlobal('sessionStorage', undefined);
     expect(shouldTrySilently(at('/login'))).toBe(false);
     expect(markSilentAttempt()).toBe(false);
