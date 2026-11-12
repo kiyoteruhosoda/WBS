@@ -10,7 +10,7 @@ interface Props {
   onSignIn: () => void;
 }
 
-/** コールバックが失敗したときに付けてくる `?error=` を読む。 */
+/** Reads the `?error=` added when the callback fails. */
 const callbackError = (): string | null => new URLSearchParams(window.location.search).get('error');
 
 const errorMessage = (error: string): string => {
@@ -20,8 +20,8 @@ const errorMessage = (error: string): string => {
 };
 
 /**
- * ログイン画面。IdP へ送り出すボタンだけを置く。
- * パスワード欄は無い（このアプリはパスワードを持たない）。
+ * Login screen. Only has a button that sends the user to the IdP.
+ * There is no password field (this app has no passwords).
  */
 const LoginPage: React.FC<Props> = ({ providerName, sessionExpired, onSignIn }) => {
   const error = callbackError();

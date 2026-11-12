@@ -3,7 +3,7 @@ import { Box } from '@mui/material';
 import { ds } from '../theme';
 
 interface Props {
-  value: number | null; // 0-100。null は判断材料が無い（分母 0）ので「—」
+  value: number | null; // 0-100. null means nothing to judge by (denominator 0), shown as "—"
   color?: string;
   height?: number;
   showLabel?: boolean;

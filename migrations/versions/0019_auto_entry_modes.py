@@ -1,16 +1,16 @@
-"""自動の打刻の送り方（fill / override）と、受け取りの控え・切り抜きの記録（WinTrack、task #386 / ADR-0045）
+"""How automatic clock-ins are sent (fill / override), plus receipt records and carve-out records (WinTrack, task #386 / ADR-0045)
 
 Revision ID: 0019
 Revises: 0018
 Create Date: 2026-10-13
 
-- ``time_entries``: ``(user_id, client_ref)`` の一意をやめて普通の索引にする（``fill`` は 1 つの ID から何本もできる）。
-  ``auto_mode`` を足す。いまある自動の打刻は ``fill`` とみなす（送り方を選べる前に送られたもの）
-- ``auto_time_entry_receipts``: 受け取った ID の控え。送り直しの見分けは ``(user_id, client_ref)`` の一意で守る。
-  いまある自動の打刻の ID から作る
-- ``time_entry_carvings``: 例外作業で切り抜いた手の打刻の、切り抜く前の姿
+- ``time_entries``: drop the ``(user_id, client_ref)`` uniqueness for a plain index (``fill`` can produce several entries from one ID).
+  Add ``auto_mode``. Existing automatic clock-ins are treated as ``fill`` (sent before the mode could be chosen)
+- ``auto_time_entry_receipts``: records of received IDs. Resend detection is guarded by uniqueness on ``(user_id, client_ref)``.
+  Built from the IDs of existing automatic clock-ins
+- ``time_entry_carvings``: the pre-carving state of manual clock-ins carved out by exception work
 
-⚠ 下げると、同じ ID の自動の打刻が 2 本以上あるとき一意の索引が作れずに失敗する（下げる前に片付ける）。
+⚠ Downgrading fails when two or more automatic clock-ins share an ID, since the unique index cannot be created (clean up before downgrading).
 """
 
 from __future__ import annotations

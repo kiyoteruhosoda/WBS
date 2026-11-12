@@ -1,6 +1,6 @@
-// 選んだタスクをまとめて別のプロジェクトへ移す（task #187、ADR-0030）。
-// 子タスクは親に従う（ADR-0024 の 4）ので、送るのは親の無いタスクだけ。親と一緒に移るもの・
-// 親を選んでいないので移さないものを、押す前に数で見せる。
+// Moves the selected tasks to another project in bulk (task #187, ADR-0030).
+// Child tasks follow their parent (ADR-0024 item 4), so only tasks without a parent are sent. Before clicking, counts show what moves with its parent
+// and what isn't moved because its parent isn't selected.
 import React, { useState } from 'react';
 import {
   Alert, Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, MenuItem, TextField,
@@ -27,7 +27,7 @@ const NONE = 'none';
 const MoveToProjectDialog: React.FC<Props> = ({ open, plan, projects, onClose, onMoved }) => {
   const { t } = useI18n();
   const qc = useQueryClient();
-  // 移し先は空から始める（絞り込み中のプロジェクトから外へ出すことが多い）
+  // The destination starts empty (tasks are usually moved out of the filtered project)
   const [target, setTarget] = useState<string>('');
   const projectId = target === NONE || target === '' ? null : Number(target);
   const label = target === NONE ? t('scope.none') : projects.find((p) => p.id === projectId)?.path ?? '';
@@ -39,7 +39,7 @@ const MoveToProjectDialog: React.FC<Props> = ({ open, plan, projects, onClose, o
       return moveTasksToProject(request);
     },
     onSuccess: async (result) => {
-      // 一覧・各タスク・ガント・実績など、プロジェクトで絞る画面を全部読み直す
+      // Reload every screen filtered by project: list, each task, Gantt, actuals, etc.
       await qc.invalidateQueries();
       setTarget('');
       onMoved(result, label);

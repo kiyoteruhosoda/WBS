@@ -22,7 +22,7 @@ class UserModel(Base):
     timezone: Mapped[str] = mapped_column(sa.String(64), default="Asia/Tokyo", nullable=False)
     language: Mapped[str] = mapped_column(sa.String(8), default="ja", nullable=False)
     is_active: Mapped[bool] = mapped_column(sa.Boolean, default=True, nullable=False)
-    #: いちばん上のプロジェクトを作れるか（ADR-0065）
+    #: Whether the user can create top-level projects (ADR-0065)
     can_create_projects: Mapped[bool] = mapped_column(
         sa.Boolean, nullable=False, default=False, server_default=sa.false()
     )
@@ -42,11 +42,11 @@ class CategoryModel(Base):
     updated_at: Mapped[datetime] = mapped_column(sa.DateTime, default=utcnow, onupdate=utcnow, nullable=False)
 
 class ProjectModel(Base):
-    """プロジェクト（task #187 / ADR-0024）。``parent_project_id`` で何段でも入れ子にできる（隣接リスト）。
+    """Project (task #187 / ADR-0024). ``parent_project_id`` allows nesting to any depth (adjacency list).
 
-    ⚠ **環はアプリ側で断る**（DB の制約では守れない）。子孫は再帰 CTE で引く。
-    ``status`` は ``ProjectStatus`` の値（active / archived）。ネイティブ ENUM にしない。
-    消すのは空のプロジェクトだけで、行ごと消す（id は使い回さない）。
+    ⚠ **Cycles are rejected by the app** (DB constraints cannot prevent them). Descendants are fetched with a recursive CTE.
+    ``status`` is a ``ProjectStatus`` value (active / archived). Not a native ENUM.
+    Only empty projects are deleted, and the row is removed (ids are not reused).
     """
 
     __tablename__ = "projects"
@@ -63,7 +63,7 @@ class ProjectModel(Base):
     )
     name: Mapped[str] = mapped_column(sa.String(200), nullable=False)
     color: Mapped[str | None] = mapped_column(sa.String(7), nullable=True)
-    # 任意の短いコード（表示だけ。一意ではない。前後の空白を落とし、空は NULL）
+    # Optional short code (display only. Not unique. Whitespace stripped, empty becomes NULL)
     code: Mapped[str | None] = mapped_column(sa.String(32), nullable=True)
     description: Mapped[str | None] = mapped_column(sa.Text, nullable=True)
     status: Mapped[str] = mapped_column(sa.String(16), default="active", nullable=False)
@@ -72,10 +72,10 @@ class ProjectModel(Base):
     updated_at: Mapped[datetime] = mapped_column(sa.DateTime, default=utcnow, onupdate=utcnow, nullable=False)
 
 class ProjectMemberModel(Base):
-    """プロジェクトのメンバー（task #544 / ADR-0055）。⚠ **行はいちばん上のプロジェクトにだけ置く**。
-    その下のプロジェクト・タスク・マイルストーンは、根のメンバー全員に見える。
+    """Project members (task #544 / ADR-0055). ⚠ **Rows exist only for top-level projects**.
+    Projects, tasks and milestones below are visible to all members of the root.
 
-    ``role`` は ``ProjectRole`` の値（manager / member）。ネイティブ ENUM にしない。
+    ``role`` is a ``ProjectRole`` value (manager / member). Not a native ENUM.
     """
 
     __tablename__ = "project_members"
@@ -96,7 +96,7 @@ class ProjectMemberModel(Base):
         nullable=False,
     )
     role: Mapped[str] = mapped_column(sa.String(16), nullable=False)
-    # 1 日の工数（時間）と従事率（%）。見込みの計算に使う（task #554 / ADR-0058）
+    # Daily hours (hours) and allocation rate (%). Used for forecasting (task #554 / ADR-0058)
     daily_hours: Mapped[Decimal] = mapped_column(
         sa.Numeric(4, 2), default=Decimal(8), server_default="8", nullable=False
     )
@@ -106,9 +106,9 @@ class ProjectMemberModel(Base):
     created_at: Mapped[datetime] = mapped_column(sa.DateTime, default=utcnow, nullable=False)
 
 class TeamWorkweekModel(Base):
-    """いちばん上のプロジェクトの稼働する曜日（task #554 / ADR-0058）。行が無ければ月〜金。
+    """Working weekdays of a top-level project (task #554 / ADR-0058). Mon-Fri if there is no row.
 
-    ``workdays`` は MO〜SU をカンマで（休みの層の ``calendars.workdays`` と同じ綴り）。
+    ``workdays`` is MO-SU comma-separated (same spelling as ``calendars.workdays`` in the leave layer).
     """
 
     __tablename__ = "team_workweeks"
@@ -125,7 +125,7 @@ class TeamWorkweekModel(Base):
     workdays: Mapped[str] = mapped_column(sa.String(32), nullable=False)
 
 class TeamDayOffModel(Base):
-    """プロジェクトの休日（task #554 / ADR-0058）。根のものはチームの休日、下のものはその木で足した休日（ADR-0059）。"""
+    """Project holidays (task #554 / ADR-0058). The root's are team holidays; lower ones are holidays added for that subtree (ADR-0059)."""
 
     __tablename__ = "team_days_off"
     __table_args__ = (
@@ -142,7 +142,7 @@ class TeamDayOffModel(Base):
     name: Mapped[str | None] = mapped_column(sa.String(100), nullable=True)
 
 class MemberDayOffModel(Base):
-    """各人の休み（人ごと・プロジェクトをまたいで同じ。日付と休む割合だけ。task #554 / ADR-0058・#557 / ADR-0059）。"""
+    """Each person's leave (per person, shared across projects. Dates and leave ratio only. task #554 / ADR-0058, #557 / ADR-0059)."""
 
     __tablename__ = "member_days_off"
     __table_args__ = (
@@ -156,14 +156,14 @@ class MemberDayOffModel(Base):
         nullable=False,
     )
     day: Mapped[date] = mapped_column(sa.Date, nullable=False)
-    #: 休む割合（終日 100・半休 50）
+    #: Leave ratio (100 for a full day, 50 for half)
     off_percent: Mapped[int] = mapped_column(sa.Integer, nullable=False, server_default="100", default=100)
-    #: その日の稼働時間（入っていれば休む割合は見ない。残業・短い日・休日出勤。task #558 / ADR-0060）
+    #: Working hours for that day (if set, the leave ratio is ignored. Overtime, short days, holiday work. task #558 / ADR-0060)
     hours: Mapped[Decimal | None] = mapped_column(sa.Numeric(4, 2), nullable=True)
 
 
 class TeamExtraWorkdayModel(Base):
-    """プロジェクトの稼働日＝稼働しない曜日に働く日（task #558 / ADR-0060）。下のプロジェクトは引き継ぐ。"""
+    """Project working days = days worked on non-working weekdays (task #558 / ADR-0060). Lower projects inherit them."""
 
     __tablename__ = "team_extra_workdays"
     __table_args__ = (
@@ -189,7 +189,7 @@ class MilestoneModel(Base):
     deleted_at: Mapped[datetime | None] = mapped_column(sa.DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(sa.DateTime, default=utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(sa.DateTime, default=utcnow, onupdate=utcnow, nullable=False)
-    # 属するプロジェクト（空 = 未分類。task #187 / ADR-0024）
+    # The project it belongs to (empty = uncategorized. task #187 / ADR-0024)
     project_id: Mapped[int | None] = mapped_column(
         sa.BigInteger().with_variant(sa.Integer(), "sqlite"),
         sa.ForeignKey("projects.id", name="fk_milestones_project_id"),
@@ -209,7 +209,7 @@ class TaskModel(Base):
     start_date: Mapped[date | None] = mapped_column(sa.Date, nullable=True)
     due_date: Mapped[date | None] = mapped_column(sa.Date, nullable=True)
     estimated_hours: Mapped[Decimal | None] = mapped_column(sa.Numeric(6, 2), nullable=True)
-    # 手で入れた残（空なら「見積 − 実績」を既定に使う。ADR-0010）
+    # Manually entered remaining time (empty uses "estimate - actual" as the default. ADR-0010)
     remaining_hours: Mapped[Decimal | None] = mapped_column(sa.Numeric(6, 2), nullable=True)
     memo: Mapped[str | None] = mapped_column(sa.Text, nullable=True)
     parent_task_id: Mapped[int | None] = mapped_column(sa.BigInteger().with_variant(sa.Integer(), "sqlite"), sa.ForeignKey("tasks.id"), nullable=True)
@@ -218,24 +218,24 @@ class TaskModel(Base):
     deleted_at: Mapped[datetime | None] = mapped_column(sa.DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(sa.DateTime, default=utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(sa.DateTime, default=utcnow, onupdate=utcnow, nullable=False)
-    # アーカイブした時刻（打刻や実績のあるタスクは消さずにアーカイブする。ADR-0046）
+    # When it was archived (tasks with time punches or actuals are archived instead of deleted. ADR-0046)
     archived_at: Mapped[datetime | None] = mapped_column(sa.DateTime, nullable=True)
-    # 属するプロジェクト（空 = 未分類。task #187 / ADR-0024）。⚠ 子タスクは親と同じ値を持つ
-    # （アプリ側で揃える。親を移すと子孫も移る）
+    # The project it belongs to (empty = uncategorized. task #187 / ADR-0024). ⚠ Child tasks hold the same value as their parent
+    # (kept in sync by the app; moving a parent moves its descendants)
     project_id: Mapped[int | None] = mapped_column(
         sa.BigInteger().with_variant(sa.Integer(), "sqlite"),
         sa.ForeignKey("projects.id", name="fk_tasks_project_id"),
         nullable=True,
         index=True,
     )
-    # 担当者（空可。task #544 / ADR-0055）。付けられるのは根のプロジェクトのメンバー（未分類なら作った人）
+    # Assignee (nullable. task #544 / ADR-0055). Must be a member of the root project (the creator if uncategorized)
     assignee_user_id: Mapped[int | None] = mapped_column(
         sa.BigInteger().with_variant(sa.Integer(), "sqlite"),
         sa.ForeignKey("users.id", name="fk_tasks_assignee_user_id"),
         nullable=True,
         index=True,
     )
-    # アサイン比率（%、空可。task #554 / ADR-0058）。入れたタスクは担当者の 1 日の空きのうちこの割合で進む
+    # Allocation rate (%, nullable. task #554 / ADR-0058). A task with it progresses at this share of the assignee's free daily time
     allocation_percent: Mapped[int | None] = mapped_column(sa.Integer, nullable=True)
 
 class WorkLogModel(Base):
@@ -249,12 +249,12 @@ class WorkLogModel(Base):
     deleted_at: Mapped[datetime | None] = mapped_column(sa.DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(sa.DateTime, default=utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(sa.DateTime, default=utcnow, onupdate=utcnow, nullable=False)
-    # WorkLogSource の値（manual / closing / tracker）。closing は Tracker へ移す前に WBS の締めで作った行（ADR-0012）
+    # A WorkLogSource value (manual / closing / tracker). closing marks rows created by WBS's own closing before the move to Tracker (ADR-0012)
     source: Mapped[str] = mapped_column(sa.String(16), default="manual", server_default=sa.text("'manual'"), nullable=False)
-    # 締め（WBS の締め・Tracker の締め）で作った行の正確な長さ（秒）。hours は小数 2 桁に収めた値
+    # Exact length (seconds) of rows created by a closing (WBS or Tracker). hours is the value rounded to 2 decimals
     duration_seconds: Mapped[int | None] = mapped_column(sa.Integer, nullable=True)
-    # Tracker から受け取った行（source=tracker）の、Tracker の締めの期間の初日（task #540 / ADR-0056）。
-    # 利用者と組で期間を指す（置き換え・取り消しの単位）
+    # For rows received from Tracker (source=tracker), the first day of the Tracker closing period (task #540 / ADR-0056).
+    # Together with the user it identifies the period (the unit of replacement and cancellation)
     tracker_first_day: Mapped[date | None] = mapped_column(sa.Date, nullable=True)
 
 class TaskDependencyModel(Base):
@@ -277,13 +277,13 @@ class InboxItemModel(Base):
     created_at: Mapped[datetime] = mapped_column(sa.DateTime, default=utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(sa.DateTime, default=utcnow, onupdate=utcnow, nullable=False)
 
-# ── SSO（OIDC）─────────────────────────────────────────────────────────────
+# ── SSO (OIDC) ─────────────────────────────────────────────────────────────
 class FederatedIdentityModel(Base):
-    """IdP 上の本人（iss + sub）と利用者の対応。
+    """Mapping between an identity on the IdP (iss + sub) and a user.
 
-    利用者の突き合わせにメールを使わないのは、IdP 側で改姓・部署異動に伴う
-    アドレス変更があると別人になってしまうため。1 人が複数 IdP に属せるよう
-    users とは 1 対多にしている。
+    Email is not used to match users, because an address change on the IdP side
+    (name change, department transfer) would turn them into a different person. Users are
+    one-to-many with this so one person can belong to several IdPs.
     """
 
     __tablename__ = "federated_identities"
@@ -295,9 +295,9 @@ class FederatedIdentityModel(Base):
     created_at: Mapped[datetime] = mapped_column(sa.DateTime, default=utcnow, nullable=False)
 
 class RefreshSessionModel(Base):
-    """ログインごとの控え（ADR-0069・ADR-0071）。行が無ければそのログインは終わっている。
+    """A record per login (ADR-0069, ADR-0071). No row means that login has ended.
 
-    ⚠ 表の名前は ADR-0069 のときのまま。リフレッシュトークンはもう出さない（ADR-0071）。
+    ⚠ The table name is still the one from ADR-0069. Refresh tokens are no longer issued (ADR-0071).
     """
 
     __tablename__ = "refresh_sessions"
@@ -305,16 +305,16 @@ class RefreshSessionModel(Base):
     user_id: Mapped[int] = mapped_column(sa.BigInteger().with_variant(sa.Integer(), "sqlite"), sa.ForeignKey("users.id"), nullable=False, index=True)
     expires_at: Mapped[datetime] = mapped_column(sa.DateTime, nullable=False, index=True)
     created_at: Mapped[datetime] = mapped_column(sa.DateTime, nullable=False)
-    # このログインを始めた IdP 側のログイン（ID トークンの ``sid``）。
-    # ⚠ 出さない IdP があるので NULL 可。その IdP では**利用者単位でしか**止められない。
+    # The IdP-side login that started this login (the ID token's ``sid``).
+    # ⚠ Nullable, as some IdPs do not send it. For such IdPs sessions can be stopped **only per user**.
     idp_session_id: Mapped[str | None] = mapped_column(sa.String(255), nullable=True, index=True)
 
 
 class BackchannelLogoutDeliveryModel(Base):
-    """受け取った停止の通知（再送を弾くためだけの記録）。
+    """Received deactivation notices (kept only to reject resends).
 
-    ⚠ **中身は持たない。** 誰を止めたかはセッションの行が消えたことで表れる。ここに
-    残すのは「この ``jti`` はもう効かせた」という 1 点だけで、一定時間で片付ける。
+    ⚠ **No content is kept.** Who was stopped shows in the session rows being gone. All that
+    is kept is "this ``jti`` has already been applied", and it is cleaned up after a while.
     """
 
     __tablename__ = "auth_backchannel_logout_deliveries"
@@ -323,7 +323,7 @@ class BackchannelLogoutDeliveryModel(Base):
     received_at: Mapped[datetime] = mapped_column(sa.DateTime, nullable=False, index=True)
 
 class LoginTransactionModel(Base):
-    """認可コードフロー 1 往復ぶんの一時データ（state / nonce / PKCE）。"""
+    """Temporary data for one authorization code flow round trip (state / nonce / PKCE)."""
 
     __tablename__ = "auth_login_transactions"
     id: Mapped[int] = mapped_column(BigIntPK, primary_key=True, autoincrement=True)
@@ -333,22 +333,22 @@ class LoginTransactionModel(Base):
     redirect_path: Mapped[str] = mapped_column(sa.String(512), nullable=False)
     created_at: Mapped[datetime] = mapped_column(sa.DateTime, nullable=False)
     expires_at: Mapped[datetime] = mapped_column(sa.DateTime, nullable=False, index=True)
-    #: 黙って確かめる往復か（``prompt=none``。ADR-0062）
+    #: Whether this is a silent check round trip (``prompt=none``. ADR-0062)
     silent: Mapped[bool] = mapped_column(
         sa.Boolean, nullable=False, default=False, server_default=sa.false()
     )
-    #: 何のための往復か（``login`` / ``renew``。ADR-0071）。⚠ ネイティブ ENUM にしない
+    #: What the round trip is for (``login`` / ``renew``. ADR-0071). ⚠ Not a native ENUM
     purpose: Mapped[str] = mapped_column(sa.String(16), nullable=False, default="login", server_default="login")
-    #: 続ける往復で、続けるログインの利用者と控え（ADR-0071）。外部キーは張らない（往復は 10 分で消える）
+    #: For a continuation round trip, the user and record of the login being continued (ADR-0071). No foreign keys (round trips vanish after 10 minutes)
     continued_user_id: Mapped[int | None] = mapped_column(sa.BigInteger().with_variant(sa.Integer(), "sqlite"), nullable=True)
     continued_session_id: Mapped[str | None] = mapped_column(sa.String(32), nullable=True)
 
 
 
 class MachineOperationLogModel(Base):
-    """機械が書いた操作の記録（どのアプリが・誰の分を・何を。task #802 / ADR-0068）。読むだけの口は残さない。
+    """Record of operations written by machines (which app, on whose behalf, what. task #802 / ADR-0068). Read-only endpoints are not recorded.
 
-    書いた内容と同じトランザクションで入れるので、「書けたのに記録が無い」は起きない。断った操作はアプリログまで。
+    It is inserted in the same transaction as the written content, so "written but not recorded" cannot happen. Refused operations go to the app log only.
     """
 
     __tablename__ = "machine_operation_logs"

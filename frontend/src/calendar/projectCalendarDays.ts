@@ -1,20 +1,20 @@
-// プロジェクトのカレンダー（ADR-0059・ADR-0060）で、その日に働くか・休日の名前を引く（task #559。ガントの列と営業日の数）。
-// 画面に依らない計算だけを置く。
+// Look up whether a day is a working day and holiday names from the project calendar (ADR-0059, ADR-0060) (task #559; Gantt columns and working-day counts).
+// Holds only UI-independent logic.
 import type { TeamCalendar, WeekdayCode } from '../types';
 
-/** 曜日の符号を `Date.getDay()` の順（日曜が 0）に並べたもの。 */
+/** Weekday codes in `Date.getDay()` order (Sunday = 0). */
 export const WEEKDAYS_SUNDAY_FIRST: readonly WeekdayCode[] = ['SU', 'MO', 'TU', 'WE', 'TH', 'FR', 'SA'];
 const MON_TO_FRI: readonly WeekdayCode[] = ['MO', 'TU', 'WE', 'TH', 'FR'];
 
 export interface ProjectDays {
   workdays: ReadonlySet<WeekdayCode>;
-  /** 休日（日付 → 名前。名前の無いものは null） */
+  /** Holidays (date → name; null when unnamed) */
   daysOff: ReadonlyMap<string, string | null>;
-  /** 稼働日（稼働しない曜日に働く日） */
+  /** Working days (work on non-working weekdays) */
   extraWorkdays: ReadonlyMap<string, string | null>;
 }
 
-/** 全部・未分類を表示しているとき・カレンダーの無いタスク: 月〜金、休日なし */
+/** When showing all or unassigned, or for tasks without a calendar: Mon–Fri, no holidays */
 export const DEFAULT_PROJECT_DAYS: ProjectDays = {
   workdays: new Set(MON_TO_FRI), daysOff: new Map(), extraWorkdays: new Map(),
 };
@@ -30,7 +30,7 @@ const weekdayOf = (day: string): WeekdayCode => {
   return WEEKDAYS_SUNDAY_FIRST[new Date(y, m - 1, d).getDay()];
 };
 
-/** その日に働くか（稼働日 > 休日 > 曜日。休日と稼働日はサーバーで重ならないように組んである） */
+/** Whether the day is worked (working day > holiday > weekday; the server keeps holidays and working days from overlapping) */
 export const worksOn = (days: ProjectDays, day: string): boolean => {
   if (days.extraWorkdays.has(day)) return true;
   if (days.daysOff.has(day)) return false;
@@ -43,7 +43,7 @@ const addDays = (day: string, n: number): string => {
   return `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, '0')}-${String(next.getDate()).padStart(2, '0')}`;
 };
 
-/** from〜to（両端を含む）の働く日の数 */
+/** Number of working days from–to (inclusive) */
 export const workingDaysBetween = (days: ProjectDays, from: string, to: string): number => {
   let count = 0;
   for (let d = from; d <= to; d = addDays(d, 1)) if (worksOn(days, d)) count += 1;

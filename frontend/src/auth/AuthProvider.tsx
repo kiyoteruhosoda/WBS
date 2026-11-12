@@ -24,7 +24,7 @@ import {
 import type { AuthConfig, CurrentUser } from '../types';
 
 interface AuthContextValue {
-  /** SSO を使わない配備では null（ログイン導線そのものが無い）。 */
+  /** null in deployments without SSO (there is no sign-in flow at all). */
   user: CurrentUser | null;
   ssoEnabled: boolean;
   providerName: string | null;
@@ -40,7 +40,7 @@ const AuthContext = createContext<AuthContextValue>({
 
 export const useAuth = (): AuthContextValue => useContext(AuthContext);
 
-/** ログイン後に戻る先。ログイン画面そのものへは戻さない（付いている `next` を使う）。 */
+/** Where to return after sign-in. Never back to the sign-in page itself (use its `next` instead). */
 const currentPath = (): string => returnPathOf(window.location);
 
 const Centered: React.FC<{ children: React.ReactNode }> = ({ children }) => (
@@ -48,17 +48,17 @@ const Centered: React.FC<{ children: React.ReactNode }> = ({ children }) => (
 );
 
 /**
- * 認証状態を確かめてから中身を描く。
+ * Checks auth state before rendering the content.
  *
- * - `AUTH_MODE=single_user` の配備では素通し（従来どおりログイン画面は出ない）
- * - SSO 有効かつ未ログインなら、経路にかかわらずログイン画面を出す
- * - つながらない（オフラインで開いた）ときは、最後にログインしていた人の控えで中身を描く（task #192 / ADR-0028）。
- *   データは取れないので各画面が失敗を出し、上に「オフラインです」が出る。つながったらサーバの答えが勝つ
+ * - Pass-through in `AUTH_MODE=single_user` deployments (no sign-in page, as before)
+ * - With SSO enabled and not signed in, shows the sign-in page regardless of route
+ * - When unreachable (opened offline), renders the content from the saved copy of the last signed-in user (task #192 / ADR-0028).
+ *   Data can't be fetched, so each screen shows its failure and an "offline" banner appears on top. Once connected, the server's answer wins
  */
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const queryClient = useQueryClient();
   const [sessionExpired, setSessionExpired] = useState(false);
-  // IdP へ黙って確かめに行った（ADR-0062）。行き先へ移るまで画面を描かない
+  // Went to the IdP for a silent check (ADR-0062). Don't render until navigating away
   const [silentStarted, setSilentStarted] = useState(false);
   const [silentUnavailable, setSilentUnavailable] = useState(false);
 
@@ -69,7 +69,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     staleTime: Infinity,
   });
 
-  // オフラインで開いたときの控え（つながらなかったときだけ使う。4xx / 5xx では使わない）
+  // Saved copy for offline opening (used only when unreachable; not on 4xx / 5xx)
   const offlineSession = isNetworkFailure(configError) ? lastSession() : null;
   const config = fetchedConfig ?? offlineSession?.config;
   const ssoEnabled = config?.sso_enabled ?? false;
@@ -82,12 +82,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     staleTime: 5 * 60_000,
   });
 
-  // 確かめられない（つながらない・サーバーが落ちている）だけなら、ログインは切れていない。控えで中身を描く（ADR-0069）
+  // If we merely couldn't check (unreachable or server down), the session isn't over. Render from the saved copy (ADR-0069)
   const userUnconfirmed = isNetworkFailure(userError) || isServerFailure(userError);
   const user = fetchedUser ?? (userUnconfirmed ? lastSession()?.user : undefined);
 
-  // 確かめられた人を控える（次にオフラインで開いたときに使う）。
-  // 入れたので黙って確かめる印も消す（次に切れたときは、また 1 回だけ試してよい）
+  // Save the verified user (used the next time it's opened offline).
+  // Signed in, so also clear the silent-check marker (next time the session ends, one more try is allowed)
   useEffect(() => {
     if (fetchedConfig?.sso_enabled && fetchedUser) {
       rememberSession({ config: fetchedConfig, user: fetchedUser });
@@ -95,9 +95,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, [fetchedConfig, fetchedUser]);
 
-  // 入っていないと分かったら、ログイン画面を描く前に IdP へ黙って確かめに行く（ADR-0062）。
-  // 使っている途中で切れた（sessionExpired）ときは試さない ——画面が勝手に移ると、打っていたものが消える。
-  // ⚠ 印を置けたときだけ。置けないと戻ってくるたびに試してループになる
+  // Once known to be signed out, do a silent check at the IdP before rendering the sign-in page (ADR-0062).
+  // Don't try when the session ended mid-use (sessionExpired) —— navigating away by itself would lose what was being typed.
+  // ⚠ Only when the marker could be stored. Otherwise it would retry on every return and loop
   const silentPlanned =
     ssoEnabled &&
     !userPending &&
@@ -117,10 +117,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     startSilentLogin(fetchedConfig, currentPath());
   }, [silentPlanned, fetchedConfig]);
 
-  // どの画面の通信で 401 が出ても（続ける往復も断られたら。ADR-0071）、ログイン画面へ戻す。
-  // 書きかけは sessionStorage に残してあり、入り直して同じ画面を開けば戻る。
-  // ただし「まだ一度もログインしていない」ときの 401 は期限切れではないので、
-  // 本人が判明したあと（＝セッションがあった）に受けた 401 だけを期限切れとして扱う。
+  // A 401 from any screen's request (after the continuation round trip is also refused; ADR-0071) returns to the sign-in page.
+  // Drafts stay in sessionStorage and come back when signing in again and opening the same screen.
+  // However, a 401 before ever signing in is not an expiry,
+  // so only a 401 received after the user was known (= there was a session) is treated as expiry.
   const hadSession = Boolean(user);
   useEffect(() => {
     setUnauthorizedHandler(() => {
@@ -132,13 +132,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const signOut = useCallback(async () => {
     const result = await requestLogout();
     forgetSession();
-    // ログイン画面が IdP へ黙って確かめに行かないように（ADR-0062）
+    // So the sign-in page doesn't do a silent check at the IdP (ADR-0062)
     rememberSignedOut();
-    // 書きかけも消す（同じタブで別の人が入ることがある。ADR-0071）
+    // Also clear drafts (someone else may sign in on the same tab. ADR-0071)
     clearSessionDrafts();
     queryClient.clear();
-    // IdP 側のセッションも切る。切らないと「ログアウト → ログイン」で
-    // 何も聞かれずに同じ人で入り直してしまい、別の人に代われない。
+    // Also end the IdP session. Otherwise "sign out → sign in"
+    // signs the same user back in without asking, and you can't switch to another user.
     window.location.href = result.end_session_url ?? '/login';
   }, [queryClient]);
 
@@ -146,7 +146,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return <Centered><CircularProgress /></Centered>;
   }
 
-  // オフラインで開いたが、控えが無い（この端末で一度もログインしていない）
+  // Opened offline with no saved copy (never signed in on this device)
   if (!config && isNetworkFailure(configError)) {
     return (
       <Centered>

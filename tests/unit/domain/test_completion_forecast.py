@@ -1,4 +1,4 @@
-"""終わる見込みの日（task #555・ADR-0058）。"""
+"""Forecast finish dates (task #555, ADR-0058)."""
 
 from __future__ import annotations
 
@@ -42,7 +42,7 @@ def _seat(daily: float = 8, engagement: int = 100, *, days_off=(), leave=(), wor
     calendar = TeamCalendar(days_off=frozenset(days_off))
     if workdays is not None:
         calendar = TeamCalendar(workdays=frozenset(workdays), days_off=frozenset(days_off))
-    # 休みは日付の集まり（終日）か、日付 → 休む割合
+    # Leave is a set of dates (full day) or date -> share of the day off
     off = leave if isinstance(leave, dict) else dict.fromkeys(leave, 100)
     return WorkSeat(daily_hours=daily, engagement_percent=engagement, calendar=calendar, leave=off)
 
@@ -66,7 +66,7 @@ def _fs(predecessor: int, successor: int, lag: int = 0, kind: DependencyType = D
 
 
 def test_adr_0058_example() -> None:
-    """ADR-0058「計算の例」の表と同じ（担当 2 人・チームの休日・本人の休み・比率・依存）。"""
+    """Same as the "worked example" table in ADR-0058 (2 assignees, team holidays, personal leave, ratios, dependencies)."""
     culture_day = date(2026, 11, 3)
     team_days_off = {culture_day}
     seats = {
@@ -77,7 +77,7 @@ def test_adr_0058_example() -> None:
         _task(1, ALICE, 6, due_date=date(2026, 11, 6)),  # A1
         _task(2, ALICE, 4, allocation_percent=50),  # A2
         _task(3, ALICE, 4, due_date=date(2026, 11, 10)),  # A3
-        _task(4, BOB, 9, due_date=date(2026, 11, 6)),  # B1（A1 の後）
+        _task(4, BOB, 9, due_date=date(2026, 11, 6)),  # B1 (after A1)
         _task(5, None, 3),  # U
         _task(6, ALICE, 0, status=TaskStatus.DONE),  # D
     ]
@@ -99,7 +99,7 @@ def test_adr_0058_example() -> None:
     assert result.milestone(milestone).unforecast_count == 0
 
 
-# ---- 見込みを出さないもの（#555 AC2） -----------------------------------------------
+# ---- Cases with no forecast (#555 AC2) ------------------------------------------------
 
 
 def test_done_cancelled_and_zero_remaining_get_no_forecast() -> None:
@@ -126,7 +126,7 @@ def test_unknown_remaining_gets_no_forecast() -> None:
 
 
 def test_default_remaining_is_estimate_minus_actual() -> None:
-    # 残が空なら 見積 − 実績（ADR-0010）。見積 12h・実績 4h → 残 8h = 1 日
+    # When remaining is empty, estimate - actual (ADR-0010). Estimate 12h, actual 4h -> remaining 8h = 1 day
     task = _task(1, remaining=None, estimated_hours=Decimal("12"))
     result = _forecast([task], {(ALICE, PROJECT): _seat()}, actual={1: 4.0})
     assert result.task(1).finish == MONDAY
@@ -136,7 +136,7 @@ def test_no_capacity_when_not_a_member_or_zero_engagement() -> None:
     tasks = [_task(1, ALICE), _task(2, BOB)]
     result = _forecast(tasks, {(ALICE, PROJECT): _seat(engagement=0)})
     assert result.task(1).gap is ForecastGap.NO_CAPACITY
-    assert result.task(2).gap is ForecastGap.NO_CAPACITY  # BOB の枠が無い（メンバーでない）
+    assert result.task(2).gap is ForecastGap.NO_CAPACITY  # BOB has no seat (not a member)
 
 
 def test_no_capacity_without_workdays() -> None:
@@ -149,11 +149,11 @@ def test_beyond_horizon() -> None:
     assert result.task(1).gap is ForecastGap.BEYOND_HORIZON
 
 
-# ---- 空きと休み（#554 AC2） ---------------------------------------------------------
+# ---- Capacity and days off (#554 AC2) -----------------------------------------------
 
 
 def test_daily_hours_times_engagement() -> None:
-    # 6 時間 × 50% = 3 時間/日。残 9h → 月・火・水
+    # 6 hours x 50% = 3 hours/day. Remaining 9h -> Mon, Tue, Wed
     result = _forecast([_task(1, remaining=9)], {(ALICE, PROJECT): _seat(6, 50)})
     assert result.task(1).finish == date(2026, 11, 4)
 
@@ -161,21 +161,21 @@ def test_daily_hours_times_engagement() -> None:
 def test_team_days_off_and_leave_are_skipped() -> None:
     seat = _seat(8, days_off={date(2026, 11, 3)}, leave={date(2026, 11, 4)})
     result = _forecast([_task(1, remaining=16)], {(ALICE, PROJECT): seat})
-    assert result.task(1).finish == date(2026, 11, 5)  # 月・(火休日)・(水休み)・木
+    assert result.task(1).finish == date(2026, 11, 5)  # Mon, (Tue holiday), (Wed leave), Thu
 
 
 def test_a_half_day_off_halves_the_hours_of_that_day() -> None:
-    # ADR-0059 決定 2: 半休（50）の日は半分だけ
+    # ADR-0059 decision 2: a half day off (50) counts only half
     seat = _seat(8, leave={date(2026, 11, 3): 50})
     result = _forecast([_task(1, remaining=16)], {(ALICE, PROJECT): seat})
-    assert result.task(1).finish == date(2026, 11, 4)  # 月 8・火 4・水 4
+    assert result.task(1).finish == date(2026, 11, 4)  # Mon 8, Tue 4, Wed 4
     seat = _seat(8, leave={date(2026, 11, 3): 100})
     result = _forecast([_task(1, remaining=16)], {(ALICE, PROJECT): seat})
-    assert result.task(1).finish == date(2026, 11, 4)  # 月 8・(火休み)・水 8
+    assert result.task(1).finish == date(2026, 11, 4)  # Mon 8, (Tue off), Wed 8
 
 
 def test_days_off_of_a_sub_project_stop_only_its_tasks() -> None:
-    # ADR-0059 決定 1: 下のプロジェクトで足した休日は、そのプロジェクトのタスクだけ止まり、時間はほかへ回る
+    # ADR-0059 decision 1: a holiday added on a child project stops only that project's tasks; the time goes elsewhere
     sub = 11
     tasks = [
         _task(1, remaining=16, project_id=sub, due_date=date(2026, 11, 3)),
@@ -192,26 +192,26 @@ def test_days_off_of_a_sub_project_stop_only_its_tasks() -> None:
             TeamCalendar(days_off=frozenset({date(2026, 11, 3)})) if project_id == sub else None
         ),
     )
-    assert result.task(2).finish == date(2026, 11, 3)  # 火は 1 が休みなので 2 へ
-    assert result.task(1).finish == date(2026, 11, 4)  # 月・(火は下のプロジェクトの休日)・水
+    assert result.task(2).finish == date(2026, 11, 3)  # Tue is a holiday for 1, so it goes to 2
+    assert result.task(1).finish == date(2026, 11, 4)  # Mon, (Tue is the child project's holiday), Wed
 
 
 def test_working_hours_of_a_day_replace_the_usual_hours() -> None:
-    # ADR-0060: その日の稼働時間 × 従事率。残業・短い日・休日出勤（土）
+    # ADR-0060: that day's working hours x allocation rate. Overtime, short days, holiday work (Sat)
     seat = WorkSeat(daily_hours=8, engagement_percent=50, day_hours={
         date(2026, 11, 2): 12, date(2026, 11, 3): 0, date(2026, 11, 7): 8,
     })
     assert seat.hours_on(date(2026, 11, 2)) == 6
     assert seat.hours_on(date(2026, 11, 3)) == 0
-    assert seat.hours_on(date(2026, 11, 7)) == 4  # 土でも働く
+    assert seat.hours_on(date(2026, 11, 7)) == 4  # works even on Saturday
     assert seat.hours_on(date(2026, 11, 8)) == 0
     result = _forecast([_task(1, remaining=20)], {(ALICE, PROJECT): seat})
-    # 月 6・火 0・水 4・木 4・金 4 → 18、土 4（休日出勤）で 22 ≥ 20
+    # Mon 6, Tue 0, Wed 4, Thu 4, Fri 4 -> 18; Sat 4 (holiday work) makes 22 >= 20
     assert result.task(1).finish == date(2026, 11, 7)
 
 
 def test_extra_workday_of_a_project_lets_its_tasks_work_that_day() -> None:
-    # ADR-0060: プロジェクトの稼働日（土）は、そのプロジェクトのタスクだけ進む
+    # ADR-0060: on project working days (Sat) only that project's tasks progress
     sub = 11
     tasks = [_task(1, remaining=48, project_id=sub), _task(2, remaining=48)]
     saturday = date(2026, 11, 7)
@@ -227,13 +227,13 @@ def test_extra_workday_of_a_project_lets_its_tasks_work_that_day() -> None:
             TeamCalendar(extra_workdays=frozenset({saturday})) if project_id == sub else None
         ),
     )
-    assert result.task(1).finish == saturday            # 月〜金 40 ＋ 土 8
-    assert result.task(2).finish == date(2026, 11, 9)   # 土は働かず、次の月
+    assert result.task(1).finish == saturday            # Mon-Fri 40 + Sat 8
+    assert result.task(2).finish == date(2026, 11, 9)   # does not work Saturday; the next Monday
 
 
 def test_weekend_is_skipped_and_workdays_follow_the_team() -> None:
     result = _forecast([_task(1, remaining=48)], {(ALICE, PROJECT): _seat()})
-    assert result.task(1).finish == date(2026, 11, 9)  # 月〜金の 5 日 + 次の月
+    assert result.task(1).finish == date(2026, 11, 9)  # 5 days Mon-Fri + the next Monday
     six_days = [Weekday.MONDAY, Weekday.TUESDAY, Weekday.WEDNESDAY, Weekday.THURSDAY, Weekday.FRIDAY, Weekday.SATURDAY]
     result = _forecast([_task(1, remaining=48)], {(ALICE, PROJECT): _seat(workdays=six_days)})
     assert result.task(1).finish == date(2026, 11, 7)
@@ -248,7 +248,7 @@ def test_seats_are_separate_per_project() -> None:
     assert result.task(2).finish == date(2026, 11, 3)
 
 
-# ---- 順番と比率 --------------------------------------------------------------
+# ---- Order and ratios ---------------------------------------------------------------
 
 
 def test_tasks_of_one_person_are_done_in_order_of_due_then_priority() -> None:
@@ -273,7 +273,7 @@ def test_leftover_of_a_finished_task_goes_to_the_next_on_the_same_day() -> None:
 
 
 def test_allocation_does_not_go_faster_when_the_person_is_free() -> None:
-    # 比率 25% は 2 時間/日。ほかに仕事が無くても速くならない
+    # A 25% ratio is 2 hours/day. It does not get faster even with no other work
     result = _forecast([_task(1, remaining=4, allocation_percent=25)], {(ALICE, PROJECT): _seat()})
     assert result.task(1).finish == date(2026, 11, 3)
 
@@ -294,7 +294,7 @@ def test_planned_start_date_is_respected() -> None:
 def test_a_waiting_task_is_skipped_and_the_next_one_goes_first() -> None:
     tasks = [
         _task(1, BOB, 16),
-        _task(2, ALICE, 8, due_date=date(2026, 11, 2)),  # 期限は早いが BOB の 1 を待つ
+        _task(2, ALICE, 8, due_date=date(2026, 11, 2)),  # earlier due date, but waits for BOB's 1
         _task(3, ALICE, 8),
     ]
     seats = {(ALICE, PROJECT): _seat(), (BOB, PROJECT): _seat()}
@@ -304,14 +304,14 @@ def test_a_waiting_task_is_skipped_and_the_next_one_goes_first() -> None:
     assert result.task(2).overdue_days == 2
 
 
-# ---- 依存 ----------------------------------------------------------------
+# ---- Dependencies -------------------------------------------------------------------
 
 
 def test_fs_lag_counts_calendar_days() -> None:
     tasks = [_task(1, ALICE, 8), _task(2, BOB, 8)]
     seats = {(ALICE, PROJECT): _seat(), (BOB, PROJECT): _seat()}
     result = _forecast(tasks, seats, [_fs(1, 2, lag=2)])
-    assert result.task(2).start == date(2026, 11, 5)  # 月の翌日 + 2 日 = 木
+    assert result.task(2).start == date(2026, 11, 5)  # the day after Monday + 2 days = Thu
 
 
 def test_ss_starts_on_the_same_day_as_the_predecessor() -> None:
@@ -349,7 +349,7 @@ def test_cycle_waits() -> None:
     assert result.task(2).gap is ForecastGap.WAITING
 
 
-# ---- 子を持つタスクとマイルストーン ---------------------------------------------------
+# ---- Tasks with children, and milestones --------------------------------------------
 
 
 def test_parent_rolls_up_its_leaves() -> None:
@@ -362,7 +362,7 @@ def test_parent_rolls_up_its_leaves() -> None:
     result = _forecast(tasks, {(ALICE, PROJECT): _seat()})
     parent = result.task(1)
     assert (parent.start, parent.finish) == (MONDAY, date(2026, 11, 3))
-    assert parent.overdue_days == 0  # 親自身の見積 100h は数えない
+    assert parent.overdue_days == 0  # the parent's own 100h estimate is not counted
 
 
 def test_parent_with_an_unforecast_leaf_gets_no_forecast() -> None:

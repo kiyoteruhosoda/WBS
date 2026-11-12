@@ -1,4 +1,4 @@
-"""進捗率 = 実績 ÷（実績 ＋ 残）を API で見る（task #165 / ADR-0010）。"""
+"""Progress = actual ÷ (actual + remaining), checked via the API (task #165 / ADR-0010)."""
 
 
 def _log(client, task_id: int, hours: float) -> None:
@@ -21,7 +21,7 @@ def test_create_task_with_estimate_starts_at_zero_progress(client) -> None:
 
 
 def test_create_task_without_hours_has_no_progress(client) -> None:
-    # 見積も残も空なら分母 0 → null（画面は「—」）
+    # With both estimate and remaining empty the denominator is 0 → null (the screen shows "—")
     response = client.post("/api/tasks", json={"title": "新規タスク"})
     assert response.status_code == 201
     data = response.json()
@@ -33,7 +33,7 @@ def test_worklog_drives_progress_with_default_remaining(client) -> None:
     task = client.post("/api/tasks", json={"title": "実装", "estimated_hours": 10}).json()
     _log(client, task["id"], 4)
     data = client.get(f"/api/tasks/{task['id']}").json()
-    # 残が空なら 見積 − 実績 = 6h → 4 / (4 + 6) = 40%
+    # With remaining empty: estimate − actual = 6h → 4 / (4 + 6) = 40%
     assert data["actual_hours"] == 4.0
     assert data["remaining_hours"] == 6.0
     assert data["progress_percent"] == 40.0
@@ -43,7 +43,7 @@ def test_overrun_task_is_not_stuck_at_100_after_remaining_is_entered(client) -> 
     task = client.post("/api/tasks", json={"title": "超過", "estimated_hours": 5}).json()
     _log(client, task["id"], 8)
     stuck = client.get(f"/api/tasks/{task['id']}").json()
-    # 残が空のままだと既定の残は 0（見積を使い切った）
+    # If remaining stays empty, the default remaining is 0 (estimate used up)
     assert stuck["remaining_hours"] == 0.0
 
     response = client.patch(f"/api/tasks/{task['id']}", json={"remaining_hours": 2})
@@ -69,10 +69,10 @@ def test_sending_null_remaining_returns_to_the_default(client) -> None:
     task = client.post("/api/tasks", json={
         "title": "戻す", "estimated_hours": 10, "remaining_hours": 3,
     }).json()
-    # 送らなければ触らない
+    # Not touched unless sent
     untouched = client.patch(f"/api/tasks/{task['id']}", json={"title": "戻す（改）"}).json()
     assert untouched["remaining_hours_entered"] == 3.0
-    # null を送ると空へ戻り、見積 − 実績 が既定になる
+    # Sending null resets it to empty, and estimate − actual becomes the default
     cleared = client.patch(f"/api/tasks/{task['id']}", json={"remaining_hours": None}).json()
     assert cleared["remaining_hours_entered"] is None
     assert cleared["remaining_hours"] == 10.0
@@ -105,7 +105,7 @@ def test_parent_rolls_up_children_everywhere(client) -> None:
     _log(client, first["id"], 8)
     _log(client, second["id"], 1)
 
-    # 親自身の見積（100h）は数えない。実績 8 + 1 = 9、残 2 + 4 = 6 → 60%
+    # The parent's own estimate (100h) is not counted. Actual 8 + 1 = 9, remaining 2 + 4 = 6 → 60%
     data = client.get(f"/api/tasks/{parent['id']}").json()
     assert data["has_subtasks"] is True
     assert data["actual_hours"] == 0.0
@@ -113,13 +113,13 @@ def test_parent_rolls_up_children_everywhere(client) -> None:
     assert data["rollup_remaining_hours"] == 6.0
     assert data["progress_percent"] == 60.0
 
-    # 一覧・ガントでも同じ値
+    # Same value in the list and Gantt
     listed = {t["id"]: t for t in client.get("/api/tasks").json()}
     assert listed[parent["id"]]["progress_percent"] == 60.0
     assert listed[first["id"]]["progress_percent"] == 80.0
     gantt = {t["id"]: t for t in client.get("/api/gantt").json()}
     assert gantt[parent["id"]]["progress_percent"] == 60.0
     assert gantt[first["id"]]["progress_percent"] == 80.0
-    # 子だけに絞った一覧でも、親の積み上げは変わらない
+    # Even in a list filtered to the children only, the parent's rollup does not change
     children = client.get(f"/api/tasks?parent_task_id={parent['id']}").json()
     assert {t["id"] for t in children} == {first["id"], second["id"]}

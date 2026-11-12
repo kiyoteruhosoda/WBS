@@ -1,17 +1,17 @@
-"""休みの 4 層（営業日・会社の公休・私の休み・日本の祝日）（task #191 / ADR-0029）
+"""Four day-off layers (business days, company holidays, personal days off, Japanese national holidays) (task #191 / ADR-0029)
 
 Revision ID: 0010
 Revises: 0009
 Create Date: 2026-10-02
 
-- ``calendars`` に休みの層の列: ``workdays``（営業日の層の曜日）・``day_off_reason``（休みの日の
-  一覧の層の理由）・``counts_as_day_off``（休みとして数える）
-- 表 ``calendar_days_off``: 休みの日の一覧の層の日付（終日。名前は任意）
+- Day-off layer columns on ``calendars``: ``workdays`` (weekdays of the business-day layer), ``day_off_reason`` (reason of
+  a day-off list layer), ``counts_as_day_off`` (counted as a day off)
+- Table ``calendar_days_off``: dates of a day-off list layer (all-day; name optional)
 
-⚠ **利用者ごとに 4 つの層を作る。** 営業日の層の曜日は、その利用者のいちばん古い営業日カレンダー
-（ADR-0009）のもの（無ければ月〜金）。**営業日カレンダーの祝日はすべて「日本の祝日」の層へ写す**
-（同じ日は先に作ったカレンダーの名前）。営業日カレンダーの表はそのまま残す。
-下げると層と日付は消える（営業日カレンダーは元のまま）。
+⚠ **Creates 4 layers per user.** The business-day layer's weekdays come from that user's oldest business calendar
+(ADR-0009) (Mon-Fri if none). **All holidays of business calendars are copied to the "Japanese national holidays" layer**
+(for the same date, the name from the calendar created first). The business calendar tables are kept as is.
+Downgrading drops the layers and dates (business calendars stay as they were).
 """
 
 from __future__ import annotations
@@ -27,7 +27,7 @@ branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
 DEFAULT_WORKDAYS = "MO,TU,WE,TH,FR"
-# (理由, 名前, 色, 並び, 数えるか)。理由が None は営業日の層（ドメインの LAYER_* と同じ値）。
+# (reason, name, color, order, counted). A reason of None is the business-day layer (same values as the domain's LAYER_*).
 LAYERS = (
     (None, "営業日", "GRAPHITE", 1000, False),
     ("COMPANY", "会社の公休", "TANGERINE", 1001, True),

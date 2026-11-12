@@ -1,4 +1,4 @@
-"""推測できない文字列の供給元。テストでは決め打ちに差し替える。"""
+"""Source of unguessable strings. Replaced with fixed values in tests."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ class SecretGenerator(ABC):
 
 
 class UrlSafeSecretGenerator(SecretGenerator):
-    """``secrets`` による既定の実装（32 バイト = 256 ビット）。"""
+    """Default implementation using ``secrets`` (32 bytes = 256 bits)."""
 
     def __init__(self, num_bytes: int = 32) -> None:
         self._num_bytes = num_bytes

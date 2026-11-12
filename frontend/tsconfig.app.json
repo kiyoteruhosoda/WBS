@@ -23,6 +23,6 @@
     "noFallthroughCasesInSwitch": true
   },
   "include": ["src"],
-  // Service Worker は WebWorker の型で別に検査する（tsconfig.sw.json）
+  // The Service Worker is checked separately with WebWorker types (tsconfig.sw.json)
   "exclude": ["src/serviceWorker/sw.ts"]
 }

@@ -1,10 +1,10 @@
-"""機械が書いた操作の記録の表を足す（task #802 / ADR-0068）
+"""Add the table recording operations written by machines (task #802 / ADR-0068)
 
 Revision ID: 0033
 Revises: 0032
 Create Date: 2026-10-31
 
-戻すと表ごと消える（記録だけの表で、ほかの表からは参照しない）。
+Downgrading drops the whole table (a record-only table, not referenced by other tables).
 """
 
 from __future__ import annotations

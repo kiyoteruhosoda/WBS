@@ -1,18 +1,18 @@
-"""古い営業日カレンダーを畳み、休みの 4 層に一本化する（task #191 / ADR-0032）
+"""Retire the old business calendars and unify on the four day-off layers (task #191 / ADR-0032)
 
 Revision ID: 0013
 Revises: 0012
 Create Date: 2026-10-02
 
-- 古い営業日カレンダー（ADR-0009）の祝日のうち、まだ「日本の祝日」の層（ADR-0029）に無い日を層へ写す
-  （0010 の後に古い画面で足した日を落とさないため。層がまだ無い利用者には 0010 と同じ 4 層を作る）
-- 予定の繰り返しの規則の ``adjustment.calendar_id``（古いカレンダーの名指し）を外す。営業日シフトは
-  休みの 4 層だけで決まる
-- 表 ``business_calendar_holidays`` と ``business_calendars`` を消す
+- Copy holidays of old business calendars (ADR-0009) not yet in the "Japanese national holidays" layer (ADR-0029) into the layer
+  (so days added on old screens after 0010 are not lost; users without layers get the same 4 layers as 0010)
+- Remove ``adjustment.calendar_id`` (naming an old calendar) from event recurrence rules. Business-day shifting
+  is decided by the four day-off layers alone
+- Drop tables ``business_calendar_holidays`` and ``business_calendars``
 
-⚠ 下げると表を作り直し、休みの層がある利用者ごとに営業日カレンダーを 1 つ作る（稼働する曜日 = 営業日の層、
-祝日 = 「日本の祝日」の層の日。「祝日だけ飛ばす」は切り）。外した名指しは戻らない（名指しの無い規則は
-0010 の後と同じく層で寄る）。
+⚠ Downgrading recreates the tables and creates one business calendar per user with day-off layers (working weekdays = business-day layer,
+holidays = days of the "Japanese national holidays" layer; "skip holidays only" is off). Removed references are not restored (rules without a reference
+shift by layers, as after 0010).
 """
 
 from __future__ import annotations
@@ -29,7 +29,7 @@ branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
 DEFAULT_WORKDAYS = "MO,TU,WE,TH,FR"
-# 0010 と同じ層（理由, 名前, 色, 並び, 数えるか）。理由が None は営業日の層。
+# Same layers as 0010 (reason, name, color, order, counted). A reason of None is the business-day layer.
 LAYERS = (
     (None, "営業日", "GRAPHITE", 1000, False),
     ("COMPANY", "会社の公休", "TANGERINE", 1001, True),
@@ -72,7 +72,7 @@ _events = sa.table(
 
 
 def _national_layer_id(bind: sa.Connection, user_id: int, workdays: str) -> int:
-    """利用者の「日本の祝日」の層（無ければ 0010 と同じ 4 層を作って）。"""
+    """The user's "Japanese national holidays" layer (creating the same 4 layers as 0010 if missing)."""
     found = bind.execute(
         sa.select(_calendars.c.id).where(
             _calendars.c.user_id == user_id, _calendars.c.day_off_reason == "NATIONAL_HOLIDAY"
@@ -145,7 +145,7 @@ def _copy_legacy_holidays(bind: sa.Connection) -> None:
 
 
 def _unname_adjustments(bind: sa.Connection) -> None:
-    """繰り返しの規則の ``adjustment.calendar_id`` を外す（表の JSON は書き込みと同じ形で書き直す）。"""
+    """Remove ``adjustment.calendar_id`` from recurrence rules (the table's JSON is rewritten in the same form as on write)."""
     rows = bind.execute(
         sa.select(_events.c.id, _events.c.recurrence_rule).where(
             _events.c.recurrence_rule.is_not(None)
@@ -172,7 +172,7 @@ def upgrade() -> None:
     _copy_legacy_holidays(bind)
     _unname_adjustments(bind)
     op.drop_table("business_calendar_holidays")
-    # 索引は表と一緒に消える（MariaDB は外部キーが使う索引を先に消せない）
+    # Indexes go away with the table (MariaDB cannot drop an index used by a foreign key first)
     op.drop_table("business_calendars")
 
 

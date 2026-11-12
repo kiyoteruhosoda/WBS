@@ -1,8 +1,8 @@
-// セルを直接書き換える一覧（task #557 / ADR-0059 決定 3。MS Project のリソースシート・ガントの左の表）。
-// - 矢印で選ぶセルを動かす。選んだセルは太い枠で見える
-// - 文字を打つか Enter・F2 で書き換えを始め、Enter で確定して下へ、Tab で確定して右へ（Shift+Tab で左）、Esc でやめる
-// - 確定したらその場で保存する（onCommit）。Delete で空にできる列は空にする
-// - 表計算から貼り付けると、選んだセルを左上としてセルごとに保存する（読めない・直せないセルは飛ばす）
+// A list with directly editable cells (task #557 / ADR-0059 decision 3; like MS Project's resource sheet and the Gantt's left table).
+// - Arrow keys move the selected cell. The selected cell has a thick outline
+// - Typing, Enter or F2 starts editing; Enter commits and moves down, Tab commits and moves right (Shift+Tab left), Esc cancels
+// - A commit saves in place (onCommit). Delete clears columns that can be empty
+// - Pasting from a spreadsheet saves cell by cell with the selected cell as the top-left (unparsable or read-only cells are skipped)
 import React, { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Box } from '@mui/material';
 import { useI18n } from '../../i18n';
@@ -15,36 +15,36 @@ export interface GridColumn<R> {
   header: string;
   width: number;
   align?: 'left' | 'right';
-  /** 書き換える値の種類。readonly は読むだけ（Enter で onActivate）。select は選ぶ */
+  /** Kind of value being edited. readonly is read-only (Enter triggers onActivate). select is a choice */
   kind: 'text' | 'number' | 'select' | 'readonly';
-  /** 書き換えを始めるときの文字・コピーする文字 */
+  /** Text used when editing starts and when copying */
   value: (row: R) => string;
-  /** セルに出すもの（省くと value） */
+  /** What to render in the cell (value when omitted) */
   display?: (row: R) => React.ReactNode;
-  /** select の候補 */
+  /** Options for select */
   options?: (row: R) => { value: string; label: string }[];
-  /** 直せるか（省くと readonly でなければ直せる） */
+  /** Whether editable (when omitted, editable unless readonly) */
   editable?: (row: R) => boolean;
-  /** 打った文字を保存する値に読む。読めなければ ok: false */
+  /** Parses typed text into the value to save. ok: false when unparsable */
   parse?: (raw: string, row: R) => Parsed<unknown>;
-  /** readonly の列で Enter を押したとき（タスクを開くなど） */
+  /** Called when Enter is pressed on a readonly column (e.g. to open the task) */
   onActivate?: (row: R) => void;
-  /** 書き換えるときの説明（読み上げ）。省くと header */
+  /** Label while editing (for screen readers). header when omitted */
   hint?: string;
 }
 
 interface Props<R> {
   rows: R[];
   rowKey: (row: R) => string | number;
-  /** 行の名前（読み上げ。「山田 花子」「設計書を書く」など） */
+  /** Row name (for screen readers, e.g. a person's name or a task title) */
   rowLabel: (row: R) => string;
   columns: GridColumn<R>[];
-  /** 1 つのセルを保存する。失敗は投げる */
+  /** Saves one cell. Throws on failure */
   onCommit: (row: R, columnKey: string, value: unknown) => Promise<void>;
   ariaLabel: string;
   rowHeight?: number;
   headerHeight?: number;
-  /** 見出しと行の間に置く行（ガントのマイルストーンなど。選べない） */
+  /** Rows placed between the header and the rows (e.g. Gantt milestones; not selectable) */
   beforeRows?: React.ReactNode;
 }
 
@@ -68,7 +68,7 @@ function EditableGrid<R>({
   const colCount = columns.length;
   const width = useMemo(() => columns.reduce((sum, c) => sum + c.width, 0), [columns]);
 
-  // 行が減ったら、選んだセルを一覧の中へ戻す
+  // When rows shrink, bring the selected cell back inside the list
   useEffect(() => {
     if (rowCount > 0 && active.row >= rowCount) setActive((a) => ({ ...a, row: rowCount - 1 }));
   }, [rowCount, active.row]);
@@ -81,12 +81,12 @@ function EditableGrid<R>({
 
   const focusGrid = () => containerRef.current?.focus({ preventScroll: true });
 
-  // 選んだセルを見える所へ
+  // Scroll the selected cell into view
   useEffect(() => {
     document.getElementById(cellId(active.row, active.col))?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
   }, [active]);
 
-  // 書き換えを始めたら、次のキーより先に入れ物へ焦点を移し、打った文字の後ろに文字の位置を置く
+  // When editing starts, move focus to the input before the next key and put the caret after the typed text
   const isEditingNow = editing !== null;
   useLayoutEffect(() => {
     const el = inputRef.current;
@@ -103,7 +103,7 @@ function EditableGrid<R>({
     });
   };
 
-  /** 1 つのセルを読んで保存する。読めなければ false（保存しない）。 */
+  /** Parses and saves one cell. Returns false when unparsable (nothing saved). */
   const save = async (pos: CellPosition, raw: string): Promise<'saved' | 'unchanged' | 'invalid' | 'failed'> => {
     const row = rows[pos.row];
     const col = columns[pos.col];
@@ -138,7 +138,7 @@ function EditableGrid<R>({
     setEditing({ draft: draft ?? col.value(row), invalid: false });
   };
 
-  /** 書き換えを確定して動く。読めない値なら書き換えを続ける（ほかを押して離れたときは捨てる）。 */
+  /** Commits the edit and moves. Keeps editing on an unparsable value (discarded when leaving by clicking elsewhere). */
   const commitAndMove = (next: CellPosition | null, refocus = true) => {
     if (!editing) return;
     const pos = active;
@@ -231,7 +231,7 @@ function EditableGrid<R>({
     const targets = planPaste(active, parseClipboard(text), rowCount, colCount);
     let saved = 0;
     let skipped = 0;
-    // 1 つずつ順に（同じ行の値を続けて直すときに、前の保存を待つ）
+    // One at a time (when editing values on the same row in a row, wait for the previous save)
     for (const target of targets) {
       const result = await save({ row: target.row, col: target.col }, target.raw);
       if (result === 'saved' || result === 'unchanged') saved += 1;
@@ -341,7 +341,7 @@ function EditableGrid<R>({
                   aria-label={`${rowLabel(row)}: ${c.header}`}
                   data-active={isActive ? 'true' : undefined}
                   onMouseDown={(e) => {
-                    // 中のボタン・リンクはそのまま押せるように、焦点だけ一覧へ
+                    // Only move focus to the list so buttons and links inside stay clickable
                     if (isEditing) return;
                     setActive({ row: r, col: ci });
                     if ((e.target as HTMLElement).closest('button, a, input, [role="checkbox"]')) return;

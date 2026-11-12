@@ -11,7 +11,7 @@ class Milestone:
     name: str
     due_date: date | None = None
     description: str | None = None
-    # 属するプロジェクト（空 = 未分類。どのタスクにも付けられる。ADR-0024）
+    # Owning project (empty = unclassified; can be attached to any task. ADR-0024)
     project_id: int | None = None
     deleted_at: datetime | None = None
     created_at: datetime | None = None

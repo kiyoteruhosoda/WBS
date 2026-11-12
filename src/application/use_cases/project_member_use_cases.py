@@ -1,6 +1,6 @@
-"""プロジェクトのメンバーを見る・加える・役割を変える・外す（task #544 / ADR-0055）。
+"""List, add, change the role of, and remove project members (task #544 / ADR-0055).
 
-メンバーはいちばん上のプロジェクトに付く。どの段のプロジェクトの id で呼んでも、その木の根のメンバーを扱う。
+Members belong to the top-level project. Whichever level's project id is passed, the members of that tree's root are used.
 """
 
 from __future__ import annotations
@@ -34,18 +34,18 @@ class MemberView:
     display_name: str
     email: str
     role: ProjectRole
-    #: 聞いた本人か（画面が「外す」を「抜ける」と出す）
+    #: Whether this is the caller (the screen shows "remove" as "leave")
     is_you: bool
-    #: 1 日の工数（時間）と従事率（%）。ADR-0058
+    #: Daily hours and allocation rate (%). ADR-0058
     daily_hours: Decimal
     engagement_percent: int
 
 
 @dataclass(frozen=True)
 class ProjectMembersView:
-    #: メンバーが付いている根
+    #: The root the members belong to
     root_project_id: int
-    #: 自分がこの木で管理者か（画面が出し入れのボタンを出すか決める）
+    #: Whether the caller is an admin in this tree (decides whether the screen shows the add/remove buttons)
     can_manage: bool
     members: list[MemberView]
 
@@ -64,10 +64,10 @@ class ProjectMemberUseCases:
         )
 
     def candidates(self, user_id: int) -> list[Person]:
-        """メンバー・担当者に選べる人（WBS に 1 度でもログインした人。ADR-0055 決定 5）。
+        """People who can be chosen as members or assignees (anyone who has signed in to WBS at least once, ADR-0055 decision 5).
 
-        全員を返すのは、どこかの木の管理者か、根を作れる印のある人だけ（メンバーを足すのに要る）。
-        ほかの人には、自分と同じ木に居る人（と自分）だけを返す（ADR-0067）。
+        Everyone is returned only to admins of some tree or people with the root-creator mark (needed to add members).
+        Others get only the people in the same trees as themselves (and themselves) (ADR-0067).
         """
         people = self._people.choosable()
         if self._may_see_everyone(user_id):
@@ -97,7 +97,7 @@ class ProjectMemberUseCases:
     def add_member(
         self, user_id: int, project_id: int, member_user_id: int, role: ProjectRole
     ) -> ProjectMembersView:
-        """加える（もう居れば役割を書き換える）。選べるのは WBS に入ったことのある人だけ（422）。"""
+        """Add (if already a member, overwrite the role). Only people who have signed in to WBS can be chosen (422)."""
         root = self._root_of(user_id, project_id)
         self._membership.require_manager(user_id, root)
         if member_user_id not in {p.id for p in self._people.choosable()}:
@@ -134,7 +134,7 @@ class ProjectMemberUseCases:
         daily_hours: Decimal,
         engagement_percent: int,
     ) -> ProjectMembersView:
-        """1 日の工数と従事率を変える。管理者は誰のでも、メンバーは自分のだけ（ADR-0058 決定 1）。"""
+        """Change daily hours and allocation rate. Admins can change anyone's, members only their own (ADR-0058 decision 1)."""
         root = self._root_of(user_id, project_id)
         if member_user_id != user_id:
             self._membership.require_manager(user_id, root)
@@ -147,7 +147,7 @@ class ProjectMemberUseCases:
         return self.list_members(user_id, project_id)
 
     def remove_member(self, user_id: int, project_id: int, member_user_id: int) -> None:
-        """外す。管理者は誰でも、メンバーは自分だけ（抜ける）を外せる。最後の管理者は外せない（409）。"""
+        """Remove. Admins can remove anyone, members only themselves (leave). The last admin cannot be removed (409)."""
         root = self._root_of(user_id, project_id)
         if member_user_id != user_id:
             self._membership.require_manager(user_id, root)
@@ -156,12 +156,12 @@ class ProjectMemberUseCases:
             raise NotFoundError("ProjectMember", member_user_id)
         if member.is_manager:
             self._keep_a_manager(root, member_user_id)
-        # 担当は消さずに残す（ADR-0055 決定 4）。見えなくなれば Tracker へも渡らない
+        # Keep assignments instead of deleting them (ADR-0055 decision 4). Once not visible, they are not passed to Tracker either
         self._members.delete(root, member_user_id)
         self._session.commit()
 
     def _root_of(self, user_id: int, project_id: int) -> int:
-        self._membership.visible_project(user_id, project_id)  # 見えなければ 404
+        self._membership.visible_project(user_id, project_id)  # 404 if not visible
         return self._membership.tree(user_id).root_of(project_id)
 
     def _keep_a_manager(self, root: int, leaving_user_id: int) -> None:

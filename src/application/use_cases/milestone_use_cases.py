@@ -29,7 +29,7 @@ class MilestoneUseCases:
     def list_milestones(
         self, user_id: int, *, project_id: int | None = None, unclassified: bool = False
     ) -> list[Milestone]:
-        """``project_id`` は**子孫のプロジェクトも含めて**絞る（タスクの絞り込みと同じ。ADR-0024）。"""
+        """``project_id`` filters **including descendant projects** (same as task filtering, ADR-0024)."""
         project_ids = (
             self._membership.scope_ids(user_id, project_id) if project_id is not None else None
         )
@@ -62,12 +62,12 @@ class MilestoneUseCases:
             if dto.project_id is not None:
                 self._membership.visible_project(user_id, dto.project_id)
             if moved:
-                # 別の木へ持ち出すのは、元と先の両方の管理者だけ（ADR-0066）
+                # Only admins of both the source and target trees may take it to another tree (ADR-0066)
                 self._membership.require_manager_to_cross(user_id, m.project_id, dto.project_id)
             m.project_id = dto.project_id
         saved = self._repo.save(m)
         if moved:
-            # 新しいプロジェクトの外のタスクからは外す（ADR-0024）
+            # Detach from tasks outside the new project (ADR-0024)
             self._membership.detach_unreachable_milestones(user_id)
         self._session.commit()
         return saved

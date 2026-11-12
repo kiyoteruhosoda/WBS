@@ -1,4 +1,4 @@
-"""プロジェクトを作る・直す・動かす・保管する・消す（task #187 / ADR-0024）。"""
+"""Create, edit, move, archive and delete projects (task #187 / ADR-0024)."""
 
 from __future__ import annotations
 
@@ -32,11 +32,11 @@ from src.infrastructure.repositories.user_account_repository import SqlAlchemyUs
 
 @dataclass(frozen=True)
 class ProjectView:
-    """応答の 1 行: プロジェクトと、表示用の道筋（「親 / 子」）。"""
+    """One row of the response: the project and its display path ("parent / child")."""
 
     project: Project
     path: str
-    #: いちばん上のプロジェクトの id と、そこでの自分の役割（ADR-0055）
+    #: The id of the top-level project and the caller's role there (ADR-0055)
     root_project_id: int
     my_role: ProjectRole | None
 
@@ -55,7 +55,7 @@ class ProjectUseCases:
         )
 
     def list_projects(self, user_id: int) -> list[ProjectView]:
-        """全部（保管したものも）。木の順（親の直後に子、兄弟は並び順）に並べる。"""
+        """All of them (archived ones too), in tree order (children right after their parent, siblings by position)."""
         tree = self._membership.tree(user_id)
         roles = self._membership.roles_of(user_id)
         ordered: list[ProjectView] = []
@@ -76,7 +76,7 @@ class ProjectUseCases:
         if dto.parent_project_id is not None:
             self._membership.visible_project(dto.user_id, dto.parent_project_id)
         else:
-            # 新しい根を作ると作った人が管理者になるので、作れる人を絞る（ADR-0065）
+            # Creating a new root makes its creator an admin, so restrict who can create one (ADR-0065)
             self._require_project_creator(dto.user_id)
         tree = self._membership.tree(dto.user_id)
         project = Project(
@@ -87,12 +87,12 @@ class ProjectUseCases:
             color=dto.color,
             code=project_code(dto.code),
             description=dto.description,
-            # 兄弟の末尾へ
+            # Append after the last sibling
             sort_order=len(tree.children_of(dto.parent_project_id)),
         )
         saved = self._repo.save(project)
         if saved.parent_project_id is None and saved.id is not None:
-            # 新しい根は作った人が管理者（ADR-0055 決定 6。作れる人は ADR-0065 で絞った）
+            # The creator of a new root is its admin (ADR-0055 decision 6; who can create one is restricted by ADR-0065)
             self._membership.make_manager(dto.user_id, saved.id)
         self._session.commit()
         return self.get_project(saved.id or 0, dto.user_id)
@@ -114,7 +114,7 @@ class ProjectUseCases:
         return self.get_project(project_id, user_id)
 
     def move_project(self, project_id: int, user_id: int, dto: MoveProjectDTO) -> ProjectView:
-        """親を替える・兄弟の中で並べ替える。⚠ 自分と自分の子孫の下へは移さない（環になる）。"""
+        """Change the parent or reorder among siblings. ⚠ Never move under itself or its own descendants (that would make a cycle)."""
         project = self._membership.visible_project(user_id, project_id)
         new_parent = dto.parent_project_id
         if new_parent is not None:
@@ -124,17 +124,17 @@ class ProjectUseCases:
             raise ProjectCycleError()
         old_parent = project.parent_project_id
         if new_parent is not None:
-            # 別の木の下へ入れるのは、元と先の両方の管理者だけ（ADR-0066）。下のものを根へ出すのは木を変えない
+            # Only admins of both the source and target trees may move it under another tree (ADR-0066). Moving a lower project out to a root does not change the tree
             self._membership.require_manager_to_cross(user_id, project_id, new_parent)
         if old_parent is None and new_parent is not None:
-            # 根を他の下へ入れると、この木のメンバーは消え、移った先の木のメンバーに見える（ADR-0055 決定 6）
+            # When a root is moved under another, this tree's members go away and it becomes visible to the target tree's members (ADR-0055 decision 6)
             self._membership.require_manager(user_id, project_id)
             self._membership.forget_members(project_id)
-            # 稼働する曜日は根にだけ付く。移った先の木のものを使う（ADR-0058 決定 2）。
-            # 休日はこのプロジェクト自身の休日として残し、移った先の木の休日に足す（ADR-0059 決定 1）
+            # Working weekdays belong only to the root; use the target tree's (ADR-0058 decision 2).
+            # Holidays stay as this project's own and are added on top of the target tree's holidays (ADR-0059 decision 1)
             self._team_calendar.forget_workdays(project_id)
         elif old_parent is not None and new_parent is None:
-            # 下のものを根へ出す: 元の木のメンバーを写す（見える人は変わらない）
+            # Moving a lower project out to a root: copy the old tree's members (who can see it does not change)
             old_root = tree.root_of(project_id)
             self._membership.copy_members(old_root, project_id)
             self._copy_team_calendar(old_root, tree.ancestors_or_self(project_id), project_id)
@@ -149,20 +149,20 @@ class ProjectUseCases:
         self._repo.save(project)
         self._repo.set_sort_orders([i for i in siblings if i is not None])
         if old_parent != new_parent:
-            # 元の兄弟の並びを詰める
+            # Close the gap in the old siblings' order
             self._repo.set_sort_orders(
                 [p.id for p in tree.children_of(old_parent) if p.id is not None and p.id != project_id]
             )
-            # 枝の外へ出たタスクは、元の祖先のマイルストーンへ届かなくなる（ADR-0024）
+            # Tasks that left the branch can no longer reach milestones of their old ancestors (ADR-0024)
             self._membership.detach_unreachable_milestones(user_id)
         self._session.commit()
         return self.get_project(project_id, user_id)
 
     def delete_project(self, project_id: int, user_id: int) -> None:
-        """空のプロジェクトだけ消す。中身があれば 409（保管するか、中身を移してから）。"""
+        """Delete only an empty project. 409 if it has contents (archive it, or move its contents first)."""
         project = self._membership.visible_project(user_id, project_id)
         if project.parent_project_id is None:
-            # いちばん上を消すのは管理者だけ（ADR-0055 決定 2）
+            # Only admins may delete a top-level project (ADR-0055 decision 2)
             self._membership.require_manager(user_id, project_id)
         if self._repo.has_contents(project_id):
             raise ProjectNotEmptyError()
@@ -175,14 +175,14 @@ class ProjectUseCases:
             raise ProjectCreatorRequiredError()
 
     def _copy_team_calendar(self, from_root_id: int, lineage: list[int], to_project_id: int) -> None:
-        """下のプロジェクトを根へ出すとき、元の根の曜日と先祖から引き継いでいた休日・稼働日を写す（見込みを変えない）。"""
+        """When moving a lower project out to a root, copy the old root's weekdays and the holidays/extra working days it inherited from its ancestors (so forecasts do not change)."""
         workdays = self._team_calendar.workdays(from_root_id)
         if workdays is not None:
             self._team_calendar.set_workdays(to_project_id, workdays)
         own = {d.day for d in self._team_calendar.team_days_off([to_project_id])}
         own |= {d.day for d in self._team_calendar.extra_workdays([to_project_id])}
         ancestors = [p for p in lineage if p != to_project_id]
-        # 先祖の休日・稼働日は近いほうが勝ったものを写す（ADR-0060）
+        # For ancestors' holidays/extra working days, copy the ones that won (the nearer one, ADR-0060)
         inherited = layer_calendar_days(
             ancestors, self._team_calendar.team_days_off(ancestors), self._team_calendar.extra_workdays(ancestors),
         )

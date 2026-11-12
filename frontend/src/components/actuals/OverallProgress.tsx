@@ -7,8 +7,8 @@ import { ds } from '../../theme';
 import { overallProgressView } from './overallProgress';
 
 /**
- * 全体の進捗（完了の割合・今週完了・期限超過）。前は「今日」の右の列のいちばん下のカードだったが、
- * 今日の作業には使わないので実績の画面の 1 行に寄せた（ADR-0036）。プロジェクトの範囲に依らず全部のタスク。
+ * Overall progress (done percentage, done this week, overdue). It used to be the bottom card of the right column on "Today",
+ * but isn't used for today's work, so it moved to one line on the actuals screen (ADR-0036). All tasks regardless of project scope.
  */
 const OverallProgress: React.FC = () => {
   const { t } = useI18n();

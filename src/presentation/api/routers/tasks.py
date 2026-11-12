@@ -31,15 +31,15 @@ def list_tasks(
     milestone_id: int | None = None,
     parent_task_id: int | None = None,
     project_id: Annotated[
-        int | None, Query(description="このプロジェクトと、その子孫のプロジェクトのタスクだけ")
+        int | None, Query(description="Only tasks in this project and its descendant projects")
     ] = None,
     unclassified: Annotated[
-        bool, Query(description="true ならプロジェクトの無い（未分類の）タスクだけ")
+        bool, Query(description="If true, only tasks without a project (uncategorized)")
     ] = False,
     assignee: Annotated[
         str | None,
         Query(
-            description="担当者で絞る: `me`（自分）・`none`（担当なし）・利用者の id（ADR-0055）",
+            description="Filter by assignee: `me` (yourself), `none` (unassigned), or a user id (ADR-0055)",
             pattern=r"^(me|none|[0-9]+)$",
         ),
     ] = None,
@@ -97,9 +97,9 @@ def create_task(body: TaskCreateRequest, uc: TaskUseCasesDep, current_user: Curr
 def move_tasks_to_project(
     body: TaskMoveToProjectRequest, uc: TaskUseCasesDep, current_user: CurrentUserDep
 ) -> TaskMoveToProjectResponse:
-    """選んだタスクをまとめて別のプロジェクトへ（``null`` で未分類へ）。
+    """Move the selected tasks to another project together (``null`` makes them uncategorized).
 
-    子孫は根と一緒に移る。祖先を一緒に選んでいない子タスクを含めば何も変えずに 422（ADR-0024・ADR-0030）。
+    Descendants move with their root. If the selection includes a child task whose ancestor is not also selected, nothing changes and 422 is returned (ADR-0024, ADR-0030).
     """
     result = uc.move_to_project(current_user.user_id, body.task_ids, body.project_id)
     return TaskMoveToProjectResponse(**result)
@@ -146,7 +146,7 @@ def patch_task(task_id: int, body: TaskUpdateRequest, uc: TaskUseCasesDep, curre
 def preview_task_removal(
     task_id: int, uc: TaskRemovalUseCasesDep, current_user: CurrentUserDep
 ) -> TaskRemovalResponse:
-    """消すとどうなるか（確定した実績と、消すかアーカイブするか）。ADR-0046。"""
+    """What deleting would do (confirmed actuals, and whether to delete or archive). ADR-0046."""
     preview = uc.preview(task_id, current_user.user_id)
     return TaskRemovalResponse(
         task_id=preview.task_id,
@@ -159,11 +159,11 @@ def preview_task_removal(
 
 @router.post("/{task_id}/archive", status_code=status.HTTP_204_NO_CONTENT)
 def archive_task(task_id: int, uc: TaskRemovalUseCasesDep, current_user: CurrentUserDep) -> None:
-    """アーカイブする（一覧と付け替え先に出なくなる。実績の表には残る）。"""
+    """Archive (no longer shown in lists or as a move target; stays in the actuals table)."""
     uc.archive(task_id, current_user.user_id)
 
 
 @router.delete("/{task_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_task(task_id: int, uc: TaskRemovalUseCasesDep, current_user: CurrentUserDep) -> None:
-    """消す。確定した実績があれば 409（アーカイブする）。"""
+    """Delete. 409 if there are confirmed actuals (archive instead)."""
     uc.delete(task_id, current_user.user_id)

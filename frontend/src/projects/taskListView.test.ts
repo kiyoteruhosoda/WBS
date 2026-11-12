@@ -8,7 +8,7 @@ const p = (id: number, name: string, parent: number | null = null, extra: Partia
   id, name, parent_project_id: parent, color: null, code: null, description: null, status: 'active', sort_order: 0, path: name, root_project_id: id, my_role: 'manager', ...extra,
 });
 
-// 仕事(1) ─ 案件 A(2) ─ 設計(3) / 仕事 ─ 案件 B(4) / 私用(5)
+// Tree: 仕事(1) ─ 案件 A(2) ─ 設計(3) / 仕事 ─ 案件 B(4) / 私用(5)
 const projects: Project[] = [
   p(1, '仕事'), p(2, '案件 A', 1, { path: '仕事 / 案件 A' }), p(3, '設計', 2, { path: '仕事 / 案件 A / 設計' }),
   p(4, '案件 B', 1, { sort_order: 1, path: '仕事 / 案件 B' }), p(5, '私用', null, { sort_order: 1 }),
@@ -32,39 +32,39 @@ const tasks: Task[] = [
   task(6, 'メモの整理', null, { remaining_hours: 0.2 }),
 ];
 
-describe('プロジェクトで束ねる', () => {
-  it('木の見出しの下にタスク・子は入れ子・数と残は子孫まで積む・未分類は最後', () => {
+describe('grouping by project', () => {
+  it('puts tasks under tree headings, nests children, rolls up count and remaining over descendants, and puts unassigned last', () => {
     const groups = groupTasksByProject(tasks, projects);
 
     expect(groups.map((g) => g.key)).toEqual(['project:1', 'project:5', 'none']);
     const work = groups[0];
     expect(work.tasks).toEqual([]);
     expect(work.total).toBe(4);
-    // 済んだものの残は数えない。0.1 + 1.5 + 2 の端数を丸める
+    // Remaining of done tasks is not counted. Rounds the float error of 0.1 + 1.5 + 2
     expect(work.remainingHours).toBe(3.6);
     expect(work.children.map((c) => [c.key, c.depth, c.total])).toEqual([['project:2', 1, 2], ['project:4', 1, 2]]);
     expect(work.children[0].children.map((c) => [c.key, c.depth, c.tasks.map((t) => t.id)])).toEqual([['project:3', 2, [1]]]);
     expect(groups[1].remainingHours).toBe(0);
     expect(groups[2]).toMatchObject({ projectId: null, total: 1, remainingHours: 0.2 });
-    // 見出しのチェックで束ごと選ぶ（子の束も）
+    // Checking a heading selects the whole group (child groups too)
     expect(groupTaskIds(work)).toEqual([2, 1, 3, 4]);
   });
 
-  it('タスクの無い枝は出さない。範囲で選んだプロジェクトを最上位にする', () => {
+  it('omits branches without tasks and makes the scoped project the top level', () => {
     const groups = groupTasksByProject(tasks.filter((t) => [1, 2].includes(t.id)), projects, 2);
 
     expect(groups.map((g) => [g.key, g.depth])).toEqual([['project:2', 0]]);
     expect(groups[0].children.map((c) => c.key)).toEqual(['project:3']);
   });
 
-  it('一覧に無いプロジェクトのタスクは道筋で 1 段に（見失わない）', () => {
+  it('puts tasks of a project missing from the list into one flat group by path (so they are not lost)', () => {
     const stray = task(9, '迷子', 99, { project_path: '消えた / 枝' });
     const groups = groupTasksByProject([stray, tasks[5]], projects);
 
     expect(groups.map((g) => [g.key, g.path])).toEqual([['project:99', '消えた / 枝'], ['none', null]]);
   });
 
-  it('保管した枝は印を付ける（子にも）', () => {
+  it('marks archived branches (children too)', () => {
     const archived = projects.map((x) => (x.id === 2 ? { ...x, status: 'archived' as const } : x));
     const [work] = groupTasksByProject(tasks, archived);
 
@@ -73,7 +73,7 @@ describe('プロジェクトで束ねる', () => {
     expect(work.children[0].children[0].archived).toBe(true);
   });
 
-  it('表の行: 見出し → 直のタスク → 子の束。畳んだ束の中は出さない', () => {
+  it('table rows: heading → direct tasks → child groups; hides the contents of collapsed groups', () => {
     const groups = groupTasksByProject(tasks, projects);
     const keys = (rows: ReturnType<typeof groupRows>) =>
       rows.map((r) => (r.kind === 'group' ? r.group.key : `task:${r.task.id}`));
@@ -88,8 +88,8 @@ describe('プロジェクトで束ねる', () => {
   });
 });
 
-describe('束の中の子タスク', () => {
-  it('子タスクは親の直後へ字下げして（兄弟は並べた順のまま）。親の居ない子はその場所に残す', () => {
+describe('subtasks within a group', () => {
+  it('indents subtasks right after their parent (siblings keep their order) and leaves orphans in place', () => {
     const list = [
       task(3, '子 b', 2, { parent_task_id: 1 }),
       task(5, '迷子の子', 2, { parent_task_id: 99 }),
@@ -105,14 +105,14 @@ describe('束の中の子タスク', () => {
       .toEqual([[5, 1, 0], [1, 1, 0], [3, 1, 1], [4, 1, 2], [2, 1, 1]]);
   });
 
-  it('環になっていても全部を 1 回ずつ出す', () => {
+  it('emits every task exactly once even with a cycle', () => {
     const list = [task(1, 'a', 2, { parent_task_id: 2 }), task(2, 'b', 2, { parent_task_id: 1 })];
     expect(nestBySubtask(list).map(({ task: t }) => t.id)).toEqual([1, 2]);
   });
 });
 
-describe('並べ替え', () => {
-  it('プロジェクトの列は木の順 → 一覧に無いもの → 未分類。同じプロジェクトの中はタスク名', () => {
+describe('sorting', () => {
+  it('project column sorts by tree order → missing from list → unassigned, then by task name within a project', () => {
     const stray = task(9, '迷子', 99, { project_path: '消えた' });
     const ids = (list: Task[]) => list.map((t) => t.id);
 
@@ -120,7 +120,7 @@ describe('並べ替え', () => {
     expect(ids(sortTasks([...tasks, stray], 'project', true, projects))).toEqual([6, 9, 5, 4, 3, 1, 2]);
   });
 
-  it('ほかの列は今までどおり（期限なしは後ろ・優先度は高い順）', () => {
+  it('other columns sort as before (no due date last, priority highest first)', () => {
     const list = [
       task(1, 'b', null, { due_date: null, priority_score: 1 }),
       task(2, 'a', null, { due_date: '2026-10-03', priority_score: 9 }),
@@ -132,14 +132,14 @@ describe('並べ替え', () => {
   });
 });
 
-describe('まとめてプロジェクトを移す', () => {
-  // 10 ─ 11 ─ 12 / 10 ─ 13 / 20 / 30 の親 99 は消した（一覧に居ない）
+describe('moving tasks to a project in bulk', () => {
+  // 10 ─ 11 ─ 12 / 10 ─ 13 / 20 / parent 99 of 30 was deleted (not in the list)
   const tree: Task[] = [
     task(10, '親', 2), task(11, '子', 2, { parent_task_id: 10 }), task(12, '孫', 2, { parent_task_id: 11 }),
     task(13, '子 2', 2, { parent_task_id: 10 }), task(20, '別の根', null), task(30, '親が消えた子', 5, { parent_task_id: 99 }),
   ];
 
-  it('親だけ送る。選んでいない子孫は数だけ（親と一緒に移る）', () => {
+  it('sends only parents; unselected descendants are only counted (they move with the parent)', () => {
     const plan = planProjectMove([10, 12, 20], tree);
 
     expect(plan).toEqual({ roots: [10, 20], followers: [12], stranded: [], carried: 2 });
@@ -149,21 +149,21 @@ describe('まとめてプロジェクトを移す', () => {
     expect(moveToProjectRequest(plan, null)?.body).toEqual({ task_ids: [10, 20], project_id: null });
   });
 
-  it('親を選んでいない子は移さない（送らない）。親が消えた子は根', () => {
+  it('does not move (send) children whose parent is unselected; a child whose parent was deleted is a root', () => {
     const plan = planProjectMove([11, 12, 30], tree);
 
     expect(plan).toEqual({ roots: [30], followers: [12], stranded: [11], carried: 0 });
     expect(moveToProjectRequest(plan, 1)?.body.task_ids).toEqual([30]);
   });
 
-  it('移せるものが無ければ呼ばない。一覧に無い id は数えない', () => {
+  it('does not call when nothing can be moved; ids not in the list are not counted', () => {
     const plan = planProjectMove([11, 404], tree);
 
     expect(plan).toEqual({ roots: [], followers: [], stranded: [11], carried: 0 });
     expect(moveToProjectRequest(plan, 1)).toBeNull();
   });
 
-  it('表で「親と一緒」と見せるのは、選んだタスクの子孫', () => {
+  it('shows "with parent" in the table for descendants of selected tasks', () => {
     expect([...followingIds([10], tree)].sort()).toEqual([11, 12, 13]);
     expect([...followingIds([11, 20], tree)]).toEqual([12]);
   });

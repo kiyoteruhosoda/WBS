@@ -7,7 +7,7 @@ from src.presentation.api.dependencies import CurrentUserDep, DbDep
 from src.presentation.api.schemas.dashboard_schemas import KpiResponse
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
-# 今日のタスクの束は「今日」の画面の要約（/api/today）へ寄せた（ADR-0015）。ここは KPI だけ。
+# Today's task bundle moved to the "Today" screen summary (/api/today) (ADR-0015). This is KPIs only.
 
 
 @router.get("/kpi", response_model=KpiResponse)

@@ -1,12 +1,12 @@
-"""定期照合の足回り（毎時、IdP に名簿を聞き直す）。
+"""Plumbing for the periodic reconciliation (asks the IdP for the roster again every hour).
 
-ユースケース（``ReconcileFederatedUsers``）へ、この配備のもの ——DB のセッション・
-IdP の名乗り・発行者の綴り——を渡して回す。⚠ **判断はユースケース側にある。**
-ここが持つのは「いつ走るか」と「引けなかったときに何を記録するか」だけ。
+Runs the use case (``ReconcileFederatedUsers``) with this deployment's pieces -- the DB session,
+the IdP identity, the issuer spelling. ⚠ **The decisions live in the use case.**
+This only owns "when it runs" and "what to log when the roster cannot be fetched".
 
-⚠ **web のプロセスで動く。** IdP と話す鍵を持っているのが web だけで、他に定期実行の
-足回りが無いため。ワーカーが複数なら同じ周回が複数回走るが、照合は何度走らせても
-結果が変わらない。
+⚠ **It runs in the web process.** Only web holds the key for talking to the IdP, and there is no other
+scheduling infrastructure. With several workers the same cycle runs several times, but reconciliation
+gives the same result no matter how often it runs.
 """
 
 from __future__ import annotations
@@ -39,13 +39,13 @@ from src.infrastructure.scheduling.interval_worker import IntervalWorker
 logger = logging.getLogger(__name__)
 
 WORKER_NAME = "sso-reconciliation"
-#: 聞き直す間隔。⚠ **短くしても停止が速くなるわけではない**（速い経路は受け口のほう）。
-#: ここは取りこぼしを拾う 2 段目なので、IdP への負荷と釣り合う程度でよい。
+#: Interval between checks. ⚠ **Shortening it does not make deactivation faster** (the fast path is the receiving endpoint).
+#: This is the second line that catches misses, so balancing it against IdP load is enough.
 RECONCILE_INTERVAL_SECONDS = 3600.0
-#: 起動から最初の 1 回まで。起動処理と取り合わない程度に置く。
+#: Time from startup to the first run. Set so it does not compete with startup work.
 FIRST_RUN_DELAY_SECONDS = 60.0
 
-#: 見送ってよい失敗。⚠ **どれも「全員辞めた」ではない。**
+#: Failures that can be skipped. ⚠ **None of them means "everyone left".**
 _SKIPPABLE = (IdentityProviderUnavailableError, AuthConfigurationError)
 
 
@@ -58,7 +58,7 @@ def build_roster_gateway(settings: AuthSettings) -> RosterGateway:
 def reconcile_once(
     settings: AuthSettings, roster: RosterGateway | None = None
 ) -> ReconciliationOutcome | None:
-    """1 周回ぶん走らせる。見送ったら ``None``。"""
+    """Run one cycle. ``None`` if skipped."""
     if not settings.reconciliation_enabled:
         return None
     session = get_db_session()
@@ -68,7 +68,7 @@ def reconcile_once(
         session.close()
     if outcome is not None:
         logger.info(
-            "SSO の定期照合が終わりました",
+            "SSO reconciliation finished",
             extra={
                 "event": "auth.oidc.reconciliation.finished",
                 "checked": outcome.checked,
@@ -85,22 +85,22 @@ def _reconcile(
 ) -> ReconciliationOutcome | None:
     try:
         return ReconcileFederatedUsers(
-            # ⚠ ログインで結び付けたときと**同じ綴り**（受け口も同じ）。
+            # ⚠ **Same spelling** as when linking at login (the receiving endpoint uses it too).
             issuer=settings.issuer,
             links=SqlAlchemyIdentityLinkRepository(session),
             sessions=SqlAlchemyRefreshSessionRepository(session),
             roster=roster,
         ).execute()
     except MachineNotBoundToApplicationError:
-        # ⚠ 準備待ちであって障害ではない。結び付けるまで毎時来るので警告にしない。
+        # ⚠ Waiting for setup, not an outage. It comes every hour until bound, so it is not a warning.
         logger.info(
-            "機械の名乗りがまだアプリに結び付いていません",
+            "the machine identity is not yet bound to the app",
             extra={"event": "auth.oidc.reconciliation.not_bound"},
         )
         return None
     except _SKIPPABLE as error:
         logger.warning(
-            "SSO の定期照合を見送りました",
+            "SSO reconciliation skipped",
             extra={
                 "event": "auth.oidc.reconciliation.skipped",
                 "reason": type(error).__name__,
@@ -110,7 +110,7 @@ def _reconcile(
 
 
 def start_reconciliation_worker(settings: AuthSettings) -> IntervalWorker | None:
-    """定期照合を開始する（``AUTH_MODE=oidc`` ＋ ``MACHINE_CLIENT_ID`` のときだけ）。"""
+    """Start the periodic reconciliation (only with ``AUTH_MODE=oidc`` + ``MACHINE_CLIENT_ID``)."""
     if not settings.reconciliation_enabled:
         return None
     worker = IntervalWorker(

@@ -1,10 +1,10 @@
-"""メンバーの 1 日の工数・従事率、チームの稼働する曜日と休日、各人の休み、タスクのアサイン比率（task #554 / ADR-0058）
+"""Members' daily hours and allocation rate, team working weekdays and holidays, personal days off, task assignment ratios (task #554 / ADR-0058)
 
 Revision ID: 0026
 Revises: 0025
 Create Date: 2026-10-20
 
-今の行は既定（8 時間・100%・月〜金・休みなし・比率なし）になる。戻すと表と列が消えて元どおり。
+Existing rows get the defaults (8 hours, 100%, Mon-Fri, no days off, no ratios). Downgrading drops the tables and columns, restoring the previous state.
 """
 
 from __future__ import annotations

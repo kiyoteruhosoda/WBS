@@ -15,9 +15,9 @@ class SqlAlchemyLogoutDeliveryRepository(LogoutDeliveryRepository):
         self._session = session
 
     def record(self, *, jti: str, now: datetime) -> bool:
-        # ⚠ **「引いて、無ければ足す」では足りない。** 同じ通知が同時に 2 本届くと、
-        #   どちらも「無い」と読んでから両方が足しに行く。一意制約で決着させ、
-        #   負けた側を「既に受けている」として扱う。
+        # ⚠ **"Look up, add if missing" is not enough.** If the same notification arrives twice at once,
+        #   both read "missing" and then both try to add. Let the unique constraint decide, and
+        #   treat the loser as "already received".
         self._session.add(BackchannelLogoutDeliveryModel(jti=jti, received_at=now))
         try:
             self._session.commit()
@@ -36,7 +36,7 @@ class SqlAlchemyLogoutDeliveryRepository(LogoutDeliveryRepository):
         return result.rowcount or 0
 
     def has(self, jti: str) -> bool:
-        """試験と調査のための確認口（ポートには載せない）。"""
+        """Lookup for tests and investigation (not part of the port)."""
         stmt = select(BackchannelLogoutDeliveryModel).where(
             BackchannelLogoutDeliveryModel.jti == jti
         )

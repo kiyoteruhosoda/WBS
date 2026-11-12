@@ -10,7 +10,7 @@ class MilestoneRepository(ABC):
     def find_by_id(self, milestone_id: int) -> Milestone | None: ...
     @abstractmethod
     def find_by_id_for_user(self, milestone_id: int, user_id: int) -> Milestone | None:
-        """消しておらず、利用者に見えるなら返す（ADR-0055）。"""
+        """Return it if not deleted and visible to the user (ADR-0055)."""
     @abstractmethod
     def find_all(
         self,
@@ -19,7 +19,7 @@ class MilestoneRepository(ABC):
         project_ids: list[int] | None = None,
         unclassified: bool = False,
     ) -> list[Milestone]:
-        """消しておらず、利用者に見えるマイルストーン。``project_ids`` の中のどれかに属するもの・未分類だけにも絞れる。"""
+        """Milestones that are not deleted and visible to the user. Can be narrowed to those in any of ``project_ids`` or to unclassified only."""
     @abstractmethod
     def save(self, milestone: Milestone) -> Milestone: ...
     @abstractmethod

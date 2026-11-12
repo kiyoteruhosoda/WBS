@@ -1,4 +1,4 @@
-"""ログインごとの控えの決まり（ADR-0069・ADR-0071）。"""
+"""Rules for the per-sign-in record (ADR-0069, ADR-0071)."""
 
 from datetime import datetime, timedelta
 

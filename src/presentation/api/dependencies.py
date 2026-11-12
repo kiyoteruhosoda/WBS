@@ -62,10 +62,10 @@ AuthSettingsDep = Annotated[AuthSettings, Depends(get_auth_settings)]
 
 
 def _log_as(request: Request, user: AuthenticatedUserDTO) -> AuthenticatedUserDTO:
-    """アクセスログの行に載せる、誰の要求か（task #812）。
+    """Who made the request, for the access log line (task #812).
 
-    ⚠ ``ContextVar`` では戻らない。この依存関数はスレッドで走り、ミドルウェアも別のタスクなので、
-    置いた値がログを出す側へ届かない。``request.state`` は要求ごとの 1 つの辞書で、どちらからも同じものが見える。
+    ⚠ ``ContextVar`` does not carry back. This dependency runs in a thread and the middleware is a separate task,
+    so a value set here never reaches the logger. ``request.state`` is one dict per request, visible from both.
     """
     request.state.user_id_hash = user.id_hash
     return user
@@ -75,13 +75,13 @@ def get_machine_reader_user(
     request: Request,
     db: DbDep,
     settings: AuthSettingsDep,
-    issuer: Annotated[str, Query(description="利用者の発行者（iss）")],
-    subject: Annotated[str, Query(description="利用者の本人番号（sub）")],
+    issuer: Annotated[str, Query(description="The user's issuer (iss)")],
+    subject: Annotated[str, Query(description="The user's subject identifier (sub)")],
 ) -> AuthenticatedUserDTO:
-    """ほかのアプリのサーバー（Tracker）が利用者の代わりに読み書きする口の利用者（ADR-0056）。
+    """The user for the endpoints another app's server (Tracker) uses to read/write on a user's behalf (ADR-0056).
 
-    ⚠ **Bearer の機械のトークンだけ**で決める（Cookie は見ない）。``AUTH_MODE=single_user`` では閉じる
-    （名乗りを確かめられないので、機械の口は SSO の配備だけのもの）。
+    ⚠ Decided **only by a Bearer machine token** (cookies are ignored). Closed under ``AUTH_MODE=single_user``
+    (the identity cannot be verified, so the machine endpoints exist only in SSO deployments).
     """
     authorization = request.headers.get("Authorization") or ""
     scheme, _, token = authorization.partition(" ")
@@ -103,7 +103,7 @@ MachineReaderUserDep = Annotated[AuthenticatedUserDTO, Depends(get_machine_reade
 
 
 def get_project_member_use_cases(db: DbDep, auth: AuthSettingsDep) -> ProjectMemberUseCases:
-    # SSO では assay と結び付いている人だけを候補にする（ADR-0055 決定 5）
+    # With SSO, only people linked in assay are candidates (ADR-0055 decision 5)
     people = SqlAlchemyPersonDirectory(db, require_identity=auth.mode is AuthMode.OIDC)
     return ProjectMemberUseCases(db, people)
 
@@ -112,14 +112,14 @@ ProjectMemberUseCasesDep = Annotated[ProjectMemberUseCases, Depends(get_project_
 
 
 def get_identity_provider(request: Request) -> IdentityProvider:
-    """SSO 有効時の IdP アダプタ。
+    """IdP adapter when SSO is enabled.
 
-    テストや別 IdP への差し替えは ``app.dependency_overrides`` でここを置き換える。
+    Tests or a different IdP replace this via ``app.dependency_overrides``.
     """
     provider = request.app.state.identity_provider
     if provider is None:
-        # 「認証に失敗した」ではなく「その入口が無い」。401 を返すと、フロントが
-        # ログイン画面へ飛ばして無限に往復する。
+        # Not "authentication failed" but "this entry point does not exist". Returning 401 makes the frontend
+        # jump to the login screen and bounce back and forth forever.
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="SSO is not enabled. Set AUTH_MODE=oidc to enable it.",
@@ -175,7 +175,7 @@ def get_receive_backchannel_logout(
         identity_provider=identity_provider,
         sessions=SqlAlchemyRefreshSessionRepository(db),
         deliveries=SqlAlchemyLogoutDeliveryRepository(db),
-        # 控えが残る長さまで覚える。短いと、古い通知の再送が入り直した後のログインを落とす（ADR-0071）
+        # Remember for as long as the record is kept. Too short and a resend of an old notification kills a login made after signing in again (ADR-0071)
         delivery_retention=settings.sign_in_carry,
     )
 
@@ -187,11 +187,11 @@ BackchannelLogoutDep = Annotated[
 def get_current_user(
     request: Request, db: DbDep, settings: AuthSettingsDep, session_auth: SessionAuthDep
 ) -> AuthenticatedUserDTO:
-    """このリクエストを出している利用者。
+    """The user making this request.
 
-    ``AUTH_MODE=single_user``（既定）では従来どおり初期ユーザー 1 人を返す。
-    SSO を入れていない既存の配備をそのまま動かし続けるための逃げ道で、
-    ネットワーク越しに公開する配備では ``AUTH_MODE=oidc`` にする。
+    With ``AUTH_MODE=single_user`` (the default), returns the single initial user as before.
+    An escape hatch to keep existing deployments without SSO running;
+    deployments exposed over the network use ``AUTH_MODE=oidc``.
     """
     if not settings.sso_enabled:
         user = SqlAlchemyUserAccountRepository(db).find_by_id(SINGLE_USER_ID)
@@ -223,14 +223,14 @@ TaskUseCasesDep = Annotated[TaskUseCases, Depends(get_task_use_cases)]
 
 
 def get_task_removal_use_cases(db: DbDep) -> TaskRemovalUseCases:
-    """タスクを消す・アーカイブする（ADR-0046）。"""
+    """Delete or archive tasks (ADR-0046)."""
     return TaskRemovalUseCases(SqlAlchemyTaskRepository(db), db)
 
 TaskRemovalUseCasesDep = Annotated[TaskRemovalUseCases, Depends(get_task_removal_use_cases)]
 
 
 def get_actuals_use_cases(db: DbDep) -> ActualsUseCases:
-    """実績の見える化（ADR-0017）。時計は 1 つを共有する（タスクの期限の近さと期間の区切りを揃える）。"""
+    """Actuals visualization (ADR-0017). Shares one clock (keeps task due proximity and period boundaries aligned)."""
     clock = UserClock(db)
     return ActualsUseCases(
         clock=clock,

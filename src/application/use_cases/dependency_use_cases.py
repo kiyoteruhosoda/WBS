@@ -8,10 +8,10 @@ from src.domain.value_objects.dependency_type import DependencyType
 
 
 def _has_cycle(all_deps: list[TaskDependency], new_pred: int, new_succ: int) -> bool:
-    """``new_pred → new_succ`` を足すと循環するか。
+    """Whether adding ``new_pred -> new_succ`` makes a cycle.
 
-    循環するのは、``new_succ`` が既に ``new_pred`` の祖先（``new_pred`` から先行を
-    辿って届く）であるとき。自分自身への依存も循環として扱う。
+    It cycles when ``new_succ`` is already an ancestor of ``new_pred`` (reachable by following
+    predecessors from ``new_pred``). A dependency on itself is also treated as a cycle.
     """
     graph: dict[int, list[int]] = {}
     for dep in all_deps:
@@ -47,11 +47,11 @@ class DependencyUseCases:
         }
 
     def add_dependency(self, successor_task_id: int, predecessor_task_id: int, user_id: int, dependency_type: str = "FS", lag_days: int = 0) -> TaskDependency:
-        # 両端とも自分のタスクであること。片方でも他人のものだと、
-        # 存在しないはずのタスクの ID を依存として書き込めてしまう。
+        # Both ends must be the caller's tasks. If either belongs to someone else,
+        # a task ID that should not exist for the caller could be written as a dependency.
         self._owned_task(successor_task_id, user_id)
         self._owned_task(predecessor_task_id, user_id)
-        # 循環は自分の依存の中でしか起きない（両端とも自分のタスクであることを上で見ている）。
+        # Cycles can only occur within the caller's own dependencies (both ends were checked above to be the caller's tasks).
         all_deps = self._repo.find_all_for_user(user_id)
         if _has_cycle(all_deps, predecessor_task_id, successor_task_id):
             raise CyclicDependencyError()
@@ -64,8 +64,8 @@ class DependencyUseCases:
         return self._repo.save(dep)
 
     def remove_dependency(self, successor_task_id: int, predecessor_task_id: int, user_id: int) -> None:
-        # 後続（URL の task_id）が自分のものであることを見る。先行は他人のタスクを
-        # 指していても、足す口で両端を見ているのでその組の行は存在せず、何も消えない。
+        # Check that the successor (task_id in the URL) is the caller's. Even if the predecessor points at someone else's
+        # task, the add endpoint checks both ends, so no such row exists and nothing is deleted.
         self._owned_task(successor_task_id, user_id)
         self._repo.delete(predecessor_task_id, successor_task_id)
 

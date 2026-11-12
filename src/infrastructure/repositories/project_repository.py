@@ -43,8 +43,8 @@ class SqlAlchemyProjectRepository(ProjectRepository):
         return [self._to_entity(m) for m in self._session.scalars(stmt)]
 
     def subtree_ids(self, user_id: int, project_id: int) -> list[int]:
-        # ⚠ 行ごとに子を引かない（多段なので深くなるほど N+1 が効く）。UNION（重複を落とす）なので、
-        #   万一の環でも止まる。起点が見えれば子孫も同じ木なので見える（ADR-0055）
+        # ⚠ Do not fetch children per row (multi-level, so N+1 grows with depth). UNION (drops duplicates), so it
+        #   terminates even on a cycle. If the anchor is visible, its descendants are in the same tree and visible too (ADR-0055)
         base = (
             select(ProjectModel.id)
             .where(ProjectModel.id == project_id, project_visible_to(user_id))
@@ -91,7 +91,7 @@ class SqlAlchemyProjectRepository(ProjectRepository):
         self._session.flush()
 
     def delete(self, project_id: int) -> None:
-        # 消したタスク・マイルストーンが指したままだと外部キーが残るので、先に外す
+        # Deleted tasks/milestones still pointing at it would leave foreign keys behind, so detach them first
         self._session.execute(
             update(TaskModel).where(TaskModel.project_id == project_id).values(project_id=None)
         )

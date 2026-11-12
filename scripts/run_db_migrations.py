@@ -3,13 +3,13 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-# スクリプト直接実行(`python scripts/run_db_migrations.py`)でも `src` パッケージを
-# 解決できるよう、リポジトリルートを import パスへ加える。
+# Add the repository root to the import path so the `src` package resolves even when
+# the script is run directly (`python scripts/run_db_migrations.py`).
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from src.infrastructure.database.connection import init_db  # noqa: E402
 
-# 接続先は DATABASE_URL 環境変数（未設定時は sqlite:///./app.db）。
-# init_db() は冪等で、Alembic の upgrade head（Alembic 導入前の DB は baseline へ
-# 揃えて stamp してから）と初期ユーザー投入を行う。失敗したら何も確定せず非 0 で終わる。
+# The connection target is the DATABASE_URL environment variable (sqlite:///./app.db when unset).
+# init_db() is idempotent: it runs Alembic upgrade head (DBs predating Alembic are first stamped
+# at baseline) and seeds the initial user. On failure nothing is committed and it exits non-zero.
 init_db()

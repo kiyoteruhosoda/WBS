@@ -175,9 +175,9 @@ class FrontendBuild(FrontendStep):
 
 
 class VersionStamp(BuildStep):
-    """版を刻む（src/infrastructure/version.json）。docker build の前に必ず走らせる。
+    """Stamp the version (src/infrastructure/version.json). Always run before docker build.
 
-    deck の build の「版を刻む」段と同じスクリプトを使う（ADR-0011）。build-arg では渡さない。
+    Uses the same script as the "stamp the version" step of deck's build (ADR-0011). Not passed as a build-arg.
     """
 
     name = "version stamp"
@@ -232,9 +232,9 @@ class DeployBundle(BuildStep):
         context.artifact_dir.mkdir(parents=True, exist_ok=True)
         scripts_dir = context.artifact_dir / "scripts"
         scripts_dir.mkdir(parents=True, exist_ok=True)
-        # bundle の compose は docker/deploy/docker-compose.yml が唯一の出所。
-        # 同じファイルが api イメージにも焼き込まれ、deploy.sh がデプロイのたびに
-        # イメージ内のコピーで配置先を上書きする。
+        # docker/deploy/docker-compose.yml is the sole source of the bundle's compose.
+        # The same file is baked into the api image, and deploy.sh overwrites the destination
+        # with the in-image copy on every deploy.
         shutil.copy2(
             ROOT / "docker" / "deploy" / "docker-compose.yml",
             context.artifact_dir / "docker-compose.yml",
@@ -324,9 +324,9 @@ def main() -> None:
         target=args.target,
         skip_tests=args.skip_tests,
         skip_frontend_install=args.skip_frontend_install,
-        # APP_VERSION は compose のイメージタグ（wbs-api:${APP_VERSION}）が参照する。
-        # --app-version 指定と docker compose build のタグを一致させるため、ここで必ず
-        # 環境変数として渡す。/info に出る版は VersionStamp が version.json に刻む。
+        # APP_VERSION is referenced by the compose image tag (wbs-api:${APP_VERSION}).
+        # Always pass it here as an environment variable so the --app-version value matches
+        # the docker compose build tag. The version on /info is stamped into version.json by VersionStamp.
         env={
             **os.environ,
             "PYTHONUNBUFFERED": "1",

@@ -1,7 +1,7 @@
-"""OIDC 認可コードフロー（PKCE 付き）で IdP と話す実装。
+"""Implementation that talks to the IdP with the OIDC authorization code flow (with PKCE).
 
-``IdentityProvider`` ポートの唯一の実装。Keycloak / Microsoft Entra ID /
-Google Workspace / Okta など、ディスカバリ文書を出す IdP であれば設定だけで繋がる。
+The only implementation of the ``IdentityProvider`` port. Any IdP that publishes a discovery document
+(Keycloak / Microsoft Entra ID / Google Workspace / Okta etc.) connects with settings alone.
 """
 
 from __future__ import annotations
@@ -26,12 +26,12 @@ from src.infrastructure.auth.pkce import CODE_CHALLENGE_METHOD, code_challenge_f
 
 JWKS_CACHE_SECONDS = 300
 
-#: アクセストークンの ``typ``（RFC 9068）。ID トークンや停止の通知を Bearer に持ち込ませない。
+#: ``typ`` of access tokens (RFC 9068). Keeps ID tokens and deactivation notices from being used as Bearer.
 ACCESS_TOKEN_TYPE = "at+jwt"
 
-# JSON の真値として認める文字列。`email_verified` を素の ``bool()`` に通すと
-# ``bool("false")`` が True になり、「検証済みメールしか通さない」規則が
-# 文字列で真偽値を返す IdP でだけ素通しになる。
+# Strings accepted as JSON true. Passing `email_verified` through a bare ``bool()`` makes
+# ``bool("false")`` True, so the "verified emails only" rule would be bypassed
+# only for IdPs that return booleans as strings.
 _TRUE_STRINGS = {"true", "1", "yes"}
 
 
@@ -64,15 +64,15 @@ class OidcIdentityProvider(IdentityProvider):
 
     @property
     def federated_issuer(self) -> str:
-        """手元に残した宛名を引くための綴り（末尾の ``/`` を落としたもの）。
+        """Spelling used to look up stored audiences/identities (with the trailing ``/`` dropped).
 
-        ⚠ ``OidcDiscovery.issuer`` は IdP が名乗ったままを保つ ——ID トークンの ``iss``
-        との照合は**完全一致**でなければならない。ここで返すのは**保存側**の綴りで、
-        結び付き（``federated_identities``）と同じもの。
+        ⚠ ``OidcDiscovery.issuer`` keeps exactly what the IdP announced -- matching against the ID token's ``iss``
+        must be an **exact match**. What this returns is the **stored** spelling,
+        the same as in the links (``federated_identities``).
         """
         return self._settings.issuer
 
-    # ── 認可リクエスト ─────────────────────────────────────────────────
+    # ── Authorization request ──────────────────────────────────────────
     def build_authorization_request(
         self, *, state: str, nonce: str, code_verifier: str, silent: bool = False
     ) -> AuthorizationRequest:
@@ -88,8 +88,8 @@ class OidcIdentityProvider(IdentityProvider):
             "code_challenge_method": CODE_CHALLENGE_METHOD,
         }
         if silent:
-            # 入っていればそのまま code、入っていなければ ``error=login_required`` で戻る
-            # （OIDC Core §3.1.2.1）。IdP は画面を出さない（ADR-0062）。
+            # If signed in, a code comes back as usual; otherwise it returns with ``error=login_required``
+            # (OIDC Core §3.1.2.1). The IdP shows no screen (ADR-0062).
             params["prompt"] = "none"
         separator = "&" if "?" in discovery.authorization_endpoint else "?"
         url = f"{discovery.authorization_endpoint}{separator}{urlencode(params)}"
@@ -97,7 +97,7 @@ class OidcIdentityProvider(IdentityProvider):
             authorization_url=url, state=state, nonce=nonce, code_verifier=code_verifier
         )
 
-    # ── コード交換と ID トークン検証 ───────────────────────────────────
+    # ── Code exchange and ID token verification ────────────────────────
     def exchange_code(self, *, code: str, code_verifier: str, nonce: str) -> IdentityClaims:
         discovery = self._discovery.get()
         tokens = self._request_tokens(code, code_verifier)
@@ -112,8 +112,8 @@ class OidcIdentityProvider(IdentityProvider):
         preferred_username = claims.get("preferred_username")
 
         if email is None and discovery.userinfo_endpoint and tokens.get("access_token"):
-            # ID トークンに email を載せない IdP がある（要求スコープや設定次第）。
-            # 所属の判定に使うので、載っていなければ userinfo から取り直す。
+            # Some IdPs do not put email in the ID token (depends on requested scopes or settings).
+            # It is used for the membership check, so fetch it from userinfo if missing.
             userinfo = self._fetch_userinfo(discovery.userinfo_endpoint, tokens["access_token"])
             if userinfo.get("sub") != claims["sub"]:
                 raise AuthenticationError("userinfo response does not match the ID token subject")
@@ -133,14 +133,14 @@ class OidcIdentityProvider(IdentityProvider):
         )
 
     def verify_logout_token(self, token: str) -> Mapping[str, Any]:
-        """停止の通知（``logout_token``）を JWT として確かめる。
+        """Verify a deactivation notice (``logout_token``) as a JWT.
 
-        ``exp`` と ``iat`` を**必須**にする。仕様は ``exp`` を必須にしていないが、
-        無ければ「いつまで有効な通知か」を判断できず、一度傍受された通知をいつまでも
-        投げ返せる。
+        Makes ``exp`` and ``iat`` **required**. The spec does not require ``exp``, but
+        without it there is no telling how long the notice is valid, and a notice intercepted once
+        could be replayed forever.
 
-        ⚠ **``algorithms`` は列挙したものだけ。** ``none`` も対称鍵も入れない
-        （``OidcDiscovery.allowed_algorithms`` が絞ってある）。
+        ⚠ **``algorithms`` are only those listed.** Neither ``none`` nor symmetric keys
+        (``OidcDiscovery.allowed_algorithms`` narrows them).
         """
         discovery = self._discovery.get()
         try:
@@ -154,24 +154,24 @@ class OidcIdentityProvider(IdentityProvider):
                 options={"require": ["exp", "iat", "iss", "aud"]},
             )
         except jwt.PyJWTError as exc:
-            # ⚠ **理由を送り手へ返さない。** 記録だけ残す（この口は未認証で叩ける）。
+            # ⚠ **Do not return the reason to the sender.** Only log it (this endpoint can be called unauthenticated).
             raise InvalidLogoutTokenError(f"logout_token verification failed: {exc}") from exc
         return claims
 
     def verify_access_token(self, token: str) -> Mapping[str, Any]:
-        """アプリから来た利用者のアクセストークンを確かめる（ADR-0018）。
+        """Verify a user's access token coming from an app (ADR-0018).
 
-        ⚠ **宛先は ``{issuer}/userinfo``。** assay は人のログインのトークンに宛名
-        （RFC 8707 の ``resource``）を載せない（assay の ADR-0042 決定 6、2026-09-30 に据え置き）。
-        どのアプリ宛てかは ``client_id`` で見分ける（ユースケース側）。
+        ⚠ **The audience is ``{issuer}/userinfo``.** assay does not put an audience (RFC 8707 ``resource``)
+        in tokens from human logins (assay ADR-0042 decision 6, kept as is on 2026-09-30).
+        Which app it is for is told apart by ``client_id`` (on the use case side).
         """
         return self._verify_jwt_access_token(token, audience=None)
 
     def verify_machine_token(self, token: str, *, audience: str) -> Mapping[str, Any]:
-        """ほかのアプリのサーバーが機械として持ってきたトークンを確かめる（ADR-0056）。
+        """Verify a token another app's server brought as a machine (ADR-0056).
 
-        機械のトークンは宛名（``resource``）を付けて取るので、``aud`` はこのアプリの宛名
-        （``MACHINE_AUDIENCE``）。⚠ 宛名は「どこ宛てか」だけで、何をしてよいかは ``client_id`` で決める。
+        Machine tokens are obtained with an audience (``resource``), so ``aud`` is this app's audience
+        (``MACHINE_AUDIENCE``). ⚠ The audience only says "for whom"; what is allowed is decided by ``client_id``.
         """
         if not audience:
             raise AuthenticationError("Machine tokens are not accepted by this deployment")
@@ -183,7 +183,7 @@ class OidcIdentityProvider(IdentityProvider):
             header = jwt.get_unverified_header(token)
             if str(header.get("typ", "")).lower() != ACCESS_TOKEN_TYPE:
                 raise AuthenticationError("Bearer token is not an access token")
-            # ⚠ 鍵の取得も try の中（壊れた入力や JWKS の失敗が 500 に化けないように）
+            # ⚠ Fetching the key is inside the try too (so broken input or JWKS failures do not turn into 500)
             signing_key = self._get_jwks_client(discovery.jwks_uri).get_signing_key_from_jwt(token)
             claims: dict[str, Any] = jwt.decode(
                 token,
@@ -201,8 +201,8 @@ class OidcIdentityProvider(IdentityProvider):
         try:
             discovery = self._discovery.get()
         except AuthenticationError:
-            # IdP に届かなくても、こちら側のセッションはもう消してある。
-            # ログアウトを失敗として返す理由がない。
+            # Even if the IdP cannot be reached, our own session is already gone.
+            # There is no reason to report the logout as failed.
             return None
         if not discovery.end_session_endpoint:
             return None
@@ -212,7 +212,7 @@ class OidcIdentityProvider(IdentityProvider):
         separator = "&" if "?" in discovery.end_session_endpoint else "?"
         return f"{discovery.end_session_endpoint}{separator}{urlencode(params)}"
 
-    # ── 内部 ───────────────────────────────────────────────────────────
+    # ── Internals ──────────────────────────────────────────────────────
     def _request_tokens(self, code: str, code_verifier: str) -> dict:
         discovery = self._discovery.get()
         data = {
@@ -227,7 +227,7 @@ class OidcIdentityProvider(IdentityProvider):
             if "client_secret_post" in discovery.token_endpoint_auth_methods_supported:
                 data["client_secret"] = self._settings.client_secret
             else:
-                # 既定は client_secret_basic（IdP が何も告げない場合もこちら）
+                # Default is client_secret_basic (also when the IdP announces nothing)
                 auth = (self._settings.client_id, self._settings.client_secret)
         try:
             response = httpx.post(
@@ -240,7 +240,7 @@ class OidcIdentityProvider(IdentityProvider):
         except httpx.HTTPError as exc:
             raise AuthenticationError(f"Could not reach the token endpoint: {exc}") from exc
         if response.status_code >= 400:
-            # IdP のエラー本文には client_secret は載らないが、詳細は利用者に返さずログへ
+            # The IdP error body does not contain client_secret, but details go to the log, not the user
             raise AuthenticationError(
                 f"Token endpoint rejected the authorization code (HTTP {response.status_code})"
             )
@@ -265,8 +265,8 @@ class OidcIdentityProvider(IdentityProvider):
             raise AuthenticationError(f"ID token verification failed: {exc}") from exc
 
         if claims.get("nonce") != nonce:
-            # nonce が合わないトークンは、別の（あるいは以前の）ログイン向けに
-            # 発行されたもの。使い回しをここで止める。
+            # A token whose nonce does not match was issued for another (or an earlier)
+            # login. Stop reuse here.
             raise AuthenticationError("ID token nonce does not match this login request")
         azp = claims.get("azp")
         if azp is not None and azp != self._settings.client_id:
@@ -280,9 +280,9 @@ class OidcIdentityProvider(IdentityProvider):
                 cache_keys=True,
                 lifespan=JWKS_CACHE_SECONDS,
                 timeout=self._settings.http_timeout_seconds,
-                # ⚠ ここだけ urllib 経由。既定の UA (`Python-urllib/3.x`) は WAF に
-                #   弾かれることがあり、そうなると**トークン交換までは成功したまま**
-                #   署名検証だけが落ちる。詳細は idp_http.py。
+                # ⚠ Only this goes through urllib. The default UA (`Python-urllib/3.x`) may be
+                #   blocked by a WAF, and then **the token exchange still succeeds**
+                #   while only signature verification fails. See idp_http.py.
                 headers=IDP_HEADERS,
             )
         return self._jwks_client

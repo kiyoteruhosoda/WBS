@@ -1,10 +1,10 @@
-"""各人の休みに休む割合を足す（終日 100・半休 50。task #557 / ADR-0059）
+"""Add the share of the day taken off to personal days off (full day 100, half day 50. task #557 / ADR-0059)
 
 Revision ID: 0027
 Revises: 0026
 Create Date: 2026-10-20
 
-今の行は終日（100）になる。戻すと列が消える（半休は終日の休みとして残る）。
+Existing rows become full days (100). Downgrading drops the column (half days remain as full days off).
 """
 
 from __future__ import annotations

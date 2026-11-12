@@ -1,4 +1,4 @@
-"""親タスクの進捗は全子孫の実績と残を合計してから同じ式に通す（ADR-0010）。"""
+"""A parent task's progress sums the actuals and remaining hours of all descendants, then applies the same formula (ADR-0010)."""
 
 from decimal import Decimal
 
@@ -19,30 +19,30 @@ def test_leaf_uses_its_own_figures() -> None:
 
 
 def test_parent_rolls_up_all_descendants() -> None:
-    # 親 1 ─ 子 2（実績 6・残 2）
-    #      └ 子 3 ─ 孫 4（実績 2・見積 10 → 残 8）
-    #              └ 孫 5（実績 4・残 手で 0）
-    parent = _task(1, estimated_hours=Decimal("100"))  # 親自身の見積は数えない
+    # parent 1 - child 2 (actual 6, remaining 2)
+    #          - child 3 - grandchild 4 (actual 2, estimate 10 -> remaining 8)
+    #                    - grandchild 5 (actual 4, remaining set to 0 by hand)
+    parent = _task(1, estimated_hours=Decimal("100"))  # the parent's own estimate is not counted
     tasks = [
         parent,
         _task(2, parent_task_id=1, remaining_hours=Decimal("2")),
-        _task(3, parent_task_id=1, estimated_hours=Decimal("50")),  # 中間の見積も数えない
+        _task(3, parent_task_id=1, estimated_hours=Decimal("50")),  # nor is the intermediate's estimate
         _task(4, parent_task_id=3, estimated_hours=Decimal("10")),
         _task(5, parent_task_id=3, remaining_hours=Decimal("0")),
     ]
     board = TaskProgressBoard(tasks, {1: 1.0, 2: 6.0, 3: 1.0, 4: 2.0, 5: 4.0})
 
     figures = board.figures(parent)
-    # 実績は親・中間も含めて全部: 1 + 6 + 1 + 2 + 4 = 14、残は葉だけ: 2 + 8 + 0 = 10
+    # Actuals include the parent and intermediates: 1 + 6 + 1 + 2 + 4 = 14; remaining is leaves only: 2 + 8 + 0 = 10
     assert figures.actual_hours == 14.0
     assert figures.remaining_hours == 10.0
     assert board.progress_percent(parent) == round(14 / 24 * 100, 1)
-    # 中間（3）も自分の子孫で積み上げる: 実績 1 + 2 + 4 = 7、残 8 + 0 = 8
+    # The intermediate (3) also rolls up its own descendants: actual 1 + 2 + 4 = 7, remaining 8 + 0 = 8
     assert board.progress_percent(tasks[2]) == round(7 / 15 * 100, 1)
 
 
 def test_parent_is_not_stuck_at_100_when_a_child_overruns() -> None:
-    # 子が見積 5h に対して 8h 使い、残を 2h と見直した。親は 8 / (8 + 2 + 5) で 100% にならない
+    # The child used 8h against a 5h estimate and remaining was revised to 2h. The parent is 8 / (8 + 2 + 5), not 100%
     parent = _task(1)
     tasks = [
         parent,
@@ -91,5 +91,5 @@ def test_parent_cycle_does_not_loop_forever() -> None:
     a = _task(1, parent_task_id=2, estimated_hours=Decimal("4"))
     b = _task(2, parent_task_id=1, estimated_hours=Decimal("4"))
     board = TaskProgressBoard([a, b], {1: 1.0, 2: 1.0})
-    # 輪の中では葉が無いので残は決まらない。止まることだけを見る
+    # Inside a cycle there are no leaves, so remaining is undefined. Only check that it terminates
     assert board.progress_percent(a) is None

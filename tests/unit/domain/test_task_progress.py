@@ -1,4 +1,4 @@
-"""進捗率 = 実績 ÷（実績 ＋ 残）（設計書 §5.1・ADR-0010）。"""
+"""Progress = actual / (actual + remaining) (design doc §5.1, ADR-0010)."""
 
 from decimal import Decimal
 
@@ -14,7 +14,7 @@ def _task(**kwargs) -> Task:
 
 
 def test_progress_is_unknown_without_estimate_or_remaining() -> None:
-    # 残も見積も空なら判断材料が無い（画面は「—」）
+    # With neither remaining nor estimate there is nothing to judge by (the screen shows "—")
     assert _task().progress_percent(0.0) is None
     assert _task().progress_percent(4.0) is None
 
@@ -26,26 +26,26 @@ def test_progress_done_is_always_100() -> None:
 
 
 def test_progress_is_actual_over_actual_plus_remaining() -> None:
-    # 設計書の例: 実績 20h、残 10h → 66.7%
+    # Example from the design doc: actual 20h, remaining 10h -> 66.7%
     task = _task(estimated_hours=Decimal("25"), remaining_hours=Decimal("10"))
     assert task.progress_percent(20.0) == 66.7
 
 
 def test_progress_with_default_remaining_matches_estimate_while_within_it() -> None:
-    # 残が空なら 見積 − 実績 を使う。見積の内側では 実績 ÷ 見積 と同じ値になる
+    # When remaining is empty, use estimate - actual. Within the estimate this equals actual / estimate
     task = _task(estimated_hours=Decimal("10"))
     assert task.progress_percent(4.0) == 40.0
     assert task.progress_percent(5.5) == 55.0
 
 
 def test_overrun_task_does_not_stick_to_100_once_remaining_is_entered() -> None:
-    # 見積 5h に対して実績 8h。残 2h と見直せば 8 / (8 + 2) = 80%
+    # Actual 8h against an estimate of 5h. Revised to remaining 2h gives 8 / (8 + 2) = 80%
     task = _task(estimated_hours=Decimal("5"), remaining_hours=Decimal("2"))
     assert task.progress_percent(8.0) == 80.0
 
 
 def test_zero_denominator_is_unknown() -> None:
-    # 実績 0・残 0（見積 0 や、残を 0 と入れた未着手）は分母 0 → null
+    # Actual 0 and remaining 0 (estimate 0, or not started with remaining entered as 0) gives denominator 0 -> null
     assert _task(estimated_hours=Decimal("0")).progress_percent(0.0) is None
     assert _task(remaining_hours=Decimal("0")).progress_percent(0.0) is None
 

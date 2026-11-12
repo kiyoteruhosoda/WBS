@@ -1,9 +1,9 @@
-"""終わる見込みの日を、見ている人に見えるタスク全部について出す（task #555 / ADR-0058）。
+"""Give the forecast completion date for every task visible to the viewer (task #555 / ADR-0058).
 
-計算は Domain の ``CompletionForecaster``。ここでは、見えるタスク・依存・実績と、担当者 × 根の枠
-（1 日の工数 × 従事率、本人の休みとその日の稼働時間）と、プロジェクトごとのカレンダー（根の曜日に自分と先祖の
-休日・稼働日を重ねたもの。ADR-0059・ADR-0060）を集めて渡すだけ。
-保存しない（決定 4: その場で毎回）。
+The calculation is the domain's ``CompletionForecaster``. This only gathers and passes the visible tasks, dependencies, actuals, the capacity per assignee x root
+(daily hours x allocation rate, the person's days off and that day's working hours), and the calendar per project (the root's weekdays overlaid with the holidays
+and extra working days of the project and its ancestors, ADR-0059, ADR-0060).
+Nothing is stored (decision 4: computed on the spot every time).
 """
 
 from __future__ import annotations
@@ -51,7 +51,7 @@ class CompletionForecastUseCases:
         self._clock = clock or UserClock(session)
 
     def forecast(self, user_id: int) -> CompletionForecast:
-        """見ている人に見えるタスク（アーカイブを除く）全部の見込み。「今日」は見ている人の日付。"""
+        """Forecasts for every task visible to the viewer (excluding archived ones). "Today" is the viewer's date."""
         today = self._clock.today(user_id)
         tasks = [t for t in self._tasks.find_all(user_id, {}) if not t.is_archived]
         tree = ProjectTree(self._projects.find_all(user_id))
@@ -73,7 +73,7 @@ class CompletionForecastUseCases:
         )
 
     def _calendars(self, tasks: list[Task], tree: ProjectTree, today: date) -> dict[int, TeamCalendar]:
-        """タスクのあるプロジェクトと、その根のカレンダー（根の曜日に、自分と先祖の休日・稼働日を重ねたもの）。"""
+        """Projects that have tasks, and their root's calendar (the root's weekdays overlaid with the holidays/extra working days of the project and its ancestors)."""
         last_day = today + timedelta(days=HORIZON_DAYS)
         projects = {t.project_id for t in tasks if t.project_id is not None and t.project_id in tree}
         projects |= {tree.root_of(p) for p in projects}
@@ -104,7 +104,7 @@ class CompletionForecastUseCases:
         roots = {r for r in (root_of(t.project_id) for t in tasks) if r is not None}
         members = {root: self._members.find_by_project(root) for root in roots}
         people = {m.user_id for ms in members.values() for m in ms}
-        # 未分類のタスクは担当が作った人だけ（ADR-0055）。その人の休みも引く
+        # An unclassified task's assignee is only its creator (ADR-0055). Subtract that person's days off too
         people |= {t.assignee_user_id for t in tasks if t.project_id is None and t.assignee_user_id is not None}
         leave: dict[int, dict[date, int]] = defaultdict(dict)
         day_hours: dict[int, dict[date, float]] = defaultdict(dict)
@@ -124,7 +124,7 @@ class CompletionForecastUseCases:
                     leave=leave[m.user_id],
                     day_hours=day_hours[m.user_id],
                 )
-        # 未分類: 1 日 8 時間・100%・月〜金・チームの休日なし（ADR-0058 決定 1）
+        # Unclassified: 8 hours a day, 100%, Monday-Friday, no team holidays (ADR-0058 decision 1)
         for task in tasks:
             if task.project_id is None and task.assignee_user_id is not None:
                 key: SeatKey = (task.assignee_user_id, None)

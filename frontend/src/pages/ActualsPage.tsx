@@ -1,5 +1,5 @@
-// 実績の見える化: 計画 vs 確定した実績（task #162、ADR-0017。予定と打刻は task #543・ADR-0070 で外した）。
-// /actuals はタスクごとの表。/actuals/review は「残を見直す」ものだけ。
+// Actuals view: plan vs confirmed actuals (task #162, ADR-0017; schedule and clock-in were removed in task #543 / ADR-0070).
+// /actuals is the per-task table. /actuals/review shows only tasks whose remaining needs review.
 import React from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Box, Tab, Tabs } from '@mui/material';
@@ -17,7 +17,7 @@ const ActualsPage: React.FC = () => {
   const navigate = useNavigate();
   const { view: param } = useParams<{ view?: string }>();
   const view: View = VIEWS.includes(param as View) ? (param as View) : 'tasks';
-  // 「残を見直す」はタスクの表を見直しが要るものに絞った形
+  // "Review remaining" is the task table filtered to tasks needing review
   const tab = view === 'review' ? 'tasks' : view;
   const go = (next: View) => navigate(next === 'tasks' ? '/actuals' : `/actuals/${next}`);
 

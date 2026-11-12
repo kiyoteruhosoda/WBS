@@ -27,29 +27,29 @@ export const patchTask = async (id: number, payload: Partial<Task>): Promise<Tas
   return data;
 };
 
-/** まとめて別のプロジェクトへ（`moveToProjectRequest` で作った呼び出しを送る。ADR-0030）。 */
+/** Bulk move to another project (sends the call built by `moveToProjectRequest`. ADR-0030). */
 export const moveTasksToProject = async (request: MoveToProjectRequest): Promise<TaskMoveToProjectResult> => {
   const { data } = await client.post(request.url, request.body);
   return data;
 };
 
-/** 消す。確定した実績があれば 409（`archiveTask` でアーカイブする。ADR-0046）。 */
+/** Delete. 409 if there are confirmed actuals (archive with `archiveTask`. ADR-0046). */
 export const deleteTask = async (id: number): Promise<void> => {
   await client.delete(`/tasks/${id}`);
 };
 
-/** 消すとどうなるか（確定した実績と、消すかアーカイブするか）。 */
+/** What deleting would do (confirmed actuals, and whether it deletes or archives). */
 export const getTaskRemoval = async (id: number): Promise<TaskRemoval> => {
   const { data } = await client.get<TaskRemoval>(`/tasks/${id}/removal`);
   return data;
 };
 
-/** アーカイブする（一覧と付け替え先に出なくなる。実績と締めの表には残る）。 */
+/** Archive (hidden from lists and reassignment targets; stays in actuals and the closing table). */
 export const archiveTask = async (id: number): Promise<void> => {
   await client.post(`/tasks/${id}/archive`);
 };
 
-// バックエンドのステータス状態機械（TODO→DOING→DONE 等）に沿った DONE までの遷移経路
+// Transition path to DONE following the backend status state machine (TODO→DOING→DONE etc.)
 const pathToDone: Record<TaskStatus, TaskStatus[]> = {
   TODO: ['DOING', 'DONE'],
   DOING: ['DONE'],
@@ -58,7 +58,7 @@ const pathToDone: Record<TaskStatus, TaskStatus[]> = {
   CANCELLED: ['TODO', 'DOING', 'DONE'],
 };
 
-// 許可された遷移を順に辿ってタスクを完了にする
+// Complete a task by stepping through allowed transitions
 export const completeTask = async (task: Pick<Task, 'id' | 'status'>): Promise<Task> => {
   let latest: Task | null = null;
   for (const status of pathToDone[task.status]) {
@@ -67,11 +67,11 @@ export const completeTask = async (task: Pick<Task, 'id' | 'status'>): Promise<T
   return latest ?? (await getTask(task.id));
 };
 
-// 完了を取り消して未着手に戻す（DONE→TODO は直接遷移が許可されている）
+// Undo completion back to not started (DONE→TODO is allowed directly)
 export const reopenTask = async (task: Pick<Task, 'id' | 'status'>): Promise<Task> =>
   patchTask(task.id, { status: 'TODO' });
 
-// 先行タスク（predecessors）の一覧を返す
+// Returns the list of predecessor tasks
 export const getTaskDependencies = async (id: number): Promise<TaskDependency[]> => {
   const { data } = await client.get<TaskDependenciesResponse>(`/tasks/${id}/dependencies`);
   return data.predecessors;

@@ -18,7 +18,7 @@ def test_readyz_ok(client) -> None:
 
 
 def test_info_available_under_api_prefix(client) -> None:
-    # フロントエンドは nginx 経由で /api/ 配下しか到達できない
+    # The frontend can only reach paths under /api/ via nginx
     response = client.get("/api/info")
     assert response.status_code == 200
     data = response.json()
@@ -49,7 +49,7 @@ def _client_with_version_file(monkeypatch, database_path, version_file):
 
 
 def test_info_reports_the_stamped_commit(monkeypatch, database_path, tmp_path) -> None:
-    # 本番の経路: ビルドの前に scripts/generate_version.sh が刻んだ版を答える（task #168）
+    # Production path: answer the version that scripts/generate_version.sh stamped before the build (task #168)
     version_file = tmp_path / "version.json"
     version_file.write_text(
         '{"version": "abc1234", "commit_hash": "abc1234", "branch": "main",'

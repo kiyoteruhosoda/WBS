@@ -2,29 +2,29 @@ import { describe, expect, it } from 'vitest';
 import { overallProgressView } from './overallProgress';
 
 describe('overallProgressView', () => {
-  it('完了の数と割合を出す', () => {
+  it('returns the done count and percentage', () => {
     expect(overallProgressView({ total_tasks: 8, incomplete_tasks: 2, overdue_tasks: 1, this_week_completed: 3, this_week_hours: 4 }))
       .toEqual({ total: 8, done: 6, donePct: 75, thisWeekDone: 3, overdue: 1 });
   });
 
-  it('タスクが 0 件なら 0%', () => {
+  it('returns 0% when there are no tasks', () => {
     expect(overallProgressView({ total_tasks: 0, incomplete_tasks: 0, overdue_tasks: 0, this_week_completed: 0, this_week_hours: 0 }))
       .toEqual({ total: 0, done: 0, donePct: 0, thisWeekDone: 0, overdue: 0 });
   });
 
   it.each([
-    ['空のオブジェクト', {}],
-    ['配列', []],
-    ['文字列（HTML が返った）', '<!doctype html>'],
-    ['total_tasks だけ欠ける', { incomplete_tasks: 1 }],
-    ['incomplete_tasks だけ欠ける', { total_tasks: 3 }],
-    ['数でない', { total_tasks: '3', incomplete_tasks: 1 }],
+    ['an empty object', {}],
+    ['an array', []],
+    ['a string (HTML was returned)', '<!doctype html>'],
+    ['only total_tasks missing', { incomplete_tasks: 1 }],
+    ['only incomplete_tasks missing', { total_tasks: 3 }],
+    ['not a number', { total_tasks: '3', incomplete_tasks: 1 }],
     ['null', null],
-  ])('%s なら出さない（NaN・undefined を出さない）', (_label, kpi) => {
+  ])('returns nothing for %s (never shows NaN/undefined)', (_label, kpi) => {
     expect(overallProgressView(kpi as never)).toBeNull();
   });
 
-  it('今週完了・期限超過が欠けていたら 0', () => {
+  it('uses 0 when this-week-done and overdue are missing', () => {
     expect(overallProgressView({ total_tasks: 2, incomplete_tasks: 1 })).toEqual({ total: 2, done: 1, donePct: 50, thisWeekDone: 0, overdue: 0 });
   });
 });

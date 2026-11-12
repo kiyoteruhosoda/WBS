@@ -56,16 +56,16 @@ class SqlAlchemyRefreshSessionRepository(RefreshSessionRepository):
     def delete_for_identity(
         self, identity: FederatedIdentity, *, idp_session_id: str | None = None
     ) -> int:
-        # 結び付き（``federated_identities``）から利用者を引き、その人のログインを消す。
-        # ⚠ **利用者の行には触らない。** 止めたのは IdP で、この口座の持ち主ではない。
+        # Look up the user via the link (``federated_identities``) and delete that person's logins.
+        # ⚠ **Do not touch the user row.** It was the IdP that stopped the session, not the account owner.
         user_ids = select(FederatedIdentityModel.user_id).where(
             FederatedIdentityModel.issuer == identity.issuer,
             FederatedIdentityModel.subject == identity.subject,
         )
         stmt = delete(RefreshSessionModel).where(RefreshSessionModel.user_id.in_(user_ids))
         if idp_session_id is not None:
-            # ⚠ その IdP のログインから始まったものだけ。``sid`` が無かったログイン（NULL）は当たらない
-            #   ——ここで巻き込むと、よその端末の停止で自分のログインまで終わる。
+            # ⚠ Only logins that started from that IdP login. Logins without a ``sid`` (NULL) do not match
+            #   -- including them would end your own login when another device is signed out.
             stmt = stmt.where(RefreshSessionModel.idp_session_id == idp_session_id)
         result = self._execute(stmt)
         self._session.commit()

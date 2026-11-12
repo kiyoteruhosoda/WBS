@@ -5,7 +5,7 @@ def test_healthcheck(client) -> None:
 
 
 def test_healthcheck_via_api_prefix(client) -> None:
-    """nginx が /api/ プレフィックスを剥がさず転送する前提の外形監視用パス。"""
+    """Path for external monitoring, assuming nginx forwards without stripping the /api/ prefix."""
     response = client.get("/api/health")
     assert response.status_code == 200
     assert response.json() == {"status": "ok"}

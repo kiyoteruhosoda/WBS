@@ -1,9 +1,9 @@
-# デプロイ先ホスト用 compose（stg / prod 共通）。
-# このファイルが唯一の出所: build.py が deploy bundle へコピーし、さらに api イメージ
-# （/app/docker/deploy/docker-compose.yml）にも焼き込まれる。deploy.sh はデプロイの
-# たびにイメージ内のコピーを取り出して配置先の docker-compose.yml を上書きするため、
-# 配置先のファイルを手で編集しても次のデプロイで消える。環境ごとの違いはすべて
-# .env 側（WEB_HOST_PORT 等）で表現する。
+# compose for the deployment hosts (shared by stg / prod).
+# This file is the sole source: build.py copies it into the deploy bundle, and it is also baked into the api image
+# (/app/docker/deploy/docker-compose.yml). On every deploy, deploy.sh extracts the in-image copy
+# and overwrites docker-compose.yml at the destination, so
+# hand edits to the destination file vanish on the next deploy. All per-environment differences
+# are expressed in .env (WEB_HOST_PORT etc.).
 services:
   api:
     image: ${API_IMAGE}
@@ -11,10 +11,10 @@ services:
       DATABASE_URL: ${DATABASE_URL:-sqlite:////app/data/app.db}
       ADMIN_EMAIL: ${ADMIN_EMAIL:-local@example.com}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-local-dev-password}
-      # 認証 / SSO。ここに並べていないキーは .env に書いてもコンテナへ渡らない
-      # ＝ AUTH_MODE=oidc と書いたつもりで認証なしのまま起動する、という
-      # 一番気づきにくい壊れ方をするので、増やしたら必ずここにも足す。
-      # 各キーの意味は README「SSO（IdP 連携）」と .env.example を参照。
+      # Auth / SSO. Keys not listed here do not reach the container even if written in .env,
+      # i.e. you think you wrote AUTH_MODE=oidc but it starts without auth, which is
+      # the hardest breakage to notice. When adding keys, always add them here too.
+      # See README "SSO (IdP integration)" and .env.example for what each key means.
       AUTH_MODE: ${AUTH_MODE:-single_user}
       OIDC_ISSUER: ${OIDC_ISSUER:-}
       OIDC_CLIENT_ID: ${OIDC_CLIENT_ID:-}
@@ -27,7 +27,7 @@ services:
       OIDC_ALLOWED_EMAIL_DOMAINS: ${OIDC_ALLOWED_EMAIL_DOMAINS:-}
       OIDC_REQUIRE_VERIFIED_EMAIL: ${OIDC_REQUIRE_VERIFIED_EMAIL:-true}
       OIDC_LINK_BY_EMAIL: ${OIDC_LINK_BY_EMAIL:-false}
-      # IdP へ**こちらから**問い合わせるときの名乗り（定期照合）。空なら照合は走らない。
+      # Client identity when **we** query the IdP (periodic reconciliation). Empty means no reconciliation.
       MACHINE_CLIENT_ID: ${MACHINE_CLIENT_ID:-}
       MACHINE_PRIVATE_KEY_FILE: ${MACHINE_PRIVATE_KEY_FILE:-}
       MACHINE_PRIVATE_KEY_KID: ${MACHINE_PRIVATE_KEY_KID:-}
@@ -42,21 +42,21 @@ services:
       AUTH_POST_LOGOUT_REDIRECT_URI: ${AUTH_POST_LOGOUT_REDIRECT_URI:-}
     volumes:
       - ${HOST_DATA_ROOT}/data:/app/data
-    # API はネットワーク内部からのみ到達可能にする。外部公開は web (nginx) が
-    # /api/ プロキシで受け持つため、ホストポートは開けない。
+    # The API is reachable only from inside the network. web (nginx) handles external exposure
+    # via the /api/ proxy, so no host port is opened.
     expose:
       - "8000"
     command: ["/app/scripts/entrypoint.sh", "${APP_MODE:-app}"]
-    # ホスト再起動・コンテナ異常終了後も自動で立ち上がる（デプロイ後の手動操作を不要にする）。
+    # Restart automatically after host reboots or abnormal container exits (no manual steps needed after deploy).
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')\""]
       interval: 30s
       timeout: 10s
       retries: 5
-      # entrypoint が起動時に DB マイグレーションを実行するため、その完了まで
-      # unhealthy と誤判定されないよう余裕を持たせる。start_period 中も probe は
-      # interval ごとに走り、成功すれば即 healthy になる。
+      # The entrypoint runs DB migrations at startup, so allow enough margin
+      # not to be misjudged as unhealthy until they finish. Probes still run every interval
+      # during start_period, and a success makes it healthy immediately.
       start_period: 120s
   web:
     image: ${WEB_IMAGE}
@@ -67,7 +67,7 @@ services:
         condition: service_healthy
     restart: unless-stopped
     healthcheck:
-      # nginx → api のプロキシ経路ごと疎通確認する（busybox wget）。
+      # Check connectivity through the whole nginx -> api proxy path (busybox wget).
       test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1/api/health || exit 1"]
       interval: 30s
       timeout: 10s

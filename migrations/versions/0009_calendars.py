@@ -1,15 +1,15 @@
-"""予定のカレンダーを複数に・表示の組み合わせ（task #191 / ADR-0027）
+"""Multiple event calendars and view combinations (task #191 / ADR-0027)
 
 Revision ID: 0009
 Revises: 0008
 Create Date: 2026-10-02
 
-- 表 ``calendars``: 利用者ごとの予定のカレンダー（名前・色・並び順・表示するか・既定か）
-- 表 ``calendar_view_presets``: 表示の組み合わせ（名前 ＋ 表示にするカレンダーの id の JSON）
-- ``calendar_events.calendar_id``: 予定が属するカレンダー（必須）
+- Table ``calendars``: per-user event calendars (name, color, order, visible, default)
+- Table ``calendar_view_presets``: view combinations (name + JSON of the ids of calendars to show)
+- ``calendar_events.calendar_id``: the calendar an event belongs to (required)
 
-⚠ **利用者 1 人に 1 つ、既定のカレンダー「予定」を作り、既存の予定はすべてそこへ入れる。**
-下げると、カレンダーの表と予定の ``calendar_id`` は消える（予定そのものは残る）。
+⚠ **Creates one default calendar "予定" (Events) per user and puts all existing events in it.**
+Downgrading drops the calendars table and the events' ``calendar_id`` (the events themselves remain).
 """
 
 from __future__ import annotations
@@ -25,8 +25,8 @@ branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
 DEFAULT_CALENDAR_NAME = "予定"
-# ⚠ calendar_events は消した予定の id を使い回さない表（sqlite_autoincrement）。SQLite で表を
-#   作り直すとき（列の NOT NULL・外部キー）にそれを落とさないよう、作り直しにも渡す。
+# ⚠ calendar_events is a table that does not reuse deleted event ids (sqlite_autoincrement). When SQLite
+#   rebuilds the table (column NOT NULL, foreign keys), pass it to the rebuild too so it is not dropped.
 _EVENTS_TABLE_KWARGS = {"sqlite_autoincrement": True}
 
 
@@ -35,7 +35,7 @@ def _id() -> sa.types.TypeEngine:
 
 
 def _events_sequence() -> int | None:
-    """SQLite が覚えている calendar_events の採番の最大（作り直しで最大の行の id まで戻らないように）。"""
+    """The max calendar_events sequence value SQLite remembers (so a rebuild does not fall back to the max row id)."""
     bind = op.get_bind()
     if bind.dialect.name != "sqlite":
         return None
@@ -58,7 +58,7 @@ def _restore_events_sequence(seq: int | None) -> None:
 
 
 def upgrade() -> None:
-    # ⚠ 作り直しの前に読む（列を足すだけの作り直しでも採番の最大は行の最大まで戻る）。
+    # ⚠ Read before the rebuild (even a rebuild that only adds a column falls back to the max row id).
     seq = _events_sequence()
     op.create_table(
         "calendars",
@@ -94,7 +94,7 @@ def upgrade() -> None:
         "ix_calendar_view_presets_user_id", "calendar_view_presets", ["user_id"], unique=False
     )
 
-    # 利用者ごとに既定のカレンダーを 1 つ。
+    # One default calendar per user.
     users = sa.table("users", sa.column("id", _id()))
     calendars = sa.table(
         "calendars",

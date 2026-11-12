@@ -1,7 +1,7 @@
-// その人のカレンダー（task #557 / ADR-0059 決定 2、task #558 / ADR-0060。人の一覧の行から開く）。
-// プロジェクトのカレンダー（稼働する曜日・休日・稼働日）を引き継いで下敷きに出し、その人だけの違いを上に重ねる:
-// 休み・半休・その日の稼働時間（残業・短い日。稼働しない日なら休日出勤）。日を押すと小さなメニューで選ぶ。
-// 違いは人に付き、ほかのプロジェクトでも同じ。入れられるのは本人と管理者だけ。
+// A person's calendar (task #557 / ADR-0059 decision 2, task #558 / ADR-0060; opened from a row in the people list).
+// Shows the inherited project calendar (working weekdays, holidays, working days) underneath and overlays the person's own differences:
+// day off, half day, that day's working hours (overtime or short day; on a non-working day, working on a day off). Clicking a day opens a small menu.
+// Differences belong to the person and apply in other projects too. Only the person and admins can enter them.
 import React, { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { isAxiosError } from 'axios';
@@ -21,7 +21,7 @@ import { parseNumber } from './grid/gridModel';
 interface Props {
   projectId: number;
   member: ProjectMember | null;
-  /** 直せるか（本人か管理者） */
+  /** Whether editable (the person or an admin) */
   editable: boolean;
   onClose: () => void;
 }
@@ -63,7 +63,7 @@ const PersonCalendarDialog: React.FC<Props> = ({ projectId, member, editable, on
   const extraWork = useMemo(() => new Map((calendar.data?.extra_workdays ?? []).map((d) => [d.day, d])), [calendar.data]);
   const workdays = useMemo(() => new Set(calendar.data?.workdays ?? []), [calendar.data]);
 
-  /** プロジェクトのカレンダーでその日に働くか（その人の違いを重ねる前） */
+  /** Whether the project calendar has that day as a working day (before overlaying the person's differences) */
   const projectWorks = (day: string) => {
     if (extraWork.has(day)) return true;
     if (dayOff.has(day)) return false;
@@ -72,7 +72,7 @@ const PersonCalendarDialog: React.FC<Props> = ({ projectId, member, editable, on
 
   const saved = (data: TeamCalendar) => {
     qc.setQueryData(teamCalendarKey(projectId), data);
-    // 違いは人に付くので、ほかのプロジェクトのカレンダーと見込みも変わる
+    // Differences belong to the person, so other projects' calendars and forecasts change too
     qc.invalidateQueries({ queryKey: ['projects'] });
     qc.invalidateQueries({ queryKey: ['tasks'] });
     qc.invalidateQueries({ queryKey: ['milestones'] });
@@ -106,7 +106,7 @@ const PersonCalendarDialog: React.FC<Props> = ({ projectId, member, editable, on
         ? { tone: 'off', label: t('personCalendar.full') }
         : { tone: 'half', label: own.off_percent === HALF ? t('personCalendar.half') : t('personCalendar.offPercent', { percent: own.off_percent }) };
     }
-    // ここから下はプロジェクトのカレンダーから引き継いだもの
+    // From here on: entries inherited from the project calendar
     const off = dayOff.get(day);
     if (off) return { tone: 'quiet', label: off.name || t('projectCalendar.dayOff') };
     const work = extraWork.get(day);

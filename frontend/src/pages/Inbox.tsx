@@ -17,7 +17,7 @@ import { PlusIcon, TrashIcon, SwapIcon } from '../components/icons';
 const Inbox: React.FC = () => {
   const qc = useQueryClient();
   const { t } = useI18n();
-  // 書きかけはログインの往復をまたいで残す（ADR-0071）
+  // Drafts survive a login round trip (ADR-0071)
   const [capture, setCapture] = useSessionDraft<{ title: string; memo: string }>('inbox');
   const title = capture?.title ?? '';
   const memo = capture?.memo ?? '';
@@ -62,7 +62,7 @@ const Inbox: React.FC = () => {
 
   return (
     <Box sx={{ maxWidth: 720 }}>
-      {/* クイック追加 */}
+      {/* Quick add */}
       <Box sx={{
         display: 'flex', gap: '10px', mb: '20px', flexWrap: 'wrap',
         bgcolor: ds.paper, border: `1px solid ${ds.border}`, borderRadius: '10px', p: '14px',

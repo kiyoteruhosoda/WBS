@@ -1,4 +1,4 @@
-"""実績を見比べる期間の区切り（task #162 / ADR-0017）。"""
+"""Period boundaries for comparing actuals (task #162 / ADR-0017)."""
 
 from __future__ import annotations
 
@@ -29,7 +29,7 @@ def test_closing_periods_are_the_halves_of_the_month() -> None:
 
 
 def test_weeks_start_on_monday() -> None:
-    # 2026-09-13 は日曜、2026-09-14 は月曜
+    # 2026-09-13 is a Sunday, 2026-09-14 is a Monday
     assert report_period_containing(ReportPeriodUnit.WEEK, date(2026, 9, 13)) == ReportPeriod(
         date(2026, 9, 7), date(2026, 9, 13)
     )
@@ -72,7 +72,7 @@ def test_ledger_totals_split_task_and_off_task_time() -> None:
     ledger.add(1, date(2026, 9, 15), 3600)
     ledger.add(None, date(2026, 9, 15), 600)
     ledger.add(1, date(2026, 9, 16), 1200)
-    ledger.add(2, date(2026, 9, 16), 0)  # 0 秒は載せない
+    ledger.add(2, date(2026, 9, 16), 0)  # zero seconds are not recorded
     first = ReportPeriod(date(2026, 9, 1), date(2026, 9, 15))
 
     assert ledger.total(first) == 4200

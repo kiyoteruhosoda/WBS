@@ -20,9 +20,9 @@ class WorkLog:
     updated_at: datetime | None = None
     source: WorkLogSource = WorkLogSource.MANUAL
     duration_seconds: int | None = None
-    """締めで作ったときの正確な長さ（秒）。``hours`` は小数 2 桁に収めた値（ADR-0012）。"""
+    """Exact length (seconds) when created by a closing. ``hours`` is the value rounded to 2 decimals (ADR-0012)."""
     tracker_first_day: date | None = None
-    """Tracker から受け取った行の、Tracker の締めの期間の初日（ADR-0056）。"""
+    """For rows received from Tracker: first day of Tracker's closing period (ADR-0056)."""
 
     @property
     def is_from_closing(self) -> bool:
@@ -30,7 +30,7 @@ class WorkLog:
 
     @property
     def seconds(self) -> int:
-        """長さ（秒）。締めの行は正確な長さ、手で書いた行は ``hours`` から出す。"""
+        """Length (seconds). Closing rows use the exact length; hand-written rows derive it from ``hours``."""
         if self.duration_seconds is not None:
             return self.duration_seconds
         return round(self.hours * 3600)

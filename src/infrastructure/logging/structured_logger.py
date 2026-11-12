@@ -8,9 +8,9 @@ from typing import Any
 
 from src.shared.clock import isoformat_utc, utcnow
 
-#: 通信の道具の標準の行（httpx の ``HTTP Request: GET <URL> ...``・httpcore の接続の行）は URL を丸ごと載せる。
-#: 取り込んだカレンダーの URL（Google の非公開アドレス・Outlook の公開 URL）はそれだけで中身が読めるので、
-#: INFO 以下は出さない（task #495・ADR-0037）。誤りの行（WARNING 以上）は残す。
+#: The networking libraries' standard lines (httpx's ``HTTP Request: GET <URL> ...``, httpcore's connection lines) include the full URL.
+#: Imported calendar URLs (Google private addresses, Outlook public URLs) expose the contents by themselves, so
+#: nothing at INFO or below is emitted (task #495, ADR-0037). Error lines (WARNING and above) are kept.
 QUIET_URL_LOGGERS = ("httpx", "httpcore")
 
 _STDLIB_ATTRS = frozenset(
@@ -65,8 +65,8 @@ def _make_rotating_handler(path: str) -> logging.handlers.TimedRotatingFileHandl
         interval=1,
         backupCount=30,
         encoding="utf-8",
-        # 契約: ログは UTC（HANDOVER §14）。既定の utc=False だと切り替えと
-        # ファイル名の日付だけがプロセスの TZ になり、中身の timestamp とずれる。
+        # Contract: logs are in UTC (HANDOVER §14). With the default utc=False, only the rollover and
+        # the date in the file name follow the process TZ and drift from the timestamps inside.
         utc=True,
     )
     handler.setFormatter(StructuredFormatter())

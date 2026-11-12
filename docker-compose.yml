@@ -1,5 +1,5 @@
-# プロジェクト名を固定し、コンテナ・ネットワーク・ボリュームを常に wbs- / wbs_
-# プレフィックスで作成する（チェックアウト先のディレクトリ名に依存させない）。
+# Pin the project name so containers, networks and volumes are always created with the wbs- / wbs_
+# prefix (independent of the checkout directory name).
 name: wbs
 services:
   db:
@@ -15,18 +15,18 @@ services:
     restart: unless-stopped
   api:
     image: wbs-api:${APP_VERSION:-local}
-    # /info（BuildInfo）の版は build-arg では渡さない。ビルドの前に
-    # scripts/generate_version.sh が src/infrastructure/version.json を作る（ADR-0011）。
+    # The /info (BuildInfo) version is not passed as a build-arg. Before the build,
+    # scripts/generate_version.sh writes src/infrastructure/version.json (ADR-0011).
     build:
       context: .
     environment:
-      # 契約: コンテナは一律 UTC（HANDOVER §14）
+      # Contract: containers are uniformly UTC (HANDOVER §14)
       TZ: UTC
       DATABASE_URL: ${DATABASE_URL:-sqlite:////app/data/app.db}
       ADMIN_EMAIL: ${ADMIN_EMAIL:-local@example.com}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-local-dev-password}
-      # 認証。既定は single_user（従来どおり認証なし）。外部公開時は oidc にする。
-      # 詳細は README「SSO（IdP 連携）」と .env.example を参照。
+      # Auth. Default is single_user (no auth, as before). Use oidc when exposed publicly.
+      # See README "SSO (IdP integration)" and .env.example for details.
       AUTH_MODE: ${AUTH_MODE:-single_user}
       OIDC_ISSUER: ${OIDC_ISSUER:-}
       OIDC_CLIENT_ID: ${OIDC_CLIENT_ID:-}
@@ -39,7 +39,7 @@ services:
       OIDC_ALLOWED_EMAIL_DOMAINS: ${OIDC_ALLOWED_EMAIL_DOMAINS:-}
       OIDC_REQUIRE_VERIFIED_EMAIL: ${OIDC_REQUIRE_VERIFIED_EMAIL:-true}
       OIDC_LINK_BY_EMAIL: ${OIDC_LINK_BY_EMAIL:-false}
-      # IdP へ**こちらから**問い合わせるときの名乗り（定期照合）。空なら照合は走らない。
+      # Client identity when **we** query the IdP (periodic reconciliation). Empty means no reconciliation.
       MACHINE_CLIENT_ID: ${MACHINE_CLIENT_ID:-}
       MACHINE_PRIVATE_KEY_FILE: ${MACHINE_PRIVATE_KEY_FILE:-}
       MACHINE_PRIVATE_KEY_KID: ${MACHINE_PRIVATE_KEY_KID:-}
@@ -62,23 +62,23 @@ services:
       interval: 30s
       timeout: 10s
       retries: 5
-      # entrypoint が起動時に DB マイグレーションを実行するため、その完了までは
-      # unhealthy と誤判定されないよう余裕を持たせる。
+      # The entrypoint runs DB migrations at startup, so allow enough margin
+      # not to be misjudged as unhealthy until they finish.
       start_period: 120s
   web:
     image: wbs-web:${APP_VERSION:-local}
     build: ./frontend
     environment:
-      # 契約: コンテナは一律 UTC（HANDOVER §14）
+      # Contract: containers are uniformly UTC (HANDOVER §14)
       TZ: UTC
-    # 外部からの待受ポート（既定 8100）。api へは nginx の /api/ プロキシ経由で到達する。
+    # External listening port (default 8100). api is reached via nginx's /api/ proxy.
     ports: ["${WEB_PORT:-8100}:80"]
     depends_on:
       api:
         condition: service_healthy
     restart: unless-stopped
     healthcheck:
-      # nginx → api のプロキシ経路ごと疎通確認する（busybox wget）。
+      # Check connectivity through the whole nginx -> api proxy path (busybox wget).
       test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1/api/health || exit 1"]
       interval: 30s
       timeout: 10s

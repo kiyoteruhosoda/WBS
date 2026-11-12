@@ -10,8 +10,8 @@ from src.domain.value_objects.redirect_target import DEFAULT_REDIRECT_PATH, Redi
         "//evil.example/steal",
         "/\\evil.example",
         "http://evil.example",
-        "tasks",                       # 相対パスは戻り先の基準が曖昧
-        "/tasks\\@evil.example",       # `\` を `/` として読むブラウザがある
+        "tasks",                       # a relative path leaves the return base ambiguous
+        "/tasks\\@evil.example",       # some browsers read `\` as `/`
         "/tasks\nLocation: https://evil.example",
         "",
         None,

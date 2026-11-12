@@ -1,4 +1,4 @@
-"""IdP の名簿を引く実装。⚠ **「引けなかった」を「誰も居ない」にしないこと。**"""
+"""Implementation that fetches the IdP roster. ⚠ **Never turn "could not fetch" into "nobody is there".**"""
 
 import httpx
 import pytest
@@ -56,7 +56,7 @@ def test_the_roster_is_read_into_states(monkeypatch) -> None:
 
     assert answers.state_of("taro") is RosterState.BLOCKED
     assert answers.state_of("hanako") is RosterState.ALLOWED
-    # ⚠ **経路にアプリを書かない。** どのアプリの名簿かは名乗りから IdP が決める。
+    # ⚠ **Do not put the app in the path.** The IdP decides whose roster it is from the client's identity.
     assert calls[0].url.path.endswith("/admin/applications/self/users")
     assert calls[0].headers["Authorization"] == "Bearer machine-token"
 
@@ -75,14 +75,14 @@ def test_a_long_list_is_asked_in_chunks(monkeypatch) -> None:
 
 
 def test_a_machine_that_is_not_bound_is_told_apart(monkeypatch) -> None:
-    """⚠ 403 は準備待ち。障害と同じ扱いにすると、毎周回 warning が出続ける。"""
+    """⚠ 403 means setup is pending. Treating it like an outage would keep emitting a warning every cycle."""
     roster, _, _ = gateway(monkeypatch, lambda request: json_response(request, {}, 403))
     with pytest.raises(MachineNotBoundToApplicationError):
         roster.fetch(issuer=ISSUER, subjects=("taro",))
 
 
 def test_an_expired_token_is_thrown_away(monkeypatch) -> None:
-    """期限内でも、向こうで止められれば通らなくなる。控えを捨てて取り直させる。"""
+    """Even before expiry, it stops working if revoked on the other side. Discard the cached token and fetch again."""
     roster, tokens, _ = gateway(monkeypatch, lambda request: json_response(request, {}, 401))
     with pytest.raises(IdentityProviderUnavailableError):
         roster.fetch(issuer=ISSUER, subjects=("taro",))
@@ -93,7 +93,7 @@ def test_an_expired_token_is_thrown_away(monkeypatch) -> None:
     "responder",
     [
         lambda request: json_response(request, {}, 500),
-        lambda request: json_response(request, {"nobody": []}),  # users が無い
+        lambda request: json_response(request, {"nobody": []}),  # no users
         lambda request: httpx.Response(200, text="not json", request=request),
     ],
     ids=["server-error", "no-users", "not-json"],

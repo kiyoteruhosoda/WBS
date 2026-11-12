@@ -1,9 +1,9 @@
-// プロジェクトのカレンダー（task #557 / ADR-0059 決定 1。もとは #554 の「稼働日と休み」）。
-// - 稼働する曜日はいちばん上のプロジェクトに 1 つ（どの段から開いても根のもの）
-// - 休日と稼働日（稼働しない曜日に働く日。ADR-0060）は開いたプロジェクトに足す。親（先祖）のものは引き継ぎ、
-//   同じ日をここで逆にできる（近いほうが勝つ）。親のものはここでは消せない
-// - 終わる見込みの計算では、そのプロジェクトと下のプロジェクトのタスクは休日に進まず、稼働日には進む
-// 変えられるのは管理者だけ。各人の休みは人の一覧の行から開く「その人のカレンダー」で入れる。
+// Project calendar (task #557 / ADR-0059 decision 1; originally "working days and time off" from #554).
+// - Working weekdays: one set on the top-level project (the root's, from any level)
+// - Holidays and working days (work on a non-working weekday. ADR-0060) are added to the opened project. Those of parents (ancestors) are inherited
+//   and the same day can be reversed here (the nearest wins). A parent's entries can't be deleted here
+// - In forecast calculation, tasks of this project and its sub-projects don't progress on holidays and do on working days
+// Only admins can change it. Each person's time off is entered in "their calendar", opened from their row in the people list.
 import React, { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { isAxiosError } from 'axios';
@@ -25,7 +25,7 @@ import type { DayMark } from './calendar/MonthCalendarPicker';
 
 interface Props {
   project: Project | null;
-  /** いちばん上のプロジェクトの名前（曜日の説明に出す） */
+  /** Name of the top-level project (shown in the weekday description) */
   rootName: string;
   onClose: () => void;
 }
@@ -71,7 +71,7 @@ const ProjectCalendarDialog: React.FC<Props> = ({ project, rootName, onClose }) 
 
   const saved = (data: TeamCalendar) => {
     qc.setQueryData(teamCalendarKey(projectId), data);
-    // 下のプロジェクトのカレンダーと、見込みの終わりが変わる
+    // Sub-project calendars and forecast end dates change
     qc.invalidateQueries({ queryKey: ['projects'] });
     qc.invalidateQueries({ queryKey: ['tasks'] });
     qc.invalidateQueries({ queryKey: ['milestones'] });
@@ -100,7 +100,7 @@ const ProjectCalendarDialog: React.FC<Props> = ({ project, rootName, onClose }) 
     if (!isUsualWorkday(day)) return { tone: 'quiet', label: t('projectCalendar.nonWorking') };
     return null;
   };
-  // 自分の指定は消す（親のもの・曜日どおりへ戻る）。それ以外は、その日に働くなら休日に、働かないなら稼働日にする
+  // Remove our own entry (back to the parent's / the weekday default). Otherwise make it a holiday if it's a working day, or a working day if not
   const pick = (day: string) => {
     const off = dayOffByDate.get(day);
     const work = workdayByDate.get(day);

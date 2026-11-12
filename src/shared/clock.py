@@ -1,20 +1,20 @@
-"""時刻の取り扱い。
+"""Handling of time.
 
-契約（HANDOVER §14）: 保存・比較・ログはすべて UTC で、ローカルタイムへ直すのは
-画面に出す瞬間だけ。「今」を取る口はここ 1 つに集約する。
+Contract (HANDOVER §14): storage, comparison and logs are all in UTC; conversion to local time happens
+only at the moment of display. There is exactly one place that reads "now": here.
 
-素の ``datetime.now()`` はコンテナのローカル時刻を返すので使わない。
-``datetime.now(UTC)`` も**ここ以外では呼ばない**（生成口が 2 つあると、次に
-方針を変えるときに片方が残る）。`tests/unit/test_time_contract.py` が見張る。
+Plain ``datetime.now()`` returns the container's local time, so it is not used.
+``datetime.now(UTC)`` is also **not called anywhere but here** (with two sources, the next
+policy change would leave one behind). `tests/unit/test_time_contract.py` guards this.
 
-``utcnow()`` が返すのは **naive な UTC**。DB（SQLite / MariaDB）の ``DATETIME``
-はタイムゾーンを持たず、書いた値は naive で返ってくる。生成側だけ aware にすると
-「入れたばかりの値は aware、読み直した値は naive」となり、両者を比べた瞬間に
-``TypeError: can't compare offset-naive and offset-aware datetimes`` で落ちる。
-保存する形に合わせておけば、その組み合わせが起こらない。
+``utcnow()`` returns **naive UTC**. ``DATETIME`` in the DB (SQLite / MariaDB)
+has no time zone, and written values come back naive. Making only the producer aware would give
+"freshly inserted values are aware, re-read values are naive", and comparing the two
+fails with ``TypeError: can't compare offset-naive and offset-aware datetimes``.
+Matching the stored form means that combination never happens.
 
-ローカルタイムへ直すときは、naive を UTC とみなして付け直してから変換する
-（`src/application/user_clock.py`）。境界へ出す文字列は `isoformat_utc()`。
+To convert to local time, treat naive as UTC, attach the zone, then convert
+(`src/application/user_clock.py`). Strings leaving the boundary use `isoformat_utc()`.
 """
 
 from __future__ import annotations
@@ -23,24 +23,24 @@ from datetime import UTC, datetime
 
 
 def utcnow() -> datetime:
-    """現在時刻を naive な UTC で返す（保存値と同じ形）。"""
+    """Return the current time as naive UTC (same form as stored values)."""
     return datetime.now(UTC).replace(tzinfo=None)
 
 
 def isoformat_utc(value: datetime) -> str:
-    """API の外へ出す ISO 文字列。末尾は必ず ``Z`` になる。
+    """ISO string for leaving the API. Always ends with ``Z``.
 
-    naive な値は UTC とみなす。``Z`` の無い ISO 文字列はブラウザの ``new Date()``
-    がローカル時刻として読むので、境界を出る値は必ずここを通す。
+    Naive values are treated as UTC. A browser's ``new Date()`` reads an ISO string without ``Z``
+    as local time, so every value leaving the boundary must go through here.
     """
     aware = value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
     return aware.isoformat().replace("+00:00", "Z")
 
 
 def to_naive_utc(value: datetime) -> datetime:
-    """境界から入ってきた時刻を保存値の形（naive な UTC）へ直す。
+    """Convert a time coming in from the boundary to the stored form (naive UTC).
 
-    aware なら UTC へ変換してから外す。naive はすでに UTC とみなす。
+    If aware, convert to UTC and then drop the zone. Naive values are taken as UTC already.
     """
     return value if value.tzinfo is None else value.astimezone(UTC).replace(tzinfo=None)
 

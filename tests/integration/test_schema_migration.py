@@ -1,4 +1,4 @@
-"""Alembic の上げ下げと、Alembic 導入前の DB の引き取り。"""
+"""Alembic upgrades and downgrades, and adopting a DB from before Alembic was introduced."""
 
 from __future__ import annotations
 
@@ -21,9 +21,9 @@ from src.infrastructure.database.schema_migration import (
     upgrade_to_head,
 )
 
-# Alembic 導入前・手書きの列補完が 1 つも当たっていない頃の形（凍結。models.py から作らない）。
-# users.language / auth_sessions.idp_session_id（と索引）が無く、tasks.remaining_hours が残り、
-# auth_backchannel_logout_deliveries がまだ無い。
+# The shape from before Alembic, when none of the hand-written column backfills had been applied (frozen; not built from models.py).
+# No users.language / auth_sessions.idp_session_id (and index), tasks.remaining_hours still present,
+# and no auth_backchannel_logout_deliveries yet.
 LEGACY_DDL = [
     """CREATE TABLE users (
         id INTEGER NOT NULL, email VARCHAR(255) NOT NULL, display_name VARCHAR(100) NOT NULL,
@@ -184,20 +184,20 @@ def test_legacy_db_is_brought_to_baseline_then_stamped(tmp_path):
     engine.dispose()
     assert tuple(user) == ("taro@example.com", "ja")
     assert task.title == "残す"
-    # auth_sessions は baseline の形へ揃えてから、後の移行が消す（ADR-0069）
+    # auth_sessions is first aligned to the baseline shape, then a later migration removes it (ADR-0069)
     assert "auth_sessions" not in _schema(legacy_url)
 
 
 def test_legacy_db_that_cannot_be_matched_is_left_untouched(tmp_path):
     url = _url(tmp_path, "odd.db")
-    # 補完の手が届かない差（baseline に無い列）を持つ古い DB
+    # An old DB with differences the backfill cannot reach (columns not in the baseline)
     _build_legacy_db(url, ["ALTER TABLE categories ADD COLUMN legacy_note TEXT"])
     before = _schema(url)
 
     with pytest.raises(LegacySchemaMismatchError):
         upgrade_to_head(url)
 
-    # 1 つの transaction で巻き戻るので、補完も stamp も残らない
+    # Rolled back in a single transaction, so neither the backfill nor the stamp remains
     assert _schema(url) == before
     assert "alembic_version" not in _tables(url)
     assert "remaining_hours" in before["tasks"]["columns"]
@@ -219,7 +219,7 @@ def test_app_engine_refuses_a_db_that_is_not_at_head(tmp_path):
 
 
 def test_0004_fills_remaining_from_estimate_minus_actual(tmp_path):
-    # task #165 / ADR-0010: 既存の行の残は、それまで画面に出ていた max(見積 − 実績, 0)。DONE は 0
+    # task #165 / ADR-0010: remaining for existing rows is what the screen showed until then, max(estimate − actual, 0). DONE is 0
     url = _url(tmp_path, "remaining.db")
     engine = sa.create_engine(url)
     try:
@@ -232,11 +232,11 @@ def test_0004_fills_remaining_from_estimate_minus_actual(tmp_path):
                 "(1, 'taro@example.com', '太郎', 'Asia/Tokyo', 'ja', 1, '2026-01-01', '2026-01-01')"
             )
             for task_id, status, estimate in [
-                (1, "TODO", "10"),  # 実績 4（削除した 3 は数えない）→ 6
-                (2, "DOING", "5"),  # 実績 8 → 負にしない 0
-                (3, "DONE", "10"),  # 実績 2 でも DONE は 0
-                (4, "TODO", None),  # 見積が空 → 空のまま
-                (5, "TODO", "7.5"),  # 実績なし → 7.5
+                (1, "TODO", "10"),  # actual 4 (the deleted 3 is not counted) → 6
+                (2, "DOING", "5"),  # actual 8 → not negative, 0
+                (3, "DONE", "10"),  # DONE is 0 even with actual 2
+                (4, "TODO", None),  # estimate empty → stays empty
+                (5, "TODO", "7.5"),  # no actuals → 7.5
             ]:
                 connection.exec_driver_sql(
                     "INSERT INTO tasks (id, user_id, title, priority, urgency, status, "
@@ -280,7 +280,7 @@ def test_0004_fills_remaining_from_estimate_minus_actual(tmp_path):
 
 
 def test_0005_marks_existing_work_logs_as_manual_and_downgrades_cleanly(tmp_path):
-    # task #161 / ADR-0012: 締めより前の実績は手で書いたもの（開け直しで消えない）
+    # task #161 / ADR-0012: actuals before a close were written by hand (not removed by reopening)
     url = _url(tmp_path, "closing.db")
     engine = sa.create_engine(url)
     try:
@@ -322,7 +322,7 @@ def test_0005_marks_existing_work_logs_as_manual_and_downgrades_cleanly(tmp_path
 
 
 def test_0006_leaves_existing_events_without_an_alarm_and_downgrades_cleanly(tmp_path):
-    # task #183 / ADR-0021: 既存の予定は通知なし（alarm_enabled が NULL）
+    # task #183 / ADR-0021: existing events have no notification (alarm_enabled is NULL)
     url = _url(tmp_path, "alarms.db")
     engine = sa.create_engine(url)
     try:
@@ -363,7 +363,7 @@ def test_0006_leaves_existing_events_without_an_alarm_and_downgrades_cleanly(tmp
 
 
 def test_0007_leaves_existing_tasks_and_milestones_unclassified(tmp_path):
-    # task #187 / ADR-0024: 移行はプロジェクトを作らない。既存のタスク・マイルストーンは未分類のまま
+    # task #187 / ADR-0024: the migration creates no projects. Existing tasks and milestones stay uncategorized
     url = _url(tmp_path, "projects.db")
     engine = sa.create_engine(url)
     try:
@@ -403,7 +403,7 @@ def test_0007_leaves_existing_tasks_and_milestones_unclassified(tmp_path):
 
 
 def test_0008_makes_existing_events_plain_events_and_downgrades_cleanly(tmp_path):
-    # task #190 / ADR-0025: 既存の予定は分類「予定」（EVENT）。済みの表は下げると消える
+    # task #190 / ADR-0025: existing events get the "event" category (EVENT). The completed table disappears on downgrade
     url = _url(tmp_path, "event_types.db")
     engine = sa.create_engine(url)
     try:
@@ -443,7 +443,7 @@ def test_0008_makes_existing_events_plain_events_and_downgrades_cleanly(tmp_path
 
 
 def test_0009_puts_existing_events_into_a_default_calendar_per_user(tmp_path):
-    # task #191 / ADR-0027: 利用者ごとに既定のカレンダー「予定」を作り、既存の予定はそこへ入れる
+    # task #191 / ADR-0027: create a default "events" calendar per user and put existing events in it
     url = _url(tmp_path, "calendars.db")
     engine = sa.create_engine(url)
     try:
@@ -483,7 +483,7 @@ def test_0009_puts_existing_events_into_a_default_calendar_per_user(tmp_path):
             assert [(e[0], e[2]) for e in events] == [
                 (1, default_of[1]), (2, default_of[2]), (5, default_of[1]),
             ]
-            # 作り直した表は消した予定の id を使い回さない（採番の最大を覚える）
+            # The recreated table does not reuse the ids of deleted events (it remembers the highest assigned)
             assert connection.exec_driver_sql(
                 "SELECT seq FROM sqlite_sequence WHERE name = 'calendar_events'"
             ).scalar() == 5
@@ -505,8 +505,8 @@ def test_0009_puts_existing_events_into_a_default_calendar_per_user(tmp_path):
 
 
 def test_0010_makes_four_day_off_layers_and_copies_business_calendar_holidays(tmp_path):
-    # task #191 / ADR-0029: 利用者ごとに 4 層。営業日の曜日はいちばん古い営業日カレンダーのもの、
-    # 営業日カレンダーの祝日は「日本の祝日」の層へ（同じ日は 1 つ）
+    # task #191 / ADR-0029: 4 layers per user. The working weekdays come from the oldest business-day calendar,
+    # and the business-day calendars' holidays go to the "Japanese holidays" layer (one per day)
     url = _url(tmp_path, "day_off_layers.db")
     engine = sa.create_engine(url)
     try:
@@ -569,7 +569,7 @@ def test_0010_makes_four_day_off_layers_and_copies_business_calendar_holidays(tm
             assert connection.exec_driver_sql(
                 "SELECT COUNT(*) FROM calendars WHERE kind <> 'EVENTS'"
             ).scalar() == 0
-            # 予定のカレンダー（0009 の後に来た利用者なので無い）だけが残る
+            # Only the events calendar remains (absent because this user came after 0009)
             assert connection.exec_driver_sql("SELECT COUNT(*) FROM calendars").scalar() == 0
             assert connection.exec_driver_sql(
                 "SELECT COUNT(*) FROM business_calendar_holidays"
@@ -579,8 +579,8 @@ def test_0010_makes_four_day_off_layers_and_copies_business_calendar_holidays(tm
 
 
 def test_0013_retires_business_calendars_into_the_layers(tmp_path):
-    # task #191 / ADR-0032: 古い営業日カレンダーの祝日で層に無い日は「日本の祝日」の層へ写し、
-    # 層の無い利用者には 4 層を作る。繰り返しの規則の名指し（adjustment.calendar_id）を外し、表を消す
+    # task #191 / ADR-0032: holidays in old business-day calendars that are missing from the layers are copied to the "Japanese holidays" layer,
+    # and users without layers get 4 layers. References from recurrence rules (adjustment.calendar_id) are removed and the table is dropped
     url = _url(tmp_path, "retire_business_calendars.db")
     engine = sa.create_engine(url)
     try:
@@ -593,7 +593,7 @@ def test_0013_retires_business_calendars_into_the_layers(tmp_path):
                     f"created_at, updated_at) VALUES ({user_id}, '{email}', 'u', 'Asia/Tokyo', 'ja', 1, "
                     "'2026-01-01', '2026-01-01')"
                 )
-            # 利用者 1 は 0010 の後の利用者（層は一覧で作る）を装い、層を自分で作っておく
+            # User 1 pretends to be a user after 0010 (layers created by the list) and has created the layers themselves
             connection.exec_driver_sql(
                 "INSERT INTO calendars (id, user_id, kind, name, color_key, sort_order, is_default, "
                 "is_visible, workdays, day_off_reason, counts_as_day_off, created_at, updated_at) VALUES "
@@ -648,7 +648,7 @@ def test_0013_retires_business_calendars_into_the_layers(tmp_path):
             assert [tuple(d) for d in days] == [
                 (1, "2026-10-12", "スポーツの日"), (1, "2026-11-03", "文化の日"), (2, "2026-12-29", "年末"),
             ]
-            # 層の無かった利用者 2 には 4 層（営業日の曜日は古いカレンダーのもの）
+            # User 2, who had no layers, gets 4 layers (working weekdays from the old calendar)
             layers = connection.exec_driver_sql(
                 "SELECT kind, workdays, day_off_reason FROM calendars WHERE user_id = 2 ORDER BY sort_order"
             ).all()
@@ -678,7 +678,7 @@ def test_0013_retires_business_calendars_into_the_layers(tmp_path):
 
 
 def test_0014_calendars_are_work_until_made_private(tmp_path):
-    # task #191 / ADR-0033: calendars.scope（WORK / PRIVATE）。既存はすべて WORK。下げると列が消える
+    # task #191 / ADR-0033: calendars.scope (WORK / PRIVATE). All existing rows are WORK. The column disappears on downgrade
     url = _url(tmp_path, "calendar_scope.db")
     engine = sa.create_engine(url)
     try:
@@ -707,7 +707,7 @@ def test_0014_calendars_are_work_until_made_private(tmp_path):
 
 
 def test_0016_renames_day_off_layers_only_when_they_keep_the_initial_name(tmp_path):
-    # task #310: 「会社の公休」→「会社の休日」・「私の休み」→「個人の休日」。付け直した名前は変えない。下げると戻る
+    # task #310: "company days off" → "company holidays", "my days off" → "personal holidays". Renamed names are not changed. Reverted on downgrade
     url = _url(tmp_path, "day_off_layer_names.db")
     engine = sa.create_engine(url)
     try:
@@ -743,8 +743,8 @@ def test_0016_renames_day_off_layers_only_when_they_keep_the_initial_name(tmp_pa
         engine.dispose()
 
 def test_project_code_migration_leaves_existing_projects_without_a_code(tmp_path):
-    # task #187: projects.code は任意。既存のプロジェクトは NULL。下げると列が消える
-    # （番号はマージ順で付け直すことがあるので、ファイル名で引く）
+    # task #187: projects.code is optional. Existing projects get NULL. The column disappears on downgrade
+    # (numbers may be reassigned by merge order, so look it up by file name)
     url = _url(tmp_path, "project_code.db")
     engine = sa.create_engine(url)
     try:
@@ -781,8 +781,8 @@ def test_project_code_migration_leaves_existing_projects_without_a_code(tmp_path
 
 
 def test_0019_keeps_existing_auto_entries_as_fill_and_receives_their_client_refs(tmp_path):
-    # task #386 / ADR-0045: 送り直しの見分けを控えの表へ移す。いまある自動の打刻は fill とみなし、控えを作る。
-    # 同じ client_ref の自動の打刻が 2 本あってもよくなる
+    # task #386 / ADR-0045: move resend detection to the record table. Existing automatic time entries are treated as fill, and records are created.
+    # Two automatic time entries with the same client_ref become allowed
     url = _url(tmp_path, "auto_entry_modes.db")
     engine = sa.create_engine(url)
     try:
@@ -809,7 +809,7 @@ def test_0019_keeps_existing_auto_entries_as_fill_and_receives_their_client_refs
                 "SELECT user_id, client_ref, mode FROM auto_time_entry_receipts"
             ).all()
             assert [tuple(r) for r in receipts] == [(1, "r1", "fill")]
-            # fill の断片: 同じ client_ref の 2 本目が入る
+            # fill fragment: a second entry with the same client_ref goes in
             connection.exec_driver_sql(
                 "INSERT INTO time_entries (id, user_id, started_at, ended_at, source, client_ref, "
                 "auto_mode, created_at, updated_at) VALUES (3, 1, '2026-10-13 05:00:00', "
@@ -820,7 +820,7 @@ def test_0019_keeps_existing_auto_entries_as_fill_and_receives_their_client_refs
 
 
 def test_0032_lets_top_project_managers_and_the_default_user_create_projects(tmp_path):
-    # task #734 / ADR-0065: 今の根の管理者と既定の利用者は作れるまま、ほかの人は作れなくなる
+    # task #734 / ADR-0065: current root admins and the default user can still create roots; others no longer can
     url = _url(tmp_path, "creators.db")
     engine = sa.create_engine(url)
     try:
@@ -840,7 +840,7 @@ def test_0032_lets_top_project_managers_and_the_default_user_create_projects(tmp
                 "(1, 2, NULL, '根', 'active', 0, '2026-01-01', '2026-01-01'), "
                 "(2, 2, 1, '子', 'active', 0, '2026-01-01', '2026-01-01')"
             )
-            # 4 は下のプロジェクトにだけ管理者の行がある（根ではないので数えない）
+            # 4 has an admin row only on a lower project (not a root, so not counted)
             connection.exec_driver_sql(
                 "INSERT INTO project_members (project_id, user_id, role, daily_hours, engagement_percent, "
                 "created_at) VALUES "
@@ -871,7 +871,7 @@ MOVED_TABLES = {
 
 
 def test_0035_drops_what_moved_to_tracker_and_scheduler_but_keeps_work_logs(tmp_path):
-    # task #543 / ADR-0070: 移した表は消える。WBS の締めで作った実績の行は残る（期間の番号の列だけ消える）
+    # task #543 / ADR-0070: moved tables disappear. Actuals rows created by WBS closes remain (only the period number column disappears)
     url = _url(tmp_path, "moved.db")
     engine = sa.create_engine(url)
     try:
@@ -906,7 +906,7 @@ def test_0035_drops_what_moved_to_tracker_and_scheduler_but_keeps_work_logs(tmp_
             row = connection.exec_driver_sql("SELECT source, duration_seconds FROM work_logs").one()
         assert tuple(row) == ("closing", 5400)
 
-        # 戻すと空の表ができる（中身は戻らない）
+        # Downgrading creates empty tables (contents are not restored)
         with engine.begin() as connection:
             command.downgrade(alembic_config(connection), "0034")
         assert _tables(url) >= MOVED_TABLES

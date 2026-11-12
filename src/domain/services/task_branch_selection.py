@@ -1,13 +1,13 @@
-"""まとめて選んだタスクを、枝ごとに移す単位へ分ける（task #187 / ADR-0030）。
+"""Split tasks selected in bulk into per-branch units to move (task #187 / ADR-0030).
 
-子タスクは親タスクと同じプロジェクトに属する（ADR-0024 の 4）。なので、まとめて移すときに書くのは
-**枝の根**（親の無いタスク）だけで、その子孫は根に付いてくる。選んだタスクは次の 3 つに分かれる:
+A child task belongs to the same project as its parent task (ADR-0024 item 4). So a bulk move writes only
+**branch roots** (tasks without a parent), and their descendants follow the root. Selected tasks fall into 3 groups:
 
-- ``roots``: 親の無いタスク。これを移す（子孫も一緒に移る）
-- ``followers``: 祖先のどれかも選ばれている子タスク。祖先と一緒に移るので、別に書かない
-- ``stranded``: 祖先のどれも選ばれていない子タスク。子だけ別のプロジェクトにはできないので移せない
+- ``roots``: tasks without a parent. These are moved (descendants move with them)
+- ``followers``: child tasks with some ancestor also selected. They move with the ancestor, so are not written separately
+- ``stranded``: child tasks with no ancestor selected. A child alone cannot be in a different project, so they cannot be moved
 
-⚠ 親が見つからない（消した）子は根として扱う（タスクの更新と同じ。親が消えただけで動かせなくしない）。
+⚠ A child whose parent is not found (deleted) is treated as a root (same as task updates; a deleted parent alone must not make it immovable).
 """
 
 from __future__ import annotations
@@ -24,7 +24,7 @@ class TaskBranchSelection:
 
     @classmethod
     def of(cls, selected: Iterable[int], parent_of: Mapping[int, int | None]) -> TaskBranchSelection:
-        """``parent_of`` は消していないタスクの「id → 親の id」。選んだ順を保ち、重ねない。"""
+        """``parent_of`` is "id → parent id" for non-deleted tasks. Keeps the selection order and does not duplicate."""
         chosen: list[int] = list(dict.fromkeys(selected))
         chosen_set = set(chosen)
         roots: list[int] = []
@@ -44,7 +44,7 @@ class TaskBranchSelection:
     def _has_selected_ancestor(
         task_id: int, chosen: set[int], parent_of: Mapping[int, int | None]
     ) -> bool:
-        """⚠ 壊れた環があっても止まる。"""
+        """⚠ Stops even with a broken cycle."""
         seen = {task_id}
         current = parent_of.get(task_id)
         while current is not None and current in parent_of and current not in seen:

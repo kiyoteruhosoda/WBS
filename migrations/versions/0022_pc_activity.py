@@ -1,10 +1,10 @@
-"""pc_activity: PC を使っていた時間（WinTrack、task #397 / ADR-0049）
+"""pc_activity: time the PC was in use (WinTrack, task #397 / ADR-0049)
 
 Revision ID: 0022
 Revises: 0021
 Create Date: 2026-10-15
 
-日（送り手のタイムゾーンでの日付）ごとの行と、その日の区間。打刻・実績・締めには使わない。
+A row per day (date in the sender's time zone) and that day's intervals. Not used for clock-ins, actuals or closing.
 """
 
 from __future__ import annotations

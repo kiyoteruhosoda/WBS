@@ -1,10 +1,10 @@
-"""tasks.archived_at: 打刻や実績のあるタスクは消さずに「しまう」（task #388 / ADR-0046）
+"""tasks.archived_at: tasks with clock-ins or actuals are "put away" instead of deleted (task #388 / ADR-0046)
 
 Revision ID: 0020
 Revises: 0019
 Create Date: 2026-10-13
 
-しまったタスクは一覧と付け替え先に出ないが、実績と締めの表には名前ごと残る。いまあるタスクは NULL（しまっていない）。
+Put-away tasks do not appear in lists or as reassignment targets, but stay by name in actuals and closing tables. Existing tasks are NULL (not put away).
 """
 
 from __future__ import annotations

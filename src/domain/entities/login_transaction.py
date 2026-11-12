@@ -1,4 +1,4 @@
-"""認可コードフロー 1 回分の往復を覚えておくためのエンティティ。"""
+"""Entity that remembers one round trip of the authorization code flow."""
 
 from __future__ import annotations
 
@@ -14,24 +14,24 @@ DEFAULT_LOGIN_TRANSACTION_TTL = timedelta(minutes=10)
 
 
 class LoginPurpose(StrEnum):
-    """往復を何のために始めたか。戻り先の URI は 1 つなので、``/callback`` はこれを見て後始末を選ぶ。"""
+    """What the round trip was started for. There is only one redirect URI, so ``/callback`` picks the cleanup by this."""
 
-    #: 入るための往復（ボタン・ログイン画面の黙った確かめ）
+    #: Round trip to sign in (button, or the silent check on the sign-in screen)
     LOGIN = "login"
-    #: 切れたログインを画面を出さずに続けるための往復（見えない枠の中。ADR-0071）
+    #: Round trip to continue an expired sign-in without showing a screen (inside a hidden frame. ADR-0071)
     RENEW = "renew"
 
 
 @dataclass
 class LoginTransaction:
-    """``/auth/login`` で作り ``/auth/callback`` で使い切る一時データ。
+    """Temporary data created in ``/auth/login`` and consumed in ``/auth/callback``.
 
-    - ``state``: コールバックが自分の出した要求への返答かを確かめる（CSRF 対策）
-    - ``nonce``: ID トークンが自分の要求に対して発行されたものかを確かめる（リプレイ対策）
-    - ``code_verifier``: PKCE。認可コードを盗まれても交換できないようにする
+    - ``state``: confirms the callback answers a request we made (CSRF protection)
+    - ``nonce``: confirms the ID token was issued for our request (replay protection)
+    - ``code_verifier``: PKCE. A stolen authorization code cannot be exchanged
 
-    ブラウザのセッションではなくサーバ側に置くのは、コールバックが別タブ・別
-    プロセスへ戻ることがあるため。使ったら必ず消す（同じコードの再送を通さない）。
+    It is kept on the server rather than in the browser session because the callback may return
+    to another tab or process. Always delete it after use (a resend of the same code must not pass).
     """
 
     state: str
@@ -41,12 +41,12 @@ class LoginTransaction:
     created_at: datetime
     expires_at: datetime
     id: int | None = None
-    #: ``prompt=none`` で「IdP でもう入っているか」を黙って確かめる往復か（ADR-0062）。
-    #: 真なら、IdP が ``login_required`` などで戻しても失敗ではない。
+    #: Whether this round trip silently checks "already signed in at the IdP" with ``prompt=none`` (ADR-0062).
+    #: If true, the IdP returning e.g. ``login_required`` is not a failure.
     silent: bool = False
     purpose: LoginPurpose = LoginPurpose.LOGIN
-    #: 続ける往復で、続けるログイン（手元の期限切れのトークンから読んだもの）。分からなければ ``None``
-    #: （そのときは新しいログインとして入る）。⚠ 戻ってきた人と突き合わせるためにある（ADR-0071）
+    #: For a continuing round trip, the sign-in to continue (read from the expired token on the client). ``None`` if unknown
+    #: (then it signs in as a new sign-in). ⚠ Exists to match against the person who comes back (ADR-0071)
     continued: ContinuedSignIn | None = None
 
     @classmethod

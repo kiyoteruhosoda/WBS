@@ -10,8 +10,8 @@ from src.infrastructure.database.models import Base
 
 config = context.config
 
-# アプリの中から呼ばれたとき（``schema_migration.py``）は接続を渡される。そのときは
-# ログの設定を alembic.ini で上書きしない（アプリの構造化ログを壊さない）。
+# When called from inside the app (``schema_migration.py``) a connection is passed in. In that case
+# do not override the logging setup with alembic.ini (do not break the app's structured logs).
 shared_connection = config.attributes.get("connection")
 if shared_connection is None and config.config_file_name is not None:
     fileConfig(config.config_file_name)
@@ -24,7 +24,7 @@ def get_url() -> str:
 
 
 def _configure(**kwargs: object) -> None:
-    # SQLite は ALTER TABLE がほとんど効かないので、autogenerate は batch で書かせる。
+    # SQLite barely supports ALTER TABLE, so make autogenerate write batch operations.
     context.configure(target_metadata=target_metadata, render_as_batch=True, **kwargs)
 
 

@@ -1,6 +1,6 @@
-"""Tracker・Scheduler のサーバーが機械として、利用者に見えるプロジェクトを読む（ADR-0056 決定 4）。
+"""The Tracker and Scheduler servers, as machines, read the projects visible to a user (ADR-0056 decision 4).
 
-トークンの通し方は担当タスクの口と同じ（``test_machine_assigned_tasks``）。ここでは返す中身と、1 本だけ通し方を見る。
+Token handling is the same as the assigned-tasks route (``test_machine_assigned_tasks``). Here we check the returned content, and the token handling in just one test.
 """
 
 from __future__ import annotations
@@ -8,7 +8,7 @@ from __future__ import annotations
 import pytest
 from fastapi.testclient import TestClient
 
-from tests.integration.api.test_auth import (  # noqa: F401 - fixture を借りる
+from tests.integration.api.test_auth import (  # noqa: F401 - borrow fixtures
     ISSUER,
     sign_in,
     sso_provider,

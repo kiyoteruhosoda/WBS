@@ -9,9 +9,9 @@ from src.infrastructure.database.session import (
 
 
 def init_db(database_url: str | None = None) -> None:
-    """DB を head まで上げ、接続を用意し、既定の利用者（id=1）を入れる。冪等。
+    """Migrate the DB to head, set up the connection, and insert the default user (id=1). Idempotent.
 
-    本番ではコンテナの entrypoint（scripts/run_db_migrations.py）が uvicorn の前に呼ぶ。
+    In production the container entrypoint (scripts/run_db_migrations.py) calls this before uvicorn.
     """
     url = resolve_database_url(database_url)
     upgrade_to_head(url)

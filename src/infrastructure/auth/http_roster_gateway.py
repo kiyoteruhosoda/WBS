@@ -1,17 +1,17 @@
-"""IdP の名簿を引く実装（定期照合の材料）。
+"""Implementation that fetches the IdP roster (input for the periodic reconciliation).
 
 ```
 GET {issuer}/admin/applications/self/users?subs=...
 ```
 
-⚠ **経路にアプリを書かない。** どのアプリの名簿を返すかは、呼んできたサービスアカウント
-（トークンの名乗り）から **IdP が決める**。こちらが ``client_id`` を載せて「自分はこの
-アプリだ」と申告する形は向きが逆で、名乗りと申告が食い違ったときに気付けない。
+⚠ **Do not put the app in the path.** Which app's roster to return is decided **by the IdP** from the
+calling service account (the token's identity). Sending a ``client_id`` to declare "I am this
+app" is backwards, and a mismatch between identity and declaration would go unnoticed.
 
-⚠ **403 は「このサービスアカウントがまだアプリの名乗りとして結び付いていない」。**
-障害ではないので分けて知らせる。
+⚠ **403 means "this service account is not yet bound as the app's identity".**
+It is not an outage, so it is reported separately.
 
-⚠ **引けなかったら例外で止める。** 空の名簿として返すと、呼び出し側は「全員辞めた」と読む。
+⚠ **Stop with an exception if it cannot be fetched.** Returning an empty roster makes the caller read "everyone left".
 """
 
 from __future__ import annotations
@@ -31,7 +31,7 @@ from src.infrastructure.auth.idp_http import IDP_HEADERS
 
 logger = logging.getLogger(__name__)
 
-#: 一度に聞ける ``sub`` の数。⚠ 超えると 400 になるので、分けて聞く。
+#: How many ``sub`` values can be asked at once. ⚠ Exceeding it gives 400, so ask in chunks.
 SUBJECTS_PER_REQUEST = 100
 
 
@@ -41,8 +41,8 @@ class HttpRosterGateway(RosterGateway):
         self._timeout = timeout_seconds
 
     def fetch(self, *, issuer: str, subjects: tuple[str, ...]) -> Roster:
-        # ⚠ **全部の塊が引けてから返す。** 途中で失敗したら例外で止まり、半分だけの
-        #   名簿で照合を進めない。
+        # ⚠ **Return only after every chunk has been fetched.** A failure midway stops with an exception, so
+        #   reconciliation never proceeds on half a roster.
         entries: list[RosterEntry] = []
         for index in range(0, len(subjects), SUBJECTS_PER_REQUEST):
             entries.extend(
@@ -79,17 +79,17 @@ class HttpRosterGateway(RosterGateway):
                 f"the roster is unreachable: {type(error).__name__}"
             ) from error
         if response.status_code == 401:
-            # 期限内でも、向こうでクライアントを止めた・鍵を替えたときは通らなくなる。
+            # Even before expiry, it stops working if the IdP side disabled the client or rotated the key.
             self._tokens.invalidate()
         if response.status_code == 403:
-            # ⚠ 結び付けるまで毎周回ここへ来る。警告を撒かない（記録は呼び出し側で 1 行）。
+            # ⚠ This is hit on every cycle until bound. Do not spam warnings (the caller logs one line).
             raise MachineNotBoundToApplicationError(
                 "the machine client is not bound to an application"
             )
         if response.status_code != 200:
-            # ⚠ 名簿が空なのとは違うので、**ここで止める**。本文は出さない。
+            # ⚠ Not the same as an empty roster, so **stop here**. Do not log the body.
             logger.warning(
-                "IdP の名簿を引けませんでした",
+                "failed to fetch the IdP roster",
                 extra={
                     "event": "auth.oidc.roster_request_failed",
                     "status_code": response.status_code,

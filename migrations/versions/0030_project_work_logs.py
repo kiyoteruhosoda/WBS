@@ -1,12 +1,12 @@
-"""プロジェクトだけの実績（タスクの無い時間）を受け取る表（task #708 / ADR-0064）
+"""Table receiving project-only actuals (time without a task) (task #708 / ADR-0064)
 
 Revision ID: 0030
 Revises: 0029
 Create Date: 2026-10-29
 
-- ``project_work_logs``: Tracker で締めた、WBS のタスクに結ばない時間を、プロジェクト × 日で持つ
+- ``project_work_logs``: time closed in Tracker that is not tied to a WBS task, per project x day
 
-新しい表なので今の行は変わらない。戻すと表が消える（受け取った時間は Tracker が送り直せる）。
+A new table, so existing rows do not change. Downgrading drops the table (Tracker can resend the received time).
 """
 
 from __future__ import annotations

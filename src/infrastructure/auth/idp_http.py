@@ -1,21 +1,21 @@
-"""IdP へ出ていく HTTP に共通で付ける値。
+"""Values attached to every outgoing HTTP request to the IdP.
 
-⚠ **User-Agent を必ず名乗る。** IdP の前段に WAF / CDN が居ると、HTTP ライブラリの
-既定の UA（``Python-urllib/3.x`` など）が自動化ツールとして 403 で弾かれることがある。
+⚠ **Always send a User-Agent.** With a WAF / CDN in front of the IdP, an HTTP library's
+default UA (``Python-urllib/3.x`` etc.) may be rejected with 403 as an automation tool.
 
-⚠ **JWKS だけ経路が違う。** ディスカバリ・トークン・userinfo は ``httpx`` で取るが、
-JWKS は PyJWT の ``PyJWKClient`` が **``urllib``** で取りに行く。httpx 側にだけ
-ヘッダを足しても JWKS には効かない。
+⚠ **JWKS takes a different path.** Discovery, token and userinfo are fetched with ``httpx``, but
+JWKS is fetched by PyJWT's ``PyJWKClient`` via **``urllib``**. Adding the header only
+on the httpx side does not affect JWKS.
 
-実際に踏んだ壊れ方（2026-08-30・Cloudflare の前段）:
+How it actually broke (2026-08-30, behind Cloudflare):
 
-* ディスカバリとトークン交換は成功する（httpx の UA は通っていた）
-* JWKS の取得だけが 403 になり、**ID トークンの署名検証で必ず落ちる**
-* 画面には「ログインに失敗しました」としか出ず、サーバのログにも
-  例外は残らない（コールバックが握ってログイン画面へ戻すため）
+* Discovery and the token exchange succeed (httpx's UA was let through)
+* Only the JWKS fetch returns 403, so **ID token signature verification always fails**
+* The screen only says "login failed", and no exception is left
+    in the server log either (the callback swallows it and returns to the login screen)
 
-「トークンまでは通っているのに毎回ログインできない」という、切り分けの難しい
-形になるので、経路を増やすときは必ずこのヘッダを通すこと。
+It shows up as "tokens come through, yet login fails every time", which is hard to
+isolate, so whenever you add a path, always send this header through it.
 """
 
 from __future__ import annotations

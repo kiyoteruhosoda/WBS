@@ -1,11 +1,11 @@
-"""プロジェクト（入れ子）とタスク・マイルストーンの所属（task #187 / ADR-0024）。
+"""Projects (nested) and the membership of tasks and milestones (task #187 / ADR-0024).
 
-- 何段でも入れ子にできる。自分・自分の子孫の下へは移せない（409）
-- 絞り込みは子孫を含む（タスク・マイルストーン・ガント・実績）
-- 子タスクは親タスクと同じプロジェクト。親を移すと子孫も移る
-- マイルストーンは、そのプロジェクトと子孫のタスクにだけ付く。届かなくなったら外れる
-- 他人のプロジェクトには触れない（404）
-- 実績のプロジェクト別は枝ごとに積み上げる
+- Can be nested to any depth. Cannot be moved under itself or its descendants (409)
+- Filters include descendants (tasks, milestones, Gantt, actuals)
+- A child task is in the same project as its parent task. Moving the parent moves its descendants
+- A milestone attaches only to tasks of its project and descendants. Detached when no longer reachable
+- Other users' projects cannot be touched (404)
+- Actuals per project are rolled up per branch
 """
 
 from __future__ import annotations
@@ -52,7 +52,7 @@ def _titles(client, path: str, **params) -> list[str]:
     return sorted(t.get("title") or t.get("name") for t in res.json())
 
 
-# ── 木 ──────────────────────────────────────────────────────────────────
+# ── Tree ────────────────────────────────────────────────────────────────
 
 
 def test_projects_nest_to_any_depth_and_list_in_tree_order(client) -> None:
@@ -79,7 +79,7 @@ def test_a_project_cannot_be_moved_under_itself_or_its_descendants(client) -> No
         res = client.post(f"/api/projects/{root['id']}/move", json={"parent_project_id": target["id"]})
         assert res.status_code == 409, res.text
 
-    # 動かなかった
+    # It did not move
     assert client.get(f"/api/projects/{root['id']}").json()["parent_project_id"] is None
 
 
@@ -88,12 +88,12 @@ def test_moving_changes_the_parent_and_the_order_among_siblings(client) -> None:
     b = _project(client, "B")
     c = _project(client, "C")
 
-    # C を先頭へ
+    # Move C to the top
     moved = client.post(f"/api/projects/{c['id']}/move", json={"parent_project_id": None, "position": 0})
     assert moved.status_code == 200, moved.text
     assert [p["name"] for p in client.get("/api/projects").json()] == ["C", "A", "B"]
 
-    # B を A の下へ
+    # Move B under A
     res = client.post(f"/api/projects/{b['id']}/move", json={"parent_project_id": a["id"]})
     assert res.status_code == 200
     assert res.json()["path"] == "A / B"
@@ -119,7 +119,7 @@ def test_rename_archive_and_restore(client) -> None:
 
 
 def test_project_code_is_optional_trimmed_and_empty_means_none(client) -> None:
-    # 任意のコード（名前の横に出す札）。前後の空白を落とし、空・空白だけは null。一意ではない
+    # Optional code (a tag shown next to the name). Surrounding spaces are stripped; empty or whitespace-only becomes null. Not unique
     plain = _project(client, "無印")
     assert plain["code"] is None
 
@@ -129,7 +129,7 @@ def test_project_code_is_optional_trimmed_and_empty_means_none(client) -> None:
     assert _project(client, "空白だけ", code="   ")["code"] is None
 
     url = f"/api/projects/{project['id']}"
-    # 送らなければ変わらない
+    # Unchanged unless sent
     res = client.put(url, json={"name": "本業"})
     assert res.status_code == 200, res.text
     assert res.json()["code"] == "PRJ-01"
@@ -144,7 +144,7 @@ def test_project_code_is_optional_trimmed_and_empty_means_none(client) -> None:
 
 
 def test_project_code_is_at_most_32_characters(client) -> None:
-    # 上限は空白を落とした後で数える
+    # The limit is counted after stripping spaces
     assert _project(client, "ちょうど", code="A" * 32)["code"] == "A" * 32
     assert _project(client, "空白込み", code=" " + "B" * 32 + " ")["code"] == "B" * 32
     res = client.post("/api/projects", json={"name": "長すぎ", "code": "C" * 33})
@@ -161,12 +161,12 @@ def test_only_an_empty_project_can_be_deleted(client) -> None:
     child = _project(client, "案件 A", root)
     task = _task(client, "設計", project_id=child["id"])
 
-    assert client.delete(f"/api/projects/{root['id']}").status_code == 409  # 子がある
-    assert client.delete(f"/api/projects/{child['id']}").status_code == 409  # タスクがある
+    assert client.delete(f"/api/projects/{root['id']}").status_code == 409  # has a child
+    assert client.delete(f"/api/projects/{child['id']}").status_code == 409  # has a task
 
     client.put(f"/api/tasks/{task['id']}", json={"project_id": None})
     milestone = client.post("/api/milestones", json={"name": "納品", "project_id": child["id"]}).json()
-    assert client.delete(f"/api/projects/{child['id']}").status_code == 409  # マイルストーンがある
+    assert client.delete(f"/api/projects/{child['id']}").status_code == 409  # has a milestone
 
     client.delete(f"/api/milestones/{milestone['id']}")
     assert client.delete(f"/api/projects/{child['id']}").status_code == 204
@@ -182,7 +182,7 @@ def test_a_deleted_task_does_not_keep_its_project_from_being_deleted(client) -> 
     assert client.delete(f"/api/projects/{project['id']}").status_code == 204
 
 
-# ── タスクの所属 ────────────────────────────────────────────────────────
+# ── Task membership ─────────────────────────────────────────────────────
 
 
 def test_existing_style_tasks_are_unclassified(client) -> None:
@@ -218,26 +218,26 @@ def test_a_subtask_belongs_to_the_project_of_its_parent(client) -> None:
     home = _project(client, "私用")
     parent = _task(client, "親", project_id=work["id"])
 
-    # 省けば親に揃う
+    # If omitted, it follows the parent
     child = _task(client, "子", parent_task_id=parent["id"])
     assert child["project_id"] == work["id"]
     grandchild = _task(client, "孫", parent_task_id=child["id"], project_id=work["id"])
     assert grandchild["project_id"] == work["id"]
 
-    # 子だけ別のプロジェクトにはできない
+    # Only the child cannot be in a different project
     res = client.post("/api/tasks", json={"title": "子 2", "parent_task_id": parent["id"], "project_id": home["id"]})
     assert res.status_code == 422
     res = client.put(f"/api/tasks/{child['id']}", json={"project_id": home["id"]})
     assert res.status_code == 422
 
-    # 親を移すと子孫も移る
+    # Moving the parent moves its descendants too
     res = client.put(f"/api/tasks/{parent['id']}", json={"project_id": home["id"]})
     assert res.status_code == 200, res.text
     assert res.json()["project_id"] == home["id"]
     for task in (child, grandchild):
         assert client.get(f"/api/tasks/{task['id']}").json()["project_id"] == home["id"]
 
-    # 未分類へ戻すと子孫も未分類
+    # Moving back to uncategorized makes descendants uncategorized too
     client.put(f"/api/tasks/{parent['id']}", json={"project_id": None})
     assert client.get(f"/api/tasks/{grandchild['id']}").json()["project_id"] is None
 
@@ -265,11 +265,11 @@ def test_changing_the_parent_task_moves_the_branch_into_the_new_parents_project(
     assert res.json()["project_id"] == home["id"]
     assert client.get(f"/api/tasks/{sub['id']}").json()["project_id"] == home["id"]
 
-    # 自分の子孫を親にはできない
+    # A task's own descendant cannot be its parent
     assert client.put(f"/api/tasks/{new_parent['id']}", json={"parent_task_id": sub["id"]}).status_code == 409
 
 
-# ── マイルストーン ──────────────────────────────────────────────────────
+# ── Milestones ──────────────────────────────────────────────────────────
 
 
 def test_milestones_belong_to_projects_and_filter_with_descendants(client) -> None:
@@ -301,7 +301,7 @@ def test_a_task_takes_milestones_of_its_project_or_ancestors_only(client) -> Non
     assert res.status_code == 422
     assert client.post("/api/tasks", json={"title": "未分類", "milestone_id": of_root["id"]}).status_code == 422
 
-    # null で外せる
+    # Can be detached with null
     res = client.put(f"/api/tasks/{task['id']}", json={"milestone_id": None})
     assert res.json()["milestone_id"] is None
 
@@ -315,29 +315,29 @@ def test_a_task_moved_out_of_reach_loses_its_milestone(client) -> None:
     task = _task(client, "A の作業", project_id=child["id"], milestone_id=milestone["id"])
     keeps = _task(client, "どこでもの作業", project_id=child["id"], milestone_id=anywhere["id"])
 
-    # タスクを別の枝へ（画面は前のマイルストーンをそのまま送ってくる）
+    # Move the task to another branch (the screen sends the previous milestone as is)
     res = client.put(
         f"/api/tasks/{task['id']}", json={"project_id": home["id"], "milestone_id": milestone["id"]}
     )
     assert res.status_code == 200, res.text
     assert res.json()["milestone_id"] is None
 
-    # プロジェクトを枝の外へ動かすと、元の祖先のマイルストーンから外れる
+    # Moving the project out of the branch detaches it from the original ancestor's milestone
     client.put(f"/api/tasks/{task['id']}", json={"project_id": child["id"], "milestone_id": milestone["id"]})
     assert client.get(f"/api/tasks/{task['id']}").json()["milestone_id"] == milestone["id"]
     client.post(f"/api/projects/{child['id']}/move", json={"parent_project_id": home["id"]})
     assert client.get(f"/api/tasks/{task['id']}").json()["milestone_id"] is None
     assert client.get(f"/api/tasks/{keeps['id']}").json()["milestone_id"] == anywhere["id"]
 
-    # マイルストーンを別のプロジェクトへ移しても、届かなくなったタスクから外れる
+    # Moving the milestone to another project also detaches it from tasks it can no longer reach
     res = client.put(f"/api/tasks/{keeps['id']}", json={"milestone_id": milestone["id"]})
-    assert res.status_code == 422  # 「案件 A」はもう「仕事」の枝の外
+    assert res.status_code == 422  # "案件 A" is now outside the "仕事" branch
     target = _task(client, "全体の作業", project_id=root["id"], milestone_id=milestone["id"])
     client.put(f"/api/milestones/{milestone['id']}", json={"project_id": home["id"]})
     assert client.get(f"/api/tasks/{target['id']}").json()["milestone_id"] is None
 
 
-# ── 他人 ────────────────────────────────────────────────────────────────
+# ── Other users ─────────────────────────────────────────────────────────
 
 
 def test_another_users_project_is_not_reachable(client, db) -> None:
@@ -368,7 +368,7 @@ def test_another_users_project_is_not_reachable(client, db) -> None:
     assert client.get("/api/tasks", params={"project_id": mine["id"]}).json() == []
 
 
-# ── 実績 ────────────────────────────────────────────────────────────────
+# ── Actuals ─────────────────────────────────────────────────────────────
 
 
 def _work_log(client, task_id: int, work_date: str, hours: float) -> None:
@@ -388,7 +388,7 @@ def test_breakdown_by_project_stacks_each_branch(client) -> None:
     _work_log(client, _task(client, "未分類")["id"], "2026-09-04", 0.25)
     window = {"from": "2026-09-01", "to": "2026-09-15", "group_by": "project"}
 
-    # 指さなければ最上位ごと（子孫の分を積む）
+    # Without a target, per top level (rolling up descendants)
     top = client.get("/api/actuals/breakdown", params=window).json()
     assert [g["key"] for g in top["groups"]] == [f"project:{work['id']}", f"project:{home['id']}", "none"]
     assert top["groups"][0]["color"] == "#0017C1"
@@ -398,7 +398,7 @@ def test_breakdown_by_project_stacks_each_branch(client) -> None:
         "none": 900,
     }
 
-    # 指せば、その直下の子ごと＋そのプロジェクトに直に付いた分（枝の外は数えない）
+    # With a target, per direct child plus what is attached directly to that project (outside the branch is not counted)
     inside = client.get("/api/actuals/breakdown", params={**window, "project_id": work["id"]}).json()
     assert [g["key"] for g in inside["groups"]] == [f"project:{work['id']}", f"project:{a['id']}"]
     assert inside["periods"][0]["seconds_by_group"] == {
@@ -406,7 +406,7 @@ def test_breakdown_by_project_stacks_each_branch(client) -> None:
         f"project:{a['id']}": 5 * 3600,
     }
 
-    # カテゴリ別も、絞ると枝の分だけ
+    # Per category too, filtering gives only the branch
     by_category = client.get(
         "/api/actuals/breakdown", params={**window, "group_by": "category", "project_id": a["id"]}
     ).json()

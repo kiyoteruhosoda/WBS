@@ -1,4 +1,4 @@
-"""検証済み ID トークンから取り出した、本人を表すクレーム。"""
+"""Claims identifying the person, taken from a verified ID token."""
 
 from __future__ import annotations
 
@@ -10,11 +10,11 @@ from src.domain.value_objects.federated_identity import FederatedIdentity
 
 @dataclass(frozen=True)
 class IdentityClaims:
-    """IdP から受け取った本人情報。
+    """Identity received from the IdP.
 
-    署名・``iss``・``aud``・``exp``・``nonce`` の検証はインフラ層（IdP アダプタ）で
-    済ませてからここへ入れる。この値オブジェクトが受け持つのは「アプリが本人を
-    作る／突き合わせるのに足りているか」の検査だけ。
+    Verification of the signature, ``iss``, ``aud``, ``exp`` and ``nonce`` is done in the infrastructure layer (IdP adapter)
+    before the value comes here. This value object only checks "whether it is enough for the app
+    to create / match the person".
     """
 
     identity: FederatedIdentity
@@ -22,8 +22,8 @@ class IdentityClaims:
     email_verified: bool = False
     display_name: str | None = None
     preferred_username: str | None = None
-    #: ID トークンの ``sid``（IdP 側のログインセッション）。出さない IdP があるので
-    #: ``None`` 可 ——その IdP では**利用者単位でしか**止められない。
+    #: The ID token's ``sid`` (IdP-side sign-in session). Some IdPs do not issue it, so
+    #: it may be ``None`` — with such an IdP sign-ins can only be stopped **per user**.
     session_id: str | None = None
 
     def __post_init__(self) -> None:
@@ -40,13 +40,13 @@ class IdentityClaims:
 
     @property
     def email_domain(self) -> str | None:
-        """メールアドレスのドメイン部（小文字）。所属の絞り込みに使う。"""
+        """Domain part of the email address (lowercase). Used to filter by affiliation."""
         if self.email is None:
             return None
         return self.email.rsplit("@", 1)[1].lower()
 
     def resolved_display_name(self) -> str:
-        """画面に出す名前。IdP が name を返さないことがあるので順に落とす。"""
+        """Name shown on screen. The IdP may not return name, so fall back in order."""
         for candidate in (self.display_name, self.preferred_username, self.email, self.subject):
             if candidate and candidate.strip():
                 return candidate.strip()

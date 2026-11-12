@@ -17,7 +17,7 @@ class WorkLogUseCases:
         self._session = session
 
     def list_work_logs(self, task_id: int, user_id: int) -> list[WorkLog]:
-        # 作業ログはタスク単位で引くので、まずそのタスクが自分のものか確かめる
+        # Work logs are fetched per task, so first check the task is the caller's
         self._owned_task(task_id, user_id)
         return self._repo.find_by_task(task_id)
 
@@ -25,7 +25,7 @@ class WorkLogUseCases:
         return self._owned(work_log_id, user_id)
 
     def create_work_log(self, dto: CreateWorkLogDTO) -> WorkLog:
-        # 他人のタスクに実績を書き込めないようにする
+        # Prevent writing actuals to someone else's task
         self._owned_task(dto.task_id, dto.user_id)
         wl = WorkLog(id=None, user_id=dto.user_id, task_id=dto.task_id, work_date=dto.work_date, hours=dto.hours, memo=dto.memo)
         saved = self._repo.save(wl)
@@ -52,7 +52,7 @@ class WorkLogUseCases:
 
     @staticmethod
     def _ensure_not_from_closing(work_log: WorkLog) -> None:
-        """WBS の締めで作った実績（Tracker へ移す前のもの）は直させない（ADR-0012。締めは Tracker へ移した）。"""
+        """Actuals created by WBS closing (from before moving to Tracker) cannot be edited (ADR-0012; closing moved to Tracker)."""
         if work_log.is_from_closing:
             raise ConflictError("This work log was created by closing a period; it cannot be changed")
 

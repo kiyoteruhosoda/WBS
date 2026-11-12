@@ -4,8 +4,8 @@ import { useI18n } from '../i18n';
 import { useOffline } from '../pwa/connectivity';
 
 /**
- * 「オフラインです」（task #192・ADR-0028）。画面の殻は Service Worker が出すが、データは取れない。
- * 端末が電波なしと言うか、直前の取得が応答なしで落ちたときに出し、何か 1 つ取れたら消える。
+ * "You are offline" (task #192, ADR-0028). The Service Worker serves the app shell, but data can't be fetched.
+ * Shown when the device reports no network or the last fetch failed without a response; hidden once any fetch succeeds.
  */
 const OfflineNotice: React.FC = () => {
   const { t } = useI18n();

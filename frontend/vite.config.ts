@@ -8,36 +8,36 @@ import react from '@vitejs/plugin-react'
 const PUBLIC_DIR = fileURLToPath(new URL('./public', import.meta.url))
 const SERVICE_WORKER_ENTRY = fileURLToPath(new URL('./src/serviceWorker/sw.ts', import.meta.url))
 
-/** Service Worker の束に、殻の一覧と版を書き込む目印（`src/serviceWorker/sw.ts` の宣言と同じ名前）。 */
+/** Placeholder in the Service Worker bundle where the shell list and version are written (same name as declared in `src/serviceWorker/sw.ts`). */
 const SHELL_PLACEHOLDER = '__WBS_SHELL__'
 
 /**
- * Service Worker（`/sw.js`）を焼く（task #192・ADR-0028）。
+ * Builds the Service Worker (`/sw.js`) (task #192, ADR-0028).
  *
- * `src/serviceWorker/sw.ts` を 2 つ目の入口として束ね、出来上がった束に
- * **殻（index.html・ハッシュ付きの assets・public の静的ファイル）の一覧と、その中身から作った版**を
- * 書き込んで `sw.js` として出す。中身が 1 バイトでも変われば `sw.js` も変わるので、
- * ブラウザが新しい版に気付く（ADR-0028 の「新しい版の知らせ」）。
- * 依存（vite-plugin-pwa / workbox）を足さないのは、lockfile を作り直さずに済ませるため。
+ * Bundles `src/serviceWorker/sw.ts` as a second entry, writes into the resulting bundle
+ * **the list of shell files (index.html, hashed assets, static files from public) and a version derived from their contents**,
+ * and emits it as `sw.js`. If the contents change by even one byte, `sw.js` changes too,
+ * so the browser notices the new version (the "new version notice" of ADR-0028).
+ * No dependency (vite-plugin-pwa / workbox) is added, to avoid regenerating the lockfile.
  */
 const serviceWorkerShell = (): Plugin => ({
   name: 'wbs-service-worker-shell',
   apply: 'build',
-  // index.html は Vite の html の部品が generateBundle で出す。それより後に回る
+  // index.html is emitted by Vite's html plugin in generateBundle; run after it
   enforce: 'post',
   generateBundle(_options, bundle) {
     const entry = Object.values(bundle).find((item) => item.type === 'chunk' && item.isEntry && item.name === 'sw')
     if (!entry || entry.type !== 'chunk') {
-      this.error('Service Worker の入口（sw）が束に見当たりません')
+      this.error('Service Worker entry (sw) not found in the bundle')
       return
     }
-    // ⚠ Service Worker は古典的なスクリプトとして登録する。ほかの束を import すると動かない
+    // ⚠ The Service Worker is registered as a classic script; importing other chunks breaks it
     if (entry.imports.length > 0 || entry.dynamicImports.length > 0) {
-      this.error(`Service Worker が別の束を読んでいます: ${[...entry.imports, ...entry.dynamicImports].join(', ')}`)
+      this.error(`Service Worker imports other chunks: ${[...entry.imports, ...entry.dynamicImports].join(', ')}`)
       return
     }
     if (!entry.code.includes(SHELL_PLACEHOLDER)) {
-      this.error(`Service Worker の束に ${SHELL_PLACEHOLDER} がありません`)
+      this.error(`${SHELL_PLACEHOLDER} not found in the Service Worker bundle`)
       return
     }
 
@@ -49,7 +49,7 @@ const serviceWorkerShell = (): Plugin => ({
       hash.update(fileName)
       hash.update(item.type === 'chunk' ? item.code : item.source)
     }
-    // 念のため。index.html が一覧に無ければ、オフラインで開いたときに殻が出ない
+    // Just in case. Without index.html in the list, the shell won't show when opened offline
     if (!urls.includes('/index.html')) urls.push('/index.html')
     for (const fileName of readdirSync(PUBLIC_DIR).sort()) {
       urls.push(`/${fileName}`)

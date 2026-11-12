@@ -12,12 +12,12 @@ class CreateMilestoneDTO:
     name: str
     due_date: date | None = None
     description: str | None = None
-    # 空 = 未分類（どのタスクにも付けられる）
+    # Empty = unclassified (can be attached to any task)
     project_id: int | None = None
 
 @dataclass
 class UpdateMilestoneDTO:
-    # UNSET = 変更しない / None = 明示的にクリアする
+    # UNSET = do not change / None = explicitly clear
     name: str | UnsetType = UNSET
     due_date: date | None | UnsetType = UNSET
     description: str | None | UnsetType = UNSET

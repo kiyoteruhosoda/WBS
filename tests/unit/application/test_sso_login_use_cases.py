@@ -1,4 +1,4 @@
-"""SSO ログインの筋書きを、IdP も DB も使わずに確かめる。"""
+"""Check the SSO sign-in scenarios without the IdP or a DB."""
 
 from datetime import datetime, timedelta
 
@@ -52,7 +52,7 @@ class InMemoryUsers(UserAccountRepository):
 class InMemorySessions(RefreshSessionRepository):
     def __init__(self) -> None:
         self.sessions: list = []
-        #: ``(issuer, subject)`` → 利用者。停止の宛名を引くのに使う。
+        #: ``(issuer, subject)`` -> user. Used to look up whom a suspension is addressed to.
         self.user_ids_by_identity: dict[tuple[str, str], int] = {}
 
     def add(self, session):
@@ -77,8 +77,8 @@ class InMemorySessions(RefreshSessionRepository):
         return True
 
     def delete_for_identity(self, identity, *, idp_session_id=None):
-        # 置き場は利用者と結び付きの対応を持たないので、試験で渡された
-        # ``user_ids_by_identity`` を引く（既定では「誰にも当たらない」）。
+        # The store has no user-to-link mapping, so look up the
+        # ``user_ids_by_identity`` given by the test (by default "matches nobody").
         user_id = self.user_ids_by_identity.get((identity.issuer, identity.subject))
         if user_id is None:
             return 0
@@ -121,7 +121,7 @@ class InMemoryTransactions(LoginTransactionRepository):
 
 
 class CountingSecrets(SecretGenerator):
-    """呼ぶたびに違う、しかし予測できる値を返す（検証を目で追えるように）。"""
+    """Return a value that differs on each call but is predictable (so verification can be followed by eye)."""
 
     def __init__(self) -> None:
         self.count = 0
@@ -205,7 +205,7 @@ def login(sso, *, code="auth-code", now=NOW, redirect_path=None):
     return sso
 
 
-# ── ログイン開始 ───────────────────────────────────────────────────────────
+# ── Starting sign-in ───────────────────────────────────────────────────────
 def test_start_login_remembers_state_nonce_and_verifier() -> None:
     sso, _, _, _, transactions = build()
     started = sso.start_login(redirect_path="/tasks", now=NOW)
@@ -213,7 +213,7 @@ def test_start_login_remembers_state_nonce_and_verifier() -> None:
     transaction = transactions.transactions[0]
     assert transaction.state in started.authorization_url
     assert transaction.nonce in started.authorization_url
-    # PKCE の verifier は IdP へ送る URL には出さない（challenge だけを預ける）
+    # The PKCE verifier does not appear in the URL sent to the IdP (only the challenge is handed over)
     assert transaction.code_verifier not in started.authorization_url
 
 
@@ -236,7 +236,7 @@ def test_start_login_sweeps_expired_transactions() -> None:
     assert len(transactions.transactions) == 1
 
 
-# ── コールバック ───────────────────────────────────────────────────────────
+# ── Callback ───────────────────────────────────────────────────────────────
 def test_completing_a_login_creates_the_user_and_a_session() -> None:
     sso, _, users, sessions, transactions = build()
     sso.start_login(redirect_path="/inbox", now=NOW)
@@ -298,7 +298,7 @@ def test_a_second_login_reuses_the_same_user() -> None:
 
 
 def test_an_existing_user_is_linked_by_verified_email() -> None:
-    """⚠ **寄せると決めた配備でだけ**起きる（既定は寄せない。下の試験）。"""
+    """⚠ Happens **only in deployments that chose to merge** (the default does not merge; see the test below)."""
     existing = UserAccount(id=7, email="taro@example.com", display_name="Old Name")
     sso, _, users, _, transactions = build(
         users=[existing], policy=ProvisioningPolicy(link_by_email=True)
@@ -309,7 +309,7 @@ def test_an_existing_user_is_linked_by_verified_email() -> None:
     assert len(users.users) == 1
     assert users.users[0].id == 7
     assert users.users[0].identities == [FederatedIdentity(issuer=ISSUER, subject="abc")]
-    # IdP 側の表示名を正とする
+    # The IdP's display name wins
     assert users.users[0].display_name == "Taro"
 
 
@@ -317,7 +317,7 @@ def test_a_deactivated_user_cannot_sign_in() -> None:
     existing = UserAccount(id=7, email="taro@example.com", display_name="Taro", is_active=False)
     sso, _, _, _, transactions = build(users=[existing])
     sso.start_login(redirect_path=None, now=NOW)
-    with pytest.raises(Exception):  # noqa: B017 - ValidationError / AccessDeniedError のどちらでも不可
+    with pytest.raises(Exception):  # noqa: B017 - either ValidationError or AccessDeniedError is fine
         sso.complete_login(code="c", state=transactions.transactions[0].state, now=NOW)
 
 
@@ -356,9 +356,9 @@ def test_an_invited_user_may_sign_in_when_provisioning_is_off() -> None:
 
 
 def test_linking_by_email_is_refused_when_emails_are_not_verified() -> None:
-    """検証済みメールを要求しない設定では、メール一致での紐付けを許さない。
+    """When verified email is not required, linking by matching email is not allowed.
 
-    許すと「他人のメールを名乗れる IdP」で既存アカウントを乗っ取れる。
+    Allowing it would let an "IdP that lets you claim someone else's email" take over existing accounts.
     """
     existing = UserAccount(id=7, email="taro@example.com", display_name="Taro")
     sso, _, _, _, transactions = build(
@@ -371,23 +371,23 @@ def test_linking_by_email_is_refused_when_emails_are_not_verified() -> None:
 
 
 def test_linking_by_email_is_off_by_default() -> None:
-    """⚠ **メールアドレスは本人の証明ではない。**
+    """⚠ **An email address is not proof of identity.**
 
-    ``email_verified`` が真でも、それは「IdP がそのアドレスへ到達できる」であって
-    「この利用者が本人である」ではない。寄せる形を既定で開けておくと、IdP 側で
-    誰かのアドレスを名乗れた時点で、このアプリの既存の口座に入れてしまう。
+    Even if ``email_verified`` is true, it means "the IdP can reach that address",
+    not "this user is that person". Leaving merging open by default would let anyone who could claim
+    someone's address at the IdP get into this app's existing account.
     """
     existing = UserAccount(id=7, email="taro@example.com", display_name="Taro")
     sso, _, users, _, transactions = build(users=[existing])
     sso.start_login(redirect_path=None, now=NOW)
     with pytest.raises(AccessDeniedError):
         sso.complete_login(code="c", state=transactions.transactions[0].state, now=NOW)
-    # ⚠ 既存の利用者は**そのまま**。新しく作りもしない。
+    # ⚠ The existing user stays **as is**. No new one is created either.
     assert [u.id for u in users.users] == [7]
     assert users.users[0].identities == []
 
 
-# ── トークン ───────────────────────────────────────────────────────────────
+# ── Tokens ─────────────────────────────────────────────────────────────────
 def _signed_in():
     sso, session_auth, users, sessions, transactions = build()
     sso.start_login(redirect_path=None, now=NOW)
@@ -460,7 +460,7 @@ def test_reissuing_the_access_token_needs_a_live_sign_in() -> None:
     assert session_auth.reissue_access(token=issued.access_token, now=NOW) is None
 
 
-# ── 黙って確かめる（prompt=none。ADR-0062） ───────────────────────────────
+# ── Silent check (prompt=none; ADR-0062) ───────────────────────────────────
 def test_a_silent_start_asks_without_a_screen() -> None:
     sso, _, _, _, transactions = build()
     started = sso.start_login(redirect_path="/gantt", now=NOW, silent=True)
@@ -472,7 +472,7 @@ def test_declining_a_silent_start_returns_where_to_go() -> None:
     sso, _, _, _, transactions = build()
     started = sso.start_login(redirect_path="/gantt", now=NOW, silent=True)
     assert sso.decline_silent_login(state=started.browser_binding, now=NOW) == "/gantt"
-    # 使い切る
+    # Used up
     assert transactions.transactions == []
 
 
@@ -482,7 +482,7 @@ def test_declining_an_ordinary_start_is_not_silent() -> None:
     assert sso.decline_silent_login(state=started.browser_binding, now=NOW) is None
 
 
-# ── 続ける（見えない枠の中の prompt=none。ADR-0071） ─────────────────────
+# ── Continue (prompt=none inside the hidden frame; ADR-0071) ───────────────
 def _renewal(sso, transactions, continued):
     started = sso.start_renewal(continued=continued, now=NOW)
     return started, transactions.transactions[-1]

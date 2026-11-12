@@ -1,7 +1,7 @@
-"""依存（task_dependencies）が利用者を跨がないこと（task #164）。
+"""Dependencies (task_dependencies) do not cross users (task #164).
 
-``task_dependencies`` には持ち主の列が無く、以前は全員分を引いてから絞っていた。
-利用者を 2 人にして、ガント・依存の取得・追加・削除のどれでも他人の分に届かないことを見る。
+``task_dependencies`` has no owner column; previously it fetched everyone's rows and then filtered.
+With two users, check that Gantt, fetching, adding and deleting dependencies never reach the other user's rows.
 """
 
 from __future__ import annotations
@@ -55,7 +55,7 @@ def other_user_id(db) -> int:
 
 @pytest.fixture
 def two_users(client, other_user_id):
-    """``me`` / ``other`` で current user を切り替える。既定は自分（単独利用者）。"""
+    """Switch the current user with ``me`` / ``other``. Default is me (single user)."""
 
     class Switch:
         def me(self) -> None:
@@ -84,7 +84,7 @@ def _depend(client, successor: int, predecessor: int):
 
 @pytest.fixture
 def world(client, two_users):
-    """自分に A→B、他人に X→Y の依存を作る。"""
+    """Create an A→B dependency for me and X→Y for the other user."""
     a = _task(client, "自分の A")
     b = _task(client, "自分の B")
     assert _depend(client, b, a).status_code == 201
@@ -123,7 +123,7 @@ def test_repository_returns_only_dependencies_whose_both_ends_are_mine(
     assert [(d.predecessor_task_id, d.successor_task_id) for d in theirs] == [
         (world["x"], world["y"])
     ]
-    # 他人のタスクを名指ししても、自分の分としては何も返らない。
+    # Even when naming the other user's tasks, nothing is returned as mine.
     assert repo.find_by_task_for_user(world["y"], SINGLE_USER_ID) == []
 
 
@@ -136,11 +136,11 @@ def test_cannot_read_dependencies_of_someone_elses_task(client, world) -> None:
 
 
 def test_cannot_add_a_dependency_that_touches_someone_elses_task(client, world) -> None:
-    # 他人のタスクを先行に指す
+    # Point the predecessor at the other user's task
     assert _depend(client, world["b"], world["x"]).status_code == 404
-    # 他人のタスクに後続として依存を足す
+    # Add a dependency to the other user's task as successor
     assert _depend(client, world["y"], world["a"]).status_code == 404
-    # 他人のタスク同士
+    # Between the other user's tasks
     assert _depend(client, world["x"], world["y"]).status_code == 404
 
     gantt = client.get("/api/gantt").json()
@@ -157,15 +157,15 @@ def test_cannot_remove_someone_elses_dependency(client, two_users, world) -> Non
 
 
 def test_cycle_check_still_works_within_my_tasks(client, world) -> None:
-    # A→B があるので B→A は循環
+    # A→B exists, so B→A is a cycle
     assert _depend(client, world["a"], world["b"]).status_code == 409
 
 
 def test_cycle_check_follows_a_longer_chain(client, world) -> None:
     c = _task(client, "自分の C")
     assert _depend(client, c, world["b"]).status_code == 201  # A→B→C
-    assert _depend(client, world["a"], c).status_code == 409  # C→A で循環
-    assert _depend(client, world["a"], world["a"]).status_code == 409  # 自分自身
+    assert _depend(client, world["a"], c).status_code == 409  # cycle via C→A
+    assert _depend(client, world["a"], world["a"]).status_code == 409  # itself
 
 
 def test_i_can_still_remove_my_own_dependency(client, world) -> None:

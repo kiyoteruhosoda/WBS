@@ -1,7 +1,7 @@
-"""プロジェクトのカレンダーを、自分と先祖の休日・稼働日から組む（ADR-0059 決定 1・ADR-0060）。
+"""Build a project's calendar from the days off and working days of itself and its ancestors (ADR-0059 decision 1, ADR-0060).
 
-同じ日に休日と稼働日の両方があれば、**近いプロジェクト（自分 → 親 → … → 根）の指定が勝つ**。
-同じプロジェクトに同じ日の休日と稼働日は並ばない（入れるときに片方を消す）。
+If one day has both a day off and a working day, **the nearest project's setting wins (self → parent → … → root)**.
+One project never has both a day off and a working day on the same day (one is removed when adding).
 """
 
 from __future__ import annotations
@@ -15,7 +15,7 @@ from src.domain.entities.team_day_off import TeamDayOff, TeamExtraWorkday
 
 @dataclass(frozen=True)
 class LayeredCalendarDays:
-    """近いほうが勝ったあとの休日と稼働日（どちらも日付の順。同じ日は重ならない）。"""
+    """Days off and working days after the nearest wins (both in date order; no day appears in both)."""
 
     days_off: list[TeamDayOff]
     extra_workdays: list[TeamExtraWorkday]
@@ -26,7 +26,7 @@ def layer_calendar_days(
     days_off: Iterable[TeamDayOff],
     extra_workdays: Iterable[TeamExtraWorkday],
 ) -> LayeredCalendarDays:
-    """``lineage`` は自分から根までの id（自分が先頭）。それ以外のプロジェクトのものは捨てる。"""
+    """``lineage`` is the ids from self up to the root (self first). Entries of any other project are discarded."""
     rank = {project_id: i for i, project_id in enumerate(lineage)}
     by_day: dict[date, tuple[int, TeamDayOff | TeamExtraWorkday]] = {}
     for item in [*days_off, *extra_workdays]:

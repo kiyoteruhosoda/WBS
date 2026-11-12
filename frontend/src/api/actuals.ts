@@ -4,7 +4,7 @@ import type {
 } from '../types/actuals';
 import type { ProjectFilterParams } from '../projects/projectScope';
 
-/** 実績の見える化（task #162、ADR-0017）。実績・残を書いたら読み直させる。 */
+/** Actuals visualization (task #162, ADR-0017). Refetched after actuals or remaining are written. */
 export const ACTUALS_KEY = ['actuals'] as const;
 
 export interface RangeParams {
@@ -12,7 +12,7 @@ export interface RangeParams {
   to?: string;
 }
 
-// project: サイドバーで選んだプロジェクト（子孫を含む）・未分類だけ（task #187、ADR-0024）
+// project: the project selected in the sidebar (including descendants) or unassigned only (task #187, ADR-0024)
 
 export const getTaskActuals = async (reviewOnly = false, project: ProjectFilterParams = {}): Promise<TaskActuals> => {
   const { data } = await client.get<TaskActuals>('/actuals/tasks', { params: { review_only: reviewOnly, ...project } });
@@ -41,7 +41,7 @@ export const getBreakdown = async (
   return data;
 };
 
-/** CSV の書き出し口（同一オリジンなので、リンクで開けばセッションの Cookie が付く）。 */
+/** CSV export URL (same origin, so opening it as a link sends the session cookie). */
 export const exportCsvUrl = (
   from: string, to: string, project: ProjectFilterParams = {},
 ): string => {

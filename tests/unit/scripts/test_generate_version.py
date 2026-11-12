@@ -1,6 +1,6 @@
-"""``scripts/generate_version.sh`` の優先順位（git > 既にある version.json > dev）。
+"""Precedence of ``scripts/generate_version.sh`` (git > existing version.json > dev).
 
-task #168、ADR-0011。スクリプトを使い捨てのリポジトリの根へ写して走らせる。
+task #168, ADR-0011. The script is copied to the root of a throwaway repository and run there.
 """
 
 from __future__ import annotations
@@ -52,7 +52,7 @@ def test_without_git_or_file_it_stamps_dev(tmp_path) -> None:
 
 
 def test_inside_the_image_it_keeps_what_the_build_stamped(tmp_path) -> None:
-    # イメージの中（.git が無い）では、ビルドの前に刻まれた内容を dev に潰さない
+    # Inside the image (no .git), do not overwrite the content stamped before the build with dev
     project = _project(tmp_path)
     (project / STAMP).parent.mkdir(parents=True)
     original = '{"version": "abc1234", "commit_hash": "abc1234", "build_date": "2026-10-01T00:00:00Z"}\n'
@@ -63,13 +63,13 @@ def test_inside_the_image_it_keeps_what_the_build_stamped(tmp_path) -> None:
     assert (project / STAMP).read_text(encoding="utf-8") == original
 
 
-@pytest.mark.skipif(shutil.which("git") is None, reason="git が無い")
+@pytest.mark.skipif(shutil.which("git") is None, reason="git is not available")
 def test_with_git_it_stamps_the_commit_and_overwrites_a_stale_file(tmp_path) -> None:
     project = _project(tmp_path)
     _git(project, "init", "-q", "-b", "main")
     _git(project, "add", "scripts")
     _git(project, "commit", "-q", "-m", "init")
-    _git(project, "checkout", "-q", "--detach")  # deck・CI のチェックアウトと同じ形
+    _git(project, "checkout", "-q", "--detach")  # same shape as the deck/CI checkout
     (project / STAMP).parent.mkdir(parents=True)
     (project / STAMP).write_text('{"version": "old", "commit_hash": "old"}', encoding="utf-8")
 

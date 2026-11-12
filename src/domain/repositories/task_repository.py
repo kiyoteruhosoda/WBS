@@ -12,9 +12,9 @@ class TaskRepository(ABC):
     def find_by_id_for_user(self, task_id: int, user_id: int) -> Task | None: ...
     @abstractmethod
     def find_all(self, user_id: int, filters: dict) -> list[Task]:
-        """消していないタスク。``filters`` の ``project_ids``（この中のどれかに属する）・
-        ``unclassified``（プロジェクトが空）・``assignee_user_id``（担当者）・
-        ``unassigned``（担当なし）でも絞れる。⚠ 「利用者の」は「利用者に見える」（ADR-0055）。"""
+        """Tasks that are not deleted. Can also be filtered by ``filters``' ``project_ids`` (belongs to any of them),
+        ``unclassified`` (no project), ``assignee_user_id`` (assignee) and
+        ``unassigned`` (no assignee). ⚠ "The user's" means "visible to the user" (ADR-0055)."""
     @abstractmethod
     def save(self, task: Task) -> Task: ...
     @abstractmethod
@@ -23,13 +23,13 @@ class TaskRepository(ABC):
     def get_actual_hours(self, task_id: int) -> float: ...
     @abstractmethod
     def get_actual_hours_by_task(self, user_id: int) -> dict[int, float]:
-        """利用者に見えるタスクごとの実績（全員ぶんの、削除していない work_logs の合計）。work_logs の無いタスクは載らない。"""
+        """Actuals per task visible to the user (sum of everyone's non-deleted work_logs). Tasks without work_logs are not included."""
     @abstractmethod
     def subtree_ids(self, user_id: int, task_id: int) -> list[int]:
-        """自分と子孫のタスクの id（消したものも含む。再帰 CTE で 1 回に引く）。"""
+        """Ids of the task and its descendants (including deleted ones; fetched at once with a recursive CTE)."""
     @abstractmethod
     def set_project(self, task_ids: list[int], project_id: int | None) -> None:
-        """タスクをまとめて別のプロジェクトへ移す（子孫を親に揃えるため）。"""
+        """Move tasks to another project in bulk (to align descendants with their parent)."""
     @abstractmethod
     def detach_milestone(self, task_ids: list[int]) -> None:
-        """マイルストーンを外す（届かないプロジェクトへ移ったタスク。ADR-0024）。"""
+        """Detach the milestone (tasks moved to a project it cannot reach. ADR-0024)."""

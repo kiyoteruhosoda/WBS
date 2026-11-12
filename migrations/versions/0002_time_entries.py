@@ -1,11 +1,11 @@
-"""time_entries: 打刻（Start / Stop のタイムトラッカー。task #154 / ADR-0008）
+"""time_entries: clock-ins (Start / Stop time tracker. task #154 / ADR-0008)
 
 Revision ID: 0002
 Revises: 0001
 Create Date: 2026-10-01
 
-走っている打刻（``ended_at`` が空）は 1 人 1 本を、部分一意索引
-``uq_time_entries_running_per_user``（``WHERE ended_at IS NULL``）で守る。
+One running clock-in (empty ``ended_at``) per user is enforced by the partial unique index
+``uq_time_entries_running_per_user`` (``WHERE ended_at IS NULL``).
 """
 
 from __future__ import annotations

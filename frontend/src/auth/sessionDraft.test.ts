@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { clearSessionDrafts } from './sessionDraft';
 
-/** 試験は node で走るので、ブラウザの保存領域を素の物で代える（Object.keys で鍵が見えるように） */
+/** Tests run in node, so browser storage is replaced with a plain object (so Object.keys sees the keys) */
 const fakeStorage = () => {
   const store: Record<string, string> = {};
   return Object.defineProperties(store, {
@@ -15,8 +15,8 @@ beforeEach(() => {
   vi.stubGlobal('window', { sessionStorage: fakeStorage() });
 });
 
-describe('書きかけ（ADR-0071）', () => {
-  it('サインアウトでこのアプリの書きかけだけを消す', () => {
+describe('drafts (ADR-0071)', () => {
+  it('clears only this app's drafts on sign-out', () => {
     window.sessionStorage.setItem('wbs.draft:inbox', '{"title":"a","memo":""}');
     window.sessionStorage.setItem('wbs.sso.silentAttempted', '1');
     clearSessionDrafts();

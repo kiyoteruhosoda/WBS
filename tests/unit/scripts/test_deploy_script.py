@@ -138,7 +138,7 @@ def test_deploy_app_uses_directory_profile_without_environment_argument(tmp_path
     assert "docker image inspect wbs-api:stg" in commands
     assert "docker image inspect wbs-web:stg" in commands
     assert f"curl -fs http://127.0.0.1:{STG.default_web_port}/api/health" in commands
-    # compose はイメージ内のコピーで毎回上書きされる（配置先の手編集は残らない）
+    # compose is overwritten every time by the copy in the image (hand edits at the destination do not survive)
     assert "docker create wbs-api:stg" in commands
     compose_text = (host.root / "docker-compose.yml").read_text(encoding="utf-8")
     assert "# synced-from-image" in compose_text

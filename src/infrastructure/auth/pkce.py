@@ -1,4 +1,4 @@
-"""PKCE（RFC 7636）の code_challenge 生成。"""
+"""PKCE (RFC 7636) code_challenge generation."""
 
 from __future__ import annotations
 
@@ -9,11 +9,11 @@ CODE_CHALLENGE_METHOD = "S256"
 
 
 def code_challenge_from_verifier(code_verifier: str) -> str:
-    """``S256`` 方式の code_challenge。
+    """code_challenge for the ``S256`` method.
 
-    認可コードは IdP から利用者のブラウザ経由で戻ってくるため、リダイレクト履歴や
-    ログから漏れ得る。challenge を先に預けておけば、verifier を持たない相手は
-    コードを手に入れてもトークンに換えられない。
+    The authorization code comes back from the IdP via the user's browser, so it can leak from
+    redirect history or logs. With the challenge registered in advance, someone without the verifier
+    cannot exchange the code for tokens even if they obtain it.
     """
     digest = hashlib.sha256(code_verifier.encode("ascii")).digest()
     return base64.urlsafe_b64encode(digest).rstrip(b"=").decode("ascii")

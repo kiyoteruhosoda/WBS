@@ -1,12 +1,12 @@
-"""IdP へ出ていく HTTP が 4 経路とも User-Agent を名乗ることの確認。
+"""Check that HTTP going out to the IdP sends a User-Agent on all 4 paths.
 
-ライブラリ既定の UA は WAF に自動化ツールとして弾かれることがある。とくに
-**JWKS だけは PyJWT の ``PyJWKClient`` が urllib で取りに行く**ため、httpx 側に
-ヘッダを足しても効かない。この食い違いを突き止めるのは難しい —— トークン交換
-までは成功して署名検証だけが落ちるので、画面には「ログインに失敗しました」と
-しか出ず、サーバのログにも例外が残らない。
+A library's default UA may be rejected by a WAF as an automation tool. In particular,
+**only JWKS is fetched via urllib by PyJWT's ``PyJWKClient``**, so adding the header on the httpx side
+does not help. This mismatch is hard to track down: the token exchange
+succeeds and only signature verification fails, so the screen just says 「ログインに失敗しました」 (sign-in failed)
+and the server log has no exception either.
 
-だから「4 経路とも」を機械で見張る。
+So "all 4 paths" is watched by a machine.
 """
 
 
@@ -73,7 +73,7 @@ def _response(payload: dict) -> httpx.Response:
     return httpx.Response(200, json=payload, request=httpx.Request("GET", ISSUER))
 
 
-# ── 1. ディスカバリ（httpx.get） ────────────────────────────────────────────
+# ── 1. Discovery (httpx.get) ───────────────────────────────────────────────
 def test_the_discovery_document_is_fetched_with_a_user_agent(monkeypatch) -> None:
     seen: dict = {}
 
@@ -86,7 +86,7 @@ def test_the_discovery_document_is_fetched_with_a_user_agent(monkeypatch) -> Non
     assert seen["headers"]["User-Agent"] == USER_AGENT
 
 
-# ── 2. トークンエンドポイント（httpx.post） ─────────────────────────────────
+# ── 2. Token endpoint (httpx.post) ─────────────────────────────────────────
 def test_the_token_request_carries_a_user_agent(monkeypatch) -> None:
     seen: dict = {}
 
@@ -98,7 +98,7 @@ def test_the_token_request_carries_a_user_agent(monkeypatch) -> None:
     provider = OidcIdentityProvider(_settings(), discovery=StubDiscoveryClient())
     provider._request_tokens("code", "verifier")
     assert seen["headers"]["User-Agent"] == USER_AGENT
-    # Accept を上書きしていないこと（ヘッダを足したつもりで潰す事故を止める）
+    # Accept is not overwritten (stops the accident of clobbering it while adding headers)
     assert seen["headers"]["Accept"] == "application/json"
 
 
@@ -114,13 +114,13 @@ def test_the_userinfo_request_carries_a_user_agent(monkeypatch) -> None:
     provider = OidcIdentityProvider(_settings(), discovery=StubDiscoveryClient())
     provider._fetch_userinfo(DISCOVERY.userinfo_endpoint, "at")
     assert seen["headers"]["User-Agent"] == USER_AGENT
-    # Bearer を落としていないこと
+    # Bearer is not dropped
     assert seen["headers"]["Authorization"] == "Bearer at"
 
 
-# ── 4. JWKS（PyJWKClient ＝ urllib。ここが抜けやすい） ──────────────────────
+# ── 4. JWKS (PyJWKClient = urllib; the easy one to miss) ───────────────────
 def test_the_jwks_client_is_built_with_a_user_agent(monkeypatch) -> None:
-    """httpx ではなく urllib を使う唯一の経路。同じヘッダが渡ること。"""
+    """The only path that uses urllib instead of httpx. The same headers must be passed."""
     seen: dict = {}
 
     class SpyJwksClient:
@@ -135,13 +135,13 @@ def test_the_jwks_client_is_built_with_a_user_agent(monkeypatch) -> None:
     assert seen["headers"]["User-Agent"] == USER_AGENT
 
 
-# ── 弾かれたときに何が起きるかの記録 ────────────────────────────────────────
+# ── Record of what happens when rejected ───────────────────────────────────
 def test_a_rejected_jwks_fetch_surfaces_as_an_authentication_error(monkeypatch) -> None:
-    """UA を弾かれると「トークンは通ったのに署名検証だけ落ちる」形になる。
+    """When the UA is rejected it looks like "the token passed but only signature verification failed".
 
-    この経路が ``AuthenticationError`` になることを固定しておく。画面には
-    「ログインに失敗しました」としか出ないので、切り分けはログと突き合わせに
-    なる —— せめて例外の型は変えない。
+    Pin that this path becomes ``AuthenticationError``. The screen only says
+    「ログインに失敗しました」 (sign-in failed), so diagnosis means cross-checking the logs;
+    at least keep the exception type unchanged.
     """
     import jwt
 

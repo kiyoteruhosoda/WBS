@@ -1,4 +1,4 @@
-"""ログインの控えと Cookie を HTTP の入口から確かめる（ADR-0069・ADR-0071）。"""
+"""Check sign-in records and cookies from the HTTP entry point (ADR-0069, ADR-0071)."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from fastapi.testclient import TestClient
 from src.infrastructure.auth.auth_settings import LOGOUT_COOKIE_NAME, REFRESH_COOKIE_NAME
 from src.infrastructure.database.session import get_engine
 from src.shared.clock import utcnow
-from tests.integration.api.test_auth import (  # noqa: F401 - fixture を借りる
+from tests.integration.api.test_auth import (  # noqa: F401 - borrow fixtures
     COOKIE,
     sign_in,
     sign_in_alive,
@@ -43,7 +43,7 @@ def _callback_cookies(client: TestClient) -> dict[str, str]:
 
 
 def test_signing_in_sets_only_the_access_token_and_keeps_it_for_thirty_days(sso_client) -> None:  # noqa: F811
-    """⚠ リフレッシュトークンもログアウトの札も出さない（ADR-0071）。以前のものが残っていれば落とす。"""
+    """⚠ Issue neither a refresh token nor a logout ticket (ADR-0071). Drop any left over from before."""
     cookies = _callback_cookies(sso_client)
     assert "HttpOnly" in cookies[COOKIE]
     assert "SameSite=lax" in cookies[COOKIE]
@@ -95,7 +95,7 @@ def test_logging_out_ends_this_sign_in_and_clears_the_cookies(sso_client) -> Non
 
 
 def test_logging_out_after_the_access_token_expired_still_ends_the_sign_in(sso_client) -> None:  # noqa: F811
-    """ログアウトの札はもう無い。切れたアクセストークンからでも、どのログインかは読める（ADR-0071）。"""
+    """The logout ticket is gone. Even from an expired access token we can read which sign-in it is (ADR-0071)."""
     sign_in(sso_client)
     later = utcnow() + timedelta(hours=3)
     with patch("src.presentation.api.routers.auth.utcnow", return_value=later):
@@ -123,7 +123,7 @@ def test_a_forged_access_token_does_not_end_someone_elses_sign_in(sso_client) ->
 
 
 def test_a_cookie_from_before_the_tokens_means_one_more_sign_in(sso_client) -> None:  # noqa: F811
-    """配った直後に残っている古い Cookie。500 にせず、ログインし直せば入れる。"""
+    """An old cookie left right after the rollout. Don't return a 500; signing in again gets you in."""
     sso_client.cookies.set(COOKIE, "old-opaque-session-token")
     assert sso_client.get(ME).status_code == 401
     sign_in(sso_client)

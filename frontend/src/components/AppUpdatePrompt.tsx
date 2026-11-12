@@ -6,16 +6,16 @@ import type { ApplyUpdate, WatchForUpdate } from '../pwa/appUpdate';
 import { followUpdateBarHeight } from '../pwa/updateBarHeight';
 
 /**
- * 「新しい版があります」の知らせ（task #192・ADR-0028。雛形の ADR-0035 と同じ形）。
+ * The "new version available" notice (task #192, ADR-0028; same shape as the template's ADR-0035).
  *
- * 新しい版が待機したときだけ**画面のいちばん上に横幅いっぱいの帯**で出し、押されたら再読み込みする
- * （出す場所は ADR-0072）。帯はどの画面にも出し（ログイン画面にはヘッダーが無いので、ヘッダーの中ではなく
- * その上に置く）、下へ送っても上に残す。ヘッダーと左のメニューが帯の真下に付くよう、帯の高さを
- * CSS 変数 `--update-bar-height` で渡す（`pwa/updateBarHeight.ts`）。
- * トーストや画面の下に浮かぶ知らせは使わない ——消えたり本文に紛れたりして、古い版のまま使い続けることになる。
+ * Shown only when a new version is waiting, as a **full-width bar at the very top of the screen**; clicking it reloads
+ * (placement per ADR-0072). The bar appears on every screen (the login screen has no header, so it sits above
+ * the header rather than inside it) and stays at the top when scrolling. So the header and left menu sit right below it,
+ * the bar's height is passed via the CSS variable `--update-bar-height` (`pwa/updateBarHeight.ts`).
+ * No toasts or floating notices at the bottom -- they vanish or blend into the content and people keep using the old version.
  *
- * 見張り方（`pwa/appUpdate.ts`）は引数で受け取る（Service Worker を登録する副作用をこの部品から切り離す）。
- * ログインの外（ログイン画面）でも出すので、文言は利用者設定に頼らない `translate` で引く。
+ * The watcher (`pwa/appUpdate.ts`) is passed in as an argument (keeps the Service Worker registration side effect out of this component).
+ * It is also shown outside login (on the login screen), so its text comes from `translate`, which doesn't depend on user settings.
  */
 const AppUpdatePrompt: React.FC<{ watch: WatchForUpdate }> = ({ watch }) => {
   const [apply, setApply] = useState<ApplyUpdate | null>(null);
@@ -23,11 +23,11 @@ const AppUpdatePrompt: React.FC<{ watch: WatchForUpdate }> = ({ watch }) => {
   const barRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    // useState は関数を「遅延初期化」と解釈するので、関数を入れるときは関数を返す関数を渡す
+    // useState treats a function as a lazy initializer, so to store a function pass a function that returns it
     watch((applyUpdate) => setApply(() => applyUpdate));
   }, [watch]);
 
-  // 帯の高さをヘッダーと左のメニューの貼り付く位置へ渡す。帯が消えたら外す。
+  // Pass the bar height to where the header and left menu stick. Remove it when the bar goes away.
   useEffect(() => {
     const bar = barRef.current;
     if (!apply || bar === null) return undefined;
@@ -42,8 +42,8 @@ const AppUpdatePrompt: React.FC<{ watch: WatchForUpdate }> = ({ watch }) => {
       role="status"
       className="update-bar"
       sx={{
-        // 下へ送っても上に残す。重ねずに場所を取るので、ヘッダーや本文の先頭を隠さない。
-        // z-index はヘッダー（10）より上、狭い画面のメニュー（MUI の Drawer は 1200）より下。
+        // Stays at the top when scrolling. It takes up space instead of overlapping, so it doesn't hide the header or the top of the content.
+        // z-index is above the header (10) and below the narrow-screen menu (MUI Drawer is 1200).
         position: 'sticky', top: 0, zIndex: 1100,
         display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'center',
         columnGap: '12px', rowGap: '6px', py: '8px',
@@ -62,7 +62,7 @@ const AppUpdatePrompt: React.FC<{ watch: WatchForUpdate }> = ({ watch }) => {
           apply();
         }}
         startIcon={applying ? <CircularProgress size={14} sx={{ color: 'inherit' }} /> : undefined}
-        // 帯と同じ色だと沈むので、色を反転させて押せる所だと分かるようにする
+        // The same color as the bar would blend in, so invert the colors to make it clearly clickable
         sx={{
           minHeight: 36, flexShrink: 0, whiteSpace: 'nowrap', bgcolor: '#fff', color: ds.primary,
           '&:hover': { bgcolor: ds.primaryPale },

@@ -1,22 +1,22 @@
-# SPA 配信 + /api/ のリバースプロキシ。
+# Serves the SPA + reverse proxy for /api/.
 #
-# nginx 公式イメージの envsubst 機構でコンテナ起動時に展開される
-# (/etc/nginx/templates/*.template → /etc/nginx/conf.d/*)。
-# 既定値は Dockerfile の ENV で与えているので、compose 側で何も指定しなくても
-# 従来どおり http://api:8000 を向く。
+# Expanded at container start by the official nginx image's envsubst mechanism
+# (/etc/nginx/templates/*.template → /etc/nginx/conf.d/*).
+# Defaults are given by ENV in the Dockerfile, so even with nothing set in compose
+# it points at http://api:8000 as before.
 #
-# ⚠ upstream を直書き (proxy_pass http://api:8000;) に戻さないこと。
-#   nginx は upstream 名を**起動時に一度だけ解決してキャッシュする**ため、api の
-#   コンテナを作り直して IP が変わると、消えた IP に接続し続けて 502 を返し続ける。
-#   復旧にはこのコンテナの再起動が要る。resolver + 変数経由なら毎リクエスト解決に
-#   なり、api を作り直しても数秒で自動復旧する。
+# ⚠ Do not go back to a hard-coded upstream (proxy_pass http://api:8000;).
+#   nginx **resolves the upstream name once at startup and caches it**, so when the api
+#   container is recreated and its IP changes, it keeps connecting to the gone IP and keeps returning 502.
+#   Recovery needs a restart of this container. With resolver + a variable it resolves per request
+#   and recovers automatically within seconds after the api is recreated.
 
 resolver ${WBS_RESOLVER} valid=10s ipv6=off;
 
-# ログイン前の口だけ IP ごとに絞る（nolumiatask #749。手本は deploy-repo の front nginx）。
-# ⚠ 鍵は $remote_addr ではなく Cloudflare が付ける CF-Connecting-IP。$remote_addr は docker の
-#   ゲートウェイに化けるので、それで数えると全員で 1 つの上限を分け合う。外から偽れない
-#   （Cloudflare が上書きする）。宅内から直接来る要求にはこの頭が無く、数えない。
+# Rate-limit only the pre-login endpoints per IP (nolumiatask #749; modeled on the front nginx in deploy-repo).
+# ⚠ The key is CF-Connecting-IP set by Cloudflare, not $remote_addr. $remote_addr turns into the docker
+#   gateway, so counting by it makes everyone share one limit. It cannot be spoofed from outside
+#   (Cloudflare overwrites it). Requests coming directly from the home LAN lack this header and are not counted.
 limit_req_zone $http_cf_connecting_ip zone=auth_ip:1m rate=10r/m;
 
 server {
@@ -24,9 +24,9 @@ server {
     root /usr/share/nginx/html;
     index index.html;
 
-    # SSO の開始。呼ぶたびに DB へ 1 行書くので、1 IP あたり毎分 10 回まで。
-    # 連打は 11 回まで通り、そこから先は即 429 で、6 秒ごとに 1 回分戻る。
-    # ⚠ 末尾の `$` があるので綴りが違う口はここに来ない。
+    # SSO start. Each call writes one row to the DB, so up to 10 per minute per IP.
+    # A burst passes up to 11 calls, then gets an immediate 429; one slot returns every 6 seconds.
+    # ⚠ Because of the trailing `$`, differently spelled paths do not land here.
     location ~ ^/api/auth/login$ {
         limit_req zone=auth_ip burst=10 nodelay;
         limit_req_status 429;
@@ -42,8 +42,8 @@ server {
     }
 
     location /api/ {
-        # ⚠ 値にパスを含めないこと。`$upstream/` のように書くと location の /api/ が
-        #   剥がれて api 側のルーティングが全部外れる。
+        # ⚠ Do not include a path in the value. Writing it like `$upstream/` strips the location's /api/
+        #   and breaks all routing on the api side.
         set $api_upstream http://${WBS_API_HOST}:${WBS_API_PORT};
         proxy_pass $api_upstream;
 
@@ -54,13 +54,13 @@ server {
         proxy_set_header X-Forwarded-Proto $scheme;
     }
 
-    # ── PWA（task #192・ADR-0028）──────────────────────────────────────
-    # ⚠ Service Worker・manifest・アイコンは認証の外（ここは静的に配るだけで、ログインを求めない）。
-    #   sw.js を転送（302）で返すとブラウザは登録できず、ホーム画面に置けなくなる。
-    # ⚠ 無いファイルに index.html を返さない（=404）。sw.js や assets に index.html（200）が返ると、
-    #   Service Worker が HTML を JavaScript として殻に入れてしまう。
-    # ⚠ sw.js・index.html・manifest は no-cache（毎回確かめる）。古いものが残ると新しい版に気付けない。
-    #   ハッシュ付きの assets/ だけ長く持たせる。
+    # ── PWA (task #192, ADR-0028) ──────────────────────────────────────
+    # ⚠ The Service Worker, manifest and icons are outside auth (served statically here, no login required).
+    #   If sw.js is answered with a redirect (302), the browser cannot register it and the app cannot be added to the home screen.
+    # ⚠ Do not return index.html for missing files (=404). If index.html (200) is returned for sw.js or assets,
+    #   the Service Worker puts HTML into the shell as JavaScript.
+    # ⚠ sw.js, index.html and the manifest are no-cache (revalidated every time). If stale copies remain, new versions go unnoticed.
+    #   Only hashed assets/ are cached long.
     location = /sw.js {
         try_files $uri =404;
         add_header Cache-Control "no-cache" always;
@@ -74,7 +74,7 @@ server {
 
     location /assets/ {
         try_files $uri =404;
-        # always を付けない（404 を長く持たせない）
+        # No `always` (do not cache 404s long)
         add_header Cache-Control "public, max-age=31536000, immutable";
     }
 

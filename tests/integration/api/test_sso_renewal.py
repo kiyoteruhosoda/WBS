@@ -1,4 +1,4 @@
-"""切れたログインを画面を出さずに続ける往復（ADR-0071）を HTTP の入口から確かめる。"""
+"""Check, from the HTTP entry point, the round trip that continues an expired sign-in without showing a screen (ADR-0071)."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from fastapi.testclient import TestClient
 
 from src.infrastructure.database.session import get_engine
 from src.shared.clock import utcnow
-from tests.integration.api.test_auth import (  # noqa: F401 - fixture を借りる
+from tests.integration.api.test_auth import (  # noqa: F401 - borrow fixtures
     COOKIE,
     STATE_COOKIE,
     sign_in,
@@ -38,14 +38,14 @@ def _start(client: TestClient) -> tuple[str, str]:
 
 
 def _renew(client: TestClient, code: str = "taro-code") -> str:
-    """続ける往復を 1 回なぞり、結果の頁の URL を返す。"""
+    """Walk the continue round trip once and return the URL of the result page."""
     _, state = _start(client)
     response = client.get(f"/api/auth/callback?code={code}&state={state}", follow_redirects=False)
     return response.headers["location"]
 
 
 def _expired(client: TestClient) -> None:
-    """アクセストークンの寿命を過ぎた。"""
+    """The access token's lifetime has passed."""
     later = utcnow() + timedelta(minutes=6)
     patcher = patch("src.presentation.api.dependencies.utcnow", return_value=later)
     patcher.start()
@@ -88,7 +88,7 @@ def test_not_being_signed_in_to_the_idp_is_declined(sso_client) -> None:  # noqa
 
 
 def test_someone_else_coming_back_is_declined(sso_client) -> None:  # noqa: F811
-    """IdP で別の人に入り直していた。開いている画面は前の人のものなので続けない。"""
+    """The user signed in again as someone else at the IdP. The open screen belongs to the previous person, so don't continue."""
     sign_in(sso_client)
     assert _renew(sso_client, code="hanako-code") == f"{RESULT}?result=declined"
     assert len(_rows()) == 1
@@ -115,7 +115,7 @@ def test_a_round_trip_from_another_browser_fails(sso_client) -> None:  # noqa: F
 
 
 def test_a_stopped_sign_in_starts_anew_when_the_idp_still_says_yes(sso_client) -> None:  # noqa: F811
-    """控えを消したのは停止の通知・定期照合。IdP がまだ入っていると答えるなら、新しいログインとして入る。"""
+    """The record was deleted by a stop notification or the periodic reconciliation. If the IdP says still signed in, enter as a new sign-in."""
     sign_in(sso_client)
     with get_engine().begin() as connection:
         connection.execute(sa.text("DELETE FROM refresh_sessions"))
@@ -132,7 +132,7 @@ def test_without_a_token_in_hand_the_renewal_is_a_new_sign_in(sso_client) -> Non
 
 
 def test_a_renewal_does_not_create_an_account(sso_client) -> None:  # noqa: F811
-    """利用者を作るのはボタンで入るときだけ。"""
+    """Users are created only when signing in via the button."""
     assert _renew(sso_client) == f"{RESULT}?result=declined"
     with get_engine().connect() as connection:
         count = connection.execute(sa.text("SELECT COUNT(*) FROM users WHERE email = 'taro@example.com'")).scalar()
@@ -161,5 +161,5 @@ def test_an_ordinary_login_still_lands_on_the_screen(sso_client) -> None:  # noq
 
 
 def test_the_renewal_in_single_user_mode_is_not_found(client) -> None:
-    """``/login`` と同じ。画面は枠が結果の頁へ着かないので ``failed`` と読む。"""
+    """Same as ``/login``. The screen reads it as ``failed`` because the frame does not reach the result page."""
     assert client.get(RENEW, follow_redirects=False).status_code == 404

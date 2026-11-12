@@ -1,9 +1,9 @@
-"""プロジェクトの休日と各人の休み（task #554 / ADR-0058 決定 2、task #557 / ADR-0059）。
+"""Project days off and each person's leave (task #554 / ADR-0058 decision 2, task #557 / ADR-0059).
 
-- 休日はどのプロジェクトにも付く。あるプロジェクトの休日は、自分と先祖（根まで）の休日を合わせたもの
-- 稼働日（稼働しない曜日に働く日）も休日と同じく、どのプロジェクトにも付き、下のプロジェクトは引き継ぐ（ADR-0060）
-- 各人の休みは人に付く（プロジェクトをまたいで同じ）。持つのは日付と休む割合（終日 100・半休 50）か、
-  その日の稼働時間（残業・短い日・休日出勤。ADR-0060）だけ
+- Days off attach to any project. A project's days off are the union of its own and its ancestors' (up to the root)
+- Working days (days worked on a non-working weekday) also attach to any project like days off, and lower projects inherit them (ADR-0060)
+- Personal leave attaches to the person (the same across projects). It holds only a date and a leave ratio (full day 100, half day 50),
+  or that day's working hours (overtime, short day, working on a day off. ADR-0060)
 """
 
 from __future__ import annotations
@@ -20,7 +20,7 @@ MAX_DAY_HOURS = 24
 
 
 def team_day_off_name(raw: str | None) -> str | None:
-    """前後の空白を落とした名前（空なら None）。長すぎるものは断る。"""
+    """The name with surrounding whitespace stripped (None if empty). Rejects too-long names."""
     if raw is None:
         return None
     name = raw.strip()
@@ -33,7 +33,7 @@ def team_day_off_name(raw: str | None) -> str | None:
 
 @dataclass(frozen=True)
 class TeamDayOff:
-    #: 休日が付いているプロジェクト（根ならチームの休日）
+    #: Project the day off belongs to (a team day off if it is a root)
     project_id: int
     day: date
     name: str | None = None
@@ -41,7 +41,7 @@ class TeamDayOff:
 
 @dataclass(frozen=True)
 class TeamExtraWorkday:
-    """稼働しない曜日に、そのプロジェクトで働く日（ADR-0060）。"""
+    """A day worked on that project on a non-working weekday (ADR-0060)."""
 
     project_id: int
     day: date
@@ -50,13 +50,13 @@ class TeamExtraWorkday:
 
 @dataclass(frozen=True)
 class MemberDayOff:
-    """人のカレンダーの 1 日: 休み・半休（休む割合）か、その日の稼働時間。"""
+    """One day of a person's calendar: leave / half day (leave ratio) or that day's working hours."""
 
     user_id: int
     day: date
-    #: 休む割合（1〜100。終日 100・半休 50）。``hours`` があれば見ない
+    #: Leave ratio (1–100; full day 100, half day 50). Ignored if ``hours`` is set
     off_percent: int = FULL_DAY_OFF_PERCENT
-    #: その日の稼働時間（0〜24。1 日の工数より多くてもよい＝残業。稼働しない日なら休日出勤）
+    #: That day's working hours (0–24; may exceed hours per day = overtime; on a non-working day it means working on a day off)
     hours: float | None = None
 
     def __post_init__(self) -> None:

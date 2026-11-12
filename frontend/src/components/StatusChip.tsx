@@ -20,7 +20,7 @@ interface Props {
   task?: Pick<Task, 'due_date' | 'status'>;
 }
 
-// task を渡すと期限超過を「遅延」として表示する
+// When a task is passed, overdue is shown as "delayed"
 const StatusChip: React.FC<Props> = ({ status, task }) => {
   const { t } = useI18n();
   const s: DisplayStatus = status ?? (task ? displayStatus(task) : 'TODO');

@@ -1,11 +1,11 @@
-"""auto_time_entry_receipts に受け取った区間を足す（WinTrack の打刻を伸ばす、task #400 / ADR-0050）
+"""Add the received interval to auto_time_entry_receipts (extending WinTrack clock-ins, task #400 / ADR-0050)
 
 Revision ID: 0023
 Revises: 0022
 Create Date: 2026-10-16
 
-同じ ``client_ref`` で終わりだけ遅くなった区間が届いたら、増えた分だけ打刻を伸ばす。そのために、受け取った
-始まり・終わり・タスクを控えに持つ。今までの控えは空（伸ばさず、今までどおりの送り直しとして扱う）。
+When an interval with the same ``client_ref`` arrives with only a later end, the clock-in is extended by the difference. For that, the receipt keeps
+the received start, end and task. Existing receipts are empty (not extended; treated as a plain resend as before).
 """
 
 from __future__ import annotations

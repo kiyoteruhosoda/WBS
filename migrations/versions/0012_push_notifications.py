@@ -1,12 +1,12 @@
-"""端末への通知（Web Push）: 購読・種類の設定・送った記録（task #193 / ADR-0031）
+"""Device notifications (Web Push): subscriptions, per-kind settings, sent records (task #193 / ADR-0031)
 
 Revision ID: 0012
 Revises: 0011
 Create Date: 2026-10-02
 
-- ``push_subscriptions``: ブラウザ・PWA の購読（端末 1 台ぶん）。一意は ``endpoint_hash``（sha256）
-- ``push_preferences``: 利用者ごとの種類の入り / 切り（行が無い = 既定。すべて入り）
-- ``push_dispatches``: 送った通知の記録。``(user_id, kind, notice_key)`` が一意
+- ``push_subscriptions``: browser/PWA subscriptions (one per device). Unique on ``endpoint_hash`` (sha256)
+- ``push_preferences``: per-user on/off per kind (no row = default; all on)
+- ``push_dispatches``: records of sent notifications. ``(user_id, kind, notice_key)`` is unique
 """
 
 from __future__ import annotations

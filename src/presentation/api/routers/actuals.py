@@ -1,14 +1,14 @@
-"""実績の見える化: 計画 vs 実績（task #162 / ADR-0017。予定と打刻は task #543 / ADR-0070 で外した）。
+"""Actuals visualization: plan vs. actual (task #162 / ADR-0017; schedules and time punches were removed in task #543 / ADR-0070).
 
-- ``GET /actuals/tasks``: タスクごとの見積・実績・残と、残を見直してほしい理由
-  （``review_only=true`` で見直しが要るものだけ。Tracker の締めが届いた後に開く）
-- ``GET /actuals/gantt``: ガントの実績の帯（確定した実績の最初〜最後の日と、日ごとの実績）
-- ``GET /actuals/periods``: 期間ごと（半月・週・月）の確定実績
-- ``GET /actuals/breakdown``: カテゴリ別・マイルストーン別・プロジェクト別（枝ごと）の積み上げ
-- ``GET /actuals/export.csv``: 期間 × 日 × タスク × 時間（外の工数の仕組みへ貼る用）
+- ``GET /actuals/tasks``: per-task estimate, actual and remaining, and why the remaining time should be reviewed
+    (``review_only=true`` returns only those needing review; opened after Tracker's closing arrives)
+- ``GET /actuals/gantt``: actual bars for the Gantt chart (first to last day of confirmed actuals, and per-day actuals)
+- ``GET /actuals/periods``: confirmed actuals per period (half month, week, month)
+- ``GET /actuals/breakdown``: stacked totals by category, milestone and project (per branch)
+- ``GET /actuals/export.csv``: period x day x task x hours (for pasting into external effort systems)
 
-日付はすべて利用者のタイムゾーン（設定）。範囲を省くと今の期間で終わる 6 期間。
-どれも ``project_id`` で、そのプロジェクトと子孫のタスクの分だけに絞れる（ADR-0024）。
+All dates are in the user's time zone (setting). Without a range, the 6 periods ending with the current one.
+Each can be narrowed with ``project_id`` to tasks of that project and its descendants (ADR-0024).
 """
 
 from __future__ import annotations
@@ -34,21 +34,21 @@ from src.presentation.api.schemas.actuals_schemas import (
 router = APIRouter(prefix="/actuals", tags=["actuals"])
 
 FromDate = Annotated[
-    dt.date | None, Query(alias="from", description="範囲の初日（利用者の日付、含む）")
+    dt.date | None, Query(alias="from", description="First day of the range (user's date, inclusive)")
 ]
 ToDate = Annotated[
-    dt.date | None, Query(alias="to", description="範囲の末日（利用者の日付、含む）")
+    dt.date | None, Query(alias="to", description="Last day of the range (user's date, inclusive)")
 ]
 ProjectScope = Annotated[
     int | None,
-    Query(description="このプロジェクトと、その子孫のプロジェクトのタスクの分だけ"),
+    Query(description="Only tasks in this project and its descendant projects"),
 ]
 Unclassified = Annotated[
-    bool, Query(description="true ならプロジェクトの無い（未分類の）タスクの分だけ")
+    bool, Query(description="If true, only tasks without a project (uncategorized)")
 ]
 Unit = Annotated[
     ReportPeriodUnit,
-    Query(description="期間の単位: closing（半月: 1〜15 日と 16 日〜末日）/ week（月曜始まり）/ month"),
+    Query(description="Period unit: closing (half month: days 1-15 and 16-end) / week (starts Monday) / month"),
 ]
 
 CSV_HEADER = [
@@ -139,17 +139,17 @@ def get_breakdown(
 @router.get(
     "/export.csv",
     response_class=Response,
-    responses={200: {"content": {"text/csv": {}}, "description": "UTF-8（BOM 付き）の CSV"}},
+    responses={200: {"content": {"text/csv": {}}, "description": "CSV in UTF-8 (with BOM)"}},
 )
 def export_actuals(
     uc: ActualsUseCasesDep,
     current_user: CurrentUserDep,
-    from_date: Annotated[dt.date, Query(alias="from", description="初日（利用者の日付、含む）")],
-    to_date: Annotated[dt.date, Query(alias="to", description="末日（利用者の日付、含む）")],
+    from_date: Annotated[dt.date, Query(alias="from", description="First day (user's date, inclusive)")],
+    to_date: Annotated[dt.date, Query(alias="to", description="Last day (user's date, inclusive)")],
     project_id: ProjectScope = None,
     unclassified: Unclassified = False,
 ) -> Response:
-    """期間（半月）× 日 × タスク × 時間（確定実績）。表計算ソフトで文字化けしないよう BOM を付ける。"""
+    """Period (half month) x day x task x hours (confirmed actuals). A BOM is added so spreadsheets do not garble it."""
     rows = uc.export(current_user.user_id, from_date, to_date, project_id, unclassified)
     filename = f"actuals-{from_date.isoformat()}-{to_date.isoformat()}.csv"
     return Response(

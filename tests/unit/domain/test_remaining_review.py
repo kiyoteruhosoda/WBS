@@ -1,4 +1,4 @@
-"""残を見直してほしいタスクの理由（task #162 / ADR-0017）。"""
+"""Reasons a task's remaining hours should be reviewed (task #162 / ADR-0017)."""
 
 from __future__ import annotations
 
@@ -55,7 +55,7 @@ def test_an_entered_remaining_left_untouched_after_closing_is_asked() -> None:
     assert _reasons(before, 5, closed_hours=2) == [RemainingReviewReason.STALE_REMAINING]
     assert _reasons(before, 5, closed_hours=0) == []
     assert _reasons(after, 5, closed_hours=2) == []
-    # 確定した期間が無ければ聞かない
+    # Do not ask when there is no closed period
     assert (
         remaining_review_reasons(
             before, actual_hours=5, has_subtasks=False, latest_closed_hours=2, latest_closed_at=None

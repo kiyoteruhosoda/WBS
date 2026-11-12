@@ -4,10 +4,10 @@ from typing import Final
 
 
 class UnsetType:
-    """更新DTOで「未指定」を「明示的な null」と区別するためのセンチネル。
+    """Sentinel that distinguishes "not specified" from "explicit null" in update DTOs.
 
-    値が ``UNSET`` のフィールドは「変更しない」を意味し、``None`` は
-    「明示的に null で上書きする（値をクリアする）」を意味する。
+    A field whose value is ``UNSET`` means "do not change", and ``None`` means
+    "explicitly overwrite with null (clear the value)".
     """
 
     _instance: UnsetType | None = None

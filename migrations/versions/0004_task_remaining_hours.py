@@ -1,13 +1,13 @@
-"""tasks.remaining_hours: 手で持つ残（task #165 / ADR-0010）
+"""tasks.remaining_hours: manually held remaining hours (task #165 / ADR-0010)
 
 Revision ID: 0004
 Revises: 0003
 Create Date: 2026-10-01
 
-進捗率を設計書 §5.1 の「実績 ÷（実績 ＋ 残）」に揃えるため、残を列で持つ。
-既存の行は、それまで画面に出ていた残と同じ値で埋める:
-DONE は 0、見積があれば max(見積 − 実績, 0)（実績は削除していない work_logs の合計）、
-見積が空なら空のまま（判断材料が無い）。
+Remaining hours are held in a column so progress matches "actual / (actual + remaining)" from design doc §5.1.
+Existing rows are filled with the same value the screen showed as remaining until now:
+0 for DONE; max(estimate - actual, 0) if there is an estimate (actual is the sum of non-deleted work_logs);
+left empty if there is no estimate (nothing to judge by).
 """
 
 from __future__ import annotations
@@ -22,7 +22,7 @@ down_revision: str | Sequence[str] | None = "0003"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
-# MAX(a, b) / GREATEST は方言で名前が違うので CASE で書く（SQLite と MariaDB の両方で通る）。
+# MAX(a, b) / GREATEST are named differently per dialect, so use CASE (works on both SQLite and MariaDB).
 _FILL_REMAINING = """
 UPDATE tasks SET remaining_hours = CASE
     WHEN status = 'DONE' THEN 0

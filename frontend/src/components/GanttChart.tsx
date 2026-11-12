@@ -23,32 +23,32 @@ import CategoryDot from './CategoryDot';
 import PriorityChip from './PriorityChip';
 
 const DAY_WIDTH = 54;
-// 計画の帯・見込みの帯・実績の帯の 3 段が入る高さ（task #556）
+// Height that fits three bands: planned, forecast and actual (task #556)
 const ROW_HEIGHT = 48;
 const HEADER_HEIGHT = 56;
-// 左の表（担当・アサイン比率・残り時間・開始・期限・見込みの終わり。task #557 / ADR-0059）。入りきらない列は横に送る
-// スマホの幅では日の側を広く（左は題名の列の頭だけ見せ、横に送れる。task #640）
+// Left table (assignee, allocation, remaining hours, start, due, forecast end. task #557 / ADR-0059). Columns that don't fit scroll horizontally
+// On phone widths give more room to the days (the left shows only the start of the title column and scrolls. task #640)
 const LEFT_WIDTH = { xs: 168, sm: 260, md: 520, lg: 700 };
-// 表示範囲は今日を基準にクランプする（過去・未来に古いタスクがあっても今日ラインが常に見えるようにする）
+// Clamp the visible range around today (so the today line stays visible even with old tasks far in the past or future)
 const MAX_PAST_DAYS = 30;
 const MAX_FUTURE_DAYS = 59;
-// 実績の帯（計画の帯の下に細く並べる。task #162）
+// Actual band (a thin band under the planned band. task #162)
 const PLAN_BAR_HEIGHT = 22;
 const PLAN_BAR_HEIGHT_STACKED = 16;
 const ACTUAL_STRIP_HEIGHT = 6;
-// 見込みの帯（点線の枠と、終わりの日の菱形。ADR-0058）
+// Forecast band (dashed outline and a diamond on the end day. ADR-0058)
 const FORECAST_BAR_HEIGHT = 9;
 const FORECAST_COLOR = ds.primary;
 const OVERDUE_COLOR = ds.danger;
-// 枝の罫線の 1 段の字下げ（task #639）
+// Indent per level of the branch lines (task #639)
 const BRANCH_STEP = 16;
-// 見込みの文字のための余白（日）
+// Padding for the forecast label (days)
 const LABEL_ROOM_DAYS = 3;
 
 const dateOnly = (d: Date): Date => new Date(d.getFullYear(), d.getMonth(), d.getDate());
 const addDays = (d: Date, n: number): Date => new Date(d.getFullYear(), d.getMonth(), d.getDate() + n);
 const diffDays = (a: Date, b: Date): number => Math.round((dateOnly(a).getTime() - dateOnly(b).getTime()) / 86400000);
-/** ローカルの日付を YYYY-MM-DD に（休みの層の API の日付）。 */
+/** Local date as YYYY-MM-DD (the date format of the time-off API). */
 const isoDay = (d: Date): string =>
   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 const parse = (s: string | null): Date | null => {
@@ -56,7 +56,7 @@ const parse = (s: string | null): Date | null => {
   return d ? dateOnly(d) : null;
 };
 
-// ステータス→バー色（トラック / フィル）
+// Status -> bar color (track / fill)
 const barColors: Record<DisplayStatus, { track: string; fill: string }> = {
   DOING: { track: ds.ganttDoingTrack, fill: ds.primary },
   DONE: { track: ds.successPale2, fill: ds.success },
@@ -71,25 +71,25 @@ interface Props {
   categories?: Category[];
   showMeta?: boolean;
   onToggleDone?: (task: Task) => void;
-  /** タスクごとの実績の帯（確定した実績の最初〜最後の日と、日ごとの実績）。渡せば計画の帯の下に出す */
+  /** Actual band per task (first to last day of confirmed actuals, and actuals per day). Shown under the planned band when given */
   actuals?: Map<number, GanttActualSpan>;
-  /** 上に並べるマイルストーン（期限と見込みの日。ADR-0058） */
+  /** Milestones shown at the top (due date and forecast date. ADR-0058) */
   milestones?: Milestone[];
-  /** 左の表のセルをその場で保存する（渡さなければ表は読むだけ）。失敗は投げる */
+  /** Saves a left-table cell in place (read-only table when omitted). Throws on failure */
   onEditTask?: (task: Task, patch: Partial<Task>) => Promise<void>;
-  /** 担当に選べる人（そのタスクの根のメンバー）。null なら担当は変えられない（未分類のタスクなど） */
+  /** People selectable as assignee (members of the task's root). null means the assignee can't be changed (e.g. uncategorized tasks) */
   assigneeChoices?: (task: Task) => { value: string; label: string }[] | null;
-  /** 列を塗るカレンダー＝表示しているプロジェクトのもの（全部・未分類なら無し＝月〜金。task #559） */
+  /** Calendar used to shade the columns = the displayed project's (none for all/uncategorized = Mon-Fri. task #559) */
   columnCalendar?: TeamCalendar | null;
-  /** タスクのプロジェクトのカレンダー（プロジェクトの id → カレンダー）。列と違う日はその行だけ塗り、営業日もこれで数える */
+  /** Calendars of the tasks' projects (project id -> calendar). Days that differ from the columns are shaded on that row only; business days are counted with these too */
   taskCalendars?: ReadonlyMap<number, TeamCalendar>;
-  /** WBS 番号（タスクの id → 1.3.2）と枝の罫線（タスクは木の順に渡す。task #639） */
+  /** WBS numbers (task id -> 1.3.2) and branch lines (pass tasks in tree order. task #639) */
   codes?: ReadonlyMap<number, string>;
   guides?: ReadonlyMap<number, TreeGuide>;
 }
 
 const isOpen = (task: Task) => task.status !== 'DONE' && task.status !== 'CANCELLED';
-// 時間を使うのは子を持たない開いたタスクだけ（比率・残を直せるのもそれだけ。ADR-0058）
+// Only open tasks without children use time (only they can have allocation/remaining edited. ADR-0058)
 const isOpenLeaf = (task: Task) => !task.has_subtasks && isOpen(task);
 
 const GanttChart: React.FC<Props> = ({
@@ -98,10 +98,10 @@ const GanttChart: React.FC<Props> = ({
 }) => {
   const navigate = useNavigate();
   const { t, weekdays } = useI18n();
-  // 行の中では `t` をタスクの変数に使っているので、訳は別名で持つ
+  // `t` is used as the task variable inside rows, so keep the translator under another name
   const tr = t;
   const today = todayDate();
-  // 期限か見込みのあるマイルストーンだけ（上に並べる）
+  // Only milestones with a due or forecast date (shown at the top)
   const milestoneRows = useMemo(
     () => milestones
       .filter((m) => m.due_date || m.forecast_finish)
@@ -118,7 +118,7 @@ const GanttChart: React.FC<Props> = ({
       const e = parse(t.due_date) ?? parse(t.start_date);
       if (s && s < min) min = s;
       if (e && e > max) max = e;
-      // 見込みの帯も入るように（ADR-0058）
+      // Make room for the forecast band too (ADR-0058)
       const fs = parse(t.forecast_start ?? null);
       const fe = parse(t.forecast_finish ?? null);
       if (fs && fs < min) min = fs;
@@ -134,9 +134,9 @@ const GanttChart: React.FC<Props> = ({
     }
     min = addDays(min, -1);
     max = addDays(max, 1);
-    // 見込みの右に出す文字（「見込み 11/10 ⚠ 期限 +4 日」）が切れないよう、終わりの後ろに余白の日を置く
+    // Add padding days after the end so the label to the right of the forecast (e.g. "forecast 11/10 ⚠ due +4 days") isn't cut off
     if (addDays(labelEnd, LABEL_ROOM_DAYS) > max) max = addDays(labelEnd, LABEL_ROOM_DAYS);
-    // 今日を含む一定幅にクランプ（範囲外にかかるバーは端で切って表示する）
+    // Clamp to a fixed width that includes today (bars extending outside are cut at the edge)
     const clampMin = addDays(today, -MAX_PAST_DAYS);
     const clampMax = addDays(today, MAX_FUTURE_DAYS);
     if (min < clampMin) min = clampMin;
@@ -148,14 +148,14 @@ const GanttChart: React.FC<Props> = ({
   const todayIdx = diffDays(today, rangeStart);
   const timelineWidth = days.length * DAY_WIDTH;
 
-  // プロジェクトのカレンダー（ADR-0059・ADR-0060。task #559）: 列は表示しているプロジェクトのカレンダーで塗り、
-  // 下のプロジェクトだけの休日・稼働日はその行だけ塗り直す。営業日の数はタスクのプロジェクトのカレンダーで数える
+  // Project calendars (ADR-0059, ADR-0060. task #559): columns are shaded with the displayed project's calendar;
+  // holidays/working days specific to a sub-project are re-shaded on that row only. Business days are counted with the task's project calendar
   const calendarPalette = useTheme().palette.calendar;
   const daysByProject = useMemo(
     () => new Map([...(taskCalendars ?? new Map<number, TeamCalendar>())].map(([id, c]) => [id, projectDaysOf(c)])),
     [taskCalendars],
   );
-  // 表示しているプロジェクトのタスクは列と同じもの（行を塗り直さない）
+  // Tasks of the displayed project use the same calendar as the columns (no row re-shading)
   const columnDays = useMemo(
     () => (columnCalendar ? daysByProject.get(columnCalendar.project_id) ?? projectDaysOf(columnCalendar) : DEFAULT_PROJECT_DAYS),
     [columnCalendar, daysByProject],
@@ -172,7 +172,7 @@ const GanttChart: React.FC<Props> = ({
     return calendarPalette.weeklyOffBg;
   };
   const columnBackground = (d: Date): string => backgroundOn(columnDays, d);
-  /** 見出しに出す日の名前（休日の名前・稼働日） */
+  /** Day names shown in the header (holiday names, working days) */
   const dayTitle = (d: Date): string | undefined => {
     const key = isoDay(d);
     if (columnDays.daysOff.has(key)) return columnDays.daysOff.get(key) ?? tr('projectCalendar.dayOff');
@@ -181,7 +181,7 @@ const GanttChart: React.FC<Props> = ({
   };
   const businessDaysOf = (task: Task, s: Date, e: Date): number => workingDaysBetween(daysOfTask(task), isoDay(s), isoDay(e));
 
-  /** 列と違う日（下のプロジェクトだけの休日・稼働日）を、その行だけ塗り直す */
+  /** Re-shade, on that row only, days that differ from the columns (holidays/working days of a sub-project only) */
   const rowDayCells = (task: Task): React.ReactNode => {
     const own = daysOfTask(task);
     if (own === columnDays) return null;
@@ -204,17 +204,17 @@ const GanttChart: React.FC<Props> = ({
     });
   };
 
-  // 初期表示で今日が見えるようにスクロールする（今日を左から1/3の位置に置く）
+  // Scroll so today is visible on first render (place today at 1/3 from the left)
   const scrollRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const el = scrollRef.current;
     if (!el || todayIdx < 0) return;
     const target = todayIdx * DAY_WIDTH + DAY_WIDTH / 2 - el.clientWidth / 3;
     el.scrollLeft = Math.max(0, target);
-    // 表示範囲が変わったときだけ位置を合わせ直す
+    // Re-align only when the visible range changes
   }, [todayIdx, timelineWidth]);
 
-  // 左の表の列（MS Project のガントの左の表。ADR-0059 決定 3）
+  // Columns of the left table (like the left table of an MS Project Gantt. ADR-0059 decision 3)
   const thisYear = today.getFullYear();
   const overdueIcon = (days: number) => (
     <Tooltip title={tr('gantt.overdueTip', { days })}>
@@ -235,7 +235,7 @@ const GanttChart: React.FC<Props> = ({
         const level = guide?.level ?? 0;
         return (
           <Box sx={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0, pl: `${level * BRANCH_STEP}px` }}>
-            {/* 枝の罫線（セルの左端から。子は 1 段ごとに字下げ） */}
+            {/* Branch lines (from the cell's left edge; children are indented one step per level) */}
             {guide && <WbsBranch guide={guide} railX={(k) => 8 + (k - 1) * BRANCH_STEP + BRANCH_STEP / 2} tick={BRANCH_STEP / 2} />}
             <Checkbox
               size="small" tabIndex={-1}
@@ -330,7 +330,7 @@ const GanttChart: React.FC<Props> = ({
 
   return (
     <Box sx={{ display: 'flex', border: `1px solid ${ds.border}`, borderRadius: '10px', bgcolor: ds.paper, overflow: 'hidden' }}>
-      {/* 左: セルを直接書き換える表（task #557 / ADR-0059）。行の高さは右の帯とそろえる */}
+      {/* Left: table with directly editable cells (task #557 / ADR-0059). Row height matches the bands on the right */}
       <Box sx={{ width: LEFT_WIDTH, flexShrink: 0, borderRight: `1px solid ${ds.border}`, overflowX: 'auto' }}>
         <EditableGrid
           rows={tasks} rowKey={(task) => task.id} rowLabel={(task) => task.title}
@@ -364,10 +364,10 @@ const GanttChart: React.FC<Props> = ({
         />
       </Box>
 
-      {/* 右: タイムライン */}
+      {/* Right: timeline */}
       <Box ref={scrollRef} sx={{ flex: 1, minWidth: 0, overflowX: 'auto' }}>
         <Box sx={{ position: 'relative', width: timelineWidth }}>
-          {/* ヘッダ */}
+          {/* Header */}
           <Box sx={{ display: 'flex', height: HEADER_HEIGHT, bgcolor: '#F7F7F8', borderBottom: `1px solid ${ds.border}` }}>
             {days.map((d, i) => {
               const dow = d.getDay();
@@ -386,9 +386,9 @@ const GanttChart: React.FC<Props> = ({
             })}
           </Box>
 
-          {/* 行グリッド + バー */}
+          {/* Row grid + bars */}
           <Box sx={{ position: 'relative' }}>
-            {/* 縦グリッド・土日シェード */}
+            {/* Vertical grid and weekend shading */}
             <Box sx={{ position: 'absolute', inset: 0, display: 'flex', pointerEvents: 'none' }}>
               {days.map((d, i) => (
                 <Box key={i} sx={{
@@ -455,9 +455,9 @@ const GanttChart: React.FC<Props> = ({
               const actualLayout = ganttActualLayout(actuals?.get(t.id), rangeStart, days.length);
               const hasActual = actualLayout.strip !== null;
               const forecastSpan = taskForecastSpan(t);
-              // 実績か見込みの帯があれば計画の帯を細くして上へ寄せ、下に 見込み → 実績 の順に置く
+              // With an actual or forecast band, make the planned band thinner and move it up, then place forecast -> actual below
               const gapKey = forecastSpan === null ? forecastGapKey(t.forecast_gap) : null;
-              // 見込みの出ない理由も見込みの段に書く（行からはみ出さないよう計画の帯を上へ寄せる）
+              // The reason there is no forecast also goes in the forecast row (move the planned band up so it stays inside the row)
               const stacked = hasActual || forecastSpan !== null || gapKey !== null;
               const planHeight = stacked ? PLAN_BAR_HEIGHT_STACKED : PLAN_BAR_HEIGHT;
               const planTop = stacked ? 4 : (ROW_HEIGHT - PLAN_BAR_HEIGHT) / 2;
@@ -535,7 +535,7 @@ const GanttChart: React.FC<Props> = ({
                   );
                 }
               }
-              // 見込みの帯（点線の枠）と終わりの菱形。期限を越えるなら赤に加え、期限の日に縦の線と「⚠ 期限 +N 日」（ADR-0058）
+              // Forecast band (dashed outline) and end diamond. If past the due date, red plus a vertical line on the due day and "⚠ due +N days" (ADR-0058)
               let forecast: React.ReactNode = null;
               if (forecastSpan) {
                 const fe = parse(forecastSpan.finish) ?? today;
@@ -618,7 +618,7 @@ const GanttChart: React.FC<Props> = ({
               );
             })}
 
-            {/* 今日ライン */}
+            {/* Today line */}
             {todayIdx >= 0 && todayIdx < days.length && (
               <Box sx={{
                 position: 'absolute', top: 0, bottom: 0, pointerEvents: 'none',
@@ -627,7 +627,7 @@ const GanttChart: React.FC<Props> = ({
             )}
           </Box>
 
-          {/* 今日ラベル（ヘッダ上） */}
+          {/* Today label (above the header) */}
           {todayIdx >= 0 && todayIdx < days.length && (
             <Box sx={{
               position: 'absolute', top: HEADER_HEIGHT - 16,

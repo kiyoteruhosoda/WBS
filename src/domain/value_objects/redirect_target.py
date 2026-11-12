@@ -1,4 +1,4 @@
-"""ログイン後に戻す画面のパス。"""
+"""Path of the screen to return to after sign-in."""
 
 from __future__ import annotations
 
@@ -9,11 +9,11 @@ DEFAULT_REDIRECT_PATH = "/"
 
 @dataclass(frozen=True)
 class RedirectTarget:
-    """自サイト内の相対パスであることを保証した戻り先。
+    """A return target guaranteed to be a relative path within this site.
 
-    ``?next=`` は利用者が自由に付けられるので、そのまま ``Location`` に載せると
-    IdP のログイン直後に外部サイトへ飛ばせてしまう（オープンリダイレクト）。
-    受け取った値はここを必ず通し、外部を指し得る形は既定のパスへ落とす。
+    Users can set ``?next=`` freely, so putting it into ``Location`` as is would
+    let someone redirect to an external site right after IdP sign-in (open redirect).
+    Every received value must pass through here; any form that could point outside falls back to the default path.
     """
 
     path: str
@@ -24,13 +24,13 @@ class RedirectTarget:
             return cls(DEFAULT_REDIRECT_PATH)
         candidate = raw.strip()
         if not candidate.startswith("/"):
-            # 絶対 URL・スキーム相対・素の相対パスはすべて外部を指し得る
+            # Absolute URLs, scheme-relative URLs and bare relative paths can all point outside
             return cls(DEFAULT_REDIRECT_PATH)
         if candidate.startswith("//") or candidate.startswith("/\\"):
-            # `//evil.example` はスキーム相対 URL として外部ホストに解決される
+            # `//evil.example` resolves to an external host as a scheme-relative URL
             return cls(DEFAULT_REDIRECT_PATH)
         if "\\" in candidate or "\n" in candidate or "\r" in candidate:
-            # バックスラッシュを `/` として読むブラウザがある。改行はヘッダ分割の材料。
+            # Some browsers read a backslash as `/`. Newlines enable header splitting.
             return cls(DEFAULT_REDIRECT_PATH)
         return cls(candidate)
 

@@ -1,4 +1,4 @@
-"""IdP の管理 API を叩くときの名乗り（``client_credentials`` ＋ ``private_key_jwt``）。"""
+"""Client identity when calling the IdP admin API (``client_credentials`` + ``private_key_jwt``)."""
 
 import httpx
 import jwt
@@ -79,13 +79,13 @@ def test_the_assertion_names_this_machine_and_the_token_endpoint(
     form = sent[0]["data"]
     assert form["grant_type"] == "client_credentials"
     assert form["client_assertion_type"] == ASSERTION_TYPE
-    # ⚠ **宛名が要る。** 省くと権限の載らないトークンになり、管理 API 側で弾かれる。
+    # ⚠ **The audience is required.** Without it the token carries no permissions and the admin API rejects it.
     assert form["resource"] == admin_audience(ISSUER) == f"{ISSUER}/admin"
 
     claims = jwt.decode(
         form["client_assertion"], public_key, algorithms=["RS256"], audience=f"{ISSUER}/token"
     )
-    # RFC 7523 §3: iss も sub も client_id 自身。
+    # RFC 7523 §3: both iss and sub are the client_id itself.
     assert claims["iss"] == claims["sub"] == "wbs-machine"
     assert claims["jti"]
     assert jwt.get_unverified_header(form["client_assertion"])["kid"] == "key-1"
@@ -96,7 +96,7 @@ def test_the_token_is_kept_until_it_is_nearly_due(monkeypatch, settings) -> None
     source = AdminApiTokenSource(settings, FakeDiscovery(), monotonic=lambda: 0.0)
 
     assert source.token() == source.token()
-    assert len(sent) == 1  # 2 回目は取り直さない
+    assert len(sent) == 1  # the second call does not fetch again
 
 
 def test_an_invalidated_token_is_fetched_again(monkeypatch, settings) -> None:
@@ -110,12 +110,12 @@ def test_an_invalidated_token_is_fetched_again(monkeypatch, settings) -> None:
 
 
 def test_a_lifetime_we_cannot_read_is_treated_as_short(monkeypatch, settings) -> None:
-    """⚠ **無期限と読まない。** 期限が読めない応答を無期限と扱うと二度と取り直さない。"""
-    sent = capture(monkeypatch, {"access_token": "t-1"})  # expires_in が無い
+    """⚠ **Do not read it as never-expiring.** Treating a response without a readable expiry as never-expiring means never fetching again."""
+    sent = capture(monkeypatch, {"access_token": "t-1"})  # no expires_in
     clock = _Clock()
     source = AdminApiTokenSource(settings, FakeDiscovery(), monotonic=clock)
     source.token()
-    clock.now = 120.0  # 仮定した寿命（60 秒）より先へ進める
+    clock.now = 120.0  # advance past the assumed lifetime (60 seconds)
     source.token()
 
     assert len(sent) == 2

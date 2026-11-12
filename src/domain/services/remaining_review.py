@@ -1,19 +1,19 @@
-"""残を見直してほしいタスクを見つける（task #162 / ADR-0017、ADR-0010 の「残を見直す」印）。
+"""Find tasks whose remaining work should be reviewed (task #162 / ADR-0017; the "review remaining" mark of ADR-0010).
 
-残は自動で減らさない（手で直す）。締めで実績が入った直後に、残が今の読みとして怪しいものを
-理由つきで挙げ、その場で入れ直してもらう。
+Remaining is never reduced automatically (it is fixed by hand). Right after a closing adds actuals, tasks whose remaining
+looks doubtful as a current estimate are listed with a reason, and the user re-enters it on the spot.
 
-対象は**未完了の葉**（DONE・CANCELLED・子を持つタスクは外す。親の残は子の積み上げで、
-手で入れさせない。ADR-0010）。理由:
+Targets are **unfinished leaves** (DONE, CANCELLED and tasks with children are excluded; a parent's remaining is the roll-up of its children
+and is not entered by hand. ADR-0010). Reasons:
 
-| 理由 | 判定 |
+| Reason | Condition |
 |---|---|
-| ``over_estimate`` | 見積を超えた実績があり、残を手で入れていない（既定の残が 0 で 100% と出ている） |
-| ``no_remaining`` | 残が 0 なのに未完了（手で 0 を入れた、または見積をちょうど使い切った） |
-| ``unknown_remaining`` | 見積も残も無いのに実績がある（進捗率が出ない） |
-| ``stale_remaining`` | 手で入れた残があり、直近に確定した期間で実績が増えたのに、その確定の後にタスクを直していない |
+| ``over_estimate`` | Actuals exceed the estimate and no remaining was entered by hand (the default remaining is 0, showing 100%) |
+| ``no_remaining`` | Remaining is 0 but the task is unfinished (0 entered by hand, or the estimate used up exactly) |
+| ``unknown_remaining`` | There are actuals but neither estimate nor remaining (progress cannot be computed) |
+| ``stale_remaining`` | Remaining was entered by hand, actuals grew in the most recently confirmed period, and the task was not edited after that confirmation |
 
-タスクを直す（残を入れる・完了にする）と、``updated_at`` が確定より後になり、理由は消える。
+Editing the task (entering remaining, marking it done) puts ``updated_at`` after the confirmation, and the reason goes away.
 """
 
 from __future__ import annotations
@@ -43,10 +43,10 @@ def remaining_review_reasons(
     latest_closed_hours: float,
     latest_closed_at: datetime | None,
 ) -> list[RemainingReviewReason]:
-    """``task`` の残を見直してほしい理由（無ければ空）。
+    """Reasons ``task``'s remaining should be reviewed (empty if none).
 
-    ``latest_closed_hours`` は直近に確定した締めの期間でこのタスクに入った実績、
-    ``latest_closed_at`` はその確定の瞬間（naive な UTC。確定した期間が無ければ None）。
+    ``latest_closed_hours`` is the actuals added to this task in the most recently confirmed closing period;
+    ``latest_closed_at`` is the instant of that confirmation (naive UTC; None if no period has been confirmed).
     """
     if task.status in CLOSED_STATUSES or has_subtasks:
         return []

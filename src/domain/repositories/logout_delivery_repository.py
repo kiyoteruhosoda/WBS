@@ -1,8 +1,8 @@
-"""停止の通知が「初めて届いたか」を覚えておく口。
+"""Remembers whether a logout notice "arrived for the first time".
 
-⚠ **再送を弾くためだけにある。** 送り手は再送でも同じ ``jti`` を使うので、
-弾かないと**古い通知の再送で、いま生きているセッション**を落としうる
-（止められた人が入り直した直後の再送が、その新しいセッションを消す）。
+⚠ **Exists only to reject replays.** Senders reuse the same ``jti`` on resend, so
+without rejecting them, **a resend of an old notice could drop a currently live session**
+(a resend right after the stopped person signed in again would kill that new session).
 """
 
 from __future__ import annotations
@@ -14,11 +14,11 @@ from datetime import datetime
 class LogoutDeliveryRepository(ABC):
     @abstractmethod
     def record(self, *, jti: str, now: datetime) -> bool:
-        """初めての通知なら記録して ``True``。既に受けていれば ``False``。"""
+        """If this is the first notice, record it and return ``True``. ``False`` if already received."""
 
     @abstractmethod
     def delete_expired(self, now: datetime) -> int:
-        """効かなくなった記録を片付ける（残しても弾く相手がもう居ない）。"""
+        """Clean up records that no longer matter (keeping them rejects nothing anymore)."""
 
 
 __all__ = ["LogoutDeliveryRepository"]

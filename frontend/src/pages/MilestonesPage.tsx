@@ -20,7 +20,7 @@ interface FormData {
   name: string;
   due_date: string;
   description: string;
-  // '' = 未分類（どのタスクにも付けられる）
+  // '' = uncategorized (can be attached to any task)
   project_id: string;
 }
 
@@ -36,7 +36,7 @@ const toForm = (m: Milestone): FormData => ({
 const MilestonesPage: React.FC = () => {
   const { t } = useI18n();
   const qc = useQueryClient();
-  // サイドバーで選んだプロジェクト（と子孫）のものだけ（task #187、ADR-0024）
+  // Only those of the project selected in the sidebar (and its descendants) (task #187, ADR-0024)
   const { scope, projects } = useProjectScope();
   const { data, isLoading, error } = useQuery({
     queryKey: ['milestones', 'scope', scope],
@@ -52,14 +52,14 @@ const MilestonesPage: React.FC = () => {
 
   useEffect(() => {
     if (!dialogOpen) return;
-    // 新しく作るときは、いま絞っているプロジェクトに入れておく
+    // New ones go into the currently filtered project
     setForm(editing ? toForm(editing) : { ...emptyForm, project_id: typeof scope === 'number' ? String(scope) : '' });
     setShowNameError(false);
   }, [dialogOpen, editing, scope]);
 
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: ['milestones'] });
-    // 別のプロジェクトへ移すと、届かなくなったタスクから外れる
+    // Moving to another project detaches it from tasks that can no longer reach it
     qc.invalidateQueries({ queryKey: ['tasks'] });
   };
 
@@ -173,7 +173,7 @@ const MilestonesPage: React.FC = () => {
         </Box>
       )}
 
-      {/* 登録・編集ダイアログ */}
+      {/* Create/edit dialog */}
       <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} fullWidth maxWidth="sm">
         <DialogTitle sx={{ fontSize: 16, fontWeight: 700 }}>
           {editing ? t('milestone.editTitle') : t('milestone.newTitle')}
@@ -228,7 +228,7 @@ const MilestonesPage: React.FC = () => {
         </DialogActions>
       </Dialog>
 
-      {/* 削除確認ダイアログ */}
+      {/* Delete confirmation dialog */}
       <Dialog open={deleteTarget !== null} onClose={() => setDeleteTarget(null)} fullWidth maxWidth="xs">
         <DialogTitle sx={{ fontSize: 16, fontWeight: 700 }}>{t('milestone.deleteTitle')}</DialogTitle>
         <DialogContent>

@@ -5,7 +5,7 @@ import pytest
 
 @pytest.fixture(scope="session")
 def migrated_database_template(tmp_path_factory):
-    """head まで上げて既定の利用者を入れた DB を 1 回だけ作る（試験ごとに写して使う）。"""
+    """Build a DB migrated to head with the default users only once (each test works on a copy)."""
     from src.infrastructure.database.connection import init_db
     from src.infrastructure.database.session import get_engine
 

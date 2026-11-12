@@ -1,9 +1,9 @@
-"""設定が読む環境変数を、compose が本当にコンテナへ渡しているか。
+"""Does compose really pass the environment variables the settings read into the container?
 
-compose の ``environment:`` に並べ忘れたキーは、``.env`` に書いても届かない。
-認証の設定でこれが起きると「AUTH_MODE=oidc と書いたのに認証なしで起動する」という
-一番気づきにくい壊れ方になる（起動もヘルスチェックも通ってしまう）ので、
-突き合わせを機械で見張る。
+A key missing from compose's ``environment:`` does not arrive even if written in ``.env``.
+When this happens to auth settings, it is the hardest breakage to notice: "AUTH_MODE=oidc was written but
+it starts without auth" (startup and health checks both pass), so
+the comparison is watched by a machine.
 """
 
 from __future__ import annotations
@@ -18,16 +18,16 @@ SETTINGS_SOURCES = (
     ROOT / "src" / "infrastructure" / "auth" / "auth_settings.py",
 )
 COMPOSE_FILES = (
-    ROOT / "docker-compose.yml",                 # ローカル開発
+    ROOT / "docker-compose.yml",                 # local development
     ROOT / "docker" / "deploy" / "docker-compose.yml",  # stg / prod
 )
 
-# 環境変数名を第 1 引数に取る呼び出し
+# Calls taking the environment variable name as the first argument
 ENV_READERS = {"getenv", "_env_bool", "_env_float", "_env_domains", "_env_samesite"}
 
 
 def auth_env_keys() -> set[str]:
-    """``auth_settings.py`` が読む環境変数名を、ソースから拾う。"""
+    """Collect the environment variable names that ``auth_settings.py`` reads, from the source."""
     keys: set[str] = set()
     for node in (n for path in SETTINGS_SOURCES for n in ast.walk(ast.parse(path.read_text(encoding="utf-8")))):
         if not isinstance(node, ast.Call) or not node.args:
@@ -43,7 +43,7 @@ def auth_env_keys() -> set[str]:
 
 
 def test_the_scan_finds_the_known_keys() -> None:
-    # 拾い方が壊れると検査が素通りになるので、代表的なキーで自己点検する
+    # If the collection breaks the check passes silently, so self-check with representative keys
     keys = auth_env_keys()
     assert {"AUTH_MODE", "OIDC_ISSUER", "AUTH_COOKIE_SECURE", "MACHINE_AUDIENCE"} <= keys
     assert len(keys) >= 10
@@ -54,6 +54,6 @@ def test_compose_passes_every_auth_setting(compose_path: Path) -> None:
     compose = compose_path.read_text(encoding="utf-8")
     missing = sorted(key for key in auth_env_keys() if f"{key}:" not in compose)
     assert not missing, (
-        f"{compose_path.relative_to(ROOT)} が渡していない認証設定: {missing}. "
-        "compose の api サービスの environment に足すこと"
+        f"auth settings not passed by {compose_path.relative_to(ROOT)}: {missing}. "
+        "add them to the environment of the compose api service"
     )

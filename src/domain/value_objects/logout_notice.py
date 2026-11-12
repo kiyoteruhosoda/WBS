@@ -1,15 +1,15 @@
-"""IdP から届いた「このセッションを止めろ」（OpenID Connect Back-Channel Logout 1.0）。
+"""A "stop this session" notice from the IdP (OpenID Connect Back-Channel Logout 1.0).
 
-``logout_token`` の**署名・発行者・対象者・有効期限**を確かめるのはインフラ層
-（JWT の話なので）。ここが見るのは**それ以外の 4 つ**で、どれも仕様が明示的に
-求めているものである（§2.6）。
+Verifying the ``logout_token``'s **signature, issuer, audience and expiry** belongs to the infrastructure layer
+(it is a JWT matter). This checks **the other 4 things**, all explicitly required
+by the spec (§2.6).
 
-- ``events`` に back-channel logout のイベントが入っていること
-  ——入っていない JWT は「ログアウトの通知」ではない
-- ``nonce`` が**入っていない**こと ——入っているものは ID トークンであり、
-  それを受け付けると**手元の ID トークンを投げ返すだけでログアウトを起こせる**
-- ``sub`` か ``sid`` のどちらかがあること ——どちらも無ければ誰を止めるのか決まらない
-- ``jti`` があること ——再送を弾く鍵になる（同じ通知の再送では同じ ``jti`` が来る）
+- ``events`` contains the back-channel logout event
+  — a JWT without it is not a "logout notice"
+- ``nonce`` is **absent** — a token with it is an ID token, and accepting
+  it would let anyone **trigger a logout just by sending back an ID token they hold**
+- either ``sub`` or ``sid`` is present — with neither, there is no telling whom to stop
+- ``jti`` is present — the key for rejecting replays (a resend of the same notice carries the same ``jti``)
 """
 
 from __future__ import annotations
@@ -21,21 +21,21 @@ from typing import Any
 from src.domain.exceptions import AuthenticationError
 from src.domain.value_objects.federated_identity import FederatedIdentity
 
-#: back-channel logout のイベント名（OpenID Connect Back-Channel Logout 1.0 §2.4）。
+#: Event name for back-channel logout (OpenID Connect Back-Channel Logout 1.0 §2.4).
 LOGOUT_EVENT = "http://schemas.openid.net/event/backchannel-logout"
 
 
 class InvalidLogoutTokenError(AuthenticationError):
-    """``logout_token`` が「ログアウトの通知」として成立していない。
+    """The ``logout_token`` does not form a valid "logout notice".
 
-    ⚠ **理由を送り手へ返さない。** この口は未認証で叩けるので、どこまで通ったかを
-    教えると、通る形を探す手掛かりになる。
+    ⚠ **Do not return the reason to the sender.** This endpoint can be hit unauthenticated, so revealing
+    how far it got would give clues for finding a form that passes.
     """
 
 
 @dataclass(frozen=True)
 class LogoutNotice:
-    """検証を通った通知。``jti`` は配送の identity で、再送でも変わらない。"""
+    """A notice that passed verification. ``jti`` is the delivery identity and does not change on resend."""
 
     jti: str
     identity: FederatedIdentity | None
@@ -43,7 +43,7 @@ class LogoutNotice:
 
     @classmethod
     def from_claims(cls, claims: Mapping[str, Any], *, issuer: str) -> LogoutNotice:
-        """検証済みのクレームから組み立てる。成立しないものは例外にする。"""
+        """Build from verified claims. Raises if it does not form a valid notice."""
         _ensure_logout_event(claims)
         _ensure_not_an_id_token(claims)
         jti = _text(claims.get("jti"))
@@ -52,7 +52,7 @@ class LogoutNotice:
         subject = _text(claims.get("sub"))
         session_id = _text(claims.get("sid"))
         if not subject and not session_id:
-            # どちらも無ければ「誰の」「どのログインを」止めるのか決まらない。
+            # With neither, there is no telling "whose" sign-in or "which" sign-in to stop.
             raise InvalidLogoutTokenError("logout_token has neither sub nor sid")
         return cls(
             jti=jti,
@@ -62,7 +62,7 @@ class LogoutNotice:
 
     @property
     def scope(self) -> str:
-        """記録に出す「どこまで止める通知か」。``sid`` があればその 1 ログインだけ。"""
+        """For the record: "how much this notice stops". If there is ``sid``, only that one sign-in."""
         return "session" if self.session_id else "subject"
 
 
@@ -73,11 +73,11 @@ def _ensure_logout_event(claims: Mapping[str, Any]) -> None:
 
 
 def _ensure_not_an_id_token(claims: Mapping[str, Any]) -> None:
-    """``nonce`` を持つものは受け取らない（仕様が MUST NOT としている）。
+    """Do not accept anything carrying ``nonce`` (the spec says MUST NOT).
 
-    ID トークンと logout token は署名鍵も発行者も対象者も同じなので、**この 1 点だけ**が
-    両者を分ける。落とすと、正規に受け取った ID トークンを送り返すだけで
-    他人のセッションを落とせる。
+    ID tokens and logout tokens share signing key, issuer and audience, so **this one point** alone
+    tells them apart. Dropping it would let anyone kill another person's session just by sending back
+    an ID token they legitimately received.
     """
     if "nonce" in claims:
         raise InvalidLogoutTokenError("a logout_token must not carry a nonce")

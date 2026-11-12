@@ -19,16 +19,16 @@ class TaskCreateRequest(BaseModel):
     start_date: date | None = None
     due_date: date | None = None
     estimated_hours: Decimal | None = None
-    # 手で持つ残（時間）。空なら「見積 − 実績」を既定に使う（ADR-0010）。更新で null を送ると空へ戻す
+    # Manually kept remaining time (hours). Empty uses "estimate - actual" as the default (ADR-0010). Sending null on update clears it
     remaining_hours: Decimal | None = Field(default=None, ge=0, le=Decimal("9999.99"))
     memo: str | None = None
     parent_task_id: int | None = None
     milestone_id: int | None = None
-    # 空 = 未分類。親を持つタスクは親のプロジェクトに入る（省くと親に揃える。違う値は 422。ADR-0024）
+    # Empty = uncategorized. A task with a parent goes in the parent's project (omitted = same as the parent; a different value is 422. ADR-0024)
     project_id: int | None = None
-    # 担当者（利用者の id）。省くと作った人、null で担当なし。根のプロジェクトのメンバー以外は 422（ADR-0055）
+    # Assignee (user id). Omitted = the creator, null = unassigned. 422 if not a member of the root project (ADR-0055)
     assignee_user_id: int | None = None
-    # アサイン比率（%）。入れると担当者の 1 日の空きのうちこの割合で進む見込みになる。空なら順番に片付ける（ADR-0058）
+    # Allocation rate (%). If set, the forecast assumes this share of the assignee's free daily time. Empty = done in order (ADR-0058)
     allocation_percent: int | None = Field(default=None, ge=1, le=100)
 
 
@@ -41,31 +41,31 @@ class TaskUpdateRequest(BaseModel):
     start_date: date | None = None
     due_date: date | None = None
     estimated_hours: Decimal | None = None
-    # 手で持つ残（時間）。空なら「見積 − 実績」を既定に使う（ADR-0010）。更新で null を送ると空へ戻す
+    # Manually kept remaining time (hours). Empty uses "estimate - actual" as the default (ADR-0010). Sending null on update clears it
     remaining_hours: Decimal | None = Field(default=None, ge=0, le=Decimal("9999.99"))
     memo: str | None = None
     parent_task_id: int | None = None
-    # null を送るとマイルストーンを外す。プロジェクトの外のものは 422（ADR-0024）
+    # Sending null removes the milestone. One outside the project is 422 (ADR-0024)
     milestone_id: int | None = None
-    # null を送ると未分類へ。子孫も一緒に移る。子タスクは親と違う値を送ると 422
+    # Sending null makes it uncategorized. Descendants move too. A child task sending a value different from its parent is 422
     project_id: int | None = None
-    # null を送ると担当なし。根のプロジェクトのメンバー以外は 422（ADR-0055）
+    # Sending null unassigns. 422 if not a member of the root project (ADR-0055)
     assignee_user_id: int | None = None
-    # null を送ると比率なし（順番に片付ける）。ADR-0058
+    # Sending null removes the rate (done in order). ADR-0058
     allocation_percent: int | None = Field(default=None, ge=1, le=100)
 
 
 class TaskMoveToProjectRequest(BaseModel):
-    """選んだタスクをまとめて別のプロジェクトへ。``project_id`` に ``null`` を送ると未分類へ（ADR-0030）。"""
+    """Move the selected tasks to another project together. Sending ``null`` as ``project_id`` makes them uncategorized (ADR-0030)."""
 
     task_ids: list[int] = Field(min_length=1, max_length=500)
     project_id: int | None
 
 
 class TaskMoveToProjectResponse(BaseModel):
-    # プロジェクトが替わったタスク（選んだ根と、一緒に移った子孫）。もともとそこに居たものは含まない
+    # Tasks whose project changed (the selected roots and the descendants that moved with them). Ones already there are not included
     moved_task_ids: list[int]
-    # 届かなくなったマイルストーンを外したタスク
+    # Tasks whose milestone was removed because it became out of reach
     detached_milestone_task_ids: list[int]
 
 
@@ -80,38 +80,38 @@ class TaskResponse(BaseModel):
     start_date: date | None = None
     due_date: date | None = None
     estimated_hours: float | None = None
-    # 自分の残（手の値、空なら見積 − 実績。DONE は 0）と、手で入れた値そのもの
+    # Own remaining time (manual value, or estimate - actual if empty; 0 for DONE), and the manually entered value itself
     remaining_hours: float | None = None
     remaining_hours_entered: float | None = None
-    # 自分の実績（work_logs の合計）
+    # Own actual time (sum of work_logs)
     actual_hours: float = 0.0
     has_subtasks: bool = False
-    # 進捗率の式に入れた実績と残（子を持つなら自分と全子孫の積み上げ）
+    # Actual and remaining used in the progress formula (rolled up over self and all descendants if it has children)
     rollup_actual_hours: float = 0.0
     rollup_remaining_hours: float | None = None
-    # 実績 ÷（実績 ＋ 残）× 100。DONE は 100。分母 0・残が決まらないときは null
+    # actual / (actual + remaining) x 100. 100 for DONE. null when the denominator is 0 or remaining is undetermined
     progress_percent: float | None = None
     priority_score: int = 0
     memo: str | None = None
     parent_task_id: int | None = None
     milestone_id: int | None = None
-    # 属するプロジェクト（null = 未分類）と、表示用の道筋（「親 / 子」）
+    # The project it belongs to (null = uncategorized) and the display path ("parent / child")
     project_id: int | None = None
     project_path: str | None = None
-    # 担当者と、その表示名（ADR-0055）。担当なしは null
+    # Assignee and their display name (ADR-0055). null if unassigned
     assignee_user_id: int | None = None
     assignee_name: str | None = None
-    # アサイン比率（%、ADR-0058）。null は比率なし
+    # Allocation rate (%, ADR-0058). null means no rate
     allocation_percent: int | None = None
-    # 終わる見込み（ADR-0058。読むたびに、残を担当者の空きに積んで出す）。出さないときは forecast_gap に理由
+    # Expected finish (ADR-0058; computed on every read by stacking the remaining time on the assignee's free time). If not given, forecast_gap holds the reason
     forecast_start: date | None = None
     forecast_finish: date | None = None
     forecast_gap: ForecastGap | None = None
-    # 見込みの終わりが期限を越える暦の日数（越えなければ 0）
+    # Calendar days by which the expected finish passes the due date (0 if it does not)
     forecast_overdue_days: int = 0
     completed_at: UtcDatetime | None = None
     deleted_at: UtcDatetime | None = None
-    # アーカイブした時刻（ADR-0046）。アーカイブしたタスクは一覧に出ないが、1 件の取得では返る
+    # When it was archived (ADR-0046). Archived tasks are not listed, but are returned when fetched individually
     archived_at: UtcDatetime | None = None
     created_at: UtcDatetime | None = None
     updated_at: UtcDatetime | None = None
@@ -120,9 +120,9 @@ class TaskResponse(BaseModel):
 
 
 class TaskRemovalResponse(BaseModel):
-    """タスクを消すとどうなるか（確認の窓に出す。ADR-0046）。
+    """What deleting the task would do (shown in the confirmation dialog. ADR-0046).
 
-    ``action`` は ``delete``（確定した実績が無い）か ``archive``（ある。消さずにアーカイブする）。
+    ``action`` is ``delete`` (no confirmed actuals) or ``archive`` (there are some; archive instead of deleting).
     """
 
     task_id: int

@@ -1,9 +1,9 @@
-"""実績の見える化の API（task #162 / ADR-0017。予定と打刻は task #543 / ADR-0070 で外した）。
+"""API for visualizing actuals (task #162 / ADR-0017; schedules and time tracking were removed in task #543 / ADR-0070).
 
-- 期間ごと: 確定実績（半月・週・月。区切りは利用者の日付）
-- 他人の実績は数えない
-- タスクごと: 残を見直してほしい理由（見積超過・残 0・残が決まらない・Tracker の締めが届いた後に直していない）
-- ガントの実績の帯・カテゴリ別の積み上げ・CSV の書き出し
+- Per period: confirmed actuals (half month, week, month; boundaries use the user's dates)
+- Other users' actuals are not counted
+- Per task: reasons to review remaining hours (over estimate, remaining 0, remaining undetermined, not revised after a Tracker close arrived)
+- Gantt actuals bar, per-category rollup, CSV export
 """
 
 from __future__ import annotations
@@ -37,7 +37,7 @@ def tokyo(client, db) -> None:
 
 @pytest.fixture
 def stranger(db) -> dict:
-    """他人と、その人のタスク・実績（同じ日付に置く）。"""
+    """Another user, with their task and actuals (placed on the same dates)."""
     other = UserModel(email="other-actuals@example.com", display_name="他人", timezone="Asia/Tokyo")
     db.add(other)
     db.flush()
@@ -72,7 +72,7 @@ def _get(client, path: str, **params) -> dict:
     return res.json()
 
 
-# ── 期間ごと ─────────────────────────────────────────────────────────────
+# ── Per period ──────────────────────────────────────────────────────────
 
 
 def test_periods_sum_confirmed_work_per_half_month(client, stranger) -> None:
@@ -94,8 +94,8 @@ def test_periods_sum_confirmed_work_per_half_month(client, stranger) -> None:
 
 def test_week_and_month_periods(client) -> None:
     task = _task(client, "実装")
-    _work_log(client, task["id"], "2026-09-13", 0.5)  # 日曜
-    _work_log(client, task["id"], "2026-09-14", 0.5)  # 月曜
+    _work_log(client, task["id"], "2026-09-13", 0.5)  # Sunday
+    _work_log(client, task["id"], "2026-09-14", 0.5)  # Monday
     _work_log(client, task["id"], "2026-09-01", 1)
 
     weeks = _get(
@@ -127,7 +127,7 @@ def test_someone_elses_time_is_not_counted(client, stranger) -> None:
 
     res = client.get("/api/actuals/export.csv", params={"from": "2026-09-01", "to": "2026-09-15"})
     assert res.status_code == 200
-    assert len(list(csv.reader(io.StringIO(res.text.lstrip("﻿"))))) == 1  # 見出しだけ
+    assert len(list(csv.reader(io.StringIO(res.text.lstrip("﻿"))))) == 1  # header only
 
     assert _get(client, "/api/actuals/gantt") == []
     assert stranger["task_id"] not in [
@@ -147,7 +147,7 @@ def test_periods_default_to_the_recent_six(client) -> None:
     assert len(body["periods"]) == 6
 
 
-# ── タスクごと・残を見直す ────────────────────────────────────────────────
+# ── Per task, review remaining ──────────────────────────────────────────
 
 
 def _rows(client, **params) -> dict[str, dict]:
@@ -183,14 +183,14 @@ def test_task_rows_carry_estimate_actual_remaining_and_review_reasons(client) ->
     ]
     assert set(_rows(client, review_only=True)) == {"超過", "見積なし", "残ゼロ"}
 
-    # その場で残を入れれば外れる
+    # Entering remaining hours on the spot removes it
     res = client.patch(f"/api/tasks/{over['id']}", json={"remaining_hours": 1.5})
     assert res.status_code == 200, res.text
     assert "超過" not in _rows(client, review_only=True)
 
 
 def _tracker_log(db, task_id: int, first_day: date, work_date: date, seconds: int, at: datetime) -> None:
-    """Tracker の締めから届いた実績（ADR-0056。届いた瞬間は ``at``）。"""
+    """Actuals delivered from Tracker's close (ADR-0056; ``at`` is the moment it arrived)."""
     db.add(
         WorkLogModel(
             user_id=1, task_id=task_id, work_date=work_date, hours=Decimal(seconds) / 3600,
@@ -204,7 +204,7 @@ def test_a_remaining_left_untouched_after_trackers_closing_is_asked_again(client
     task = _task(client, "設計", estimated_hours=8, remaining_hours=6)
     untouched = _task(client, "手付かず", estimated_hours=8, remaining_hours=6)
     db.query(TaskModel).update({TaskModel.updated_at: datetime(2026, 9, 1)})
-    # 前の期間と、直近の期間（こちらが「直近の締め」）
+    # An earlier period and the latest period (this one is the "latest close")
     _tracker_log(db, task["id"], date(2026, 8, 16), date(2026, 8, 20), 1800, datetime(2026, 9, 1, 1))
     _tracker_log(db, task["id"], date(2026, 9, 1), date(2026, 9, 2), 3600, datetime(2026, 9, 16, 1))
     _tracker_log(db, task["id"], date(2026, 9, 1), date(2026, 9, 3), 3600, datetime(2026, 9, 16, 2))
@@ -217,7 +217,7 @@ def test_a_remaining_left_untouched_after_trackers_closing_is_asked_again(client
     rows = {r["task"]["title"]: r for r in body["rows"]}
     assert rows["設計"]["review_reasons"] == ["stale_remaining"]
     assert rows["設計"]["latest_closed_hours"] == 2
-    # 締めで実績の入らなかったタスクは聞かない
+    # Tasks that got no actuals from the close are not asked about
     assert rows["手付かず"]["review_reasons"] == []
     assert untouched["id"] == rows["手付かず"]["task"]["id"]
 
@@ -245,7 +245,7 @@ def test_parent_tasks_are_not_asked_for_a_remaining(client) -> None:
     assert rows["子"]["review_reasons"] == ["over_estimate"]
 
 
-# ── ガント・積み上げ・書き出し ────────────────────────────────────────────
+# ── Gantt, rollup, export ───────────────────────────────────────────────
 
 
 def test_gantt_spans_cover_all_logs_and_days_only_the_asked_range(client) -> None:

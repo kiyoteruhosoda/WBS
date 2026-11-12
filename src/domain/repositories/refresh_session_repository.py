@@ -19,25 +19,25 @@ class RefreshSessionRepository(ABC):
 
     @abstractmethod
     def extend(self, session_id: str, *, idp_session_id: str | None, expires_at: datetime) -> bool:
-        """続けたログインの期限を延ばし、IdP 側のログインを付け替える（ADR-0071）。行が無ければ偽。"""
+        """Extend a continued sign-in and re-point it at the IdP-side sign-in (ADR-0071). False if there is no row."""
 
     @abstractmethod
     def delete_for_identity(
         self, identity: FederatedIdentity, *, idp_session_id: str | None = None
     ) -> int:
-        """IdP 上の本人で引いて、このアプリのログインを終わらせる（消した数を返す）。
+        """Look up by the person on the IdP and end their sign-ins in this app (returns the number deleted).
 
-        ``idp_session_id`` を渡すと、**その IdP のログインから始まったものだけ**を
-        終わらせる。渡さなければその人のログインをすべて終わらせる。
+        Passing ``idp_session_id`` ends **only the ones that started from that IdP sign-in**.
+        Without it, all of that person's sign-ins are ended.
 
-        ⚠ **本人が本人であることは、ここでは確かめない。** 呼ぶ側（停止の通知・定期照合）が
-        IdP の署名で確かめてから呼ぶ。
+        ⚠ **This does not verify that the person is who they claim to be.** The caller (logout
+        notice, periodic reconciliation) verifies the IdP signature before calling.
         """
 
     @abstractmethod
     def delete_for_idp_session(self, *, issuer: str, idp_session_id: str) -> int:
-        """``sub`` の無い通知のため、``sid`` だけで引いて終わらせる。
+        """For notices without ``sub``: look up by ``sid`` alone and end the sign-ins.
 
-        仕様は ``sub`` か ``sid`` のどちらかがあればよいとしている（§2.6）ので、
-        ``sid`` しか無い通知も宛名として成立する。
+        The spec only requires either ``sub`` or ``sid`` (§2.6), so a notice
+        carrying only ``sid`` is still a valid recipient.
         """

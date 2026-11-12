@@ -16,7 +16,7 @@ def test_shutdown_rejected_with_wrong_token(client, monkeypatch) -> None:
 def test_shutdown_rejected_without_a_token_or_with_a_non_ascii_one(client, monkeypatch) -> None:
     monkeypatch.setenv("ADMIN_TOKEN", "secret")
     assert client.post("/admin/shutdown").status_code == 401
-    # 比べる前に bytes にする（str のまま比べると ASCII 以外で TypeError になり 500 に化ける）
+    # Convert to bytes before comparing (comparing as str raises TypeError on non-ASCII and turns into a 500)
     assert client.post("/admin/shutdown", headers={"X-Admin-Token": "秘密".encode()}).status_code == 401
 
 

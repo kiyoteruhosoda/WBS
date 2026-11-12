@@ -1,5 +1,5 @@
-// セルを直接書き換える一覧の、画面に依らない部分（task #557 / ADR-0059 決定 3）。
-// 選んだセルの動き（矢印・Enter・Tab）、表計算から貼り付けた文字の読み方、セルの値の読み方。
+// The UI-independent part of the list with directly editable cells (task #557 / ADR-0059 decision 3).
+// Selected-cell movement (arrows, Enter, Tab), parsing text pasted from a spreadsheet, and parsing cell values.
 
 export interface CellPosition {
   row: number;
@@ -8,7 +8,7 @@ export interface CellPosition {
 
 export type Direction = 'up' | 'down' | 'left' | 'right';
 
-/** 矢印・Enter で動く。端では止まる。 */
+/** Moves with arrows/Enter. Stops at the edges. */
 export const moveCell = (pos: CellPosition, direction: Direction, rowCount: number, colCount: number): CellPosition => {
   const clamp = (n: number, size: number) => Math.max(0, Math.min(size - 1, n));
   switch (direction) {
@@ -20,8 +20,8 @@ export const moveCell = (pos: CellPosition, direction: Direction, rowCount: numb
 };
 
 /**
- * Tab（Shift+Tab）で右（左）へ。行の端では次（前）の行の端へ回る。
- * 一覧の最後（最初）を越えるときは null（一覧の外へ焦点を出す）。
+ * Tab (Shift+Tab) moves right (left). At the end of a row it wraps to the end of the next (previous) row.
+ * Returns null past the last (first) cell (focus leaves the list).
  */
 export const tabCell = (pos: CellPosition, backwards: boolean, rowCount: number, colCount: number): CellPosition | null => {
   const index = pos.row * colCount + pos.col + (backwards ? -1 : 1);
@@ -29,7 +29,7 @@ export const tabCell = (pos: CellPosition, backwards: boolean, rowCount: number,
   return { row: Math.floor(index / colCount), col: index % colCount };
 };
 
-/** 表計算からコピーした文字（行は改行、列はタブ）を行と列に分ける。最後の改行は行に数えない。 */
+/** Splits text copied from a spreadsheet (rows by newlines, columns by tabs). A trailing newline doesn't count as a row. */
 export const parseClipboard = (text: string): string[][] => {
   const lines = text.replace(/\r\n?/g, '\n').split('\n');
   if (lines.length > 1 && lines[lines.length - 1] === '') lines.pop();
@@ -42,7 +42,7 @@ export interface PasteTarget {
   raw: string;
 }
 
-/** 選んだセルを左上として、貼り付ける値をセルに当てはめる（一覧の外へはみ出す分は捨てる）。 */
+/** Maps pasted values onto cells with the selected cell as top-left (anything outside the list is dropped). */
 export const planPaste = (start: CellPosition, matrix: string[][], rowCount: number, colCount: number): PasteTarget[] => {
   const targets: PasteTarget[] = [];
   matrix.forEach((cells, dr) => {
@@ -59,7 +59,7 @@ export type Parsed<T> = { ok: true; value: T } | { ok: false };
 
 const NUMBER = /^[+-]?(\d+(\.\d*)?|\.\d+)$/;
 
-/** 数（全角の数字・「h」「%」「時間」の後ろ付きも読む）。空は null。範囲の外・読めないものは失敗。 */
+/** Number (also accepts full-width digits and "h", "%", "時間" suffixes). Empty is null. Out of range or unparsable fails. */
 export const parseNumber = (
   raw: string, { min, max, integer = false, allowEmpty = false }: { min: number; max: number; integer?: boolean; allowEmpty?: boolean },
 ): Parsed<number | null> => {
@@ -77,8 +77,8 @@ export const parseNumber = (
 const pad = (n: number) => String(n).padStart(2, '0');
 
 /**
- * 日付。「2026-11-05」「2026/11/5」「11/5」（年は今年）を読み、YYYY-MM-DD にする。空は null。
- * 暦に無い日（2/30 など）は失敗。
+ * Date. Parses "2026-11-05", "2026/11/5", "11/5" (current year) into YYYY-MM-DD. Empty is null.
+ * Non-existent dates (e.g. 2/30) fail.
  */
 export const parseDay = (raw: string, thisYear: number): Parsed<string | null> => {
   const text = raw.trim().replace(/[０-９／－]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xfee0));
@@ -94,7 +94,7 @@ export const parseDay = (raw: string, thisYear: number): Parsed<string | null> =
   return { ok: true, value: `${y}-${pad(m)}-${pad(d)}` };
 };
 
-/** 選ぶ列: 表示の名前か値のどちらでも読む（大文字・小文字と前後の空白は見ない）。 */
+/** Choice column: accepts either the display label or the value (case-insensitive, ignoring surrounding whitespace). */
 export const parseChoice = (raw: string, options: { value: string; label: string }[]): Parsed<string> => {
   const text = raw.trim().toLowerCase();
   const found = options.find((o) => o.value.toLowerCase() === text || o.label.trim().toLowerCase() === text);

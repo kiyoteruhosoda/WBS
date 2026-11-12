@@ -1,7 +1,7 @@
-"""停止の通知が「ログアウトの通知として成立しているか」の判断。
+"""Decide whether a suspension notice "holds up as a logout notice".
 
-署名・発行者・対象者・期限の検証はインフラ層（JWT の話）。ここが見るのは
-**それ以外の 4 つ**で、どれも落とすと実害が出る。
+Verification of signature, issuer, audience and expiry is the infrastructure layer's job (a JWT matter). What this looks at is
+**the other 4 things**, and dropping any of them does real harm.
 """
 
 import pytest
@@ -36,18 +36,18 @@ def test_a_notice_with_a_sid_addresses_one_login() -> None:
 
 
 def test_a_sid_alone_is_a_valid_address() -> None:
-    """仕様は ``sub`` か ``sid`` のどちらかで足りるとしている（§2.6）。"""
+    """The spec says either ``sub`` or ``sid`` is enough (§2.6)."""
     notice = LogoutNotice.from_claims(claims(sub=None, sid="taro-session"), issuer=ISSUER)
     assert notice.identity is None
     assert notice.session_id == "taro-session"
 
 
 def test_an_id_token_is_not_a_logout_notice() -> None:
-    """⚠ **``nonce`` を持つものを受け取らない**（仕様が MUST NOT としている）。
+    """⚠ **Do not accept anything carrying a ``nonce``** (the spec says MUST NOT).
 
-    ID トークンと ``logout_token`` は署名鍵も発行者も対象者も同じなので、**この 1 点
-    だけ**が両者を分ける。落とすと、正規に受け取った ID トークンを送り返すだけで
-    他人のセッションを落とせる。
+    An ID token and a ``logout_token`` share the signing key, issuer and audience, so **this one point
+    alone** tells them apart. Dropping it would let anyone end someone else's session
+    just by sending back a legitimately received ID token.
     """
     with pytest.raises(InvalidLogoutTokenError):
         LogoutNotice.from_claims(claims(nonce="n-1"), issuer=ISSUER)
@@ -56,10 +56,10 @@ def test_an_id_token_is_not_a_logout_notice() -> None:
 @pytest.mark.parametrize(
     "broken",
     [
-        {"events": None},  # イベントが無い＝ログアウトの通知ではない
-        {"events": {"http://example.com/other": {}}},  # 別のイベント
-        {"jti": None},  # 再送を弾く鍵が無い
-        {"sub": None},  # sub も sid も無い（誰を止めるのか決まらない）
+        {"events": None},  # no events = not a logout notice
+        {"events": {"http://example.com/other": {}}},  # a different event
+        {"jti": None},  # no key to reject replays
+        {"sub": None},  # neither sub nor sid (cannot tell whom to stop)
     ],
     ids=["no-events", "other-event", "no-jti", "no-address"],
 )
@@ -69,7 +69,7 @@ def test_a_notice_that_does_not_stand_up_is_refused(broken) -> None:
 
 
 def test_the_issuer_spelling_comes_from_the_caller() -> None:
-    """⚠ 宛名の発行者は**手元に残した綴り**で持つ（末尾の ``/`` は落ちる）。"""
+    """⚠ The audience issuer is held in **the spelling we kept locally** (the trailing ``/`` is dropped)."""
     notice = LogoutNotice.from_claims(claims(), issuer=f"{ISSUER}/")
     assert notice.identity is not None
     assert notice.identity.issuer == ISSUER

@@ -25,8 +25,8 @@ export const storedLang = (): Lang => {
 };
 
 /**
- * I18nProvider の外（＝ログイン前）でも使える翻訳。
- * ログイン画面は利用者設定を取りに行けないので、前回の言語を localStorage から使う。
+ * Translation usable outside I18nProvider (= before login).
+ * The login screen can't fetch user settings, so it uses the last language from localStorage.
  */
 export const translate = (key: TranslationKey, params?: TranslateParams): string => {
   const lang = storedLang();
@@ -52,7 +52,7 @@ export const I18nProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const { data: settings } = useQuery({ queryKey: ['settings'], queryFn: getSettings });
 
-  // サーバー側の設定を正として反映し、次回初期表示用にローカルにも保存する
+  // Apply the server-side setting as authoritative and also store it locally for the next initial render
   useEffect(() => {
     if (!settings) return;
     if (isLang(settings.language)) {
@@ -65,7 +65,7 @@ export const I18nProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, [settings]);
 
-  // 「今日」の判定を行う日付ユーティリティへタイムゾーンを伝える
+  // Pass the time zone to the date utilities that decide what "today" is
   useEffect(() => {
     setActiveTimeZone(timezone);
   }, [timezone]);

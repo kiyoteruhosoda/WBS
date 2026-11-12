@@ -1,7 +1,7 @@
-"""プロジェクトのメンバー・担当者（task #544 / ADR-0055）。
+"""Project members and assignees (task #544 / ADR-0055).
 
-利用者を 2 人にして、根のメンバーにするとその木のタスクが見え、外すと見えなくなること、
-役割（管理者・メンバー）の境、担当者の付け方と絞り込み、プロジェクトを動かしたときのメンバーを見る。
+With two users, check that becoming a member of a root shows that tree's tasks and removal hides them,
+the boundary between roles (admin, member), how assignees are set and filtered, and members when a project is moved.
 """
 
 from __future__ import annotations
@@ -53,7 +53,7 @@ def other_id(db) -> int:
 
 @pytest.fixture
 def as_(client, other_id):
-    """``as_.me()`` / ``as_.other()`` で current user を切り替える。既定は自分（単独利用者）。"""
+    """Switch the current user with ``as_.me()`` / ``as_.other()``. Default is me (single user)."""
 
     class Switch:
         def me(self) -> None:
@@ -120,12 +120,12 @@ def test_adding_a_member_shares_the_whole_tree(client, as_, other_id) -> None:
     as_.other()
     assert [p["name"] for p in client.get("/api/projects").json()] == ["根", "子"]
     assert _titles(client) == ["子のタスク", "根のタスク"]
-    # メンバーはタスクを作れ、作ったものは持ち主にも見える
+    # Members can create tasks, and what they create is visible to the owner too
     _task(client, "仲間のタスク", project_id=child["id"])
     as_.me()
     assert _titles(client, project_id=root["id"]) == ["仲間のタスク", "子のタスク", "根のタスク"]
 
-    # 外すと見えなくなる
+    # Removing hides them
     assert client.delete(f"/api/projects/{root['id']}/members/{other_id}").status_code == 204
     as_.other()
     assert _titles(client) == []
@@ -145,9 +145,9 @@ def test_only_managers_manage_members(client, as_, other_id) -> None:
         f"/api/projects/{root['id']}/members/{SINGLE_USER_ID}", json={"role": "member"}
     ).status_code == 403
     assert client.delete(f"/api/projects/{root['id']}/members/{SINGLE_USER_ID}").status_code == 403
-    # 根を消すのも管理者だけ
+    # Deleting the root is admin-only too
     assert client.delete(f"/api/projects/{root['id']}").status_code == 403
-    # 自分で抜けるのはよい
+    # Leaving on your own is fine
     assert client.delete(f"/api/projects/{root['id']}/members/{other_id}").status_code == 204
     assert client.get(f"/api/projects/{root['id']}").status_code == 404
 
@@ -181,18 +181,18 @@ def test_people_lists_active_users(client, db, other_id) -> None:
 
 
 def test_people_outside_your_trees_are_hidden_unless_you_manage(client, db, as_, other_id) -> None:
-    """管理者でも印のある人でもない人には、同じ木に居ない人を返さない（task #767 / ADR-0067）。"""
+    """Someone who is neither an admin nor marked is not shown people outside their trees (task #767 / ADR-0067)."""
     outsider = UserModel(email="outsider@example.com", display_name="よその人", timezone="Asia/Tokyo")
     db.add(outsider)
     db.commit()
 
-    # どの木にも居ない仲間には自分だけ
+    # A teammate in no tree sees only themselves
     as_.other()
     people = client.get("/api/projects/people").json()
     assert [p["id"] for p in people] == [other_id]
     assert "outsider@example.com" not in {p["email"] for p in people}
 
-    # 同じ木のメンバーになると、その木の人は見えるが、よその人は見えない
+    # As a member of the same tree, they see that tree's people but not outsiders
     as_.me()
     root = _project(client, "根")
     client.post(f"/api/projects/{root['id']}/members", json={"user_id": other_id})
@@ -201,7 +201,7 @@ def test_people_outside_your_trees_are_hidden_unless_you_manage(client, db, as_,
     assert {p["id"] for p in people} == {SINGLE_USER_ID, other_id}
     assert "outsider@example.com" not in {p["email"] for p in people}
 
-    # 管理者になると全員（メンバーを足すのに要る）
+    # As an admin, everyone (needed to add members)
     as_.me()
     client.put(f"/api/projects/{root['id']}/members/{other_id}", json={"role": "manager"})
     as_.other()
@@ -223,7 +223,7 @@ def test_assignee_defaults_to_the_creator_and_must_be_a_member(client, as_, othe
     assert task["assignee_user_id"] == SINGLE_USER_ID
     assert task["assignee_name"]
 
-    # メンバーでない人は 422
+    # Someone who is not a member gets 422
     res = client.put(f"/api/tasks/{task['id']}", json={"assignee_user_id": other_id})
     assert res.status_code == 422, res.text
 
@@ -236,7 +236,7 @@ def test_assignee_defaults_to_the_creator_and_must_be_a_member(client, as_, othe
     unassigned = _task(client, "だれか", project_id=root["id"], assignee_user_id=None)
     assert unassigned["assignee_user_id"] is None
 
-    # 未分類のタスクは作った本人だけ
+    # Uncategorized tasks are only for their creator
     mine = _task(client, "自分だけ")
     res = client.put(f"/api/tasks/{mine['id']}", json={"assignee_user_id": other_id})
     assert res.status_code == 422, res.text
@@ -267,7 +267,7 @@ def test_moving_projects_keeps_or_hands_over_the_members(client, as_, other_id) 
     solo = _project(client, "ひとり")
     _task(client, "ひとりのタスク", project_id=solo["id"])
 
-    # 下のものを根へ出しても、見える人は変わらない
+    # Moving a lower project out to a root does not change who can see it
     res = client.post(f"/api/projects/{part['id']}/move", json={"parent_project_id": None})
     assert res.status_code == 200, res.text
     assert res.json()["root_project_id"] == part["id"]
@@ -276,7 +276,7 @@ def test_moving_projects_keeps_or_hands_over_the_members(client, as_, other_id) 
         other_id,
     }
 
-    # 根を他の木へ入れると、移った先のメンバーに見える
+    # Putting the root into another tree makes it visible to the destination's members
     res = client.post(f"/api/projects/{solo['id']}/move", json={"parent_project_id": team["id"]})
     assert res.status_code == 200, res.text
     assert res.json()["root_project_id"] == team["id"]
@@ -287,15 +287,15 @@ def test_moving_projects_keeps_or_hands_over_the_members(client, as_, other_id) 
 def test_a_member_cannot_move_someone_elses_top_project(client, db, as_, other_id) -> None:
     team = _project(client, "チーム")
     client.post(f"/api/projects/{team['id']}/members", json={"user_id": other_id})
-    # 仲間も根を作れる人にする（ADR-0065）
+    # Make the teammate someone who can create roots too (ADR-0065)
     ProjectCreatorUseCases(db).allow(OTHER_EMAIL)
     as_.other()
     own = _project(client, "仲間の根")
-    # 仲間は自分の根でも「チーム」へは入れられない（チームの管理者ではない。ADR-0066）
+    # Even in their own root, the teammate cannot put in the "team" project (not its admin; ADR-0066)
     assert client.post(
         f"/api/projects/{own['id']}/move", json={"parent_project_id": team["id"]}
     ).status_code == 403
-    # でも「チーム」を自分の根の下へ入れることはできない（管理者ではない）
+    # But they also cannot put the "team" project under their own root (not an admin)
     another = _project(client, "もう一つ")
     assert client.post(
         f"/api/projects/{team['id']}/move", json={"parent_project_id": another["id"]}

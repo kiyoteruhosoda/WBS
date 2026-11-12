@@ -1,7 +1,7 @@
-"""定期照合の判断を、IdP も DB も使わずに確かめる。
+"""Check the periodic reconciliation's decisions without the IdP or a DB.
 
-⚠ **ここで守っているのは「止めすぎない」ほう。** 止め損ねは受け口（停止の通知）と
-二段で拾えるが、止めすぎ——IdP が不調なだけで全員を落とす——は拾えない。
+⚠ **What this guards is the "do not over-suspend" side.** Missed suspensions are caught in two stages
+together with the receiver (suspension notices), but over-suspension (dropping everyone just because the IdP is unwell) is not.
 """
 
 import pytest
@@ -56,7 +56,7 @@ class FakeLinks:
 
 
 class FakeSessions:
-    """「その人にセッションが何本あるか」だけを持つ置き場。"""
+    """A store that only holds "how many sessions that person has"."""
 
     def __init__(self, counts: dict[str, int] | None = None) -> None:
         self.counts = counts or {}
@@ -78,7 +78,7 @@ def build(states, subjects, counts=None, **roster_kwargs):
 
 
 def test_a_blocked_person_loses_their_sessions_but_keeps_the_link() -> None:
-    """⚠ **止まっただけの人の結び付きは外さない**（IdP で戻ればそのまま入れる）。"""
+    """⚠ **Do not remove the link of someone who is merely suspended** (if restored at the IdP they get straight back in)."""
     use_case, links, sessions, _ = build({"taro": "blocked", "hanako": "allowed"}, ["taro", "hanako"])
     outcome = use_case.execute()
 
@@ -107,7 +107,7 @@ def test_an_allowed_person_is_left_alone() -> None:
 
 @pytest.mark.parametrize("state", ["", "retired", "suspended-maybe"])
 def test_a_state_we_do_not_know_changes_nothing(state) -> None:
-    """⚠ **知らない値で人を止めない。** IdP が 4 つ目の状態を足した日に全員が止まる。"""
+    """⚠ **Do not suspend people over unknown values.** The day the IdP adds a fourth state, everyone would be suspended."""
     use_case, links, sessions, _ = build({"taro": state}, ["taro"])
     outcome = use_case.execute()
 
@@ -117,7 +117,7 @@ def test_a_state_we_do_not_know_changes_nothing(state) -> None:
 
 
 def test_someone_missing_from_the_roster_is_left_alone() -> None:
-    """名簿に載っていない ``sub`` は「消えた」ではない（答えが無いだけ）。"""
+    """A ``sub`` not on the roster is not "gone" (there is simply no answer)."""
     use_case, links, sessions, _ = build({}, ["taro"])
     outcome = use_case.execute()
 
@@ -127,7 +127,7 @@ def test_someone_missing_from_the_roster_is_left_alone() -> None:
 
 
 def test_everyone_unknown_holds_the_whole_round_back() -> None:
-    """⚠ **テナントの取り違えでもこの形になる。** 全員分を外す前に止まる。"""
+    """⚠ **A tenant mix-up also takes this shape.** Stop before removing everyone."""
     use_case, links, sessions, _ = build(
         {"taro": "unknown", "hanako": "unknown"}, ["taro", "hanako"]
     )
@@ -139,7 +139,7 @@ def test_everyone_unknown_holds_the_whole_round_back() -> None:
 
 
 def test_one_person_who_is_gone_is_still_handled() -> None:
-    """結び付きが 1 件だけなら「その 1 人が消えた」と区別が付かないので、通常どおり。"""
+    """With only one link, "that one person is gone" cannot be told apart, so proceed as usual."""
     use_case, links, sessions, _ = build({"taro": "unknown"}, ["taro"])
     outcome = use_case.execute()
 
@@ -148,7 +148,7 @@ def test_one_person_who_is_gone_is_still_handled() -> None:
 
 
 def test_a_roster_we_cannot_read_stops_the_round() -> None:
-    """⚠ **引けないことと「全員辞めた」を混ぜない。** 例外で止め、何も変えない。"""
+    """⚠ **Do not confuse "could not fetch" with "everyone left".** Stop with an exception and change nothing."""
     use_case, links, sessions, _ = build({}, ["taro"], fails=True)
     with pytest.raises(IdentityProviderUnavailableError):
         use_case.execute()
@@ -166,9 +166,9 @@ def test_nothing_is_asked_when_no_one_is_linked() -> None:
 
 
 def test_a_person_with_no_sessions_left_is_not_counted_again() -> None:
-    """⚠ 止まったままの人を毎時 1 人として数えない（記録が意味を失う）。"""
+    """⚠ Do not count someone who stays suspended as one per hour (the record would lose its meaning)."""
     use_case, _, sessions, _ = build({"taro": "blocked"}, ["taro"], counts={})
     outcome = use_case.execute()
 
-    assert sessions.ended == ["taro"]  # 消しには行く（何本あるかは知らない）
+    assert sessions.ended == ["taro"]  # still goes to end them (does not know how many there are)
     assert outcome.revoked == 0

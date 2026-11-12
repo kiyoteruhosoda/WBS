@@ -1,14 +1,14 @@
-"""動いているイメージの版（``/info`` と ``/healthz`` が答えるもの）。
+"""Version of the running image (what ``/info`` and ``/healthz`` report).
 
-出どころは ``src/infrastructure/version.json``。**ビルドの前に**
-``scripts/generate_version.sh`` が git から作り、イメージへ入る（ADR-0011。形は
-fastapitemplate の ADR-0044 に揃えた）。⚠ ``docker build --build-arg`` では受け取らない
-——渡す側ごとに名前がずれて、本番の ``git_sha`` が ``unknown`` のままになった
-（task #168）。
+The source is ``src/infrastructure/version.json``. **Before the build**,
+``scripts/generate_version.sh`` creates it from git and it goes into the image (ADR-0011; the shape
+follows fastapitemplate ADR-0044). ⚠ It is not taken via ``docker build --build-arg``
+-- names drifted between the callers and production's ``git_sha`` stayed ``unknown``
+(task #168).
 
-ファイルが無い（手元で ``uvicorn`` を直に起こした等）ときは既定値で動く。
-環境変数 ``APP_VERSION`` / ``GIT_SHA`` / ``BUILD_TIME`` を置けばそちらが勝つ
-（手元で名乗りを変えて確かめるための口。イメージは設定しない）。
+Without the file (e.g. ``uvicorn`` started directly on a dev machine) it runs with defaults.
+Setting the env vars ``APP_VERSION`` / ``GIT_SHA`` / ``BUILD_TIME`` overrides them
+(a hook to change the reported identity for local checks; images do not set them).
 """
 
 import json
@@ -30,7 +30,7 @@ class BuildInfo:
 
 
 def _read_version_file(path: Path) -> dict[str, str]:
-    """``version.json`` を読む。無い・壊れているなら空（＝既定値で名乗る）。"""
+    """Read ``version.json``. Empty if missing or broken (= report the defaults)."""
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError):

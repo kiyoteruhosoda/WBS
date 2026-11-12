@@ -1,12 +1,12 @@
 import React from 'react';
 
 /**
- * アプリの像（ログイン画面・メニューの上に出す）。
+ * The app mark (shown on the login screen and above the menu).
  *
- * 絵は持たず、タブのアイコンと同じ `favicon.svg` をそのまま読む。正本は
- * `scripts/generate_pwa_icons.py` の 1 本だけで、図柄や色を変えるとタブ・
- * ホーム画面のアイコンとこの像がいっしょに変わる（雛形 fastapitemplate の ADR-0053 と同じ作り）。
- * 像を足す場所でも絵を書き起こさず、この部品を使う。
+ * It has no artwork of its own and loads the same `favicon.svg` as the tab icon. The single source of truth is
+ * `scripts/generate_pwa_icons.py`; changing the design or colors there changes the tab and
+ * home-screen icons together with this mark (same approach as ADR-0053 in the fastapitemplate template).
+ * Wherever the mark is needed, use this component instead of redrawing it.
  */
 const AppMark: React.FC<{ size: number }> = ({ size }) => (
   <img

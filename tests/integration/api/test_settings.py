@@ -14,7 +14,7 @@ def test_update_language_and_timezone(client) -> None:
     assert data["language"] == "en"
     assert data["timezone"] == "America/New_York"
 
-    # 再取得しても保存されている
+    # Still saved when fetched again
     data = client.get("/api/settings").json()
     assert data["language"] == "en"
     assert data["timezone"] == "America/New_York"

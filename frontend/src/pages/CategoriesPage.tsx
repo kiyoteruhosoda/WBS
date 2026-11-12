@@ -137,7 +137,7 @@ const CategoriesPage: React.FC = () => {
         </Box>
       )}
 
-      {/* 登録・編集ダイアログ */}
+      {/* Create/edit dialog */}
       <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} fullWidth maxWidth="xs">
         <DialogTitle sx={{ fontSize: 16, fontWeight: 700 }}>
           {editing ? t('category.editTitle') : t('category.newTitle')}
@@ -212,7 +212,7 @@ const CategoriesPage: React.FC = () => {
         </DialogActions>
       </Dialog>
 
-      {/* 削除確認ダイアログ */}
+      {/* Delete confirmation dialog */}
       <Dialog open={deleteTarget !== null} onClose={() => setDeleteTarget(null)} fullWidth maxWidth="xs">
         <DialogTitle sx={{ fontSize: 16, fontWeight: 700 }}>{t('category.deleteTitle')}</DialogTitle>
         <DialogContent>

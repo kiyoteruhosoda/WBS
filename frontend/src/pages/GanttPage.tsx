@@ -29,19 +29,19 @@ const legend: { labelKey: TranslationKey; color: string }[] = [
 const GanttPage: React.FC = () => {
   const qc = useQueryClient();
   const { t } = useI18n();
-  // サイドバーで選んだプロジェクト（と子孫）だけ（task #187、ADR-0024）
+  // Only the project selected in the sidebar (and its descendants) (task #187, ADR-0024)
   const { scope } = useProjectScope();
   const { data, isLoading, error } = useQuery({
     queryKey: ['tasks', 'scope', scope],
     queryFn: () => getTasks(scopeParams(scope)),
   });
   const { data: categories } = useQuery({ queryKey: ['categories'], queryFn: getCategories });
-  // マイルストーンの期限と見込みの日（ADR-0058）。取れなくてもタスクは出す
+  // Milestone due and forecast dates (ADR-0058). Tasks are still shown if this fails
   const { data: milestones } = useQuery({
     queryKey: ['milestones', 'scope', scope],
     queryFn: () => getScopedMilestones(scopeParams(scope)),
   });
-  // 実績の帯（確定した実績。task #162）。取れなくても計画の帯は出す
+  // Actual bands (confirmed actuals. task #162). Planned bands are still shown if this fails
   const { data: actualSpans } = useQuery({ queryKey: [...ACTUALS_KEY, 'gantt'], queryFn: () => getGanttActuals() });
   const actuals = useMemo(() => new Map((actualSpans ?? []).map((s) => [s.task_id, s])), [actualSpans]);
 
@@ -54,7 +54,7 @@ const GanttPage: React.FC = () => {
     },
   });
 
-  // 左の表のセルをその場で保存する。見込みは読み直したときに計算し直される（ADR-0058 決定 4・ADR-0059 決定 3）
+  // Save left-table cells in place. Forecasts are recomputed on reload (ADR-0058 decision 4, ADR-0059 decision 3)
   const editTask = useMutation({
     mutationFn: ({ task, patch }: { task: Task; patch: Partial<Task> }) => updateTask(task.id, patch),
     onSuccess: () => {
@@ -63,7 +63,7 @@ const GanttPage: React.FC = () => {
     },
   });
 
-  // 担当に選べるのは、そのタスクのいちばん上のプロジェクトのメンバー（ADR-0055）
+  // Assignee candidates are the members of the task's top-level project (ADR-0055)
   const { data: projects } = useQuery({ queryKey: PROJECTS_KEY, queryFn: getProjects });
   const rootOf = useMemo(() => new Map((projects ?? []).map((p) => [p.id, p.root_project_id])), [projects]);
   const roots = useMemo(
@@ -82,13 +82,13 @@ const GanttPage: React.FC = () => {
     });
     return map;
   }, [roots, memberLists]);
-  // 日の列はプロジェクトのカレンダーで塗る（task #559）。表示しているプロジェクトと、タスクのあるプロジェクトのもの
+  // Day columns are shaded by project calendars (task #559): the displayed project's and those of the tasks' projects
   const calendarProjects = useMemo(() => {
     const ids = new Set((data ?? []).map((task) => task.project_id).filter((id): id is number => id != null));
     if (typeof scope === 'number') ids.add(scope);
     return [...ids].sort((a, b) => a - b);
   }, [data, scope]);
-  // combine の結果は中身が同じなら同じ参照のまま（行の塗り直しの計算を毎回やり直さない）
+  // combine keeps the same reference when the content is unchanged (avoids recomputing row shading every time)
   const calendarData = useQueries({
     queries: calendarProjects.map((id) => ({ queryKey: teamCalendarKey(id), queryFn: () => getTeamCalendar(id) })),
     combine: (results) => results.map((r) => r.data),
@@ -100,16 +100,16 @@ const GanttPage: React.FC = () => {
   }, [calendarProjects, calendarData]);
   const columnCalendar = typeof scope === 'number' ? taskCalendars.get(scope) ?? null : null;
 
-  // 未分類のタスク（担当は作った人だけ）とメンバーが読めないものは変えない
+  // Don't allow changes for uncategorized tasks (assignee is the creator only) or when members can't be loaded
   const assigneeChoices = (task: Task) => {
     const root = task.project_id == null ? undefined : rootOf.get(task.project_id);
     return root === undefined ? null : choicesByRoot.get(root) ?? null;
   };
 
-  // 始まりの順に並べ、子タスクは親の直後へ（枝の罫線でつなぐ。task #639）
+  // Sort by start, with child tasks right after their parent (joined by branch lines. task #639)
   const nested = useMemo(
     () => nestBySubtask((data ?? [])
-      // 計画の日付が無くても、終わる見込みがあれば出す
+      // Show it even without planned dates if there is a forecast end
       .filter(showsOnGantt)
       .sort((a, b) => (a.start_date ?? a.due_date ?? '').localeCompare(b.start_date ?? b.due_date ?? ''))),
     [data],
@@ -119,7 +119,7 @@ const GanttPage: React.FC = () => {
     const list = treeGuides(nested.map((n) => n.level));
     return new Map(nested.map((n, i) => [n.task.id, list[i]]));
   }, [nested]);
-  // WBS 番号は絞る前の一覧で（タスクの一覧と同じ番号）
+  // WBS numbers come from the unfiltered list (same numbers as the task list)
   const codes = useMemo(() => wbsCodes(data ?? [], projects ?? []).tasks, [data, projects]);
 
   if (isLoading) return <Box sx={{ display: 'flex', justifyContent: 'center', mt: 6 }}><CircularProgress /></Box>;

@@ -37,7 +37,7 @@ import {
 
 const STATUSES: TaskStatus[] = ['TODO', 'DOING', 'WAITING', 'DONE', 'CANCELLED'];
 
-// プロジェクトで束ねるか（端末の好み。失われても困らない。task #187・ADR-0030）
+// Whether to group by project (a per-device preference; fine to lose. task #187, ADR-0030)
 const GROUPED_KEY = 'wbs.taskList.groupByProject';
 const readGrouped = (): boolean => {
   try {
@@ -47,9 +47,9 @@ const readGrouped = (): boolean => {
   }
 };
 
-/** スマホ幅では隠す列（題名・期限・ステータスだけ残す）。 */
+/** Columns hidden on phone widths (only title, due date and status remain). */
 const wideOnly = { display: { xs: 'none', sm: 'table-cell' } } as const;
-/** プロジェクトの列は PC 幅だけ（狭い幅では題名の下に道筋を出す）。 */
+/** The project column is shown on desktop widths only (narrow widths show the path under the title). */
 const desktopOnly = { display: { xs: 'none', md: 'table-cell' } } as const;
 
 const TaskList: React.FC = () => {
@@ -58,7 +58,7 @@ const TaskList: React.FC = () => {
   const [statusFilter, setStatusFilter] = useState<TaskStatus[]>([]);
   const [categoryId, setCategoryId] = useState<string>('');
   const [milestoneId, setMilestoneId] = useState<string>('');
-  // 担当者（ADR-0055）。'' = すべて、'me' = 自分、'none' = 担当なし、数字 = その人。絞りはサーバ
+  // Assignee (ADR-0055). '' = all, 'me' = me, 'none' = unassigned, number = that person. Filtered on the server
   const [assignee, setAssignee] = useState<string>('');
   const [keyword, setKeyword] = useState('');
   const [sortKey, setSortKey] = useState<TaskSortKey>('priority_score');
@@ -69,7 +69,7 @@ const TaskList: React.FC = () => {
   const [moveOpen, setMoveOpen] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
 
-  // 範囲はサイドバーと同じ状態（ここで替えればサイドバーも替わる）。絞りはサーバ（task #187、ADR-0024）
+  // The scope is the same state as the sidebar (changing it here changes the sidebar too). Filtered on the server (task #187, ADR-0024)
   const { scope, projects } = useProjectScope();
   const { data, isLoading, error } = useQuery({
     queryKey: ['tasks', 'scope', scope, assignee],
@@ -84,7 +84,7 @@ const TaskList: React.FC = () => {
     try {
       window.localStorage.setItem(GROUPED_KEY, next ? 'on' : 'off');
     } catch {
-      // 覚えられないだけで、画面は動く
+      // The preference just isn't remembered; the screen still works
     }
   };
 
@@ -113,11 +113,11 @@ const TaskList: React.FC = () => {
   const rows: TaskListRow[] = grouped
     ? groupRows(groups, collapsed)
     : items.map((task) => ({ kind: 'task' as const, task, depth: 0, level: 0 }));
-  // WBS 番号は絞る前の一覧で決める（並べ替え・絞り込みで変わらない）。枝の罫線は見えている行の並びから（task #639）
+  // WBS numbers come from the unfiltered list (stable across sorting and filtering). Branch lines come from the visible row order (task #639)
   const codes = useMemo(() => wbsCodes(all, projects ?? []), [all, projects]);
   const guides = treeGuides(rows.map((row) => (row.kind === 'task' ? row.level : 0)));
 
-  // 選べるのは見えているタスクだけ（絞り込みで隠れたものを知らずに移さない）
+  // Only visible tasks are selectable (so tasks hidden by a filter aren't moved unknowingly)
   const chosen = useMemo(() => items.filter((t) => selected.has(t.id)).map((t) => t.id), [items, selected]);
   const chosenSet = useMemo(() => new Set(chosen), [chosen]);
   const plan = useMemo(() => planProjectMove(chosen, all), [chosen, all]);
@@ -169,15 +169,15 @@ const TaskList: React.FC = () => {
 
   const groupRow = (g: TaskGroupNode) => {
     const ids = groupTaskIds(g);
-    // 親と一緒に移る子も選んだものとして数える（見た目のチェックと揃える）
+    // Count children that move with their parent as selected too (to match the visible checkboxes)
     const checkedCount = ids.filter((id) => chosenSet.has(id) || following.has(id)).length;
     const isCollapsed = collapsed.has(g.key);
-    // 最上位は道筋で（範囲で選んだプロジェクトが最上位になると、名前だけでは親が分からない）
+    // Top level shows the path (when the scoped project is the top, the name alone doesn't tell the parent)
     const label = g.projectId === null ? t('scope.none') : (g.depth === 0 ? g.path : g.name) ?? g.path ?? '';
     return (
       <TableRow key={g.key} data-testid="tasklist-group" sx={{ bgcolor: g.depth === 0 ? ds.hairline : ds.paper }}>
         <TableCell padding="checkbox">
-          {/* ⚠ 行のチェックと同じく span で包む（直の子のときだけ MUI が余白を 0 にして、列が揃わない） */}
+          {/* ⚠ Wrap in a span like the row checkboxes (MUI zeroes the padding only for a direct child, misaligning the column) */}
           <Box component="span">
             <Checkbox
               size="small"
@@ -210,7 +210,7 @@ const TaskList: React.FC = () => {
             {g.projectId !== null && <WbsCode code={codes.projects.get(g.projectId)} />}
             <Box sx={{
               fontFamily: headingFont, fontSize: 13, fontWeight: 700, color: g.archived ? ds.textMuted : ds.text,
-              // スマホ幅では折り返す（1 行に詰めると表が画面より広がる）
+              // Wrap on phone widths (keeping it on one line makes the table wider than the screen)
               overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: { xs: 'normal', sm: 'nowrap' }, minWidth: 0,
             }} title={g.path ?? label}>
               {label}
@@ -265,7 +265,7 @@ const TaskList: React.FC = () => {
           </Box>
         </TableCell>
         <TableCell sx={{ position: 'relative' }}>
-          {/* 枝の罫線: 親の点の真下から縦に、子の点の手前まで横に（字下げの幅と揃える） */}
+          {/* Branch lines: vertical from right under the parent's dot, horizontal up to the child's dot (matches the indent width) */}
           {grouped && (
             <WbsBranch
               guide={guide}
@@ -284,7 +284,7 @@ const TaskList: React.FC = () => {
                 fontSize: 13, fontWeight: 500, color: task.status === 'DONE' ? ds.textMuted : ds.text,
                 textDecoration: task.status === 'DONE' ? 'line-through' : 'none',
               }}>
-                {/* 束ねた表では枝の罫線が親子を見せる。束ねない表だけ印を残す */}
+                {/* In the grouped table the branch lines show parent/child; only the ungrouped table keeps the marker */}
                 {task.parent_task_id != null && !grouped && (
                   <Box component="span" sx={{ color: ds.textMuted, mr: '4px' }} aria-hidden>↳</Box>
                 )}
@@ -295,7 +295,7 @@ const TaskList: React.FC = () => {
                   {`${t('taskList.assignee')}: ${task.assignee_name}`}
                 </Box>
               )}
-              {/* 束ねない表では、狭い幅だけ題名の下に道筋（広い幅はプロジェクトの列） */}
+              {/* In the ungrouped table, narrow widths show the path under the title (wide widths use the project column) */}
               {!grouped && task.project_path && (
                 <Box sx={{ fontSize: 11, color: ds.textMuted, display: { xs: 'block', md: 'none' } }} title={t('taskList.project')}>
                   {task.project_path}
@@ -341,7 +341,7 @@ const TaskList: React.FC = () => {
 
   return (
     <Box>
-      {/* フィルタツールバー。プロジェクトが先頭（サイドバーの範囲と同じ状態） */}
+      {/* Filter toolbar. Project comes first (same state as the sidebar scope) */}
       <Box sx={{ display: 'flex', gap: '12px', mb: '14px', flexWrap: 'wrap', alignItems: 'center' }}>
         <ProjectScopeSelect inline />
         <TextField
@@ -407,7 +407,7 @@ const TaskList: React.FC = () => {
         <Box sx={{ fontSize: 13, color: ds.textSub, ml: 'auto' }}>{t('taskList.count', { count: items.length })}</Box>
       </Box>
 
-      {/* まとめて移す（選んでいる間だけ） */}
+      {/* Bulk move (only while something is selected) */}
       {chosen.length > 0 && (
         <Box data-testid="tasklist-bulkbar" sx={{
           display: 'flex', flexWrap: 'wrap', alignItems: 'center', columnGap: '12px', rowGap: '6px',
@@ -442,7 +442,7 @@ const TaskList: React.FC = () => {
           <TableContainer>
             <Table size="small" sx={{
               '& td': { py: '10px' },
-              // スマホ幅では左右の余白を詰める（チェックの列は MUI の幅のまま）
+              // Tighten the side padding on phone widths (the checkbox column keeps MUI's width)
               '& td:not(.MuiTableCell-paddingCheckbox), & th:not(.MuiTableCell-paddingCheckbox)': { px: { xs: '6px', sm: '16px' } },
               '& td.MuiTableCell-paddingCheckbox, & th.MuiTableCell-paddingCheckbox': { pl: { xs: '4px', sm: '16px' }, pr: { xs: 0, sm: '12px' } },
               '& th': { whiteSpace: 'nowrap' },

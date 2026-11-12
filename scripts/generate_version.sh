@@ -1,31 +1,31 @@
 #!/usr/bin/env bash
-# src/infrastructure/version.json を作る。/info（と画面の設定ページ）が「どのコミットの
-# イメージが動いているか」を答えるための唯一の出どころ（ADR-0011）。
-# 形は fastapitemplate の scripts/generate_version.sh（ADR-0044）に揃えてある。
+# Writes src/infrastructure/version.json. The sole source for /info (and the settings page) to answer
+# "which commit's image is running" (ADR-0011).
+# The shape matches fastapitemplate's scripts/generate_version.sh (ADR-0044).
 #
-# 呼ばれる場所は 3 つ:
-#   1. deck の build の「版を刻む」段（本番の経路）— deploy-repo の
-#      resources/build-matrix.json で `pre_build: true` のとき、クローン済みの
-#      リポジトリの根でこれを走らせ、その出力が Docker のビルドコンテキストへ入る
-#   2. Dockerfile の RUN — 1 が動いていれば **何もしない**。無ければ dev と刻む
-#   3. 手元での確認（scripts/build.py の docker / deploy / 直接実行）
+# Called from 3 places:
+#   1. The "stamp the version" step of deck's build (the production path): when deploy-repo's
+#      resources/build-matrix.json has `pre_build: true`, this runs at the root of the cloned
+#      repository and its output goes into the Docker build context
+#   2. The Dockerfile RUN: does **nothing** if 1 ran. Otherwise stamps dev
+#   3. Local checks (scripts/build.py docker / deploy / direct run)
 #
-# 優先順位: **git > 既にある version.json > dev**
+# Precedence: **git > existing version.json > dev**
 #
-# ⚠ git が引ける場所では必ず作り直す。ビルドディレクトリを使い回す作り（かつ
-#   version.json は .gitignore 済みで `git pull` でも消えない）だと、「既存を尊重する」
-#   にした場合に 2 回目以降のビルドが**初回の版を名乗り続ける**。
-# ⚠ 逆にイメージの中（.git は .dockerignore で入らない）では既存を絶対に上書きしない。
-#   上書きにすると 1 が作った本物の版を Dockerfile の RUN が dev に潰す。
+# ⚠ Always regenerate where git is available. With a reused build directory (and
+#   version.json being in .gitignore, so `git pull` does not remove it), "respecting the existing one"
+#   would make every build after the first **keep claiming the first version**.
+# ⚠ Conversely, inside the image (.git is excluded by .dockerignore) never overwrite the existing one.
+#   Overwriting would let the Dockerfile RUN clobber the real version made by 1 with dev.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 VERSION_FILE="${VERSION_FILE:-$PROJECT_ROOT/src/infrastructure/version.json}"
 
-# --- 1. git から作る（引ける場所では必ず作り直す）-----------------------------
-# ⚠ `-c safe.directory=*` が要る。ビルドする側はクローンした所有者と別 UID で走ることが
-#   あり、無いと "dubious ownership" で git が黙って落ちる。
+# --- 1. Generate from git (always regenerate where available) ----------------
+# ⚠ `-c safe.directory=*` is required. The builder may run under a different UID from the
+#   clone's owner, and without it git silently fails with "dubious ownership".
 if command -v git >/dev/null 2>&1 && [ -e "$PROJECT_ROOT/.git" ]; then
     GIT=(git -c "safe.directory=*" -C "$PROJECT_ROOT")
 
@@ -34,14 +34,14 @@ if command -v git >/dev/null 2>&1 && [ -e "$PROJECT_ROOT/.git" ]; then
     BRANCH=$("${GIT[@]}" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "unknown")
     COMMIT_DATE=$("${GIT[@]}" log -1 --format=%cI 2>/dev/null || echo "unknown")
 
-    # detached HEAD（deck・CI のチェックアウト）では BRANCH が "HEAD" になる。
-    # 呼び出し側がブランチ名を知っているなら BRANCH_OVERRIDE で補う（deck は渡してくる）。
+    # On a detached HEAD (deck/CI checkouts) BRANCH becomes "HEAD".
+    # If the caller knows the branch name, it fills it in via BRANCH_OVERRIDE (deck passes it).
     if [ -n "${BRANCH_OVERRIDE:-}" ] && { [ "$BRANCH" = "HEAD" ] || [ "$BRANCH" = "unknown" ]; }; then
         BRANCH="$BRANCH_OVERRIDE"
     fi
 
-    # ⚠ 接頭辞の `v` は付けない。意味のある版数ではなくコミットの短縮ハッシュなので、
-    #   `v` があると「そういう版がある」と読めてしまう。
+    # ⚠ No `v` prefix. It is a short commit hash, not a meaningful version number,
+    #   and a `v` would read as "such a release exists".
     if [ "$BRANCH" = "main" ]; then
         VERSION="$COMMIT_HASH"
     else
@@ -49,12 +49,12 @@ if command -v git >/dev/null 2>&1 && [ -e "$PROJECT_ROOT/.git" ]; then
     fi
     SOURCE="git"
 elif [ -s "$VERSION_FILE" ] && grep -q '"commit_hash"' "$VERSION_FILE"; then
-    # --- 2. git が無い＝イメージの中。ビルド前に置かれた内容が正 -----------------
-    echo "[version] 既存の version.json を使います: $VERSION_FILE"
+    # --- 2. No git = inside the image. The content placed before the build wins ----
+    echo "[version] Using the existing version.json: $VERSION_FILE"
     cat "$VERSION_FILE"
     exit 0
 else
-    # --- 3. どちらでもない（`docker build` を素で叩いた等）----------------------
+    # --- 3. Neither (e.g. a bare `docker build`) ---------------------------------
     COMMIT_HASH="dev"
     COMMIT_HASH_FULL="dev"
     BRANCH="unknown"
@@ -63,7 +63,7 @@ else
     SOURCE="default"
 fi
 
-BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)   # 契約: 時刻は UTC・末尾は Z（HANDOVER §14）
+BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)   # contract: times are UTC with a trailing Z (HANDOVER §14)
 
 mkdir -p "$(dirname "$VERSION_FILE")"
 cat > "$VERSION_FILE" << JSON
@@ -77,4 +77,4 @@ cat > "$VERSION_FILE" << JSON
 }
 JSON
 
-echo "[version] $SOURCE から生成しました: $VERSION ($COMMIT_HASH, $BRANCH) → $VERSION_FILE"
+echo "[version] Generated from $SOURCE: $VERSION ($COMMIT_HASH, $BRANCH) -> $VERSION_FILE"

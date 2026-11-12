@@ -1,7 +1,7 @@
-"""木（いちばん上のプロジェクト）をまたぐ移動は、元と先の両方の管理者だけ（task #735 / ADR-0066）。
+"""Moving across trees (top-level projects) is only for admins of both the source and the destination (task #735 / ADR-0066).
 
-メンバーがチームのタスク・子プロジェクト・マイルストーンを自分の木へ持ち出すと、元のチームから見えなくなっていた。
-同じ木の中の移動は、これまでどおりメンバーにもできる。
+Members could take the team's tasks, child projects and milestones out to their own tree, hiding them from the original team.
+Moving within the same tree is still allowed for members, as before.
 """
 
 from __future__ import annotations
@@ -34,14 +34,14 @@ def other_id(db) -> int:
     db.flush()
     user_id = user.id
     db.commit()
-    # 仲間も自分の根を持てる人にする（ADR-0065）
+    # Make the teammate someone who can own their own root too (ADR-0065)
     ProjectCreatorUseCases(db).allow(OTHER_EMAIL)
     return user_id
 
 
 @pytest.fixture
 def as_(client, other_id):
-    """``as_.me()`` / ``as_.other()`` で current user を切り替える。既定は自分（チームの管理者）。"""
+    """Switch the current user with ``as_.me()`` / ``as_.other()``. Default is me (the team's admin)."""
 
     def other() -> AuthenticatedUserDTO:
         return AuthenticatedUserDTO(
@@ -67,7 +67,7 @@ def _created(res) -> dict:
 
 @pytest.fixture
 def team(client, as_, other_id) -> dict:
-    """自分が管理者のチームの木（根・子 2 つ・タスク・マイルストーン）と、仲間だけの根。仲間はチームのメンバー。"""
+    """A team tree where I am admin (root, two children, a task, a milestone) and a root owned only by the teammate. The teammate is a team member."""
     root = _created(client.post("/api/projects", json={"name": "チーム"}))
     child = _created(client.post("/api/projects", json={"name": "子", "parent_project_id": root["id"]}))
     sibling = _created(client.post("/api/projects", json={"name": "隣", "parent_project_id": root["id"]}))
@@ -95,7 +95,7 @@ def test_a_member_cannot_carry_a_team_task_to_another_tree(client, as_, team) ->
     for target in (own_id, None):
         res = client.post("/api/tasks/move-to-project", json={"task_ids": [task_id], "project_id": target})
         assert res.status_code == 403, res.text
-    # 自分の木のタスクの下へ入れて連れ出すのも同じ
+    # Same for putting it under a task in my own tree and taking it out
     res = client.put(f"/api/tasks/{task_id}", json={"parent_task_id": team["own_task"]["id"]})
     assert res.status_code == 403, res.text
 
@@ -120,7 +120,7 @@ def test_a_member_cannot_carry_a_sub_project_or_milestone_to_another_tree(client
 
 
 def test_a_member_cannot_push_own_things_into_a_team_tree(client, as_, team) -> None:
-    # 管理者でない木へは渡せない（元と先の両方の管理者だけ）
+    # Cannot hand over to a tree you don't administer (only admins of both source and destination)
     as_.other()
     root_id = team["root"]["id"]
     res = client.post(f"/api/projects/{team['own']['id']}/move", json={"parent_project_id": root_id})
@@ -142,7 +142,7 @@ def test_a_member_still_moves_things_within_the_tree(client, as_, team) -> None:
     assert res.json()["root_project_id"] == team["root"]["id"]
     res = client.put(f"/api/milestones/{team['milestone']['id']}", json={"project_id": sibling_id})
     assert res.status_code == 200, res.text
-    # 自分の未分類と自分の木のあいだも、これまでどおり
+    # Between my uncategorized items and my own tree too, as before
     res = client.put(f"/api/tasks/{team['loose']['id']}", json={"project_id": team["own"]["id"]})
     assert res.status_code == 200, res.text
 

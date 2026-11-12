@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { RENEWAL_RESULT_PATH, resultOf } from './silentRenewal';
 
-/** 試験は node で走るので、枠の行き先だけを持つ形で代える */
+/** Tests run in node, so the frame is replaced by an object holding only its location */
 const frameAt = (href: string | null, readable = true): HTMLIFrameElement => {
   const url = href === null ? null : new URL(href, 'https://wbs.example.com');
   const contentWindow = {
@@ -16,16 +16,16 @@ const frameAt = (href: string | null, readable = true): HTMLIFrameElement => {
 };
 
 describe('resultOf', () => {
-  it('まだ途中なら決めない', () => {
+  it('undecided while still in progress', () => {
     expect(resultOf(frameAt(null))).toBeNull();
   });
 
-  it('結果の頁の result を読む', () => {
+  it('reads result from the result page', () => {
     expect(resultOf(frameAt(`${RENEWAL_RESULT_PATH}?result=renewed`))).toBe('renewed');
     expect(resultOf(frameAt(`${RENEWAL_RESULT_PATH}?result=declined`))).toBe('declined');
   });
 
-  it('知らない値・ほかの頁・読めないオリジンは failed', () => {
+  it('unknown values, other pages and unreadable origins are failed', () => {
     expect(resultOf(frameAt(`${RENEWAL_RESULT_PATH}?result=maybe`))).toBe('failed');
     expect(resultOf(frameAt('/login'))).toBe('failed');
     expect(resultOf(frameAt('https://identity.example.com/authorize', false))).toBe('failed');

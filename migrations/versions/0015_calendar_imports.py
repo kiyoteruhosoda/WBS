@@ -1,15 +1,15 @@
-"""取り込んだカレンダー（外の iCalendar を読み込む）（task #196 / ADR-0037）
+"""Imported calendars (reading external iCalendar feeds) (task #196 / ADR-0037)
 
 Revision ID: 0015
 Revises: 0014
 Create Date: 2026-10-02
 
-- 表 ``calendar_imports``: 取り込んだカレンダーの読み込みの状態（カレンダー 1 つに 1 行。購読している
-  URL は封じたもの）
-- 表 ``calendar_imported_occurrences``: 読み込んだ回（読み込むたびにカレンダーごと入れ替える）
+- Table ``calendar_imports``: fetch state of an imported calendar (one row per calendar; the subscribed
+  URL is sealed)
+- Table ``calendar_imported_occurrences``: fetched occurrences (replaced per calendar on every fetch)
 
-カレンダーの種類 ``IMPORTED`` は ``calendars.kind``（文字列）の値が増えるだけで、列は変えない。
-下げると 2 つの表が消え、取り込んだカレンダーの行も消える。
+The calendar kind ``IMPORTED`` only adds a value to ``calendars.kind`` (a string); columns do not change.
+Downgrading drops both tables along with the imported calendars' rows.
 """
 
 from __future__ import annotations

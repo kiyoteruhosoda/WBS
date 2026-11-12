@@ -1,4 +1,4 @@
-"""外部 IdP との会話の口（ポート）。実装はインフラ層。"""
+"""The port for talking to the external IdP. Implemented in the infrastructure layer."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from src.domain.value_objects.identity_claims import IdentityClaims
 
 @dataclass(frozen=True)
 class AuthorizationRequest:
-    """認可エンドポイントへ利用者のブラウザを飛ばすための材料。"""
+    """Material for redirecting the user's browser to the authorization endpoint."""
 
     authorization_url: str
     state: str
@@ -21,77 +21,77 @@ class AuthorizationRequest:
 
 
 class IdentityProvider(ABC):
-    """OIDC の Relying Party 側から見た IdP。
+    """The IdP as seen from the OIDC Relying Party side.
 
-    ユースケースはこのインターフェースしか知らない。ディスカバリ・JWKS 取得・
-    ID トークンの署名検証といった手順はすべて実装側に隠す。
+    Use cases only know this interface. Steps such as discovery, fetching JWKS
+    and verifying ID token signatures are all hidden in the implementation.
     """
 
     @property
     @abstractmethod
     def display_name(self) -> str:
-        """ログイン画面のボタンに出す IdP の名前。"""
+        """IdP name shown on the login screen button."""
 
     @abstractmethod
     def build_authorization_request(
         self, *, state: str, nonce: str, code_verifier: str, silent: bool = False
     ) -> AuthorizationRequest:
-        """認可リクエスト URL を組み立てる。
+        """Build the authorization request URL.
 
-        ``silent`` なら ``prompt=none`` を付け、IdP に画面を出させない（ADR-0062）。
+        If ``silent``, add ``prompt=none`` so the IdP shows no screen (ADR-0062).
         """
 
     @abstractmethod
     def exchange_code(self, *, code: str, code_verifier: str, nonce: str) -> IdentityClaims:
-        """認可コードを ID トークンに交換し、検証して本人のクレームを返す。
+        """Exchange the authorization code for an ID token, verify it, and return the user's claims.
 
-        署名・``iss``・``aud``・``exp``・``nonce`` の検証は実装側の責務。
-        検証に通らなければ ``AuthenticationError`` を送出する。
+        Verifying signature, ``iss``, ``aud``, ``exp`` and ``nonce`` is the implementation's job.
+        Raises ``AuthenticationError`` if verification fails.
         """
 
     @abstractmethod
     def build_end_session_url(self, *, post_logout_redirect_uri: str | None) -> str | None:
-        """IdP 側もログアウトさせる URL。IdP が対応していなければ None。"""
+        """URL that also logs out on the IdP side. None if the IdP does not support it."""
 
     @abstractmethod
     def verify_logout_token(self, token: str) -> Mapping[str, Any]:
-        """停止の通知（``logout_token``）を JWT として確かめ、クレームを返す。
+        """Verify a stop notification (``logout_token``) as a JWT and return its claims.
 
-        確かめるのは**署名・発行者・対象者・期限**まで。「ログアウトの通知として
-        成立しているか」（``events`` / ``nonce`` / ``sub`` か ``sid`` / ``jti``）の
-        判断はドメイン側（``LogoutNotice``）が行う。
+        Only **signature, issuer, audience and expiry** are checked. Whether it is valid
+        as a logout notification (``events`` / ``nonce`` / ``sub`` or ``sid`` / ``jti``)
+        is decided by the domain (``LogoutNotice``).
 
-        通らなければ ``InvalidLogoutTokenError`` を送出する。
+        Raises ``InvalidLogoutTokenError`` if it does not pass.
         """
 
     @abstractmethod
     def verify_machine_token(self, token: str, *, audience: str) -> Mapping[str, Any]:
-        """ほかのアプリのサーバーが**機械として**持ってきたアクセストークンを確かめる（ADR-0056）。
+        """Verify an access token another app's server brought **as a machine** (ADR-0056).
 
-        確かめるのは**署名・``typ``（``at+jwt``）・発行者・宛先（``audience``）・期限**まで。
-        機械のトークンか（``sub_type``）・どのアプリか（``client_id``）はユースケース側が決める。
+        Only **signature, ``typ`` (``at+jwt``), issuer, audience (``audience``) and expiry** are checked.
+        Whether it is a machine token (``sub_type``) and which app (``client_id``) are decided by the use case.
 
-        通らなければ ``AuthenticationError`` を送出する。
+        Raises ``AuthenticationError`` if it does not pass.
         """
 
     @abstractmethod
     def verify_access_token(self, token: str) -> Mapping[str, Any]:
-        """アプリが ``Authorization: Bearer`` で持ってきた**利用者の**アクセストークンを確かめる
-        （ADR-0018）。
+        """Verify a **user's** access token an app brought with ``Authorization: Bearer``
+        (ADR-0018).
 
-        確かめるのは**署名・``typ``（``at+jwt``）・発行者・宛先・期限**まで。どのアプリの
-        トークンを受け取るか（``client_id``）・機械のトークンを断るか（``sub_type``）は
-        ユースケース側が決める。
+        Only **signature, ``typ`` (``at+jwt``), issuer, audience and expiry** are checked. Which apps'
+        tokens to accept (``client_id``) and whether to reject machine tokens (``sub_type``)
+        are decided by the use case.
 
-        通らなければ ``AuthenticationError`` を送出する。
+        Raises ``AuthenticationError`` if it does not pass.
         """
 
     @property
     @abstractmethod
     def federated_issuer(self) -> str:
-        """**手元に残した宛名を引くための**発行者の綴り。
+        """Issuer spelling **used to look up the stored identity links**.
 
-        ⚠ ディスカバリ文書が名乗るままの綴り（ID トークンの ``iss`` と完全一致で
-        照合する値）とは別。末尾の ``/`` の有無が違うだけで、引く行が 1 つも
-        見つからなくなる。
+        ⚠ Different from the spelling the discovery document claims (the value matched exactly
+        against the ID token's ``iss``). A difference of just a trailing ``/`` makes the lookup
+        find no rows at all.
         """

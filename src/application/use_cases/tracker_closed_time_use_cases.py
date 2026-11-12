@@ -1,12 +1,12 @@
-"""Tracker で締めた時間を受け取る（task #540 / ADR-0056）。
+"""Receive time closed in Tracker (task #540 / ADR-0056).
 
-- 置き換え: Tracker の締めの期間（利用者 × 初日）ごとに、前に受け取った行を退けて送られた行で入れ直す。
-  同じ期間の WBS 自身の締めの行（Tracker へ移る前のもの）も退ける（Tracker の ADR-0053 決定 4。二重に数えない）
-- 取り消し: Tracker で締めを開け直したら、その期間の行を退ける
+- Replace: per Tracker closing period (user x first day), retire the previously received rows and insert the sent rows.
+  Also retire WBS's own closing rows for the same period (from before moving to Tracker) (Tracker ADR-0053 decision 4; no double counting)
+- Revoke: when the closing is reopened in Tracker, retire that period's rows
 
-退けるのは論理削除（``deleted_at``）。WBS に無い・消したタスクの行は受け取らず、id を返す。
+Retiring is a soft delete (``deleted_at``). Rows for tasks missing from or deleted in WBS are not accepted; their ids are returned.
 
-どちらも、呼んだアプリと操作を ``machine_operation_logs`` へ同じトランザクションで残す（task #802 / ADR-0068）。
+Both record the calling app and the operation in ``machine_operation_logs`` in the same transaction (task #802 / ADR-0068).
 """
 
 from __future__ import annotations
@@ -30,10 +30,10 @@ HOURS_QUANTUM = Decimal("0.01")
 
 
 def hours_of(seconds: int) -> Decimal:
-    """``work_logs.hours`` へ入れる値（小数 2 桁。正確な長さは ``duration_seconds``）。"""
+    """The value stored in ``work_logs.hours`` (2 decimals; the exact length is ``duration_seconds``)."""
     return (Decimal(seconds) / Decimal(3600)).quantize(HOURS_QUANTUM, rounding=ROUND_HALF_UP)
 
-#: 1 期間に受け取る行の上限（毎日 × タスク。区切りは月まで）
+#: Upper limit of rows accepted per period (every day x tasks; periods are at most a month)
 MAX_ENTRIES = 5000
 
 
@@ -46,9 +46,9 @@ class ClosedTimeEntry:
 
 @dataclass(frozen=True)
 class ClosedTimeReceipt:
-    #: 入れた行の数
+    #: Number of rows inserted
     stored: int
-    #: WBS に無い・消したタスク（受け取らなかった）
+    #: Tasks missing from or deleted in WBS (not accepted)
     unknown_task_ids: list[int]
 
 

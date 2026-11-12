@@ -1,26 +1,26 @@
-"""PWA アイコン（`frontend/public/`）を生成する（task #192・ADR-0028。図柄は ADR-0057）。
+"""Generate the PWA icons (`frontend/public/`) (task #192, ADR-0028; artwork in ADR-0057).
 
-アイコンの正本はこのスクリプト（配色と図形の座標）であり、出力物は生成結果として
-コミットする。標準ライブラリだけで PNG を書き出すため、追加の依存や外部の
-ラスタライザは要らない（CI・手元のどちらでも同じ結果になる）。雛形（fastapitemplate）の
-`scripts/generate_pwa_icons.py` と同じ作り。図柄と色だけが違う。
+This script (colors and shape coordinates) is the source of truth for the icons, and the outputs are committed
+as generated results. PNGs are written with the standard library only, so no extra dependencies or external
+rasterizer are needed (same result in CI and locally). Built the same way as the template's (fastapitemplate)
+`scripts/generate_pwa_icons.py`. Only the artwork and colors differ.
 
     python3 scripts/generate_pwa_icons.py
 
-図柄: ガントチャート。上に日付の目盛り、その下に段々に右へずれる帯 3 本（task #548。前は WBS の木だったが
-組織図に見えた）。色は画面の主色の青のまま。Tracker（緑青のストップウォッチ）・Scheduler（紫のカレンダー）と見分ける。
+Artwork: a Gantt chart. A date ruler on top, with 3 bars below stepping to the right (task #548; it used to be a WBS tree but
+looked like an org chart). The color stays the screen's primary blue. Distinguished from Tracker (teal stopwatch) and Scheduler (purple calendar).
 
-出力:
-    favicon.svg                  ブラウザのタブ用（角丸・ベクタ）
-    pwa-192x192.png              マニフェストの通常アイコン
-    pwa-512x512.png              同（大）
-    pwa-maskable-512x512.png     maskable 用（全面塗り・セーフゾーンを取った小さめの図形）
-    apple-touch-icon.png         iOS ホーム画面用（OS 側で角丸に切られるため全面塗り）
+Outputs:
+    favicon.svg                  for browser tabs (rounded corners, vector)
+    pwa-192x192.png              regular manifest icon
+    pwa-512x512.png              same (large)
+    pwa-maskable-512x512.png     maskable (fully filled, smaller shape within the safe zone)
+    apple-touch-icon.png         iOS home screen (fully filled, since the OS rounds the corners)
 
-画面の中の像（ログイン画面・メニューの上。`frontend/src/components/AppMark.tsx`）も
-favicon.svg をそのまま読む（ADR-0040）。図柄や色を変えるときはここだけを直して出力し直せばよく、
-画面側に同じ絵を書き起こさない。⚠ 色を変えるときは `frontend/src/theme.ts` の ds.primary 系・
-`frontend/index.html` の theme-color・manifest の theme_color も揃える。
+The in-screen mark (sign-in screen, top of the menu; `frontend/src/components/AppMark.tsx`) also
+reads favicon.svg as is (ADR-0040). To change the artwork or colors, fix only this file and regenerate;
+do not redraw the same picture on the screen side. ⚠ When changing colors, also align the ds.primary family in `frontend/src/theme.ts`,
+theme-color in `frontend/index.html`, and the manifest's theme_color.
 """
 
 from __future__ import annotations
@@ -30,21 +30,21 @@ import zlib
 from pathlib import Path
 from typing import NamedTuple
 
-# 出力先。frontend の静的アセットとして配信される。
+# Output directory. Served as static assets of the frontend.
 OUTPUT_DIR = Path(__file__).resolve().parent.parent / "frontend" / "public"
 
-# 配色。画面の主色（`frontend/src/theme.ts` の ds.primary = #0017C1。manifest の theme_color）を
-# 挟む形の対角グラデーション。終わりの色は ds.primaryHover。
+# Colors: a diagonal gradient around the screen's primary color (ds.primary = #0017C1 in `frontend/src/theme.ts`;
+# the manifest's theme_color). The end color is ds.primaryHover.
 GRADIENT_START = (0x1F, 0x3A, 0xE0)
 GRADIENT_END = (0x00, 0x0E, 0xA5)
 MARK_COLOR = (0xFF, 0xFF, 0xFF)
 
-# 角丸の半径（辺の長さに対する比）。
+# Corner radius (as a ratio of the side length).
 CORNER_RADIUS_RATIO = 0.22
 
 
 class Box(NamedTuple):
-    """図柄の部品: 角丸の矩形（100x100 の座標系）。"""
+    """Artwork part: a rounded rectangle (100x100 coordinate system)."""
 
     x0: float
     y0: float
@@ -55,7 +55,7 @@ class Box(NamedTuple):
 
 
 class Ring(NamedTuple):
-    """図柄の部品: 輪（inner が 0 なら塗りつぶしの円）。"""
+    """Artwork part: a ring (a filled circle when inner is 0)."""
 
     cx: float
     cy: float
@@ -65,7 +65,7 @@ class Ring(NamedTuple):
 
 
 class Bar(NamedTuple):
-    """図柄の部品: 両端の丸い棒（(x0, y0) と (x1, y1) を結ぶ線分を half_width だけ太らせたもの）。"""
+    """Artwork part: a bar with round ends (the segment from (x0, y0) to (x1, y1) thickened by half_width)."""
 
     x0: float
     y0: float
@@ -77,41 +77,41 @@ class Bar(NamedTuple):
 
 Shape = Box | Ring | Bar
 
-# ガントチャート。100x100 の座標系で定義し、外接矩形を各アイコンの大きさへ拡大縮小する。
+# Gantt chart. Defined in a 100x100 coordinate system; the bounding box is scaled to each icon size.
 MARK_SHAPES: tuple[Shape, ...] = (
-    Box(10.0, 12.0, 90.0, 18.0, 3.0),  # 日付の目盛り
-    Bar(18.0, 34.0, 52.0, 34.0, 7.0),  # 帯（1 つ目のタスク）
-    Bar(38.0, 56.0, 74.0, 56.0, 7.0),  # 帯（2 つ目）
-    Bar(56.0, 78.0, 86.0, 78.0, 7.0),  # 帯（3 つ目）
+    Box(10.0, 12.0, 90.0, 18.0, 3.0),  # date ruler
+    Bar(18.0, 34.0, 52.0, 34.0, 7.0),  # bar (first task)
+    Bar(38.0, 56.0, 74.0, 56.0, 7.0),  # bar (second)
+    Bar(56.0, 78.0, 86.0, 78.0, 7.0),  # bar (third)
 )
 
-# 1 ピクセルあたりの走査点数（アンチエイリアス用のスーパーサンプリング）。
+# Samples per pixel (supersampling for anti-aliasing).
 SAMPLES_PER_AXIS = 4
 
 
 class IconSpec(NamedTuple):
-    """生成する PNG 1 枚の仕様。"""
+    """Spec of one PNG to generate."""
 
     filename: str
     size: int
-    # 図柄の長い辺（幅）がアイコンの一辺に占める割合
+    # Share of the icon side taken by the artwork's long side (width)
     mark_width_ratio: float
     rounded: bool
 
 
 ICONS = (
-    # 通常アイコン: 角を透明にした角丸。
+    # Regular icon: rounded with transparent corners.
     IconSpec("pwa-192x192.png", 192, 0.72, rounded=True),
     IconSpec("pwa-512x512.png", 512, 0.72, rounded=True),
-    # maskable: OS が円などに切り抜く。図形を中央の安全な円（直径 80%）に収め、背景は全面塗りにする。
+    # maskable: the OS crops it to a circle etc. Fit the shape in the central safe circle (80% diameter) and fill the background fully.
     IconSpec("pwa-maskable-512x512.png", 512, 0.52, rounded=False),
-    # iOS は独自に角丸へ切るため、透明な角を持たせない。
+    # iOS rounds the corners itself, so no transparent corners.
     IconSpec("apple-touch-icon.png", 180, 0.66, rounded=False),
 )
 
 
 def _bounds(shape: Shape) -> tuple[float, float, float, float]:
-    """部品の外接矩形 (x0, y0, x1, y1)。"""
+    """Bounding box (x0, y0, x1, y1) of a part."""
     if isinstance(shape, Ring):
         return (shape.cx - shape.outer, shape.cy - shape.outer, shape.cx + shape.outer, shape.cy + shape.outer)
     if isinstance(shape, Bar):
@@ -126,7 +126,7 @@ def _bounds(shape: Shape) -> tuple[float, float, float, float]:
 
 
 def _mark_bounds() -> tuple[float, float, float, float]:
-    """図柄全体の外接矩形。"""
+    """Bounding box of the whole artwork."""
     corners = [_bounds(shape) for shape in MARK_SHAPES]
     return (
         min(corner[0] for corner in corners),
@@ -137,7 +137,7 @@ def _mark_bounds() -> tuple[float, float, float, float]:
 
 
 def _scaled_mark(size: int, width_ratio: float) -> tuple[Shape, ...]:
-    """図柄の部品を、一辺 *size* のアイコン中央に置いた座標へ変換する（長い辺を width_ratio に合わせる）。"""
+    """Transform artwork parts to coordinates centered in an icon of side *size* (long side scaled to width_ratio)."""
     bound_x0, bound_y0, bound_x1, bound_y1 = _mark_bounds()
     scale = size * width_ratio / max(bound_x1 - bound_x0, bound_y1 - bound_y0)
     offset_x = (size - (bound_x1 - bound_x0) * scale) / 2 - bound_x0 * scale
@@ -160,7 +160,7 @@ def _scaled_mark(size: int, width_ratio: float) -> tuple[Shape, ...]:
 
 
 def _inside_box(box: Box, x: float, y: float) -> bool:
-    """点 (*x*, *y*) が角丸の矩形 *box* の内側にあるか。"""
+    """Whether point (*x*, *y*) is inside the rounded rectangle *box*."""
     if not (box.x0 <= x <= box.x1 and box.y0 <= y <= box.y1):
         return False
     if box.radius <= 0:
@@ -171,7 +171,7 @@ def _inside_box(box: Box, x: float, y: float) -> bool:
 
 
 def _inside(shape: Shape, x: float, y: float) -> bool:
-    """点 (*x*, *y*) が部品 *shape* の内側にあるか。"""
+    """Whether point (*x*, *y*) is inside part *shape*."""
     if isinstance(shape, Ring):
         distance = (x - shape.cx) ** 2 + (y - shape.cy) ** 2
         return shape.inner**2 <= distance <= shape.outer**2
@@ -185,7 +185,7 @@ def _inside(shape: Shape, x: float, y: float) -> bool:
 
 
 def _inside_rounded_square(size: int, radius: float, x: float, y: float) -> bool:
-    """点 (*x*, *y*) が一辺 *size*・角半径 *radius* の角丸正方形の内側にあるか。"""
+    """Whether point (*x*, *y*) is inside a rounded square of side *size* and corner radius *radius*."""
     return _inside_box(Box(0.0, 0.0, float(size), float(size), radius), x, y)
 
 
@@ -194,7 +194,7 @@ def _mix(start: int, end: int, ratio: float) -> int:
 
 
 def _background_color(size: int, x: float, y: float) -> tuple[int, int, int]:
-    """対角グラデーションの色。左上を GRADIENT_START、右下を GRADIENT_END にする。"""
+    """Diagonal gradient color: GRADIENT_START at top-left, GRADIENT_END at bottom-right."""
     ratio = (x + y) / (size * 2)
     return (
         _mix(GRADIENT_START[0], GRADIENT_END[0], ratio),
@@ -204,7 +204,7 @@ def _background_color(size: int, x: float, y: float) -> tuple[int, int, int]:
 
 
 def _sample(spec: IconSpec, mark: tuple[Shape, ...], x: float, y: float) -> tuple[int, int, int, int]:
-    """1 走査点の色。背景の外側は透明、図柄の内側は部品の色（後に並べた部品が上）。"""
+    """Color of one sample: transparent outside the background, part color inside the artwork (later parts on top)."""
     if spec.rounded and not _inside_rounded_square(spec.size, spec.size * CORNER_RADIUS_RATIO, x, y):
         return (0, 0, 0, 0)
     for shape in reversed(mark):
@@ -213,16 +213,16 @@ def _sample(spec: IconSpec, mark: tuple[Shape, ...], x: float, y: float) -> tupl
     return (*_background_color(spec.size, x, y), 255)
 
 
-# 1 ピクセル内の走査点の位置（中心をずらした格子）。
+# Sample positions within a pixel (a grid offset from the center).
 _SAMPLE_OFFSETS = tuple((index + 0.5) / SAMPLES_PER_AXIS for index in range(SAMPLES_PER_AXIS))
 
 
 def _pixel(spec: IconSpec, mark: tuple[Shape, ...], column: int, row: int) -> bytes:
-    """1 ピクセルの RGBA。走査点の平均を取ってアンチエイリアスする。"""
+    """RGBA of one pixel. Anti-aliased by averaging the samples."""
     red = green = blue = alpha = 0
     for offset_y in _SAMPLE_OFFSETS:
         for offset_x in _SAMPLE_OFFSETS:
-            # アルファを乗算した色で足し合わせる（透明部分の色が縁へ滲まないようにする）。
+            # Sum with premultiplied alpha (so the color of transparent areas does not bleed into edges).
             sample = _sample(spec, mark, column + offset_x, row + offset_y)
             red += sample[0] * sample[3]
             green += sample[1] * sample[3]
@@ -234,7 +234,7 @@ def _pixel(spec: IconSpec, mark: tuple[Shape, ...], column: int, row: int) -> by
 
 
 def _pixel_row(spec: IconSpec, mark: tuple[Shape, ...], row: int) -> bytearray:
-    """1 行分の RGBA バイト列。"""
+    """RGBA bytes of one row."""
     line = bytearray()
     for column in range(spec.size):
         line += _pixel(spec, mark, column, row)
@@ -242,15 +242,15 @@ def _pixel_row(spec: IconSpec, mark: tuple[Shape, ...], row: int) -> bytearray:
 
 
 def _png_chunk(kind: bytes, payload: bytes) -> bytes:
-    """PNG チャンク（長さ + 種別 + 中身 + CRC）。"""
+    """A PNG chunk (length + type + data + CRC)."""
     body = kind + payload
     return struct.pack(">I", len(payload)) + body + struct.pack(">I", zlib.crc32(body) & 0xFFFFFFFF)
 
 
 def _write_png(path: Path, size: int, rows: list[bytearray]) -> None:
-    """RGBA の行データを 8bit/channel の PNG として書き出す。"""
+    """Write RGBA row data as an 8 bit/channel PNG."""
     header = struct.pack(">IIBBBBB", size, size, 8, 6, 0, 0, 0)
-    raw = b"".join(b"\x00" + bytes(row) for row in rows)  # 各行のフィルタ種別は 0（None）
+    raw = b"".join(b"\x00" + bytes(row) for row in rows)  # filter type of each row is 0 (None)
     path.write_bytes(
         b"\x89PNG\r\n\x1a\n"
         + _png_chunk(b"IHDR", header)
@@ -260,7 +260,7 @@ def _write_png(path: Path, size: int, rows: list[bytearray]) -> None:
 
 
 def _render(spec: IconSpec) -> None:
-    """アイコン 1 枚を生成して書き出す。"""
+    """Generate and write one icon."""
     mark = _scaled_mark(spec.size, spec.mark_width_ratio)
     rows = [_pixel_row(spec, mark, row) for row in range(spec.size)]
     _write_png(OUTPUT_DIR / spec.filename, spec.size, rows)
@@ -273,7 +273,7 @@ def _hex_color(color: tuple[int, int, int]) -> str:
 
 
 def _svg_element(shape: Shape) -> str:
-    """部品 1 つを SVG の要素にする。"""
+    """Turn one part into an SVG element."""
     fill = _hex_color(shape.color)
     if isinstance(shape, Ring):
         if shape.inner <= 0:
@@ -295,12 +295,12 @@ def _svg_element(shape: Shape) -> str:
 
 
 def _write_favicon_svg() -> None:
-    """タブ用の favicon.svg。PNG と同じ配色・同じ図形・同じ配置をベクタで書き出す。"""
+    """favicon.svg for tabs. Writes the same colors, shapes and layout as the PNGs, as vectors."""
     canvas = 512
-    width_ratio = ICONS[0].mark_width_ratio  # 通常アイコンと同じ大きさに合わせる
+    width_ratio = ICONS[0].mark_width_ratio  # match the size of the regular icon
     elements = "\n".join(_svg_element(shape) for shape in _scaled_mark(canvas, width_ratio))
     svg = f"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {canvas} {canvas}">
-  <!-- scripts/generate_pwa_icons.py が生成する。手で編集しない。 -->
+  <!-- Generated by scripts/generate_pwa_icons.py. Do not edit by hand. -->
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0" stop-color="{_hex_color(GRADIENT_START)}"/>

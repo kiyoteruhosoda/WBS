@@ -1,12 +1,12 @@
-"""time_entries.client_ref: 自動の打刻の送り直しを見分ける（WinTrack、task #379 / ADR-0042）
+"""time_entries.client_ref: tell resends of automatic clock-ins apart (WinTrack, task #379 / ADR-0042)
 
 Revision ID: 0017
 Revises: 0016
 Create Date: 2026-10-13
 
-PC の自動記録（WinTrack）は打刻ごとに ID（UUID）を付けて送る。同じ利用者・同じ ID は 1 本だけ
-（``uq_time_entries_client_ref_per_user``）。手の打刻は NULL のままで、NULL どうしはぶつからない。
-出どころ ``auto`` は ``source`` の文字列が 1 つ増えるだけなので、表は変えない。
+Automatic PC tracking (WinTrack) sends each clock-in with an ID (UUID). Only one per user and ID
+(``uq_time_entries_client_ref_per_user``). Manual clock-ins stay NULL, and NULLs do not collide.
+The ``auto`` source only adds one more ``source`` string, so the table does not change.
 """
 
 from __future__ import annotations

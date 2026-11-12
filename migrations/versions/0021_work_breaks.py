@@ -1,10 +1,10 @@
-"""work_breaks: 休み（WinTrack、task #392 / ADR-0048）
+"""work_breaks: breaks (WinTrack, task #392 / ADR-0048)
 
 Revision ID: 0021
 Revises: 0020
 Create Date: 2026-10-13
 
-打刻とは別に持つ。実績の長さは打刻の長さから、その打刻と重なる休みの時間を引いたもの。
+Kept separately from clock-ins. The actual duration is the clock-in duration minus the break time overlapping that clock-in.
 """
 
 from __future__ import annotations

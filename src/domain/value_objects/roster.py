@@ -1,11 +1,11 @@
-"""IdP が答える「いま誰がこのアプリを使ってよいか」（定期照合の材料）。
+"""The IdP's answer to "who may use this app right now" (input for periodic reconciliation).
 
-assay の ``GET {issuer}/admin/applications/self/users`` が返す形をそのまま写した値。
-載っているのは ``sub`` と状態だけで、プロフィールは含まない（属性の写しはログインの
-たびに渡っている）。
+A value mirroring exactly what assay's ``GET {issuer}/admin/applications/self/users`` returns.
+It carries only ``sub`` and state, no profile (attribute copies are passed on every
+sign-in).
 
-⚠ **知らない状態は「触らない」へ倒す。** IdP が 4 つ目の状態を足した日に、こちらが
-「知らない＝止める」と読むと**全員が止まる**。読めない値で人を止めない。
+⚠ **Unknown states fall back to "leave alone".** If the IdP adds a 4th state one day and we
+read "unknown = stop", **everyone stops**. Never stop people on a value we cannot read.
 """
 
 from __future__ import annotations
@@ -15,15 +15,15 @@ from enum import Enum
 
 
 class RosterState(Enum):
-    """名簿に載る 1 人の扱い。**RP が取る行動**で 3 つに分かれる。"""
+    """How one person on the roster is treated. Split into 3 by **the action the RP takes**."""
 
-    #: いま使ってよい。
+    #: May use it now.
     ALLOWED = "allowed"
-    #: IdP に居るが、いまは使えない。⚠ **結び付きは残す**（向こうで戻れば、そのまま入れる）。
+    #: Exists on the IdP but cannot use it now. ⚠ **Keep the link** (if restored there, they get in as is).
     BLOCKED = "blocked"
-    #: IdP のこのテナントに居ない（＝消えた）。結び付きごと落としてよい。
+    #: Not in this IdP tenant (= gone). The link may be dropped too.
     UNKNOWN = "unknown"
-    #: ⚠ IdP が**こちらの知らない値**を返した・名簿に載っていない。何もしない。
+    #: ⚠ The IdP returned **a value we do not know**, or the person is not on the roster. Do nothing.
     UNRECOGNISED = ""
 
     @classmethod
@@ -35,29 +35,29 @@ class RosterState(Enum):
 
     @property
     def ends_sessions(self) -> bool:
-        """この状態は「もうこのアプリのセッションを使わせない」か。"""
+        """Whether this state means "no longer allow sessions in this app"."""
         return self in {RosterState.BLOCKED, RosterState.UNKNOWN}
 
     @property
     def drops_the_link(self) -> bool:
-        """結び付き（``federated_identities`` の行）まで落としてよいか。
+        """Whether the link (the ``federated_identities`` row) may also be dropped.
 
-        ⚠ **止まっただけの人の結び付きは落とさない。** 落とすと、向こうで戻ったときに
-        ``(iss, sub)`` の対応を作り直すことになる。
+        ⚠ **Do not drop the link of someone who is merely blocked.** Dropping it would mean
+        recreating the ``(iss, sub)`` mapping when they are restored there.
         """
         return self is RosterState.UNKNOWN
 
 
 @dataclass(frozen=True)
 class RosterEntry:
-    """名簿の 1 行。"""
+    """One roster row."""
 
     subject: str
     state: RosterState
 
     @classmethod
     def of(cls, payload: dict[str, object]) -> RosterEntry | None:
-        """応答の 1 要素から組み立てる。``sub`` が読めなければ ``None``。"""
+        """Build from one element of the response. ``None`` if ``sub`` cannot be read."""
         subject = payload.get("sub")
         state = payload.get("state")
         if not isinstance(subject, str) or not subject:
@@ -67,16 +67,16 @@ class RosterEntry:
 
 @dataclass(frozen=True)
 class Roster:
-    """1 回の問い合わせで受け取った名簿。
+    """The roster received in one query.
 
-    ⚠ **「引けなかった」をこの型で表さない。** 引けなかったときは例外で止め、照合そのものを
-    見送る ——空の名簿と区別が付かなくなると、IdP が不調なだけで全員を止める。
+    ⚠ **Do not express "could not fetch" with this type.** When fetching fails, stop with an exception and skip
+    the reconciliation itself — if it became indistinguishable from an empty roster, an IdP hiccup would stop everyone.
     """
 
     entries: tuple[RosterEntry, ...]
 
     def state_of(self, subject: str) -> RosterState:
-        """その ``sub`` の状態。⚠ **名簿に無い ``sub`` は ``UNRECOGNISED``**（＝触らない）。"""
+        """State of that ``sub``. ⚠ **A ``sub`` not on the roster is ``UNRECOGNISED``** (= leave alone)."""
         for entry in self.entries:
             if entry.subject == subject:
                 return entry.state

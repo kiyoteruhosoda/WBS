@@ -1,10 +1,10 @@
-"""タスクの進捗率を、親子の積み上げまで含めて出す（設計書 §5.1・ADR-0010）。
+"""Compute task progress, including roll-ups from children (design doc §5.1, ADR-0010).
 
-- 子を持たないタスク: 自分の実績と残で ``実績 ÷（実績 ＋ 残）``
-- 子を持つタスク: 自分と全子孫の実績の合計と、子孫のうち子を持たないもの（葉）の残の合計を、
-  同じ式に通す。親自身の残（見積・手の値）は数えない（子と二重に数えないため）。
-  CANCELLED の葉は実績だけ数え、残は 0 とする（もうやらない仕事は親の完了を止めない）。
-  葉の残がどれも決まらない（残も見積も空）なら、積み上げの残も決まらない（None）。
+- Task without children: ``actual ÷ (actual + remaining)`` from its own actual and remaining
+- Task with children: the sum of actuals of itself and all descendants, and the sum of remaining of the descendants without children (leaves),
+  go through the same formula. The parent's own remaining (estimate / manual value) is not counted (to avoid double counting with the children).
+  CANCELLED leaves count only their actuals, with remaining 0 (work no longer to be done does not hold back the parent's completion).
+  If no leaf's remaining is determined (both remaining and estimate empty), the rolled-up remaining is undetermined too (None).
 """
 
 from __future__ import annotations
@@ -18,7 +18,7 @@ from src.domain.value_objects.work_figures import WorkFigures
 
 
 class TaskProgressBoard:
-    """1 人ぶんのタスク（削除済みを除く）と、タスクごとの実績の合計から作る。"""
+    """Build from one person's tasks (excluding deleted ones) and the actual totals per task."""
 
     def __init__(self, tasks: Iterable[Task], actual_hours_by_task: Mapping[int, float]) -> None:
         self._tasks: dict[int, Task] = {t.id: t for t in tasks if t.id is not None}
@@ -38,7 +38,7 @@ class TaskProgressBoard:
         return task_id is not None and bool(self._children.get(task_id))
 
     def figures(self, task: Task) -> WorkFigures:
-        """進捗率の式に入れる実績と残（子を持つなら積み上げ）。"""
+        """Actual and remaining to feed into the progress formula (rolled up if it has children)."""
         own_actual = self.actual_hours(task.id)
         if not self.has_subtasks(task.id):
             return task.work_figures(own_actual)
@@ -62,8 +62,8 @@ class TaskProgressBoard:
         return self.figures(task).progress_percent(done=task.status == TaskStatus.DONE)
 
     def descendants(self, root_id: int) -> Iterator[Task]:
-        """子孫（自分を除く）。"""
-        # 親子が輪になっていても止まるよう、通ったものは二度辿らない
+        """Descendants (excluding itself)."""
+        # Never revisit a visited node, so this stops even if parent/child links form a cycle
         seen = {root_id}
         stack = list(self._children.get(root_id, ()))
         while stack:

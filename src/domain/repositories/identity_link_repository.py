@@ -1,7 +1,7 @@
-"""結び付き（``federated_identities``）を行として扱う口。
+"""Access to identity links (``federated_identities``) as rows.
 
-ログインの筋道は ``UserAccountRepository`` 側で足すだけで足りるが、定期照合は
-**発行者ごとに全部を数え上げ、1 行を外す**ので、別の口として立てる。
+For the sign-in flow, adding via ``UserAccountRepository`` is enough, but periodic reconciliation
+**enumerates everything per issuer and removes single rows**, so it gets its own interface.
 """
 
 from __future__ import annotations
@@ -14,16 +14,16 @@ from src.domain.entities.identity_link import IdentityLink
 class IdentityLinkRepository(ABC):
     @abstractmethod
     def list_for_issuer(self, issuer: str) -> list[IdentityLink]:
-        """その発行者で結ばれている行をすべて返す。
+        """Return all rows linked with that issuer.
 
-        ⚠ **発行者の綴りはログインで書いたものと同じでなければならない。** 1 文字
-        ずれると 0 件になり、何も確かめないまま「異常なし」で終わる
-        （``FederatedIdentity`` が綴りを揃える）。
+        ⚠ **The issuer spelling must be identical to what sign-in wrote.** If it is off
+        by one character, nothing matches and the run ends as "no problems" without checking anything
+        (``FederatedIdentity`` normalizes the spelling).
         """
 
     @abstractmethod
     def unlink(self, link_id: int) -> None:
-        """行を外す。利用者そのものは消さない。"""
+        """Remove the row. The user itself is not deleted."""
 
 
 __all__ = ["IdentityLinkRepository"]

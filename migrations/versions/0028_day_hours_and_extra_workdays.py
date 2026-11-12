@@ -1,13 +1,13 @@
-"""その日の稼働時間（残業・短い日・休日出勤）と、プロジェクトの稼働日（task #558 / ADR-0060）
+"""Working hours for a day (overtime, short days, holiday work) and project working days (task #558 / ADR-0060)
 
 Revision ID: 0028
 Revises: 0027
 Create Date: 2026-10-20
 
-- 各人の休み（``member_days_off``）に ``hours`` を足す。入っていれば、その日の稼働時間（休む割合は見ない）
-- 表 ``team_extra_workdays``: 稼働しない曜日に働く日（プロジェクトごと。下のプロジェクトは引き継ぐ）
+- Add ``hours`` to personal days off (``member_days_off``). When set, it is that day's working hours (the day-off share is ignored)
+- Table ``team_extra_workdays``: days worked on non-working weekdays (per project; child projects inherit)
 
-今の行は ``hours`` が空（今までどおり休む割合）になる。戻すと列と表が消える。
+Existing rows get an empty ``hours`` (day-off share as before). Downgrading drops the column and table.
 """
 
 from __future__ import annotations

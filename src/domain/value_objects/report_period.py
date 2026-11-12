@@ -1,10 +1,10 @@
-"""実績を見比べる期間の区切り（task #162 / ADR-0017）。
+"""Period buckets for comparing actuals (task #162 / ADR-0017).
 
-期間はすべて**利用者のタイムゾーンの日付**（両端を含む）。単位は 3 つ:
+All periods are **dates in the user's time zone** (inclusive at both ends). There are 3 units:
 
-- ``closing``: 締めの期間（1〜15 日 / 16 日〜末日。``HalfMonthPeriod`` と同じ区切り）
-- ``week``: 月曜始まりの 7 日
-- ``month``: 暦の月
+- ``closing``: closing period (days 1–15 / day 16 to month end; same split as ``HalfMonthPeriod``)
+- ``week``: 7 days starting on Monday
+- ``month``: calendar month
 """
 
 from __future__ import annotations
@@ -18,7 +18,7 @@ from src.domain.exceptions import ValidationError
 from src.domain.value_objects.half_month_period import HalfMonthPeriod
 
 MAX_REPORT_PERIODS = 120
-"""1 回に並べる期間の上限（週なら 2 年強・締めなら 5 年）。"""
+"""Maximum number of periods listed at once (a bit over 2 years for weeks, 5 years for closings)."""
 
 
 class ReportPeriodUnit(StrEnum):
@@ -31,7 +31,7 @@ class ReportPeriodUnit(StrEnum):
 class ReportPeriod:
     first_day: date
     last_day: date
-    """含む（その日の終わりまで）。"""
+    """Inclusive (through the end of that day)."""
 
     def contains(self, day: date) -> bool:
         return self.first_day <= day <= self.last_day
@@ -51,7 +51,7 @@ def report_period_containing(unit: ReportPeriodUnit, day: date) -> ReportPeriod:
 def report_periods_between(
     unit: ReportPeriodUnit, first_day: date, last_day: date
 ) -> list[ReportPeriod]:
-    """``first_day``〜``last_day`` に掛かる期間を古い順に（端の期間は丸ごと含める）。"""
+    """Periods overlapping ``first_day``–``last_day``, oldest first (periods at the edges are included whole)."""
     if last_day < first_day:
         raise ValidationError("the end of the range must not be before its start")
     periods: list[ReportPeriod] = []
@@ -65,7 +65,7 @@ def report_periods_between(
 
 
 def recent_report_periods(unit: ReportPeriodUnit, today: date, count: int) -> list[ReportPeriod]:
-    """``today`` を含む期間で終わる、直近の ``count`` 期間（古い順）。"""
+    """The latest ``count`` periods ending with the one containing ``today`` (oldest first)."""
     if count < 1:
         raise ValidationError("count must be at least 1")
     periods = [report_period_containing(unit, today)]

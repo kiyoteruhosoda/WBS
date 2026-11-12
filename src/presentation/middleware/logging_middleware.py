@@ -26,7 +26,7 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
                 "path": request.url.path,
                 "status_code": response.status_code,
                 "duration_ms": duration_ms,
-                # 認証の依存関数が置く（dependencies._log_as）。未認証の要求は空
+                # Set by the auth dependency (dependencies._log_as). Empty for unauthenticated requests
                 "user_id_hash": getattr(request.state, "user_id_hash", None),
             },
         )

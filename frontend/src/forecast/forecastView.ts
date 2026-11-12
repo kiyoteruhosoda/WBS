@@ -1,8 +1,8 @@
-// 終わる見込みの出し方（task #556、ADR-0058）。期限を越えるものは色だけでなく「⚠」と文字でも示す。
+// How forecast finishes are shown (task #556, ADR-0058). Overdue forecasts are marked not only by color but also with "⚠" and text.
 import type { ForecastGap, Milestone, Task } from '../types';
 import type { TranslationKey } from '../i18n/translations';
 
-/** 見込みを出さない理由の短い言葉（finished は出さない） */
+/** Short wording for why no forecast is given (nothing for finished) */
 export const forecastGapKey = (gap: ForecastGap | null | undefined): TranslationKey | null => {
   switch (gap) {
     case 'no_assignee': return 'forecast.gap.no_assignee';
@@ -21,7 +21,7 @@ export interface ForecastSpan {
   overdueDays: number;
 }
 
-/** 見込みの帯（始まりが無ければ終わりの日だけ）。見込みが無ければ null */
+/** Forecast bar (end day only when there is no start). null without a forecast */
 export const taskForecastSpan = (task: Pick<Task, 'forecast_start' | 'forecast_finish' | 'forecast_overdue_days'>): ForecastSpan | null => {
   if (!task.forecast_finish) return null;
   return {
@@ -31,10 +31,10 @@ export const taskForecastSpan = (task: Pick<Task, 'forecast_start' | 'forecast_f
   };
 };
 
-/** ガントに出すか（計画の日付か見込みのどちらかがあれば出す） */
+/** Whether to show in the Gantt (if there are planned dates or a forecast) */
 export const showsOnGantt = (task: Pick<Task, 'start_date' | 'due_date' | 'forecast_finish'>): boolean =>
   Boolean(task.start_date || task.due_date || task.forecast_finish);
 
-/** マイルストーンの見込みが「少なくとも」か（見込みの出ないタスクがある） */
+/** Whether the milestone forecast is "at least" (some tasks have no forecast) */
 export const milestoneForecastIsPartial = (m: Pick<Milestone, 'forecast_unforecast_count'>): boolean =>
   (m.forecast_unforecast_count ?? 0) > 0;

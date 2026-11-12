@@ -1,6 +1,6 @@
 import React from 'react';
 
-// デザイン仕様: インラインSVG viewBox 24 / fill:none / stroke=文脈色 / stroke-width 1.8〜2.6 / round
+// Design spec: inline SVG, viewBox 24 / fill:none / stroke=currentColor / stroke-width 1.8-2.6 / round
 interface IconProps {
   size?: number;
   stroke?: string;
@@ -77,7 +77,7 @@ export const FolderIcon: React.FC<IconProps> = (p) => base(p, (
   <path d="M3.5 7a2 2 0 0 1 2-2h4l2 2.5h7a2 2 0 0 1 2 2V17a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2V7z" />
 ));
 
-// プロジェクト（入れ子）: 枝の付いた 3 つの箱
+// Project (nested): three boxes joined by branches
 export const TreeIcon: React.FC<IconProps> = (p) => base(p, (
   <>
     <rect x="3.5" y="3.5" width="7" height="5" rx="1.2" />
@@ -167,7 +167,7 @@ export const SwapIcon: React.FC<IconProps> = (p) => base(p, (
   </>
 ));
 
-// 打刻ボタン（塗りの三角・四角。stroke は細い縁取りとして同じ色で引く）
+// Clock-in/out buttons (filled triangle/square; stroke is a thin outline in the same color)
 export const PlayIcon: React.FC<IconProps> = (p) => base({ strokeWidth: 2, ...p }, (
   <path d="M8 5.5v13l10.5-6.5z" fill="currentColor" />
 ));
@@ -180,7 +180,7 @@ export const ChevronDownIcon: React.FC<IconProps> = (p) => base({ strokeWidth: 2
   <path d="M6 9.5l6 6 6-6" />
 ));
 
-// 締め（task #161）: カレンダーに確定の印
+// Closing (task #161): a calendar with a confirmation mark
 export const ClosingIcon: React.FC<IconProps> = (p) => base(p, (
   <>
     <rect x="4" y="5" width="16" height="15" rx="2" />

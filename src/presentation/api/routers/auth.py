@@ -1,12 +1,12 @@
-"""SSO（OIDC）のログイン導線。
+"""SSO (OIDC) login flow.
 
-ブラウザの遷移で使う口（``/login`` と ``/callback``）は JSON ではなくリダイレクトを
-返す。失敗もログイン画面へ戻し、画面側でメッセージを出す（コールバックに JSON の
-エラーを出しても、利用者にはただの生テキストにしか見えない）。
+The endpoints used by browser navigation (``/login`` and ``/callback``) return redirects, not
+JSON. Failures also go back to the login screen, where the SPA shows the message (JSON errors
+from the callback would look like nothing but raw text to the user).
 
-切れたログインは、画面が見えない枠で ``/renew`` を開いて IdP へ ``prompt=none`` で問い合わせて続ける
-（ADR-0071）。戻りは ``/callback`` で、往復の目的（``renew``）を見て結果の頁 ``/renewed`` へ送る。
-リフレッシュトークンの口（``/refresh``）はもう無い。
+An expired login is continued by the SPA opening ``/renew`` in a hidden frame, which asks the IdP with ``prompt=none``
+(ADR-0071). It returns via ``/callback``, which checks the round trip's purpose (``renew``) and sends it to the result page ``/renewed``.
+The refresh token endpoint (``/refresh``) no longer exists.
 """
 
 from __future__ import annotations
@@ -48,28 +48,28 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 LOGIN_ENDPOINT_PATH = "/api/auth/login"
 LOGIN_PAGE_PATH = "/login"
 
-# 認可コードフロー 1 往復のあいだだけ生きる Cookie。中身は発行した state で、
-# 「このコールバックはこのブラウザが始めた往復への返答か」を確かめるためだけに使う。
-# セッション Cookie とは別名にしておく（名前の取り違えで寿命が混ざらないように）。
+# Cookie that lives only for one authorization code flow round trip. It holds the issued state and is
+# used only to check "is this callback a reply to a round trip this browser started".
+# Named differently from the session cookie (so a name mix-up cannot mix lifetimes).
 LOGIN_STATE_COOKIE = "sso_login_state"
 LOGIN_STATE_COOKIE_MAX_AGE = int(DEFAULT_LOGIN_TRANSACTION_TTL.total_seconds())
-# 別タブで同時にログインを始めることがあるので、直近の state を数個ぶん覚える。
-# 1 つしか持たないと、後から始めた往復が先の往復を締め出してしまう。
+# Logins may be started in several tabs at once, so remember the last few states.
+# Keeping only one would let a later round trip lock out an earlier one.
 LOGIN_STATE_COOKIE_CAPACITY = 3
-# state は token_urlsafe（英数字と `-` `_`）なので、区切りに使っても値と衝突しない。
+# state is token_urlsafe (alphanumerics, `-`, `_`), so using this as a separator cannot collide with values.
 LOGIN_STATE_SEPARATOR = "."
-# 黙って確かめた往復で、IdP が「画面を出さないと進めない」と返すときの印（OIDC Core §3.1.2.6）。
-# **失敗ではない**——ふつうのログイン画面を出せばよい（ADR-0062）。
+# Marker for when, on a silent round trip, the IdP replies "cannot proceed without a screen" (OIDC Core §3.1.2.6).
+# **Not a failure** -- just show the normal login screen (ADR-0062).
 SILENT_DECLINES = frozenset(
     {"login_required", "consent_required", "interaction_required", "account_selection_required"}
 )
-# 黙って確かめて「入っていない」と分かったことを画面へ伝える印。画面はもう試さない。
+# Marker telling the SPA that a silent check found the user "not signed in". The SPA stops trying.
 SILENT_DECLINED_FLAG = "sso_silent"
 
 
 @router.get("/config", response_model=AuthConfigResponse, summary="Authentication configuration")
 def get_auth_config(settings: AuthSettingsDep) -> AuthConfigResponse:
-    """ログイン画面を出すべきかどうかを画面側に伝える（認証不要）。"""
+    """Tell the SPA whether to show the login screen (no auth required)."""
     if not settings.sso_enabled:
         return AuthConfigResponse(mode=settings.mode.value, sso_enabled=False)
     return AuthConfigResponse(
@@ -88,16 +88,16 @@ def start_login(
     next_path: str | None = Query(default=None, alias="next"),
     silent: bool = False,
 ) -> RedirectResponse:
-    """IdP の認可エンドポイントへ送り出す。
+    """Send the user to the IdP's authorization endpoint.
 
-    ``silent`` は、ログイン画面が描く前に「IdP でもう入っているか」を確かめる往復
-    （``prompt=none``。ADR-0062）。入っていればふつうのログインと同じ道で入る。
+    ``silent`` is the round trip that checks "already signed in at the IdP?" before the login screen renders
+    (``prompt=none``. ADR-0062). If signed in, it continues along the same path as a normal login.
 
-    ``next`` はログイン後に戻す画面。外部を指し得る値は ``RedirectTarget`` が
-    既定のパスへ落とす（オープンリダイレクト対策）。
+    ``next`` is the screen to return to after login. Values that could point outside are
+    reduced to the default path by ``RedirectTarget`` (open redirect protection).
 
-    併せて state を短命な Cookie にも置く。コールバックで両者が一致することを
-    求めることで、この往復を始めたブラウザ以外がコールバックを使い切れなくなる。
+    The state is also put in a short-lived cookie. Requiring both to match at the callback
+    means no browser other than the one that started this round trip can use up the callback.
     """
     started = sso.start_login(redirect_path=next_path, now=utcnow(), silent=silent)
     return _to_idp(request, settings, started)
@@ -107,24 +107,24 @@ def start_login(
 def start_renewal(
     request: Request, settings: AuthSettingsDep, sso: SsoLoginDep, session_auth: SessionAuthDep
 ) -> RedirectResponse:
-    """切れたログインを画面を出さずに続ける往復を始める（ADR-0071）。**画面は見えない枠で開く。**
+    """Start the round trip that silently continues an expired login (ADR-0071). **The SPA opens it in a hidden frame.**
 
-    常に ``prompt=none``。手元に残った期限切れのアクセストークンから「誰の・どのログインか」を読み、
-    往復に写す（同じ人が戻ってきたときだけ引き継ぐ）。SSO が無効な配備では ``/login`` と同じく 404。
+    Always ``prompt=none``. Reads "whose login, which login" from the expired access token still held and
+    copies it into the round trip (taken over only when the same person comes back). 404 like ``/login`` in deployments without SSO.
     """
     now = utcnow()
     continued = session_auth.continuation_of(token=request.cookies.get(settings.cookie_name), now=now)
     try:
         started = sso.start_renewal(continued=continued, now=now)
     except AuthenticationError:
-        logger.warning("続ける往復を始められませんでした", extra={"event": "auth.sso.renewal_failed"})
+        logger.warning("could not start the renewal round trip", extra={"event": "auth.sso.renewal_failed"})
         return _renewal_result(renewal.RenewalResult.FAILED)
     return renewal.allow_same_origin_framing(_to_idp(request, settings, started))
 
 
 @router.get("/renewed", include_in_schema=False)
 def renewal_result() -> Response:
-    """続ける往復の結果の頁（画面は枠の URL の ``result`` を読む）。"""
+    """Result page of the renewal round trip (the SPA reads ``result`` from the frame's URL)."""
     return renewal.result_page()
 
 
@@ -145,16 +145,16 @@ def complete_login(
     ):
         redirect_path = sso.decline_silent_login(state=state, now=utcnow())
         if redirect_path is not None:
-            # 黙って確かめたら IdP に入っていなかった。エラーを付けずに画面を出す（ADR-0062）
+            # The silent check found the user not signed in at the IdP. Show the screen without an error (ADR-0062)
             return _silently_declined(redirect_path)
     if error:
-        # 利用者が同意画面で断った場合などは IdP がここへエラーを返す
+        # The IdP returns an error here, e.g. when the user declined on the consent screen
         return _back_to_login(error, error_description)
     if not code or not state:
         return _back_to_login("invalid_request", "code and state are required")
     if not _binding_matches(request.cookies.get(LOGIN_STATE_COOKIE), state):
-        # このブラウザが始めた往復ではない。攻撃者が自分のログインのコールバックを
-        # 踏ませて、他人のブラウザを自分のアカウントに繋ぐ手口を止める。
+        # Not a round trip this browser started. Stops the trick where an attacker makes someone hit
+        # the callback of the attacker's own login, connecting the victim's browser to the attacker's account.
         return _back_to_login("invalid_request", "This login did not start in this browser")
 
     try:
@@ -164,13 +164,13 @@ def complete_login(
     except AccessDeniedError as exc:
         return _back_to_login("access_denied", str(exc))
     except ValidationError as exc:
-        # IdP の応答は正しくても、こちらの都合で受け入れられないことがある
-        # （同じ発行者に別の sub で紐付け済み、など）。ここで JSON を返すと
-        # 遷移の途中の利用者には生テキストにしか見えない。
+        # Even if the IdP response is valid, we may not be able to accept it
+        # (e.g. already linked to a different sub of the same issuer). Returning JSON here would
+        # look like raw text to a user mid-navigation.
         return _back_to_login("access_denied", str(exc))
 
     response = RedirectResponse(completed.redirect_path, status_code=status.HTTP_302_FOUND)
-    # ログインの Cookie を先に載せる（使い終えた一時 Cookie の掃除はその後）
+    # Set the login cookie first (cleaning up the used temporary cookies comes after)
     set_session_cookies(response, settings, completed.session)
     _clear_login_state_cookie(response, settings)
     return response
@@ -196,10 +196,10 @@ def logout(
     session_auth: SessionAuthDep,
     sso: SsoLoginDep,
 ) -> LogoutResponse:
-    """このログインだけを終わらせ（ほかの端末は続く）、IdP 側も切るための URL を返す。
+    """End only this login (other devices continue) and return the URL for also ending the IdP session.
 
-    IdP へのリダイレクトは画面側に任せる（XHR でリダイレクトを返しても、
-    ブラウザが勝手に追いかけてしまい、応答を読む前に画面が飛ぶ）。
+    The redirect to the IdP is left to the SPA (returning a redirect to an XHR makes
+    the browser follow it on its own, and the page navigates away before the response is read).
     """
     session_auth.revoke(token=request.cookies.get(settings.cookie_name), now=utcnow())
     clear_session_cookies(response, settings)
@@ -210,7 +210,7 @@ def logout(
     )
 
 
-#: 受け取る本文の上限。``logout_token`` 1 本しか入らないので、これで充分に広い。
+#: Upper limit for the received body. It only holds a single ``logout_token``, so this is ample.
 LOGOUT_BODY_MAX_BYTES = 16 * 1024
 
 
@@ -218,37 +218,37 @@ LOGOUT_BODY_MAX_BYTES = 16 * 1024
 async def receive_backchannel_logout(
     request: Request, use_case: BackchannelLogoutDep
 ) -> dict[str, str]:
-    """IdP からの停止の通知を受ける（OpenID Connect Back-Channel Logout 1.0）。
+    """Receive deactivation notices from the IdP (OpenID Connect Back-Channel Logout 1.0).
 
-    ⚠ **この口は未認証で叩ける。** 相手の証明は ``logout_token`` の署名だけなので、
-    検証を通らないものは理由を返さずに 400 で落とす（どこまで通ったかを教えない）。
+    ⚠ **This endpoint can be called unauthenticated.** The sender is proven only by the ``logout_token`` signature, so
+    anything failing verification is rejected with 400 without a reason (do not reveal how far it got).
 
-    ⚠ **SSO が無効な配備では 404 を返す**（署名を確かめる相手が居ない）。SSO を
-    有効にしている配備でこの口が 404 になるなら、経路の取り違えである ——送り手は
-    404 を「届かない」とだけ記録して再送を続けるので、気付くのが遅れる。
+    ⚠ **Returns 404 in deployments without SSO** (there is nobody to verify the signature against). If this
+    endpoint returns 404 in a deployment with SSO enabled, the routing is wrong -- the sender only logs
+    404 as "undeliverable" and keeps resending, so it gets noticed late.
 
-    検証ではディスカバリと JWKS の同期 HTTP が出るので、処理はスレッドプールへ逃がす。
+    Verification makes synchronous HTTP calls for discovery and JWKS, so the work is moved to the thread pool.
     """
     try:
         logout_token = _logout_token_of(await _bounded_body(request))
         await run_in_threadpool(use_case.execute, logout_token=logout_token, now=utcnow())
     except InvalidLogoutTokenError:
-        # 停止の通知を送るのは IdP であって利用者ではない。401 で返すと「認証し直せ」に
-        # 読めてしまうので、仕様どおり「要求が不正」として返す（§2.8）。
+        # Deactivation notices come from the IdP, not the user. Returning 401 could read as
+        # "authenticate again", so per the spec it is returned as "invalid request" (§2.8).
         logger.warning(
-            "停止の通知を受け付けませんでした",
+            "logout notice rejected",
             extra={"event": "auth.oidc.logout_rejected"},
         )
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail={"error": "invalid_logout_token"},
         ) from None
-    # 仕様が求める応答。⚠ **キャッシュさせない**（§2.8）。
+    # The response the spec requires. ⚠ **Must not be cached** (§2.8).
     return {"status": "ok"}
 
 
 async def _bounded_body(request: Request) -> bytes:
-    """本文を読む。**大きすぎるものは読まずに断る**（未認証で叩ける口のため）。"""
+    """Read the body. **Reject oversized ones without reading them** (the endpoint can be called unauthenticated)."""
     declared = request.headers.get("Content-Length")
     if declared is not None and declared.isdigit() and int(declared) > LOGOUT_BODY_MAX_BYTES:
         raise InvalidLogoutTokenError("the logout_token body is too large")
@@ -259,10 +259,10 @@ async def _bounded_body(request: Request) -> bytes:
 
 
 def _logout_token_of(body: bytes) -> str:
-    """``application/x-www-form-urlencoded`` の 1 項目だけを取り出す。
+    """Extract a single field from ``application/x-www-form-urlencoded``.
 
-    ⚠ **``Form()`` を使わない。** FastAPI の ``Form`` は ``python-multipart`` を要求する
-    ので、この 1 か所のために依存を 1 つ増やすことになる。
+    ⚠ **Do not use ``Form()``.** FastAPI's ``Form`` requires ``python-multipart``,
+    which would add a dependency just for this one place.
     """
     try:
         fields = parse_qs(body.decode("utf-8"))
@@ -275,8 +275,8 @@ def _logout_token_of(body: bytes) -> str:
 
 
 def _to_idp(request: Request, settings: AuthSettings, started: StartedLoginDTO) -> RedirectResponse:
-    """IdP の認可エンドポイントへ送り、state を短命な Cookie に置く。"""
-    # 302 でないと、IdP からの GET が POST として飛ぶ実装がある
+    """Send to the IdP's authorization endpoint and put the state in a short-lived cookie."""
+    # Without 302, some implementations turn the GET from the IdP into a POST
     response = RedirectResponse(started.authorization_url, status_code=status.HTTP_302_FOUND)
     response.set_cookie(
         key=LOGIN_STATE_COOKIE,
@@ -286,7 +286,7 @@ def _to_idp(request: Request, settings: AuthSettings, started: StartedLoginDTO) 
         max_age=LOGIN_STATE_COOKIE_MAX_AGE,
         httponly=True,
         secure=settings.cookie_secure,
-        # IdP からのトップレベル遷移で戻ってくるので lax でなければ届かない
+        # It comes back via a top-level navigation from the IdP, so it only arrives with lax
         samesite=settings.cookie_samesite,
         path="/",
     )
@@ -302,33 +302,33 @@ def _complete_renewal(
     state: str,
     error: str | None,
 ) -> RedirectResponse:
-    """続ける往復の戻り（ADR-0071）。Cookie を載せて結果の頁へ送る。
+    """Return of the renewal round trip (ADR-0071). Sets the cookie and sends to the result page.
 
-    「入っていない」「許可が無い」は失敗ではない（画面を出さずに試しただけ）。
+    "Not signed in" and "no consent" are not failures (we only tried silently).
     """
     if not _binding_matches(request.cookies.get(LOGIN_STATE_COOKIE), state):
         return _renewal_result(renewal.RenewalResult.FAILED)
     if error in SILENT_DECLINES and sso.decline_renewal(state=state, now=utcnow()):
-        logger.info("IdP に入っていないので続けません", extra={"event": "auth.sso.renewal_declined"})
+        logger.info("not signed in at the IdP, not renewing", extra={"event": "auth.sso.renewal_declined"})
         return _renewal_result(renewal.RenewalResult.DECLINED, settings)
     if error or not code:
-        logger.warning("続ける往復が壊れました", extra={"event": "auth.sso.renewal_failed"})
+        logger.warning("renewal round trip broke", extra={"event": "auth.sso.renewal_failed"})
         return _renewal_result(renewal.RenewalResult.FAILED, settings)
     try:
         issued = sso.complete_renewal(code=code, state=state, now=utcnow())
     except (AuthenticationError, AccessDeniedError, ValidationError):
-        logger.warning("続ける往復が壊れました", extra={"event": "auth.sso.renewal_failed"})
+        logger.warning("renewal round trip broke", extra={"event": "auth.sso.renewal_failed"})
         return _renewal_result(renewal.RenewalResult.FAILED, settings)
     if issued is None:
         return _renewal_result(renewal.RenewalResult.DECLINED, settings)
     response = _renewal_result(renewal.RenewalResult.RENEWED, settings)
     set_session_cookies(response, settings, issued)
-    logger.info("ログインを続けました", extra={"event": "auth.sso.renewed"})
+    logger.info("login renewed", extra={"event": "auth.sso.renewed"})
     return response
 
 
 def _renewal_result(result: renewal.RenewalResult, settings: AuthSettings | None = None) -> RedirectResponse:
-    """結果の頁へ送る（使い終えた往復の Cookie は落とし、自分の枠にだけ入れてよい印を付ける）。"""
+    """Send to the result page (dropping the used round-trip cookie and marking it frameable only by our own origin)."""
     response = RedirectResponse(renewal.result_location(result), status_code=status.HTTP_302_FOUND)
     if settings is not None:
         _clear_login_state_cookie(response, settings)
@@ -336,7 +336,7 @@ def _renewal_result(result: renewal.RenewalResult, settings: AuthSettings | None
 
 
 def _remember_binding(cookie_value: str | None, state: str) -> str:
-    """新しい state を先頭に足し、古いものから溢れさせる。"""
+    """Prepend the new state and let the oldest ones overflow."""
     previous = [v for v in (cookie_value or "").split(LOGIN_STATE_SEPARATOR) if v]
     remaining = [v for v in previous if v != state][: LOGIN_STATE_COOKIE_CAPACITY - 1]
     return LOGIN_STATE_SEPARATOR.join([state, *remaining])
@@ -372,7 +372,7 @@ def _back_to_login(error: str, description: str | None) -> RedirectResponse:
 
 
 def _silently_declined(redirect_path: str) -> RedirectResponse:
-    """行き先（``next``）は持ち帰る ——ボタンを押したあとに、開こうとした画面へ戻れるように。"""
+    """Keep the destination (``next``) -- so that after pressing the button the user returns to the screen they wanted."""
     params = {SILENT_DECLINED_FLAG: "1"}
     if redirect_path != "/":
         params["next"] = redirect_path

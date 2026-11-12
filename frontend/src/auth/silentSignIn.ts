@@ -1,27 +1,27 @@
-// ログイン画面を描く前に、IdP（Assay）でもう入っているかを黙って確かめる（task #647・ADR-0062）。
+// Before rendering the sign-in page, silently check whether the user is already signed in at the IdP (Assay) (task #647, ADR-0062).
 //
-// 入っていればボタンを押さずにそのまま入り、入っていなければふつうのログイン画面を出す。
-// 確かめるのはサーバの `/api/auth/login?silent=1`（認可要求に `prompt=none` を付ける）で、
-// ここが決めるのは**試してよいか**だけ。
+// If so, sign in without pressing the button; otherwise show the normal sign-in page.
+// The check is the server's `/api/auth/login?silent=1` (adds `prompt=none` to the authorization request);
+// this module only decides **whether to try**.
 //
-// 試さないとき（ループと勝手な入り直しを防ぐ）:
-// - このタブで一度試して戻ってきた後（sessionStorage の印。入れたら消す）。
-//   ただし**本人が再読み込みしたときは、もう 1 回だけ試す**（別のタブで Assay に入ってから戻ってきたとき。ADR-0063）。
-//   断られて戻る先は再読み込みではない遷移なので、ループにはならない
-// - このアプリでサインアウトした後（localStorage の印。次に入れたら消す）
-// - ログイン画面（`/login`）に `next` 以外が付いているとき（`error` など。黙って断られた印 `sso_silent` は再読み込みなら構わない）
-// - 印が読み書きできないとき（1 回だけの印が置けないと、戻ってくるたびに試してループになる）
+// When not to try (prevents loops and unwanted re-sign-in):
+// - after trying once in this tab and coming back (a sessionStorage marker, cleared on sign-in).
+//   But **when the user reloads, try once more** (after signing in to Assay in another tab and coming back. ADR-0063).
+//   The return after a refusal is not a reload navigation, so it does not loop
+// - after signing out of this app (a localStorage marker, cleared on the next sign-in)
+// - when the sign-in page (`/login`) carries anything other than `next` (`error` etc.; the silent-refusal marker `sso_silent` is fine on reload)
+// - when markers can't be read or written (without the one-shot marker it would retry on every return and loop)
 
 const ATTEMPTED_KEY = 'wbs.sso.silentAttempted';
 const SIGNED_OUT_KEY = 'wbs.sso.signedOut';
 
 const LOGIN_PATH = '/login';
-/** ログイン画面の URL で、付いていても試してよいもの（開こうとした画面）。 */
+/** Sign-in page URL parameters that still allow trying (the page the user wanted to open). */
 const ALLOWED_LOGIN_PARAMS = new Set(['next']);
-/** 再読み込みしたときに限って、付いていても試してよいもの（前に黙って断られた印）。 */
+/** Parameters that allow trying only on reload (marker of an earlier silent refusal). */
 const SILENT_DECLINED_PARAM = 'sso_silent';
 
-/** この画面は本人の再読み込みで開かれたか。1 つの画面で 1 回だけ真（試した後にまた真にならないように） */
+/** Whether this page was opened by a user reload. True only once per page (so it isn't true again after trying) */
 let reloadAllowanceUsed = false;
 const openedByReload = (): boolean => {
   if (reloadAllowanceUsed) return false;
@@ -50,7 +50,7 @@ export const shouldTrySilently = ({ pathname, search }: Place, reloaded = opened
   }
 };
 
-/** これから試す。戻ってきたら、このタブではもう試さない。置けなければ偽（試さない） */
+/** About to try. After returning, don't try again in this tab. False if the marker can't be stored (don't try) */
 export const markSilentAttempt = (): boolean => {
   reloadAllowanceUsed = true;
   try {
@@ -61,7 +61,7 @@ export const markSilentAttempt = (): boolean => {
   }
 };
 
-/** サインアウトした印があるか（切れたログインを続ける問い合わせもしない。ADR-0071）。読めなければ真 */
+/** Whether the signed-out marker is set (also skips the session continuation request. ADR-0071). True if unreadable */
 export const signedOutHere = (): boolean => {
   try {
     return localStorage.getItem(SIGNED_OUT_KEY) !== null;
@@ -70,28 +70,28 @@ export const signedOutHere = (): boolean => {
   }
 };
 
-/** サインアウトした。次に入るまで黙って入り直さない */
+/** Signed out. No silent re-sign-in until the next sign-in */
 export const rememberSignedOut = (): void => {
   try {
     localStorage.setItem(SIGNED_OUT_KEY, '1');
   } catch {
-    // 覚えられないだけ。ストレージが使えない環境では、そもそも試さない
+    // Just can't remember it. Without storage we never try anyway
   }
 };
 
-/** 入れた。次に切れたときは、また 1 回だけ試してよい */
+/** Signed in. Next time the session ends, one more try is allowed */
 export const forgetSilentMarks = (): void => {
   try {
     sessionStorage.removeItem(ATTEMPTED_KEY);
     localStorage.removeItem(SIGNED_OUT_KEY);
   } catch {
-    // 消せないなら試さないままになるだけ（ボタンで入れる）
+    // If it can't be cleared we just won't try (the button still works)
   }
 };
 
 /**
- * ログイン後に戻る先。ログイン画面そのものへは戻さず、付いている `next`（黙って確かめて戻ってきたとき）を使う。
- * 外を指す値はサーバの `RedirectTarget` が落とすので、ここでは形だけ見る。
+ * Where to return after sign-in. Never the sign-in page itself; use its `next` (when returning from a silent check).
+ * External targets are dropped by the server's `RedirectTarget`, so only the shape is checked here.
  */
 export const returnPathOf = ({ pathname, search }: Place): string => {
   if (pathname !== LOGIN_PATH) return `${pathname}${search}`;

@@ -43,12 +43,12 @@ class SqlAlchemyTaskRepository(TaskRepository):
             stmt = stmt.where(TaskModel.milestone_id == filters["milestone_id"])
         if "parent_task_id" in filters and filters["parent_task_id"] is not None:
             stmt = stmt.where(TaskModel.parent_task_id == filters["parent_task_id"])
-        # プロジェクトの子孫まで含めた id の一覧（呼ぶ側が再帰 CTE で引いて渡す。ADR-0024）
+        # IDs of the project including its descendants (the caller fetches them with a recursive CTE. ADR-0024)
         if filters.get("project_ids") is not None:
             stmt = stmt.where(TaskModel.project_id.in_(filters["project_ids"]))
         if filters.get("unclassified"):
             stmt = stmt.where(TaskModel.project_id.is_(None))
-        # 担当者（ADR-0055）。``unassigned`` は担当の無いタスクだけ
+        # Assignee (ADR-0055). ``unassigned`` means only tasks without an assignee
         if filters.get("assignee_user_id") is not None:
             stmt = stmt.where(TaskModel.assignee_user_id == filters["assignee_user_id"])
         if filters.get("unassigned"):
@@ -121,7 +121,7 @@ class SqlAlchemyTaskRepository(TaskRepository):
         return {task_id: float(total or 0) for task_id, total in rows}
 
     def subtree_ids(self, user_id: int, task_id: int) -> list[int]:
-        # UNION（重複を落とす）なので、親子が万一環になっていても止まる
+        # UNION (drops duplicates), so it terminates even if parent/child links somehow form a cycle
         base = (
             select(TaskModel.id)
             .where(TaskModel.id == task_id, task_visible_to(user_id))
