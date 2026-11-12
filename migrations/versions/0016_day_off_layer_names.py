@@ -1,11 +1,11 @@
-"""休日カレンダーの初期名を直す（task #310）
+"""Fix the initial names of holiday calendars (task #310)
 
 Revision ID: 0016
 Revises: 0015
 Create Date: 2026-10-07
 
-「会社の公休」→「会社の休日」、「私の休み」→「個人の休日」。利用者が付け直した名前は変えない
-（初期名のままの行だけを直す）。下げると初期名のままの行を元の名前へ戻す。
+"会社の公休" -> "会社の休日", "私の休み" -> "個人の休日". Names the user changed are left alone
+(only rows still having the initial name are fixed). Downgrading restores the old name on rows still having the initial name.
 """
 
 from __future__ import annotations
@@ -20,7 +20,7 @@ down_revision: str | Sequence[str] | None = "0015"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
-# （理由, 前の名前, 新しい名前）
+# (reason, old name, new name)
 RENAMES = (
     ("COMPANY", "会社の公休", "会社の休日"),
     ("PERSONAL", "私の休み", "個人の休日"),

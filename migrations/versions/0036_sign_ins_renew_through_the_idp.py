@@ -1,14 +1,14 @@
-"""ログインの控えから振り替えの列を外し、往復に「続ける」の項目を足す（task #889 / ADR-0071）
+"""Drop the rotation columns from the sign-in record and add "continue" fields to the round trip (task #889 / ADR-0071)
 
 Revision ID: 0036
 Revises: 0035
 Create Date: 2026-11-05
 
-- refresh_sessions: current_jti・previous_jti・rotated_at を消す（リフレッシュトークンをもう出さない）。
-  行（ログインの控え）は残す。今のログインはそのまま続く
-- auth_login_transactions: purpose（login / renew）・continued_user_id・continued_session_id を足す
+- refresh_sessions: drop current_jti, previous_jti, rotated_at (refresh tokens are no longer issued).
+  Rows (sign-in records) are kept. Current sign-ins continue as they are
+- auth_login_transactions: add purpose (login / renew), continued_user_id, continued_session_id
 
-戻すと current_jti は空の値で埋まる（その控えの古いリフレッシュトークンは通らない。入り直しになる）。
+Downgrading fills current_jti with an empty value (that record's old refresh token no longer works; the user signs in again).
 """
 
 from __future__ import annotations
@@ -27,7 +27,7 @@ _ID = sa.BigInteger().with_variant(sa.Integer(), "sqlite")
 
 
 def upgrade() -> None:
-    # SQLite は列を消せないので、表を作り直す（batch）
+    # SQLite cannot drop columns, so the table is rebuilt (batch)
     with op.batch_alter_table("refresh_sessions") as batch:
         batch.drop_column("rotated_at")
         batch.drop_column("previous_jti")

@@ -1,16 +1,16 @@
-"""``private_key_jwt`` のクライアント認証アサーション（RFC 7523 / OIDC Core §9）。
+"""``private_key_jwt`` client authentication assertion (RFC 7523 / OIDC Core §9).
 
-``client_secret`` と違い、**秘密鍵はホストから出ない**。配備の設定（環境変数）に
-資格情報そのものを置かずに済むのが採用理由で、機械としての名乗り
-（``client_credentials``）はこの方式だけを使う。
+Unlike ``client_secret``, **the private key never leaves the host**. The reason for choosing it is that
+the credential itself need not be put in the deployment settings (env vars); the machine identity
+(``client_credentials``) uses this method only.
 
-IdP 側の検証:
+Verification on the IdP side:
 
-- ``client_assertion_type`` は ``urn:ietf:params:oauth:client-assertion-type:jwt-bearer`` のみ
-- ``iss`` と ``sub`` はどちらも **client_id 自身**（RFC 7523 §3）
-- ``aud`` はトークンエンドポイント（発行者そのものを受ける IdP もある）
-- **``jti`` 必須**。再生防止のため IdP 側が記録する
-- ``exp`` は短いこと。長くしても得るものは無く、再生の窓を伸ばすだけ
+- ``client_assertion_type`` must be ``urn:ietf:params:oauth:client-assertion-type:jwt-bearer``
+- ``iss`` and ``sub`` are both **the client_id itself** (RFC 7523 §3)
+- ``aud`` is the token endpoint (some IdPs also accept the issuer itself)
+- **``jti`` is required**. The IdP records it to prevent replay
+- ``exp`` must be short. A longer one gains nothing and only widens the replay window
 """
 
 from __future__ import annotations
@@ -23,17 +23,17 @@ import jwt
 
 ASSERTION_TYPE = "urn:ietf:params:oauth:client-assertion-type:jwt-bearer"
 
-#: アサーションの寿命。⚠ **長くしない**（IdP 側が ``jti`` を覚える期間も伸びる）。
+#: Assertion lifetime. ⚠ **Do not make it longer** (it also extends how long the IdP remembers the ``jti``).
 LIFETIME_SECONDS = 60
 
 
 @dataclass(frozen=True)
 class ClientAssertionRequest:
-    """アサーションを 1 通作るための入力。
+    """Input for building one assertion.
 
-    ``client_id`` / ``audience`` / ``kid`` はどれも ``str`` なので、位置引数で渡すと
-    取り違えが型検査を抜ける。取り違えれば IdP 側で ``invalid_client`` になるが、
-    **どれで落ちたかは返ってこない**ので、入口でまとめて運ぶ。
+    ``client_id`` / ``audience`` / ``kid`` are all ``str``, so passing them positionally lets
+    a mix-up slip past type checking. A mix-up gives ``invalid_client`` at the IdP, but
+    **it does not say which one was wrong**, so they are carried together from the entry point.
     """
 
     client_id: str
@@ -44,17 +44,17 @@ class ClientAssertionRequest:
 
 
 def build_client_assertion(request: ClientAssertionRequest) -> str:
-    """トークンエンドポイントへ提示する署名付きアサーションを組み立てる。"""
+    """Build the signed assertion presented to the token endpoint."""
     headers = {"typ": "JWT"}
     if request.kid:
-        # 鍵が複数登録されていると、kid が無ければ IdP はどれで検証するか決められない。
+        # With several keys registered, the IdP cannot tell which one to verify with if there is no kid.
         headers["kid"] = request.kid
     return jwt.encode(
         {
             "iss": request.client_id,
             "sub": request.client_id,
             "aud": request.audience,
-            # 毎回異なる値。IdP が記録して再生を防ぐ。
+            # A different value every time. The IdP records it to prevent replay.
             "jti": secrets.token_urlsafe(32),
             "iat": request.now,
             "exp": request.now + timedelta(seconds=LIFETIME_SECONDS),

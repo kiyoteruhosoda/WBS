@@ -1,4 +1,4 @@
-"""プロジェクトの状態（task #187 / ADR-0024）。"""
+"""Project status (task #187 / ADR-0024)."""
 
 from __future__ import annotations
 
@@ -7,6 +7,6 @@ import enum
 
 class ProjectStatus(enum.StrEnum):
     ACTIVE = "active"
-    """進行中。タスクやマイルストーンの選び先に出る。"""
+    """Active. Offered as a choice for tasks and milestones."""
     ARCHIVED = "archived"
-    """保管。木には薄く残る（中のタスクと実績はそのまま読める）が、選び先には出ない。"""
+    """Archived. Stays faintly in the tree (its tasks and actuals can still be read) but is not offered as a choice."""

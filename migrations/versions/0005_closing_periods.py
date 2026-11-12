@@ -1,12 +1,12 @@
-"""closing_periods: 締めの確定（task #161 / ADR-0012）と、work_logs の出どころの列
+"""closing_periods: confirming a closing (task #161 / ADR-0012), and the source columns of work_logs
 
 Revision ID: 0005
 Revises: 0004
 Create Date: 2026-10-01
 
-- 表 ``closing_periods``: 確定した期間（行がある = 確定済み）。``(user_id, first_day)`` で一意
-- ``work_logs`` に ``source``（``manual`` / ``closing``、既存の行は ``manual``）・
-  ``closing_period_id``（締めで作った行がどの期間から来たか）・``duration_seconds``（正確な長さ）
+- Table ``closing_periods``: confirmed periods (a row exists = confirmed). Unique on ``(user_id, first_day)``
+- Adds to ``work_logs``: ``source`` (``manual`` / ``closing``; existing rows are ``manual``),
+  ``closing_period_id`` (which period a row created by closing came from), ``duration_seconds`` (exact duration)
 """
 
 from __future__ import annotations
@@ -40,7 +40,7 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(["user_id"], ["users.id"]),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint("user_id", "first_day", name="uq_closing_periods_user_first_day"),
-        # 開け直すと行を消す。消した id を使い回さない
+        # Reopening deletes rows. Do not reuse deleted ids
         sqlite_autoincrement=True,
     )
     with op.batch_alter_table("work_logs") as batch:

@@ -1,13 +1,13 @@
-"""予定のカレンダーに「仕事 / プライベート」（task #191 / ADR-0033）
+"""Event calendars get a "work / private" scope (task #191 / ADR-0033)
 
 Revision ID: 0014
 Revises: 0013
 Create Date: 2026-10-02
 
-- ``calendars.scope``: ``WORK`` / ``PRIVATE``（必須。既定は ``WORK``）。既存のカレンダー（既定のカレンダー・
-  休みの層を含む）はすべて ``WORK``
+- ``calendars.scope``: ``WORK`` / ``PRIVATE`` (required; default ``WORK``). All existing calendars (including the default calendar
+  and day-off layers) become ``WORK``
 
-下げると列が消える（プライベートにしていたカレンダーは仕事に戻る）。
+Downgrading drops the column (calendars that were private go back to work).
 """
 
 from __future__ import annotations

@@ -1,26 +1,26 @@
-// 401 のあとログインを続けるかの決まり（ADR-0071）。DOM に触らない純な手順だけを置く（試験は node で走る）。
+// Rules for whether to continue the session after a 401 (ADR-0071). Holds only pure steps that don't touch the DOM (tests run in node).
 //
-// 1. サインアウトした印があれば問い合わせない（IdP のログイン状態は既定で残るので、入り直してしまう）
-// 2. タブをまたいで 1 本ずつ。順番を待つ間にほかのタブが続けていれば（`/auth/me` が通れば）枠を開かない
-// 3. 見えない枠で IdP へ問い合わせる。断られたら、ログイン画面の黙った確かめ（ADR-0062）をこのタブで重ねない
+// 1. If the signed-out marker is set, don't ask (the IdP session survives by default, so it would sign back in)
+// 2. One at a time across tabs. If another tab continued while waiting (`/auth/me` succeeds), don't open the frame
+// 3. Ask the IdP in a hidden frame. If refused, the sign-in page's silent check (ADR-0062) is not repeated in this tab
 import type { RenewalResult } from '../auth/silentRenewal';
 
 export type ContinuationOutcome =
   | { kind: 'continued' }
-  /** 続けられなかった。ログインは終わっている */
+  /** Could not continue. The session is over */
   | { kind: 'ended' }
-  /** サーバーに届かない。⚠ ログアウト扱いにしない（Cookie は残っていて、戻れば続く） */
+  /** Server unreachable. ⚠ Not treated as signed out (cookies remain and it continues once back) */
   | { kind: 'unavailable'; error: unknown };
 
 export interface ContinuationSteps {
   signedOutHere: () => boolean;
   oneAtATime: <T>(task: () => Promise<T>) => Promise<T>;
-  /** 今のログインで通るか。届かなければ投げる */
+  /** Whether the current session works. Throws when unreachable */
   stillSignedIn: () => Promise<boolean>;
   renewInFrame: () => Promise<RenewalResult>;
-  /** 続けられた。黙った確かめの印を消す */
+  /** Continued. Clear the silent-check marker */
   onRenewed: () => void;
-  /** 断られた。このタブでは黙った確かめをもう試さない */
+  /** Refused. Don't try the silent check again in this tab */
   onDeclined: () => void;
 }
 

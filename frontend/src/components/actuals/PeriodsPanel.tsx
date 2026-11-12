@@ -1,4 +1,4 @@
-// 期間ごと（半月・週・月）の確定実績（task #162、ADR-0017。予定と打刻は task #543・ADR-0070 で外した）。
+// Confirmed actuals per period (half-month, week, month) (task #162, ADR-0017; schedule and clock-in were removed in task #543 / ADR-0070).
 import React, { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {

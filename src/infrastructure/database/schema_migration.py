@@ -1,11 +1,11 @@
-"""DB の形を Alembic の head へ揃える。
+"""Bring the DB schema to Alembic's head.
 
-本番の入口は ``scripts/run_db_migrations.py``（コンテナの entrypoint が uvicorn の前に流す）。
-アプリ本体（lifespan）は形を変えず、head に揃っているかを確かめるだけ（ADR-0006）。
+In production the entry point is ``scripts/run_db_migrations.py`` (the container entrypoint runs it before uvicorn).
+The app itself (lifespan) never changes the schema; it only checks that it is at head (ADR-0006).
 
-Alembic 導入前の DB（表はあるが ``alembic_version`` が無い）は、かつての
-``create_all`` + 手書きの列補完を 1 回だけなぞって baseline と同じ形にし、
-**同じ形になったと確かめてから** baseline へ ``stamp`` する。食い違ったままは stamp しない。
+A DB from before Alembic (tables exist but no ``alembic_version``) replays the former
+``create_all`` + hand-written column additions once to reach the same shape as baseline, and
+is ``stamp``ed to baseline **only after confirming the shapes match**. A mismatch is never stamped.
 """
 
 from __future__ import annotations
@@ -25,18 +25,18 @@ BASELINE_REVISION = "0001"
 VERSION_TABLE = "alembic_version"
 _ALEMBIC_INI = Path(__file__).resolve().parents[3] / "alembic.ini"
 
-# 手書きの列補完が ``ALTER TABLE ... ADD COLUMN`` で足した列は、SQLite の決まりで
-# NOT NULL に既定値が要るため ``DEFAULT 'ja'`` を持つ（create_all の形は持たない）。
-# アプリは常に値を入れて書くので、この差だけは同じ形とみなす。
+# Columns added by the hand-written ``ALTER TABLE ... ADD COLUMN`` have ``DEFAULT 'ja'``, because SQLite
+# requires a default for NOT NULL (the create_all shape has none).
+# The app always writes a value, so this one difference is treated as the same shape.
 _TOLERATED_SERVER_DEFAULTS = frozenset({("users", "language")})
 
 
 class LegacySchemaMismatchError(RuntimeError):
-    """Alembic 導入前の DB を baseline の形へ揃えきれなかった（stamp しない）。"""
+    """Could not bring a pre-Alembic DB to the baseline shape (not stamped)."""
 
 
 class SchemaNotCurrentError(RuntimeError):
-    """DB が head まで上がっていない（先に scripts/run_db_migrations.py を流す）。"""
+    """The DB is not at head (run scripts/run_db_migrations.py first)."""
 
 
 def alembic_config(connection: Connection | None = None) -> Config:
@@ -55,10 +55,10 @@ def current_revision(connection: Connection) -> str | None:
 
 
 def migration_engine(database_url: str) -> Engine:
-    """形を変えるための接続。SQLite でも DDL を 1 つの transaction に入れる。
+    """Connection for schema changes. Puts DDL in a single transaction even on SQLite.
 
-    pysqlite は DDL の前に BEGIN を出さない（自動で確定してしまう）。補完・stamp・
-    upgrade のどこかで落ちたら**全部を巻き戻す**ため、BEGIN を自分で出す。
+    pysqlite does not emit BEGIN before DDL (it auto-commits). To **roll back everything** if
+    the column additions, stamp or upgrade fail anywhere, we emit BEGIN ourselves.
     """
     if not database_url.startswith("sqlite"):
         return sa.create_engine(database_url)
@@ -95,24 +95,24 @@ def ensure_schema_is_current(engine: Engine) -> None:
     head = head_revision()
     if current != head:
         raise SchemaNotCurrentError(
-            f"DB のスキーマが {current!r} で head（{head!r}）ではない。"
-            "先に scripts/run_db_migrations.py を流すこと"
+            f"the DB schema is at {current!r}, not head ({head!r}). "
+            "Run scripts/run_db_migrations.py first"
         )
 
 
-# ── Alembic 導入前の DB の引き取り ──────────────────────────────────────────
+# ── Adopting a pre-Alembic DB ────────────────────────────────────────────────
 
 
 def adopt_legacy_schema(connection: Connection) -> None:
-    """Alembic 導入前の DB を baseline と同じ形にする。揃わなければ例外（stamp させない）。
+    """Bring a pre-Alembic DB to the same shape as baseline. Raises if it does not match (no stamp).
 
-    やることは、かつて起動のたびに走っていた処理と同じ:
-    無い表を作る（``create_all`` 相当）→ 手書きの列補完 3 つ → 無い索引を作る。
-    表と索引の DDL は baseline を空の DB へ当てた結果から写すので、文面まで baseline と同じになる。
+    It does the same as what used to run on every startup:
+    create missing tables (like ``create_all``) -> the 3 hand-written column additions -> create missing indexes.
+    Table and index DDL is copied from baseline applied to an empty DB, so even the text matches baseline.
     """
     if connection.dialect.name != "sqlite":
         raise LegacySchemaMismatchError(
-            f"{connection.dialect.name} の、alembic_version の無い DB は引き取らない（SQLite のみ）"
+            f"a {connection.dialect.name} DB without alembic_version is not adopted (SQLite only)"
         )
     reference = _baseline_reference()
     try:
@@ -133,13 +133,13 @@ def adopt_legacy_schema(connection: Connection) -> None:
     actual = describe_schema(connection)
     if actual != expected:
         raise LegacySchemaMismatchError(
-            "既存の DB を baseline の形へ揃えきれなかった（stamp しない）。"
-            f" 差: {_describe_difference(expected, actual)}"
+            "could not bring the existing DB to the baseline shape (not stamped)."
+            f" diff: {_describe_difference(expected, actual)}"
         )
 
 
 def _apply_legacy_column_upgrades(connection: Connection) -> None:
-    # Alembic 導入前の session.py が起動のたびに当てていた列補完（文面もそのまま）。
+    # Column additions the pre-Alembic session.py applied on every startup (text kept verbatim).
     inspector = sa.inspect(connection)
     user_columns = {c["name"] for c in inspector.get_columns("users")}
     if "language" not in user_columns:
@@ -172,7 +172,7 @@ def _schema_ddl(connection: Connection) -> dict[str, tuple[str, str]]:
 
 
 def describe_schema(connection: Connection) -> dict[str, dict[str, Any]]:
-    """表ごとの形（列・主キー・一意制約・外部キー・索引）。比べるためだけの写し。"""
+    """Per-table shape (columns, primary key, unique constraints, foreign keys, indexes). A copy for comparison only."""
     inspector = sa.inspect(connection)
     schema: dict[str, dict[str, Any]] = {}
     for table in sorted(inspector.get_table_names()):
@@ -207,5 +207,5 @@ def _describe_difference(expected: dict[str, Any], actual: dict[str, Any]) -> st
     parts = []
     for table in sorted(set(expected) | set(actual)):
         if expected.get(table) != actual.get(table):
-            parts.append(f"{table}: 期待 {expected.get(table)} / 実際 {actual.get(table)}")
+            parts.append(f"{table}: expected {expected.get(table)} / actual {actual.get(table)}")
     return "; ".join(parts)

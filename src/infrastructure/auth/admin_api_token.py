@@ -1,16 +1,16 @@
-"""IdP の**管理 API** を叩くときに名乗るトークン。
+"""Token presented when calling the IdP's **admin API**.
 
-``client_credentials`` ＋ ``private_key_jwt`` で取る。ログイン用の登録
-（``OIDC_CLIENT_ID``。public ＋ PKCE で鍵を持たない）とは別の、**このアプリの
-サービスアカウント**（``MACHINE_CLIENT_ID``）として名乗る。
+Obtained with ``client_credentials`` + ``private_key_jwt``. It identifies as **this app's
+service account** (``MACHINE_CLIENT_ID``), separate from the login registration
+(``OIDC_CLIENT_ID``; public + PKCE, holds no key).
 
-- **宛名は ``{issuer}/admin``。** 管理 API のトークンはこの ``aud`` でなければ通らない。
-  ⚠ **設定にしない** ——発行者から決まる値で、運用者が選ぶものではない。
-- **方式は常に ``private_key_jwt``。** ログインが public クライアントでも、機械は鍵で名乗る。
-- **トークンエンドポイントはディスカバリから引く**（ログイン・停止の受け口と同じ出所）。
+- **The audience is ``{issuer}/admin``.** Admin API tokens are accepted only with this ``aud``.
+    ⚠ **Not a setting** -- the value follows from the issuer; it is not for operators to choose.
+- **The method is always ``private_key_jwt``.** Even when login uses a public client, the machine identifies with a key.
+- **The token endpoint comes from discovery** (same source as the login and deactivation endpoints).
 
-⚠ **IdP 側でこのサービスアカウントをアプリの名乗りとして結び付ける必要がある。**
-結び付けるまで管理 API は 403 を返し続ける（トークンそのものは取れる）。
+⚠ **This service account must be bound as the app's identity on the IdP side.**
+Until then the admin API keeps returning 403 (the token itself can still be obtained).
 """
 
 from __future__ import annotations
@@ -37,27 +37,27 @@ from src.shared.clock import utcnow
 
 logger = logging.getLogger(__name__)
 
-#: 期限のどれだけ手前で取り直すか（秒）。⚠ **0 にしない**（送信中に期限が来ると 401 で落ちる）。
+#: How long before expiry to fetch a new one (seconds). ⚠ **Never 0** (expiring mid-request fails with 401).
 RENEW_MARGIN_SECONDS = 60.0
 
-#: 期限が読めなかったときに仮定する寿命（秒）。⚠ 無期限と読むと二度と取り直さない。
+#: Lifetime assumed when the expiry cannot be read (seconds). ⚠ Reading it as never-expiring would never refetch.
 FALLBACK_LIFETIME_SECONDS = 60.0
 
 
 def admin_audience(issuer: str) -> str:
-    """管理 API のトークンに刻む宛名。
+    """Audience stamped into admin API tokens.
 
-    ⚠ **``issuer`` にはテナントが含まれる**（``https://identity.example/<tenant>``）ので、
-    宛名はその後ろに ``/admin`` を足したものになる。
+    ⚠ **``issuer`` includes the tenant** (``https://identity.example/<tenant>``), so
+    the audience is that with ``/admin`` appended.
     """
     return f"{issuer.rstrip('/')}/admin"
 
 
 class AdminToken(Protocol):
-    """管理 API 向けの 1 本を出すもの。
+    """Something that provides one token for the admin API.
 
-    名簿を引く側が要るのはこの 2 つだけ。**クラスではなくこの形に依存させる**ので、
-    試験は IdP を立てずに差し替えられる。
+    The roster side only needs these two. **Depend on this shape, not the class**, so
+    tests can substitute it without running an IdP.
     """
 
     def token(self) -> str: ...
@@ -66,9 +66,9 @@ class AdminToken(Protocol):
 
 
 class AdminApiTokenSource:
-    """管理 API 用のトークンを取得し、期限の手前まで使い回す。
+    """Obtain a token for the admin API and reuse it until shortly before it expires.
 
-    プロセスで 1 つ持つ。周回のたびに取り直すと、照合 1 回につき IdP への往復が 1 つ増える。
+    One per process. Fetching a new one every cycle would add an IdP round trip per reconciliation.
     """
 
     def __init__(
@@ -106,7 +106,7 @@ class AdminApiTokenSource:
             return self._token
 
     def invalidate(self) -> None:
-        """控えているトークンを捨てる（401 を受けたときに呼ぶ）。"""
+        """Discard the cached token (call this on a 401)."""
         with self._lock:
             self._token = ""
             self._expires_at = 0.0
@@ -139,7 +139,7 @@ class AdminApiTokenSource:
         try:
             return Path(path).read_text(encoding="utf-8")
         except OSError as error:
-            # 0400 root だとコンテナの実行ユーザーは読めない（group を実行 gid に合わせる）。
+            # As 0400 root the container's runtime user cannot read it (match the group to the runtime gid).
             raise AuthConfigurationError(
                 f"cannot read the machine private key: {type(error).__name__}"
             ) from error
@@ -152,8 +152,8 @@ class AdminApiTokenSource:
             "client_id": client_id,
             "client_assertion_type": ASSERTION_TYPE,
             "client_assertion": assertion,
-            # ⚠ 管理 API では宛名が**必須**。省くと権限の載らないトークンになり、
-            #   管理 API 側で弾かれる。
+            # ⚠ The audience is **required** for the admin API. Without it the token carries no permissions
+            #   and the admin API rejects it.
             "resource": audience,
         }
         try:
@@ -168,9 +168,9 @@ class AdminApiTokenSource:
                 f"the token endpoint is unreachable: {type(error).__name__}"
             ) from error
         if response.status_code != 200:
-            # ⚠ 本文をそのままログに出さない（トークンが載りうる）。
+            # ⚠ Do not log the body as is (it may contain a token).
             logger.warning(
-                "機械の名乗りでトークンを取得できませんでした",
+                "failed to obtain a token with the machine identity",
                 extra={
                     "event": "auth.oidc.admin_token_failed",
                     "status_code": response.status_code,

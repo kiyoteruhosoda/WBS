@@ -6,10 +6,10 @@ COPY . .
 RUN npm run build
 FROM nginx:1.31-alpine@sha256:713fc2ebfd92e8217db451477182ee91944b123d2b1ee9fd5a8c6e91ca6c3a11
 COPY --from=build /web/dist /usr/share/nginx/html
-# 起動時に envsubst で展開される (nginx 公式イメージの機構)。
+# Expanded by envsubst at startup (mechanism of the official nginx image).
 COPY nginx.conf.template /etc/nginx/templates/default.conf.template
-# 既定値。従来と同じ挙動になるので、compose 側の指定は任意。
-# サービス名が衝突する環境では WBS_API_HOST を固有名に変えて渡す。
+# Defaults. Behavior is the same as before, so setting them in compose is optional.
+# Where service names collide, pass a unique name in WBS_API_HOST.
 ENV WBS_API_HOST=api \
     WBS_API_PORT=8000 \
     WBS_RESOLVER=127.0.0.11

@@ -11,9 +11,9 @@ class LoginTransactionRepository(ABC):
     def add(self, transaction: LoginTransaction) -> LoginTransaction: ...
     @abstractmethod
     def consume(self, state: str) -> LoginTransaction | None:
-        """``state`` に対応する往復を取り出し、同時に消す（1 回きり）。"""
+        """Take the round trip matching ``state`` and delete it at the same time (one use only)."""
     @abstractmethod
     def find(self, state: str) -> LoginTransaction | None:
-        """``state`` に対応する往復を読む（消さない）。戻りをどの後始末に回すかを決めるためだけに使う。"""
+        """Read the round trip matching ``state`` (without deleting). Used only to decide which cleanup the return goes to."""
     @abstractmethod
     def delete_expired(self, now: datetime) -> int: ...

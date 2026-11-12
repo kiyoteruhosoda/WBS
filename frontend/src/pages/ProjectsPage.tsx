@@ -1,7 +1,7 @@
-// プロジェクトの一覧（/projects。task #187、ADR-0024）。
-// ⚠ 何段でも入れ子にできるので、表の行に並べず親の下にぶら下げて見せる（nolumiatask の ProjectsPage と同じ）。
-// 動かすのは行の操作（上へ・下へ・親を替える）。nolumiatask のツリーの長押し（ADR-0067）は持ち込まない
-// ——プロジェクトは数十で、動かすのは稀。行の操作ならキーボードでも同じことができる。
+// Project list (/projects. task #187, ADR-0024).
+// ⚠ Projects nest to any depth, so they hang under their parent instead of being flat table rows (same as nolumiatask's ProjectsPage).
+// Moving is done with row actions (up, down, change parent). nolumiatask's tree long-press (ADR-0067) is not brought over
+// -- there are only dozens of projects and they rarely move. Row actions also work from the keyboard.
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
@@ -28,7 +28,7 @@ import { useAuth } from '../auth/AuthProvider';
 
 interface FormData {
   name: string;
-  parent: string; // '' = 最上位
+  parent: string; // '' = top level
   color: string | null;
   code: string;
   description: string;
@@ -87,7 +87,7 @@ const ProjectsPage: React.FC = () => {
   const { setScope } = useProjectScope();
   const { user, ssoEnabled } = useAuth();
   const projects = useMemo(() => data ?? [], [data]);
-  // いちばん上を作れるのは印のある人だけ（ADR-0065）。SSO の無い配備は 1 人だけで、その人は作れる
+  // Only marked users can create top-level projects (ADR-0065). Deployments without SSO have a single user, who can
   const canCreateTop = !ssoEnabled || Boolean(user?.can_create_projects);
 
   const [showArchived, setShowArchived] = useState(false);
@@ -97,9 +97,9 @@ const ProjectsPage: React.FC = () => {
   const [menu, setMenu] = useState<{ anchor: HTMLElement; node: ProjectNode } | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Project | null>(null);
   const [moveError, setMoveError] = useState<'failed' | 'forbidden' | null>(null);
-  // メンバーの窓（ADR-0055。どの段から開いても根の名簿）
+  // Members dialog (ADR-0055. Shows the root's roster from any level)
   const [membersOf, setMembersOf] = useState<Project | null>(null);
-  // 稼働日と休み（task #554、ADR-0058）
+  // Working days and time off (task #554, ADR-0058)
   const [calendarOf, setCalendarOf] = useState<Project | null>(null);
 
   useEffect(() => {
@@ -117,7 +117,7 @@ const ProjectsPage: React.FC = () => {
 
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: PROJECTS_KEY });
-    // 道筋と、届かなくなったマイルストーンが外れたかもしれない
+    // Paths may have changed, and milestones no longer reachable may have been detached
     qc.invalidateQueries({ queryKey: ['tasks'] });
     qc.invalidateQueries({ queryKey: ['task'] });
     qc.invalidateQueries({ queryKey: ['milestones'] });
@@ -157,7 +157,7 @@ const ProjectsPage: React.FC = () => {
     onSuccess: () => { invalidate(); setDeleteTarget(null); },
   });
   const deleteBlocked = isAxiosError(remove.error) && remove.error.response?.status === 409;
-  // いちばん上を消せるのは管理者だけ（ADR-0055）
+  // Only admins can delete top-level projects (ADR-0055)
   const deleteForbidden = isAxiosError(remove.error) && remove.error.response?.status === 403;
   const rootName = (p: Project | null) => (p ? projects.find((x) => x.id === p.root_project_id)?.name ?? p.name : '');
 
@@ -177,7 +177,7 @@ const ProjectsPage: React.FC = () => {
   const parentOptions = editingId === null ? flattenTree(tree) : parentCandidates(projects, editingId);
 
   const openTasks = (p: Project) => { setScope(p.id); navigate('/tasks'); };
-  // 「新しいプロジェクト」の既定の親。いちばん上を作れない人は、入っている木の最初の根の下に作る
+  // Default parent for "new project". Users who can't create top-level projects create under the first root they belong to
   const firstRoot = projects.find((p) => p.parent_project_id === null && p.status === 'active') ?? null;
   const newProjectParent = canCreateTop ? null : firstRoot?.id ?? null;
 
@@ -225,7 +225,7 @@ const ProjectsPage: React.FC = () => {
                   '&:hover': { bgcolor: ds.hairline },
                 }}
               >
-                {/* 深さを線で示す（字下げだけでは何段目か読めない） */}
+                {/* Show depth with lines (indentation alone doesn't tell the level) */}
                 {node.depth > 0 && (
                   <Box aria-hidden sx={{ width: 10, height: 1.5, bgcolor: ds.border, flexShrink: 0, ml: '-14px' }} />
                 )}
@@ -241,7 +241,7 @@ const ProjectsPage: React.FC = () => {
                     <Box sx={{ fontSize: 14, fontWeight: 600, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       {p.name}
                     </Box>
-                    {/* コード（任意）: 名前の横に控えめな札で。名前を詰めても札は削らない */}
+                    {/* Code (optional): a subtle chip next to the name. The chip is kept even when the name is truncated */}
                     {p.code && (
                       <Box
                         component="span"
@@ -267,7 +267,7 @@ const ProjectsPage: React.FC = () => {
                     {t('project.members')}
                   </Button>
                 )}
-                {/* カレンダーはどの段にもある（下のプロジェクトは親の休日を引き継いで足す。ADR-0059） */}
+                {/* Every level has a calendar (sub-projects inherit the parent's holidays and add their own. ADR-0059) */}
                 <Button size="small" onClick={() => setCalendarOf(p)} sx={{ whiteSpace: 'nowrap', display: { xs: 'none', sm: 'inline-flex' } }}>
                   {t('project.teamCalendar')}
                 </Button>
@@ -296,7 +296,7 @@ const ProjectsPage: React.FC = () => {
         <Box sx={{ fontSize: 12, color: ds.textMuted, mt: '8px' }}>{t('project.archivedHint')}</Box>
       )}
 
-      {/* 行の操作 */}
+      {/* Row actions */}
       <Menu anchorEl={menu?.anchor} open={menu !== null} onClose={() => setMenu(null)}>
         {menu && (() => {
           const p = menu.node.project;
@@ -334,7 +334,7 @@ const ProjectsPage: React.FC = () => {
         })()}
       </Menu>
 
-      {/* 作る・直す */}
+      {/* Create / edit */}
       <Dialog open={dialog !== null} onClose={() => setDialog(null)} fullWidth maxWidth="xs">
         <DialogTitle sx={{ fontSize: 16, fontWeight: 700 }}>
           {dialog?.editing ? t('project.editTitle') : t('project.newTitle')}
@@ -356,7 +356,7 @@ const ProjectsPage: React.FC = () => {
             select fullWidth size="small" label={t('project.parent')} value={form.parent}
             onChange={(e) => setForm({ ...form, parent: e.target.value })}
           >
-            {/* 下のものを根へ出すのは誰でもできる（メンバーはそのまま写る）。新しく根を作るのは印のある人だけ */}
+            {/* Anyone can promote a sub-project to a root (members are copied over). Only marked users can create a new root */}
             <MenuItem value="" disabled={editingId === null && !canCreateTop}>{t('project.noParent')}</MenuItem>
             {parentOptions.map(({ project, depth }) => (
               <MenuItem key={project.id} value={String(project.id)} sx={{ pl: `${16 + depth * 14}px` }}>
@@ -384,7 +384,7 @@ const ProjectsPage: React.FC = () => {
       <ProjectMembersDialog project={membersOf} rootName={rootName(membersOf)} onClose={() => setMembersOf(null)} />
       <ProjectCalendarDialog project={calendarOf} rootName={rootName(calendarOf)} onClose={() => setCalendarOf(null)} />
 
-      {/* 消す（空のものだけ。中身があれば断られる） */}
+      {/* Delete (empty projects only; refused when not empty) */}
       <Dialog open={deleteTarget !== null} onClose={() => setDeleteTarget(null)} fullWidth maxWidth="xs">
         <DialogTitle sx={{ fontSize: 16, fontWeight: 700 }}>{t('project.deleteTitle')}</DialogTitle>
         <DialogContent>

@@ -1,5 +1,5 @@
-// カレンダーの色（移植元 `WinUI/Resources/Styles/Colors.xaml` と `Presentation/Helpers/WinColors.cs`）。
-// 明暗のテーマごとの値は MUI のテーマ（`theme.palette.calendar`）に載せ、部品はそこから読む。
+// Calendar colors (ported from `WinUI/Resources/Styles/Colors.xaml` and `Presentation/Helpers/WinColors.cs`).
+// Per light/dark theme values live in the MUI theme (`theme.palette.calendar`) and components read them from there.
 
 import type { EventColorKey } from '../types';
 
@@ -11,37 +11,37 @@ export interface CalendarPalette {
   border: string;
   outOfMonthText: string;
   holidayBg: string;
-  /** 会社の公休の日の地（ADR-0029） */
+  /** Background of company holidays (ADR-0029) */
   companyDayOffBg: string;
-  /** 私の休みの日の地 */
+  /** Background of my days off */
   personalDayOffBg: string;
-  /** 曜日の休み（営業日の層の曜日に当たらない平日）の地 */
+  /** Background of weekday days off (weekdays not in the working-day layer's weekdays) */
   weeklyOffBg: string;
   sundayBg: string;
   saturdayBg: string;
   /**
-   * 過ぎた日・時刻に敷く半透明の黒（移植元は #3D000000 / #54000000。濃すぎて題名が読めないので薄くした）。
-   * 予定のチップはこの上に描き、文字は白のまま地だけ `pastEventFactor` 倍に沈める。
+   * Translucent black laid over past days/times (the original used #3D000000 / #54000000; lightened because titles were unreadable).
+   * Event chips are drawn on top; text stays white and only the background is darkened by `pastEventFactor`.
    */
   pastShade: string;
-  /** 過ぎた予定の地の色に掛ける倍率（影と同じ濃さ。`1 − 影の不透明度`） */
+  /** Factor applied to the background of past events (same depth as the shade: `1 − shade opacity`) */
   pastEventFactor: number;
   gridLine: string;
   gridHalfLine: string;
   currentTimeLine: string;
-  /** 終日の予定がある日に敷く色 */
+  /** Color laid on days with all-day events */
   allDayTint: string;
-  /** 予定の既定色・今日の丸・土曜の文字 */
+  /** Default event color, today's circle, Saturday text */
   blue: string;
-  /** 祝日のチップ・日曜の文字 */
+  /** Holiday chips, Sunday text */
   red: string;
-  /** 祝日の日付の文字（暗いテーマでは明るい赤） */
+  /** Holiday date text (bright red in the dark theme) */
   holidayText: string;
   selectedCircle: string;
   weekHeaderText: string;
-  /** 色の上に載せる文字（予定のチップ・今日の丸） */
+  /** Text drawn on top of colors (event chips, today's circle) */
   onColor: string;
-  /** ドラッグ中の行き先に描く半透明の青（移植元 GCalDragGhost） */
+  /** Translucent blue drawn at the drag target (ported GCalDragGhost) */
   dragGhost: string;
 }
 
@@ -102,7 +102,7 @@ export const calendarPalettes: Record<'light' | 'dark', CalendarPalette> = {
   },
 };
 
-/** 予定の色。白い文字を載せられる濃さなので、明暗どちらのテーマでも同じ値（移植元と同じ）。 */
+/** Event colors. Dark enough for white text, so the same values in both themes (as in the original). */
 export const eventColors: Record<EventColorKey, string> = {
   DEFAULT: '#1a73e8',
   TOMATO: '#d50000',
@@ -119,11 +119,11 @@ export const eventColors: Record<EventColorKey, string> = {
 
 export const eventColor = (key: EventColorKey | null | undefined): string => eventColors[key ?? 'DEFAULT'] ?? eventColors.DEFAULT;
 
-/** 過ぎた予定の地の色（影を重ねたのと同じ色。文字は白のまま）。 */
+/** Background color of past events (same as with the shade applied; text stays white). */
 export const pastEventColor = (hex: string, palette: Pick<CalendarPalette, 'pastEventFactor'>): string =>
   darken(hex, palette.pastEventFactor);
 
-/** 予定の枠の色（地の色を 0.72 倍に暗くする。移植元 `DarkenColor`）。 */
+/** Event border color (background darkened ×0.72; ported `DarkenColor`). */
 export const darken = (hex: string, factor = 0.72): string => {
   const m = /^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(hex);
   if (!m) return hex;
@@ -132,8 +132,8 @@ export const darken = (hex: string, factor = 0.72): string => {
 };
 
 /**
- * 日の列の地（ADR-0029）。休みの層の帯があればその理由の色、曜日の休み（営業日の層が表示のとき）なら
- * 土日は今までの色・平日は曜日の休みの色。営業日の層を隠しているとき（`nonWorkdays` が null）は土日の色だけ。
+ * Day column background (ADR-0029). The reason's color if there is a day-off band; for weekday days off (when the working-day layer is shown),
+ * weekends keep their usual color and weekdays get the weekday day-off color. With the working-day layer hidden (`nonWorkdays` is null), only weekend colors.
  */
 export const dayColumnBackground = (
   palette: Pick<CalendarPalette, 'holidayBg' | 'companyDayOffBg' | 'personalDayOffBg' | 'weeklyOffBg' | 'sundayBg' | 'saturdayBg'>,
@@ -141,7 +141,7 @@ export const dayColumnBackground = (
   holiday: { reason?: string } | undefined,
   nonWorkday: boolean | null,
 ): string => {
-  // 曜日の休みの帯は地の色を変えない（下の曜日の休みの色のまま）
+  // Weekday day-off bands don't change the background (keeps the weekday day-off color below)
   if (holiday && holiday.reason !== 'WEEKLY') {
     if (holiday.reason === 'COMPANY') return palette.companyDayOffBg;
     if (holiday.reason === 'PERSONAL') return palette.personalDayOffBg;
@@ -154,13 +154,13 @@ export const dayColumnBackground = (
 };
 
 /**
- * プライベートの予定（ADR-0033）に重ねる斜線。地の色は予定の色のまま、白い細い斜線で仕事の予定と見分ける
- * （色だけに頼らない。題名の白い文字は読める濃さ）。
+ * Hatching over private events (ADR-0033). The background keeps the event color; thin white diagonal lines set them apart from work events
+ * (not relying on color alone; white title text stays readable).
  */
 export const PRIVATE_HATCH =
   'repeating-linear-gradient(135deg, rgba(255,255,255,0.32) 0 3px, rgba(255,255,255,0) 3px 8px)';
 
-/** 回の地に重ねる模様（プライベートなら斜線、ほかは無し）。 */
+/** Pattern over an occurrence's background (hatching if private, none otherwise). */
 export const occurrencePattern = (occurrence: { is_private?: boolean }): string =>
   (occurrence.is_private ? PRIVATE_HATCH : 'none');
 

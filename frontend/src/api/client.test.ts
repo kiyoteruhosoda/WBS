@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AxiosAdapter, AxiosError, AxiosResponse, InternalAxiosRequestConfig } from 'axios';
 import type { RenewalResult } from '../auth/silentRenewal';
 
-// 見えない枠は DOM が要るので代える（試験は node で走る）。1 本ずつの錠はそのまま走らせる
+// The hidden frame needs the DOM, so it is replaced (tests run in node). The one-at-a-time lock runs as is
 const { renewInFrame } = vi.hoisted(() => ({
   renewInFrame: vi.fn(async (): Promise<RenewalResult> => 'renewed'),
 }));
@@ -31,7 +31,7 @@ const respond = (config: InternalAxiosRequestConfig, answer: Answer): Promise<Ax
   return Promise.reject(error);
 };
 
-/** 経路ごとの答えを順に返す。尽きたら最後の答えを返し続ける */
+/** Returns the answers per path in order; repeats the last one when exhausted */
 const fake = (answers: Record<string, Answer[]>) => {
   const calls: string[] = [];
   const adapter: AxiosAdapter = (config) => {
@@ -45,7 +45,7 @@ const fake = (answers: Record<string, Answer[]>) => {
   return calls;
 };
 
-describe('401 のとき見えない枠で続ける（ADR-0071）', () => {
+describe('continuing via a hidden frame on 401 (ADR-0071)', () => {
   const expired = vi.fn();
   const storage = () => {
     const values = new Map<string, string>();
@@ -68,7 +68,7 @@ describe('401 のとき見えない枠で続ける（ADR-0071）', () => {
     vi.unstubAllGlobals();
   });
 
-  it('続けられたら元の要求をやり直し、ログイン切れにしない', async () => {
+  it('retries the original request after continuing and does not expire the session', async () => {
     const calls = fake({ '/tasks': [401, 200], '/auth/me': [401] });
     await expect(client.get('/tasks')).resolves.toMatchObject({ status: 200 });
     expect(calls).toEqual(['/tasks', '/auth/me', '/tasks']);
@@ -76,26 +76,26 @@ describe('401 のとき見えない枠で続ける（ADR-0071）', () => {
     expect(expired).not.toHaveBeenCalled();
   });
 
-  it('更新の口はもう叩かない', async () => {
+  it('no longer calls the refresh endpoint', async () => {
     const calls = fake({ '/tasks': [401, 200], '/auth/me': [401] });
     await client.get('/tasks');
     expect(calls).not.toContain('/auth/refresh');
   });
 
-  it('ほかのタブが先に続けていれば、枠を開かずにやり直す', async () => {
+  it('retries without opening a frame when another tab already continued', async () => {
     const calls = fake({ '/tasks': [401, 200], '/auth/me': [200] });
     await expect(client.get('/tasks')).resolves.toMatchObject({ status: 200 });
     expect(calls).toEqual(['/tasks', '/auth/me', '/tasks']);
     expect(renewInFrame).not.toHaveBeenCalled();
   });
 
-  it('同時に 401 になった要求は 1 本の往復を待つ', async () => {
+  it('concurrent 401 requests wait for a single round trip', async () => {
     fake({ '/a': [401, 200], '/b': [401, 200], '/c': [401, 200], '/auth/me': [401] });
     await Promise.all([client.get('/a'), client.get('/b'), client.get('/c')]);
     expect(renewInFrame).toHaveBeenCalledTimes(1);
   });
 
-  it.each(['declined', 'failed'] as const)('%s ならログイン切れにする', async (result) => {
+  it.each(['declined', 'failed'] as const)('expires the session on %s', async (result) => {
     renewInFrame.mockImplementation(async () => result);
     const calls = fake({ '/tasks': [401], '/auth/me': [401] });
     await expect(client.get('/tasks')).rejects.toMatchObject({ response: { status: 401 } });
@@ -103,14 +103,14 @@ describe('401 のとき見えない枠で続ける（ADR-0071）', () => {
     expect(expired).toHaveBeenCalledTimes(1);
   });
 
-  it('断られたら、このタブではログイン画面の黙った確かめを重ねない', async () => {
+  it('after a refusal, the sign-in page does not repeat the silent check in this tab', async () => {
     renewInFrame.mockImplementation(async () => 'declined');
     fake({ '/tasks': [401], '/auth/me': [401] });
     await expect(client.get('/tasks')).rejects.toBeDefined();
     expect(sessionStorage.getItem('wbs.sso.silentAttempted')).toBe('1');
   });
 
-  it('やり直しも 401 ならログイン切れにし、もう続けない', async () => {
+  it('expires the session and stops continuing when the retry is also 401', async () => {
     const calls = fake({ '/tasks': [401], '/auth/me': [401] });
     await expect(client.get('/tasks')).rejects.toMatchObject({ response: { status: 401 } });
     expect(calls).toEqual(['/tasks', '/auth/me', '/tasks']);
@@ -118,7 +118,7 @@ describe('401 のとき見えない枠で続ける（ADR-0071）', () => {
     expect(expired).toHaveBeenCalledTimes(1);
   });
 
-  it('サインアウトした後は問い合わせない', async () => {
+  it('does not ask after sign-out', async () => {
     localStorage.setItem('wbs.sso.signedOut', '1');
     fake({ '/tasks': [401] });
     await expect(client.get('/tasks')).rejects.toBeDefined();
@@ -126,19 +126,19 @@ describe('401 のとき見えない枠で続ける（ADR-0071）', () => {
     expect(expired).toHaveBeenCalledTimes(1);
   });
 
-  it.each([503, 'no-response'] as const)('確かめの口が %s のときはログイン切れにしない', async (answer) => {
+  it.each([503, 'no-response'] as const)('does not expire the session when the check endpoint gives %s', async (answer) => {
     fake({ '/tasks': [401], '/auth/me': [answer] });
     await expect(client.get('/tasks')).rejects.toBeDefined();
     expect(expired).not.toHaveBeenCalled();
     expect(renewInFrame).not.toHaveBeenCalled();
   });
 
-  it('確かめの口が 503 のときは 503 として失敗を返す（画面がログイン切れと取り違えない）', async () => {
+  it('returns a 503 failure when the check endpoint gives 503 (so the UI does not mistake it for expiry)', async () => {
     fake({ '/tasks': [401], '/auth/me': [503] });
     await expect(client.get('/tasks')).rejects.toMatchObject({ response: { status: 503 } });
   });
 
-  it('401 以外の失敗では続けない', async () => {
+  it('does not continue on failures other than 401', async () => {
     const calls = fake({ '/tasks': [500] });
     await expect(client.get('/tasks')).rejects.toMatchObject({ response: { status: 500 } });
     expect(calls).toEqual(['/tasks']);

@@ -55,9 +55,9 @@ class SqlAlchemyTaskDependencyRepository(TaskDependencyRepository):
 
     @staticmethod
     def _owned_by(user_id: int) -> Select[tuple[TaskDependencyModel]]:
-        # 依存の行には持ち主が無いので、両端のタスクを辿って見えるかを見る（ADR-0055）。
-        # 片端だけ見ると、見えないタスクへ伸びた依存（入口で弾いているが、古いデータに
-        # 残りうる）が混ざる。削除済みのタスクは絞らない（従来どおり。表示側で落とす）。
+        # Dependency rows have no owner, so check visibility by following both end tasks (ADR-0055).
+        # Checking only one end would let in dependencies reaching invisible tasks (blocked at the entry, but they
+        # may remain in old data). Deleted tasks are not filtered out (as before; the display side drops them).
         predecessor = aliased(TaskModel)
         successor = aliased(TaskModel)
         return (

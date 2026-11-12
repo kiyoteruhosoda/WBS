@@ -1,4 +1,4 @@
-"""プロジェクトの木（task #187 / ADR-0024）: 道筋・環・積み上げの束ね先・マイルストーンの届く範囲。"""
+"""The project tree (task #187 / ADR-0024): paths, cycles, roll-up targets, and milestone reach."""
 
 from __future__ import annotations
 
@@ -48,8 +48,8 @@ def test_moving_under_itself_or_a_descendant_is_a_cycle() -> None:
 def test_group_under_rolls_a_branch_up_to_the_child_of_the_top() -> None:
     assert TREE.group_under(3, None) == 1
     assert TREE.group_under(3, 1) == 2
-    assert TREE.group_under(1, 1) == 1  # 直に付いた分
-    assert TREE.group_under(5, 1) is None  # 枝の外
+    assert TREE.group_under(1, 1) == 1  # directly attached
+    assert TREE.group_under(5, 1) is None  # outside the branch
     assert TREE.group_under(None, None) is None
 
 

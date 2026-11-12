@@ -1,25 +1,25 @@
-// 切れたログインを、画面を出さずに続ける（ADR-0071。fastapitemplate の ADR-0104 と同じ考え）。
+// Continue an expired session without showing any UI (ADR-0071; same idea as fastapitemplate's ADR-0104).
 //
-// SSO で入ったログインはリフレッシュトークンを持たない。アクセストークン（5 分）が切れたら、
-// 見えない枠（iframe）で `/api/auth/renew` を開き、IdP へ `prompt=none` で問い合わせる。
-// IdP のログイン状態が生きていれば、戻り（`/api/auth/callback`）が新しい Cookie を載せて
-// 結果の頁（`/api/auth/renewed?result=…`）へ送る。画面は枠の行き先（同じオリジン）を読む。
+// SSO sessions have no refresh token. When the access token (5 minutes) expires,
+// open `/api/auth/renew` in a hidden iframe and ask the IdP with `prompt=none`.
+// If the IdP session is alive, the return (`/api/auth/callback`) sets new cookies and
+// redirects to the result page (`/api/auth/renewed?result=…`). The UI reads the frame's location (same origin).
 //
-// - 枠の中でスクリプトは動かさない（`postMessage` を使わない）。結果は URL だけで渡る
-// - 枠が IdP の画面で止まった（読めないオリジンのまま読み込みが終わった）・時間切れは `failed`
-// - **タブをまたいで 1 本ずつ**（Web Locks）。往復の印の Cookie は 1 つの値に 3 本まで積むが、
-//   同時に走らせると IdP 側の往復も重なるので、待てば済むものは待つ
+// - No scripts run inside the frame (no `postMessage`). The result is passed via the URL only
+// - A frame stuck on an IdP page (finished loading on an unreadable origin) or a timeout is `failed`
+// - **One at a time across tabs** (Web Locks). The round-trip state cookie stacks up to 3 in one value,
+//   but running concurrently also overlaps the IdP round trips, so wait when waiting suffices
 
-/** 結果の頁（サーバーの `src/presentation/api/renewal.py` と対）。 */
+/** Result page (paired with the server's `src/presentation/api/renewal.py`). */
 export const RENEWAL_RESULT_PATH = '/api/auth/renewed';
 export const RENEWAL_START_PATH = '/api/auth/renew';
 const LOCK_NAME = 'wbs-sso-renewal';
-/** IdP の往復を待つ長さ。これを過ぎたら諦めてログイン画面を出す。 */
+/** How long to wait for the IdP round trip. After this, give up and show the sign-in page. */
 export const RENEWAL_TIMEOUT_MS = 15_000;
 
 export type RenewalResult = 'renewed' | 'declined' | 'failed';
 
-/** 枠の今の行き先から結果を読む。まだ途中（`about:blank`）なら null。 */
+/** Read the result from the frame's current location. null while still in progress (`about:blank`). */
 export const resultOf = (frame: HTMLIFrameElement): RenewalResult | null => {
   let location: Location | undefined;
   try {
@@ -27,14 +27,14 @@ export const resultOf = (frame: HTMLIFrameElement): RenewalResult | null => {
     if (!location || location.href === 'about:blank') return null;
     if (location.pathname !== RENEWAL_RESULT_PATH) return 'failed';
   } catch {
-    // 読めないオリジン（IdP の画面）で止まった。prompt=none なので画面は出ないはず
+    // Stuck on an unreadable origin (an IdP page). With prompt=none no page should be shown
     return 'failed';
   }
   const value = new URLSearchParams(location.search).get('result');
   return value === 'renewed' || value === 'declined' ? value : 'failed';
 };
 
-/** 見えない枠で 1 回問い合わせる。 */
+/** Ask once in a hidden frame. */
 export const renewInFrame = (timeoutMs = RENEWAL_TIMEOUT_MS): Promise<RenewalResult> =>
   new Promise((resolve) => {
     const frame = document.createElement('iframe');
@@ -58,7 +58,7 @@ export const renewInFrame = (timeoutMs = RENEWAL_TIMEOUT_MS): Promise<RenewalRes
     document.body.appendChild(frame);
   });
 
-/** タブをまたいで 1 本ずつ走らせる。Web Locks の無いブラウザ（古いもの・http の開発）ではそのまま走らせる。 */
+/** Run one at a time across tabs. Browsers without Web Locks (old ones, http dev) just run it directly. */
 export const oneAtATime = async <T>(task: () => Promise<T>): Promise<T> => {
   const locks = (navigator as Partial<Pick<Navigator, 'locks'>>).locks;
   if (!locks) return task();

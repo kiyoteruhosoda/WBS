@@ -1,9 +1,9 @@
-"""このアプリが自分で出すトークンを JWT（HS256）で作る・読む（ADR-0069・ADR-0071）。
+"""Create and read the tokens this app issues itself, as JWT (HS256) (ADR-0069, ADR-0071).
 
-出すのはアクセストークンだけ。⚠ **読むときは ``type`` を必ず見る。** 以前出していたリフレッシュトークン・
-ログアウトの札（``refresh`` / ``logout``）が手元に残っていても、API を叩けないように。
+Only access tokens are issued. ⚠ **Always check ``type`` when reading.** So that refresh tokens and
+logout tickets (``refresh`` / ``logout``) issued in the past cannot call the API even if someone still holds them.
 
-期限は ``now`` と比べる（ライブラリに時計を持たせない。時刻の口は ``src/shared/clock.py`` 1 つ）。
+Expiry is compared with ``now`` (the library gets no clock; the single time source is ``src/shared/clock.py``).
 """
 
 from __future__ import annotations
@@ -18,14 +18,14 @@ from src.application.ports.session_tokens import AccessTokenContents, SessionTok
 from src.domain.value_objects.continued_sign_in import ContinuedSignIn
 
 _ALGORITHM = "HS256"
-#: 発行者と宛先。別のアプリや環境のトークンは鍵で落ちるが、鍵を取り違えても混ざらないように名乗る
+#: Issuer and audience. Tokens of other apps/environments fail on the key anyway, but naming them keeps them apart even if keys get mixed up
 _NAME = "wbs"
 TYPE_ACCESS = "access"
 CLAIM_SESSION = "rsid"
 
 
 def _timestamp(moment: datetime) -> int:
-    """naive な UTC をエポック秒へ（``src/shared/clock.py`` の契約）。"""
+    """Naive UTC to epoch seconds (the ``src/shared/clock.py`` contract)."""
     return int(moment.replace(tzinfo=UTC).timestamp())
 
 
@@ -33,7 +33,7 @@ class JwtSessionTokens(SessionTokens):
     def __init__(self, *, signing_key: str, access_lifetime: timedelta, carry: timedelta) -> None:
         self._key = signing_key
         self._access_lifetime = access_lifetime
-        #: 期限切れのトークンから続けるログインを読む長さ（ADR-0071。Cookie を残す長さと同じ）
+        #: How long a login may be continued from an expired token (ADR-0071; same as how long the cookie is kept)
         self._carry = carry
 
     def access_token(self, user: AuthenticatedUserDTO, *, session_id: str, now: datetime) -> str:

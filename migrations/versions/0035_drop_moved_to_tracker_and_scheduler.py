@@ -1,19 +1,19 @@
-"""Tracker・Scheduler へ移した表を消す（task #543 / ADR-0070。Tracker の ADR-0053・Scheduler の ADR-0054 の段 4）
+"""Drop the tables moved to Tracker and Scheduler (task #543 / ADR-0070; stage 4 of Tracker's ADR-0053 and Scheduler's ADR-0054)
 
 Revision ID: 0035
 Revises: 0034
 Create Date: 2026-11-03
 
-- 打刻まわり（Tracker へ 2026-10-19 に移した）: time_entries・time_entry_carvings・auto_time_entry_receipts・
-  work_breaks・pc_activity_days・pc_activity_spans・tracking_rules・tracking_rule_books・closing_periods
-- 予定まわり（Scheduler へ 2026-10-19 に移した）: calendars・calendar_days_off・calendar_imports・
-  calendar_imported_occurrences・calendar_view_presets・calendar_events・calendar_event_exceptions・
-  calendar_event_moves・calendar_event_completions
-- 端末への通知（Web Push。4 種類とも Tracker・Scheduler が送る）: push_subscriptions・push_preferences・push_dispatches
-- work_logs.closing_period_id（WBS の締めの期間を指す列）。行は残す（``source=closing`` のまま）
+- Clock-in related (moved to Tracker on 2026-10-19): time_entries, time_entry_carvings, auto_time_entry_receipts,
+  work_breaks, pc_activity_days, pc_activity_spans, tracking_rules, tracking_rule_books, closing_periods
+- Event related (moved to Scheduler on 2026-10-19): calendars, calendar_days_off, calendar_imports,
+  calendar_imported_occurrences, calendar_view_presets, calendar_events, calendar_event_exceptions,
+  calendar_event_moves, calendar_event_completions
+- Device notifications (Web Push; all 4 kinds are sent by Tracker/Scheduler): push_subscriptions, push_preferences, push_dispatches
+- work_logs.closing_period_id (column pointing at WBS closing periods). Rows are kept (still ``source=closing``)
 
-⚠ 中身は捨てる。写しは切り替えのときに Tracker・Scheduler へ取ってあり、WBS の DB は毎日退避している
-（持ち主が承知のうえ・2026-11-03）。戻すと空の表ができる（中身は戻らない）。
+⚠ The contents are discarded. Copies were taken to Tracker/Scheduler at the switchover, and the WBS DB is backed up daily
+(with the owner's agreement, 2026-11-03). Downgrading creates empty tables (contents are not restored).
 """
 
 from __future__ import annotations
@@ -32,7 +32,7 @@ _ID = sa.BigInteger().with_variant(sa.Integer(), "sqlite")
 
 
 def upgrade() -> None:
-    # 先に子（参照する側）を消す。MariaDB は参照されている表を消せない
+    # Drop children (referencing side) first. MariaDB cannot drop a referenced table
     with op.batch_alter_table("work_logs", schema=None) as batch_op:
         batch_op.drop_index(batch_op.f("ix_work_logs_closing_period_id"))
         batch_op.drop_constraint(batch_op.f("fk_work_logs_closing_period_id"), type_="foreignkey")
@@ -100,7 +100,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    # 親（参照される側）から作る
+    # Create from the parents (referenced side)
     op.create_table('closing_periods',
     sa.Column('id', _ID, nullable=False),
     sa.Column('user_id', _ID, nullable=False),

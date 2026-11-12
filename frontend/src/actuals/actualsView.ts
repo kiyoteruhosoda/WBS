@@ -1,17 +1,17 @@
-// 実績の見える化の画面で使う純関数（task #162、ADR-0017）。
+// Pure functions for the actuals visualization screen (task #162, ADR-0017).
 import type { BreakdownGroup, GanttActualSpan, ReportUnit } from '../types/actuals';
 
-/** 0〜1 の割合を百分率に。分母 0（null）は「—」。 */
+/** Ratio 0–1 as a percentage. Zero denominator (null) → "—". */
 export const formatRatio = (ratio: number | null): string =>
   ratio === null ? '—' : `${Math.round(ratio * 100)}%`;
 
-/** ガントの実績の帯（最初〜最後の日）と、実績のある日の塗り。 */
+/** Gantt actuals bar (first to last day) and fill for days with actuals. */
 export const ACTUAL_STRIP_COLOR = '#D9D4F5';
 export const ACTUAL_DAY_COLOR = '#4a3aa7';
 
 const MS_PER_DAY = 86_400_000;
 
-/** 'YYYY-MM-DD' をその日の 0:00（端末のローカル）に。ガントの日付と同じ読み方。 */
+/** 'YYYY-MM-DD' to 0:00 of that day (device local). Same parsing as the Gantt dates. */
 export const parseIsoDay = (s: string): Date => {
   const [y, m, d] = s.split('-').map(Number);
   return new Date(y, m - 1, d);
@@ -24,13 +24,13 @@ const dayIndex = (s: string, rangeStart: Date): number =>
   Math.round((parseIsoDay(s).getTime() - rangeStart.getTime()) / MS_PER_DAY);
 
 export interface GanttActualLayout {
-  /** 最初〜最後の日の帯（表示範囲で切った日の添字、両端を含む）。範囲の外なら null。 */
+  /** Bar from first to last day (day indices clipped to the visible range, inclusive). null if outside the range. */
   strip: { startIdx: number; endIdx: number; clippedStart: boolean; clippedEnd: boolean } | null;
-  /** 実績のある日（表示範囲の中だけ）。 */
+  /** Days with actuals (within the visible range only). */
   cells: { idx: number; seconds: number }[];
 }
 
-/** ガントの 1 行の実績の帯を、表示範囲（rangeStart から dayCount 日）の添字へ直す。 */
+/** Convert one Gantt row's actuals bar to indices in the visible range (dayCount days from rangeStart). */
 export const ganttActualLayout = (
   span: GanttActualSpan | undefined, rangeStart: Date, dayCount: number,
 ): GanttActualLayout => {
@@ -51,7 +51,7 @@ export const ganttActualLayout = (
   return { strip, cells };
 };
 
-/** 締めの直前の期間（今日が前半なら先月の後半、後半なら今月の前半）。書き出しの既定。 */
+/** The period just before closing (second half of last month if today is in the first half, else first half of this month). Default for export. */
 export const previousClosingPeriod = (today: Date): { from: string; to: string } => {
   const y = today.getFullYear();
   const m = today.getMonth();
@@ -62,17 +62,17 @@ export const previousClosingPeriod = (today: Date): { from: string; to: string }
   return { from: toIsoDay(new Date(y, m, 1)), to: toIsoDay(new Date(y, m, 15)) };
 };
 
-/** マイルストーンの色（固定の順。8 つを超えたぶんは灰色にまとめる——色を巡回させない）。 */
+/** Milestone colors (fixed order; beyond 8 they all become gray —— colors are not cycled). */
 const MILESTONE_COLORS = ['#2a78d6', '#eb6834', '#1baf7a', '#eda100', '#e87ba4', '#008300', '#4a3aa7', '#e34948'];
 const OVERFLOW_COLOR = '#8E8E93';
-// 純関数のまま試験できるよう、テーマ（MUI）は引かずに値を写す（theme.ts の ds.todoGray / ds.paper）
+// To keep this testable as pure functions, copy the values instead of reading the MUI theme (ds.todoGray / ds.paper in theme.ts)
 export const UNGROUPED_COLOR = '#B7B7BB';
-/** タスク外は斜線で塗る（未分類の灰色と色だけで分けない）。 */
+/** Non-task time is hatched (not distinguished from unassigned gray by color alone). */
 export const UNASSIGNED_FILL = `repeating-linear-gradient(135deg, ${UNGROUPED_COLOR} 0 3px, #FFFFFF 3px 6px)`;
 
 /**
- * グループの塗り。カテゴリはカテゴリの色（ほかの画面と同じ ``categoryColor`` を渡す）、
- * マイルストーンは並び順の固定色。プロジェクトは自分の色（無ければ並び順の固定色）。
+ * Group fill. Categories use the category color (pass the same ``categoryColor`` as other screens),
+ * milestones a fixed color by order. Projects use their own color (or a fixed color by order if none).
  */
 export const groupFill = (
   group: BreakdownGroup,
@@ -82,7 +82,7 @@ export const groupFill = (
   if (group.key === 'unassigned') return UNASSIGNED_FILL;
   if (group.key === 'none') return UNGROUPED_COLOR;
   if (group.key.startsWith('category:')) return categoryFill(Number(group.key.slice('category:'.length)), group.color);
-  // プロジェクトは色を持っていればその色、無ければマイルストーンと同じ並び順の固定色
+  // Projects use their color if set, otherwise the same fixed order colors as milestones
   if (group.key.startsWith('project:') && group.color) return group.color;
   return MILESTONE_COLORS[milestoneOrder] ?? OVERFLOW_COLOR;
 };
@@ -90,11 +90,11 @@ export const groupFill = (
 export interface StackSegment {
   key: string;
   seconds: number;
-  /** 最も長い期間を 1 とした長さ。 */
+  /** Length relative to the longest period (= 1). */
   share: number;
 }
 
-/** 積み上げの 1 本。グループの並び（凡例と同じ順）で、0 秒のものは除く。 */
+/** One stacked bar. In group order (same as the legend), excluding zero-second entries. */
 export const stackSegments = (
   groups: BreakdownGroup[], secondsByGroup: Record<string, number>, maxTotal: number,
 ): StackSegment[] =>
@@ -106,14 +106,14 @@ export const stackSegments = (
 export const totalOf = (secondsByGroup: Record<string, number>): number =>
   Object.values(secondsByGroup).reduce((a, b) => a + b, 0);
 
-/** 期間の単位と範囲（空欄はサーバの既定: 今の期間で終わる 6 期間）。 */
+/** Period unit and range (blank = server default: 6 periods ending with the current one). */
 export interface RangeValue {
   unit: ReportUnit;
   from: string;
   to: string;
 }
 
-/** 空欄はクエリに載せない。 */
+/** Blank values are left out of the query. */
 export const rangeParams = (value: RangeValue): { from?: string; to?: string } => ({
   ...(value.from ? { from: value.from } : {}),
   ...(value.to ? { to: value.to } : {}),

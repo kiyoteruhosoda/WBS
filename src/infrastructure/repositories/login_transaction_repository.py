@@ -46,10 +46,10 @@ class SqlAlchemyLoginTransactionRepository(LoginTransactionRepository):
         if model is None:
             return None
         entity = self._to_entity(model)
-        # 取り出したその場で消す。同じ state（＝同じ認可コード）での再送を通さない。
-        # 消す側を条件付き DELETE にして、削れたのが自分だったときだけ返す。読んでから
-        # 消すまでのあいだに別のリクエストが同じ行を取っていると、そちらでも 1 回きりの
-        # はずの往復が成立してしまう（コールバックの二重送信で起こり得る）。
+        # Delete it right when it is taken out, so a resend with the same state (= same authorization code) does not pass.
+        # The delete is a conditional DELETE, and the row is returned only if we were the one that removed it. Otherwise,
+        # if another request took the same row between our read and our delete, the round trip that should be one-shot
+        # would succeed there too (possible with a double-submitted callback).
         deleted = self._session.execute(
             delete(LoginTransactionModel).where(LoginTransactionModel.id == model.id)
         )
@@ -76,7 +76,7 @@ class SqlAlchemyLoginTransactionRepository(LoginTransactionRepository):
             created_at=model.created_at,
             expires_at=model.expires_at,
             silent=model.silent,
-            # 知らない値（戻した後の行など）はふつうのログインとして読む
+            # Unknown values (e.g. rows after a downgrade) are read as a normal login
             purpose=LoginPurpose.RENEW if model.purpose == LoginPurpose.RENEW.value else LoginPurpose.LOGIN,
             continued=_continued_of(model),
         )

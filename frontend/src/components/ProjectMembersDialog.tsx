@@ -1,8 +1,8 @@
-// プロジェクトのメンバー＝人の一覧（task #544、ADR-0055。一覧の入力は task #557、ADR-0059）。
-// メンバーはいちばん上のプロジェクトに付くので、どの段から開いても根の名簿を出す。
-// 加える・外す・役割を変えるのは管理者だけ。メンバーは自分だけ「抜ける」ができる。
-// 1 日の工数と従事率（task #554、ADR-0058）は管理者がだれのでも、メンバーは自分のだけ直せる。
-// 一覧はセルを直接書き換える（Enter・Tab で次へ、その場で保存、表計算から貼り付け）。行の「カレンダー」でその人の休みを入れる。
+// Project members = the people list (task #544, ADR-0055; in-list editing is task #557, ADR-0059).
+// Members belong to the top-level project, so the root's roster is shown from any level.
+// Only admins add, remove or change roles. A member can only "leave" themselves.
+// Daily hours and engagement rate (task #554, ADR-0058): admins can edit anyone's, members only their own.
+// The list has directly editable cells (Enter/Tab to move on, saved in place, paste from a spreadsheet). A row's "calendar" sets that person's time off.
 import React, { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { isAxiosError } from 'axios';
@@ -23,7 +23,7 @@ import PersonCalendarDialog from './PersonCalendarDialog';
 
 interface Props {
   project: Project | null;
-  /** いちばん上のプロジェクトの名前（説明に出す） */
+  /** Name of the top-level project (shown in the description) */
   rootName: string;
   onClose: () => void;
 }
@@ -56,7 +56,7 @@ const ProjectMembersDialog: React.FC<Props> = ({ project, rootName, onClose }) =
 
   const changed = () => {
     qc.invalidateQueries({ queryKey: projectMembersKey(projectId) });
-    // 抜けたら木ごと見えなくなる。担当者の候補も変わる
+    // After leaving, the whole tree becomes invisible. Assignee candidates change too
     qc.invalidateQueries({ queryKey: PROJECTS_KEY });
     qc.invalidateQueries({ queryKey: ['tasks'] });
   };
@@ -73,9 +73,9 @@ const ProjectMembersDialog: React.FC<Props> = ({ project, rootName, onClose }) =
       changeProjectMemberCapacity(projectId, userId, daily, engagement)
     ),
     onSuccess: (data) => {
-      // 貼り付けで同じ行の 2 つの列を続けて直すとき、次の保存が今の値を読めるよう先に入れる
+      // When a paste edits two columns of the same row in a row, store first so the next save reads the current value
       qc.setQueryData(projectMembersKey(projectId), data);
-      // 見込みの終わりが変わる
+      // Forecast end dates change
       qc.invalidateQueries({ queryKey: ['tasks'] });
       qc.invalidateQueries({ queryKey: ['milestones'] });
     },
@@ -87,7 +87,7 @@ const ProjectMembersDialog: React.FC<Props> = ({ project, rootName, onClose }) =
   const failed = [add, changeRole, remove].find((m) => m.isError);
   const [calendarOf, setCalendarOf] = useState<ProjectMember | null>(null);
 
-  /** 1 つのセルを保存する。1 日の工数と従事率は 2 つで 1 組なので、もう片方は今の値（保存したばかりのものを含む） */
+  /** Saves one cell. Daily hours and engagement rate are saved as a pair, so the other one uses its current value (including one just saved) */
   const commit = async (member: ProjectMember, key: string, value: unknown) => {
     if (key === 'role') {
       await changeRole.mutateAsync({ userId: member.user_id, next: value as ProjectRole });

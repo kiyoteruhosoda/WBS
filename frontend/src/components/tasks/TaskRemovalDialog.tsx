@@ -1,5 +1,5 @@
-// タスクを消す・アーカイブする確認の窓（task #388・#394、ADR-0046）。
-// 確定した実績が無ければ消す。あれば消さずにアーカイブする（一覧と付け替え先に出ない。実績の表には残る）。
+// Confirmation dialog for deleting or archiving a task (task #388, #394, ADR-0046).
+// Deleted if it has no confirmed actuals; otherwise archived instead (hidden from lists and reassignment targets, kept in the actuals tables).
 import React from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Alert, Box, Button, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle } from '@mui/material';

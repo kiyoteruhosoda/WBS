@@ -1,11 +1,11 @@
-"""projects.code: 任意のプロジェクトコード（task #187）
+"""projects.code: optional project code (task #187)
 
 Revision ID: 0011
 Revises: 0010
 Create Date: 2026-10-02
 
-- ``projects.code``: 任意の短い文字列（32 字まで）。プロジェクト一覧で名前の横に出すだけ。
-  一意にはしない。**既存のプロジェクトは NULL**（コード無し）。
+- ``projects.code``: an optional short string (up to 32 characters). Only shown next to the name in the project list.
+  Not unique. **Existing projects are NULL** (no code).
 """
 
 from __future__ import annotations

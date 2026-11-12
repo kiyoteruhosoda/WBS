@@ -1,12 +1,12 @@
-"""プロジェクトだけの実績の表を消す（task #708 の取り下げ / ADR-0064）
+"""Drop the project-only actuals table (task #708 withdrawn / ADR-0064)
 
 Revision ID: 0031
 Revises: 0030
 Create Date: 2026-10-29
 
-- ``project_work_logs`` を消す。#708 を取り下げたので受け取る口が無くなった（受け取った行は無い）
+- Drop ``project_work_logs``. #708 was withdrawn, so the receiving endpoint is gone (no rows were received)
 
-戻すと空の表ができる（0030 と同じ形）。
+Downgrading creates an empty table (same shape as 0030).
 """
 
 from __future__ import annotations

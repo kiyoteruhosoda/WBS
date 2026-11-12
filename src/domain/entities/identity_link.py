@@ -1,7 +1,7 @@
-"""利用者と IdP 上の本人を結ぶ 1 行（``federated_identities``）。
+"""One row linking a user and a person on the IdP (``federated_identities``).
 
-``UserAccount.identities`` は「その人が持つ結び付き」の一覧だが、**行そのもの**を
-指せない（id を持たない）。定期照合は「この 1 行を外す」を行うので、行を指せる形が要る。
+``UserAccount.identities`` lists "the links the person has", but cannot point at **the row itself**
+(it has no id). Periodic reconciliation "removes this one row", so it needs a form that can point at rows.
 """
 
 from __future__ import annotations

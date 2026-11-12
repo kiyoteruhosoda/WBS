@@ -1,16 +1,16 @@
-"""日本の祝日・休日を暦から出す（「国民の祝日に関する法律」、ADR-0009）。
+"""Derive Japanese national holidays and substitute days off from the calendar ("Act on National Holidays", ADR-0009).
 
-実行時に外へ取りに行かない（内閣府の CSV などを引かない）。規則で決まるものは規則で、
-法律で 1 年だけ動かした日（2019 年の即位・2020/2021 年の五輪）は表で持つ。
+Nothing is fetched at runtime (no Cabinet Office CSV or the like). What follows rules is computed by rule;
+days moved by law for a single year (the 2019 enthronement, the 2020/2021 Olympics) are kept in a table.
 
-- 春分の日・秋分の日は、毎年 2 月の官報で翌年の日が決まる。ここでは 1980〜2099 年に
-  当てはまる近似式で出す（実際の公示と食い違ったことは今のところ無い）。
-- 振替休日: 祝日が日曜なら、その後の最も近い祝日でない日。
-- 国民の休日: 前日と翌日が祝日（振替休日を除く）で、それ自体は祝日でない日。
+- Vernal and Autumnal Equinox Days are fixed for the next year in the official gazette each February. Here they come from an
+  approximation valid for 1980–2099 (it has not disagreed with the official announcements so far).
+- Substitute holiday: if a national holiday falls on Sunday, the nearest following day that is not a holiday.
+- Citizens' holiday: a non-holiday day whose previous and next days are both national holidays (excluding substitute holidays).
 
-扱う年は 2007 年（振替休日・国民の休日の今の規則と「昭和の日」が始まった年）から
-2099 年（春分・秋分の式が当てはまる最後の年）まで。外れは ``ValidationError``。
-法律が変わったときや公示と食い違ったときは、「日本の祝日」の層（ADR-0029）の日を手で直す。
+Supported years run from 2007 (when the current substitute/citizens' holiday rules and "Showa Day" began) to
+2099 (the last year the equinox formulas hold). Outside that: ``ValidationError``.
+When the law changes or a date disagrees with the announcement, fix the days in the "Japanese holidays" layer (ADR-0029) by hand.
 """
 
 from __future__ import annotations
@@ -30,7 +30,7 @@ CITIZENS_HOLIDAY = "国民の休日"
 
 @dataclass(frozen=True)
 class Holiday:
-    """暦から出した祝日・休日 1 日（「日本の祝日」の層へ入れる元）。"""
+    """One national holiday / day off derived from the calendar (source for the "Japanese holidays" layer)."""
 
     date: date
     name: str
@@ -39,7 +39,7 @@ class Holiday:
 _MONDAY = 0
 _SUNDAY = 6
 
-# 法律（特措法）でその年だけ動かした・足した祝日。名前 → 日付（その年に無いものは None）。
+# Holidays moved or added by law (special measures acts) for that year only. Name → date (None if absent that year).
 _SPECIAL_YEARS: dict[int, dict[str, date | None]] = {
     2019: {
         "天皇の即位の日": date(2019, 5, 1),
@@ -65,7 +65,7 @@ def _autumnal_equinox_day(year: int) -> int:
 
 
 def _statutory_holidays(year: int) -> dict[date, str]:
-    """その年の「国民の祝日」（振替休日・国民の休日を除く）。"""
+    """That year's "national holidays" (excluding substitute holidays and citizens' holidays)."""
     special = _SPECIAL_YEARS.get(year, {})
 
     def moved(name: str, usual: date | None) -> date | None:
@@ -97,7 +97,7 @@ def _statutory_holidays(year: int) -> dict[date, str]:
 
 
 def japanese_national_holidays(year: int) -> list[Holiday]:
-    """``year`` 年の祝日・振替休日・国民の休日を日付順に返す。"""
+    """Return the national holidays, substitute holidays and citizens' holidays of ``year`` in date order."""
     if not FIRST_SUPPORTED_YEAR <= year <= LAST_SUPPORTED_YEAR:
         raise ValidationError(
             f"japanese holidays are available for {FIRST_SUPPORTED_YEAR}..{LAST_SUPPORTED_YEAR}"
@@ -107,7 +107,7 @@ def japanese_national_holidays(year: int) -> list[Holiday]:
 
     one_day = timedelta(days=1)
     for day in sorted(statutory):
-        # 国民の休日: 祝日に挟まれた祝日でない日。
+        # Citizens' holiday: a non-holiday day sandwiched between national holidays.
         between = day + one_day
         if between not in statutory and between + one_day in statutory and between.year == year:
             holidays[between] = CITIZENS_HOLIDAY

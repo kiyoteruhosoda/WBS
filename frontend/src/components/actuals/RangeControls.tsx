@@ -1,4 +1,4 @@
-// 期間の単位と範囲（初日・末日）を選ぶ一列（task #162）。空の範囲はサーバの既定（今の期間で終わる 6 期間）。
+// A row for choosing the period unit and range (first/last day) (task #162). An empty range uses the server default (6 periods ending with the current one).
 import React from 'react';
 import { Box, MenuItem, TextField } from '@mui/material';
 import { useI18n } from '../../i18n';

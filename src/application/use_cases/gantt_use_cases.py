@@ -24,7 +24,7 @@ class GanttUseCases:
     def get_gantt_data(
         self, user_id: int, project_id: int | None = None, forecast: CompletionForecast | None = None,
     ) -> list[dict]:
-        """``project_id`` を指すと、そのプロジェクトと子孫のタスクだけ（ADR-0024）。アーカイブしたタスクは出さない（ADR-0046）。"""
+        """With ``project_id``, only tasks of that project and its descendants (ADR-0024). Archived tasks are not returned (ADR-0046)."""
         all_tasks = [t for t in self._tasks.find_all(user_id, {}) if not t.is_archived]
         tasks = all_tasks
         if project_id is not None:
@@ -33,10 +33,10 @@ class GanttUseCases:
                 raise NotFoundError("Project", project_id)
             tasks = [t for t in all_tasks if t.project_id in scope]
         tree = ProjectTree(self._projects.find_all(user_id))
-        # 自分の依存だけを引く（task_dependencies に持ち主の列は無く、リポジトリがタスクを辿って絞る）。
+        # Fetch only the caller's dependencies (task_dependencies has no owner column; the repository filters by following tasks).
         deps = self._dependencies.find_all_for_user(user_id)
         task_ids = {t.id for t in tasks}
-        # 進捗率は一覧・ダッシュボードと同じ式（親は子孫の積み上げ。ADR-0010）
+        # Progress uses the same formula as the list and the dashboard (parents roll up their descendants, ADR-0010)
         board = TaskProgressBoard(all_tasks, self._tasks.get_actual_hours_by_task(user_id))
         result = []
         for task in tasks:
@@ -47,7 +47,7 @@ class GanttUseCases:
                     "lag_days": d.lag_days,
                 }
                 for d in deps
-                # 削除済みのタスクへの依存は出さない（find_all は削除済みを含まない）。
+                # Dependencies on deleted tasks are not returned (find_all excludes deleted ones).
                 if d.successor_task_id == task.id and d.predecessor_task_id in task_ids
             ]
             result.append(
@@ -69,7 +69,7 @@ class GanttUseCases:
 
 
 def _forecast_fields(forecast: CompletionForecast | None, task_id: int | None) -> dict:
-    """終わる見込み（ADR-0058）。見込みを渡されなければ載せない。"""
+    """Forecast completion (ADR-0058). Omitted when no forecast is passed."""
     if forecast is None or task_id is None:
         return {}
     f = forecast.task(task_id)

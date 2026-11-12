@@ -1,11 +1,11 @@
-"""tracking_rules: PC の自動記録の規則（WinTrack、task #381 / ADR-0043）
+"""tracking_rules: rules for automatic PC tracking (WinTrack, task #381 / ADR-0043)
 
 Revision ID: 0018
 Revises: 0017
 Create Date: 2026-10-13
 
-- ``tracking_rules``: 「アプリが〜」「表題に〜を含む」→ タスク。``position`` の順に上から当てる（照合は PC の中）
-- ``tracking_rule_books``: 利用者ごとに、規則を最後に変えた時刻（消したことも PC へ伝えるため）
+- ``tracking_rules``: "app is ..." / "title contains ..." -> task. Applied top-down in ``position`` order (matching happens on the PC)
+- ``tracking_rule_books``: per user, when the rules last changed (so deletions are also conveyed to the PC)
 """
 
 from __future__ import annotations

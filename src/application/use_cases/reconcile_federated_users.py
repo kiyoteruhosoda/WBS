@@ -1,18 +1,18 @@
-"""IdP へ聞き直して、使えなくなった人のセッションを止める（定期照合）。
+"""Ask the IdP again and stop sessions of people who can no longer use the app (periodic reconciliation).
 
-停止の通知の受け口は、**通知が届いたときにしか効かない**。IdP が送れなかった・
-こちらが落ちていた・送り先が登録されていなかった ——どれも取りこぼしがそのまま残る。
-ここはその 2 段目で、毎時 IdP に名簿を聞き直して差を埋める。
+The stop notification endpoint **only works when a notification arrives**. If the IdP could not send it,
+we were down, or the destination was not registered — the miss simply remains.
+This is the second line: every hour it asks the IdP for the roster again and fills the gap.
 
-止める範囲は受け口と同じ ——**このアプリのセッションだけ**で、利用者そのもの
-（``users.is_active``）には触らない。範囲を揃えておかないと、「届いたとき」と
-「取りこぼしたとき」で止まる範囲が違う、という分かりにくい状態になる。
+What it stops is the same as the endpoint — **only this app's sessions**; the user itself
+(``users.is_active``) is not touched. Without matching scopes, what gets stopped would differ between
+"when it arrived" and "when it was missed", which is confusing.
 
-⚠ **引けなかったときは何もしない。** 名簿が引けないことと、名簿が空であることを
-混ぜない ——混ぜると、IdP が不調なだけで全員を止める。
+⚠ **Do nothing when the roster cannot be fetched.** Do not confuse failing to fetch the roster with
+the roster being empty — confusing them would stop everyone just because the IdP is unwell.
 
-⚠ **何度走らせても結果が同じになるように書く。** 同じ仕事がワーカーの数だけ、
-同じ時刻に走る。
+⚠ **Write it so that running it any number of times gives the same result.** The same job runs once per worker,
+at the same time.
 """
 
 from __future__ import annotations
@@ -31,20 +31,20 @@ logger = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class ReconciliationOutcome:
-    """1 回の照合で何が起きたか（記録と試験のための数）。"""
+    """What happened in one reconciliation run (counts for logging and tests)."""
 
     checked: int = 0
-    #: セッションを終わらせた人数。⚠ **既に 1 本も無かった人は数えない**（毎時 0 に戻る）。
+    #: Number of people whose sessions were ended. ⚠ **People who already had none are not counted** (back to 0 every hour).
     revoked: int = 0
     unlinked: int = 0
-    #: ⚠ **全員が ``unknown`` で返ったので見送った**か。真のときは何も変えていない。
+    #: ⚠ Whether it **held back because everyone came back ``unknown``**. When true, nothing was changed.
     held_back: bool = False
 
 
 @dataclass(frozen=True)
 class ReconcileFederatedUsers:
-    #: ⚠ ログインで結び付けたときと**同じ綴り**の発行者。1 文字ずれると 1 件も当たらず、
-    #: 何も確かめないまま「異常なし」で終わる。
+    #: ⚠ The issuer with **the same spelling** as when linked at login. Off by one character and nothing matches,
+    #: so it ends as "no problems" without checking anything.
     issuer: str
     links: IdentityLinkRepository
     sessions: RefreshSessionRepository
@@ -54,16 +54,16 @@ class ReconcileFederatedUsers:
         links = self.links.list_for_issuer(self.issuer)
         if not links:
             return ReconciliationOutcome()
-        # ⚠ 名指しで聞く。候補の一覧では「向こうに居ない（消えた）」が分からない。
+        # ⚠ Ask by name. A candidate list cannot tell "not there (gone)".
         answers = self.roster.fetch(
             issuer=self.issuer, subjects=tuple(link.subject for link in links)
         )
         outcome = ReconciliationOutcome(checked=len(links))
         if _everyone_is_unknown(links, answers):
-            # ⚠ テナントの取り違えやアプリの付け替えでも、この形で返りうる。
-            #   全員分の結び付きを外す前に止まる。
+            # ⚠ A tenant mix-up or the app being reassigned can also return this shape.
+            #   Stop before unlinking everyone.
             logger.warning(
-                "IdP の名簿が全員 unknown だったため照合を見送りました",
+                "Skipped reconciliation because the IdP roster returned unknown for everyone",
                 extra={
                     "event": "auth.oidc.reconciliation.everyone_unknown",
                     "checked": len(links),
@@ -77,13 +77,13 @@ class ReconcileFederatedUsers:
     def _apply(
         self, link: IdentityLink, state: RosterState, outcome: ReconciliationOutcome
     ) -> ReconciliationOutcome:
-        """1 人ぶんの結果を反映する。⚠ **触らない側も明示的に返す。**"""
+        """Apply the result for one person. ⚠ **Explicitly return the untouched case too.**"""
         if not state.ends_sessions:
             return outcome
         ended = self.sessions.delete_for_identity(link.identity)
         if ended:
             logger.info(
-                "IdP で止まった人のセッションを終了しました",
+                "Ended sessions of a person deactivated at the IdP",
                 extra={
                     "event": "auth.oidc.reconciliation.revoked",
                     "user_id": link.user_id,
@@ -93,20 +93,20 @@ class ReconcileFederatedUsers:
             outcome = replace(outcome, revoked=outcome.revoked + 1)
         if not state.drops_the_link:
             return outcome
-        # 向こうに居ない＝結び付きの相手がもう存在しない。行を残すと、同じ ``sub`` が
-        # 別人へ再利用されたときに他人へ繋がる（再利用しない約束だが、残す理由も無い）。
+        # Not there = the other end of the link no longer exists. Keeping the row would connect to someone else
+        # if the same ``sub`` were reused for another person (it is promised not to be reused, but there is no reason to keep it).
         self.links.unlink(link.id)
         logger.info(
-            "IdP に居なくなった人の結び付きを外しました",
+            "Unlinked a person no longer present at the IdP",
             extra={"event": "auth.oidc.reconciliation.unlinked", "user_id": link.user_id},
         )
         return replace(outcome, unlinked=outcome.unlinked + 1)
 
 
 def _everyone_is_unknown(links: list[IdentityLink], answers: Roster) -> bool:
-    """結び付きが 2 件以上あり、全員が ``unknown`` で返ったか。
+    """Whether there are 2 or more links and everyone came back ``unknown``.
 
-    1 件だけのときは「その 1 人が消えた」と区別が付かないので、通常どおり扱う。
+    With only one, it cannot be told apart from "that one person is gone", so it is handled normally.
     """
     if len(links) < 2:
         return False

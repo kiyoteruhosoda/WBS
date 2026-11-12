@@ -6,25 +6,25 @@ from src.domain.entities.task_dependency import TaskDependency
 
 
 class TaskDependencyRepository(ABC):
-    """タスク間の依存。
+    """Dependencies between tasks.
 
-    ``task_dependencies`` には持ち主の列が無いので、**読み出しは必ず利用者で絞る口を通す**。
-    両端のタスクがどちらもその利用者のものである依存だけを返す（タスクを辿って持ち主を見る）。
-    全員分を引く口は置かない ——置くと、利用者が 2 人になった日に他人の依存が混ざる。
+    ``task_dependencies`` has no owner column, so **reads must always go through a method that filters by user**.
+    Only dependencies whose both end tasks belong to that user are returned (the owner is found via the tasks).
+    There is deliberately no method that fetches everyone's — with one, other people's dependencies would mix in once there are two users.
     """
 
     @abstractmethod
     def find_by_task_for_user(self, task_id: int, user_id: int) -> list[TaskDependency]:
-        """``task_id`` が先行・後続のどちらかに居る依存のうち、両端とも ``user_id`` のもの。"""
+        """Dependencies where ``task_id`` is either predecessor or successor and both ends belong to ``user_id``."""
 
     @abstractmethod
     def find_all_for_user(self, user_id: int) -> list[TaskDependency]:
-        """両端とも ``user_id`` のタスクである依存すべて。"""
+        """All dependencies whose both end tasks belong to ``user_id``."""
 
     @abstractmethod
     def save(self, dep: TaskDependency) -> TaskDependency:
-        """足す（同じ組が在れば種別と lag を書き換える）。確定まで行う。"""
+        """Add one (if the same pair exists, overwrite its type and lag). Commits."""
 
     @abstractmethod
     def delete(self, predecessor_id: int, successor_id: int) -> None:
-        """消す。無ければ何もしない。確定まで行う。"""
+        """Delete one. Does nothing if absent. Commits."""

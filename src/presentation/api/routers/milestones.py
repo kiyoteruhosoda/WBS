@@ -22,17 +22,17 @@ def list_milestones(
     db: DbDep,
     current_user: CurrentUserDep,
     project_id: Annotated[
-        int | None, Query(description="このプロジェクトと、その子孫のプロジェクトのものだけ")
+        int | None, Query(description="Only those in this project and its descendant projects")
     ] = None,
     unclassified: Annotated[
-        bool, Query(description="true ならプロジェクトの無い（未分類の）ものだけ")
+        bool, Query(description="If true, only those without a project (uncategorized)")
     ] = False,
 ) -> list[MilestoneResponse]:
     uc = MilestoneUseCases(db)
     milestones = uc.list_milestones(
         current_user.user_id, project_id=project_id, unclassified=unclassified
     )
-    # 見込みの日は読むたびに出す（ADR-0058）
+    # The forecast date is computed on every read (ADR-0058)
     forecast = CompletionForecastUseCases(db).forecast(current_user.user_id)
     return [MilestoneResponse.with_forecast(m, forecast) for m in milestones]
 
@@ -57,8 +57,8 @@ def get_milestone(milestone_id: int, db: DbDep, current_user: CurrentUserDep) ->
 @router.put("/{milestone_id}", response_model=MilestoneResponse)
 def update_milestone(milestone_id: int, body: MilestoneUpdateRequest, db: DbDep, current_user: CurrentUserDep) -> MilestoneResponse:
     uc = MilestoneUseCases(db)
-    # 送信されたフィールドのみ DTO へ渡す（未指定は UNSET のまま＝変更しない）。
-    # 明示的な null はクリアとして反映される。
+    # Pass only the submitted fields to the DTO (omitted ones stay UNSET = unchanged).
+    # An explicit null clears the value.
     dto = UpdateMilestoneDTO(**body.model_dump(exclude_unset=True))
     return MilestoneResponse.model_validate(uc.update_milestone(milestone_id, current_user.user_id, dto), from_attributes=True)
 

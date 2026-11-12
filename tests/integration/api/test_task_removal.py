@@ -1,6 +1,6 @@
-"""タスクを消す・アーカイブする（task #388 / ADR-0046）。確定した実績があれば消さずにアーカイブする。
+"""Delete or archive a task (task #388 / ADR-0046). If it has confirmed actuals, archive instead of deleting.
 
-打刻と WinTrack の規則は Tracker へ移したので、ここでは見ない（task #543 / ADR-0070）。
+Time-tracking and WinTrack rules moved to Tracker, so they are not checked here (task #543 / ADR-0070).
 """
 
 from __future__ import annotations
@@ -39,15 +39,15 @@ def test_a_task_with_work_logs_is_archived_not_deleted(client) -> None:
 
     preview = client.get(f"/api/tasks/{task}/removal").json()
     assert (preview["action"], preview["work_log_hours"]) == ("archive", 1.5)
-    # 消せない（実績の表から名前が消えるので）
+    # Cannot delete (the name would disappear from the actuals table)
     assert client.delete(f"/api/tasks/{task}").status_code == 409
     assert client.post(f"/api/tasks/{task}/archive").status_code == 204
-    assert client.post(f"/api/tasks/{task}/archive").status_code == 204  # 冪等
+    assert client.post(f"/api/tasks/{task}/archive").status_code == 204  # idempotent
 
-    # 一覧・ガントに出ない
+    # Not shown in the list or Gantt
     assert task not in _listed(client) and other in _listed(client)
     assert task not in {t["id"] for t in client.get("/api/gantt").json()}
-    # 1 件の取得では返る（アーカイブの印つき）
+    # Returned when fetched individually (with the archived flag)
     detail = client.get(f"/api/tasks/{task}").json()
     assert detail["archived_at"] is not None
     assert client.get(f"/api/tasks/{task}/removal").json()["archived"] is True

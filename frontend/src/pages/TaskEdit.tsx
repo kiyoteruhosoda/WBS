@@ -37,15 +37,15 @@ interface FormData {
   due_date: string;
   estimated_hours: string;
   actual_hours: string;
-  // 手で持つ残。空なら「見積 − 実績」を既定に使う
+  // Manually set remaining. When empty, "estimate - actual" is used as the default
   remaining_hours: string;
   parent_task_id: string;
   milestone_id: string;
-  // '' = 未分類。子タスクは親と同じ（選べない。ADR-0024）
+  // '' = uncategorized. Child tasks follow the parent (not selectable. ADR-0024)
   project_id: string;
-  // 担当者（ADR-0055）。'' = 担当なし、'auto' = 送らない（新しいタスクは作った人になる）
+  // Assignee (ADR-0055). '' = unassigned, 'auto' = not sent (a new task gets its creator)
   assignee: string;
-  // アサイン比率（%）。'' = 比率なし（順番に片付ける。ADR-0058）
+  // Allocation (%). '' = no allocation (done one after another. ADR-0058)
   allocation_percent: string;
   memo: string;
 }
@@ -68,7 +68,7 @@ const toForm = (t: Task): FormData => ({
   allocation_percent: t.allocation_percent == null ? '' : String(t.allocation_percent), memo: t.memo ?? '',
 });
 
-// ユーザー設定タイムゾーンでの「今日」を YYYY-MM-DD にする（実績差分の記録日）
+// "Today" in the user's configured time zone as YYYY-MM-DD (the date the actual-time delta is recorded on)
 const todayYmd = (): string => {
   const d = todayDate();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -91,7 +91,7 @@ const FieldLabel: React.FC<{ children: React.ReactNode; required?: boolean }> = 
   );
 };
 
-// 優先度・緊急度のラジオpill（高/中/低）
+// Radio pills for priority/urgency (high/medium/low)
 const PillRadio: React.FC<{ value: PriorityBand; onChange: (v: PriorityBand) => void }> = ({ value, onChange }) => {
   const { t } = useI18n();
   return (
@@ -159,10 +159,10 @@ const TaskEdit: React.FC = () => {
 
   const isChild = form.parent_task_id !== '';
   const projectNumber = form.project_id ? Number(form.project_id) : null;
-  // 選べるマイルストーン: このプロジェクトとその祖先のもの・未分類のもの（ADR-0024）
+  // Selectable milestones: those of this project and its ancestors, and uncategorized ones (ADR-0024)
   const reachableMilestones = (milestonesList: Milestone[] | undefined, projectId: number | null) =>
     (milestonesList ?? []).filter((m) => milestoneReachable(projects, m.project_id, projectId));
-  // 担当者の候補はその木のメンバー（ADR-0055）。未分類のタスクは作った本人だけ
+  // Assignee candidates are the members of the tree (ADR-0055). For uncategorized tasks only the creator
   const memberProject = isChild ? (task?.project_id ?? projectNumber) : projectNumber;
   const { data: members } = useQuery({
     queryKey: projectMembersKey(memberProject ?? 0),
@@ -175,18 +175,18 @@ const TaskEdit: React.FC = () => {
     const current = milestones?.find((m) => String(m.id) === form.milestone_id);
     const keep = current === undefined || milestoneReachable(projects, current.project_id, next);
     setMilestoneCleared(!keep);
-    // 未分類へ移す新しいタスクは、担当を作った人（自分）に戻す
+    // A new task moved to uncategorized gets its creator (me) back as assignee
     const assignee = next === null && isNew && form.assignee !== '' ? 'auto' : form.assignee;
     setForm({ ...form, project_id: value, milestone_id: keep ? form.milestone_id : '', assignee });
   };
   useEffect(() => { if (task) setForm(toForm(task)); }, [task]);
-  // 新しいタスクの既定は自分（メンバーが読めたら、自分の行を選んだ形で見せる）
+  // A new task defaults to me (once members are loaded, show my row as selected)
   useEffect(() => {
     const me = members?.members.find((m) => m.is_you);
     if (isNew && me) setForm((f) => (f.assignee === 'auto' ? { ...f, assignee: String(me.user_id) } : f));
   }, [isNew, members]);
-  // 新しいタスクは、指定のプロジェクト（`?project=<id>`。タスク一覧の束の見出しから来る。`none` は未分類）、
-  // 無ければいま絞っているプロジェクトに入れておく
+  // A new task goes into the given project (`?project=<id>`, coming from a group header in the task list; `none` is uncategorized),
+  // otherwise into the currently filtered project
   const [searchParams] = useSearchParams();
   const projectParam = searchParams.get('project');
   useEffect(() => {
@@ -199,7 +199,7 @@ const TaskEdit: React.FC = () => {
   const save = useMutation({
     mutationFn: async (data: Partial<Task>) => {
       const saved = isNew ? await createTask(data) : await updateTask(Number(id), data);
-      // 実績時間の変更分を作業ログとして記録する（実績は作業ログの合計）
+      // Record the change in actual hours as a work log (actuals are the sum of work logs)
       if (!isNew && task) {
         const newActual = form.actual_hours === '' ? task.actual_hours : Number(form.actual_hours);
         const delta = Math.round((newActual - task.actual_hours) * 100) / 100;
@@ -214,7 +214,7 @@ const TaskEdit: React.FC = () => {
       qc.invalidateQueries({ queryKey: ['kpi'] });
       qc.invalidateQueries({ queryKey: ['worklogs', id] });
       qc.invalidateQueries({ queryKey: ['task'] });
-      // マイルストーンの見込みの日も変わる（ADR-0058）
+      // Milestone forecast dates change too (ADR-0058)
       qc.invalidateQueries({ queryKey: ['milestones'] });
       navigate('/tasks');
     },
@@ -232,7 +232,7 @@ const TaskEdit: React.FC = () => {
 
   const addDep = useMutation({
     mutationFn: () => addDependency(Number(id), { predecessor_task_id: Number(depPredId), dependency_type: depType }),
-    // 依存は見込みの日を動かす（ADR-0058）
+    // Dependencies move forecast dates (ADR-0058)
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['deps', id] }); setDepPredId('');
       qc.invalidateQueries({ queryKey: ['tasks'] }); qc.invalidateQueries({ queryKey: ['milestones'] });
@@ -264,15 +264,15 @@ const TaskEdit: React.FC = () => {
       priority: form.priority, urgency: form.urgency, status: form.status,
       start_date: form.start_date || null, due_date: form.due_date || null,
       estimated_hours: form.estimated_hours ? Number(form.estimated_hours) : null,
-      // 空で送ると手の値を消し、見積 − 実績 を既定に戻す
+      // Sending empty clears the manual value and goes back to the estimate - actual default
       remaining_hours: form.remaining_hours === '' ? null : Number(form.remaining_hours),
       parent_task_id: form.parent_task_id ? Number(form.parent_task_id) : null,
       milestone_id: form.milestone_id ? Number(form.milestone_id) : null,
-      // 子タスクは親のプロジェクトに入る（送らない。親を移すと子孫も移る）
+      // Child tasks belong to the parent's project (not sent; moving the parent moves its descendants)
       ...(isChild ? {} : { project_id: form.project_id ? Number(form.project_id) : null }),
-      // 担当者は変えたときだけ送る（前からの担当は、外れた人でも残す。ADR-0055）
+      // Send the assignee only when changed (an existing assignee stays even if they left. ADR-0055)
       ...(assigneeChanged ? { assignee_user_id: form.assignee === '' ? null : Number(form.assignee) } : {}),
-      // 子を持つタスクは時間を使わない（見込みは子の束ね）ので送らない
+      // Tasks with children don't use time (their forecast rolls up the children), so don't send it
       ...(isParent ? {} : { allocation_percent: form.allocation_percent === '' ? null : Number(form.allocation_percent) }),
       memo: form.memo || null,
     });
@@ -284,14 +284,14 @@ const TaskEdit: React.FC = () => {
 
   const titleError = showTitleError && !form.title.trim();
 
-  // 残が空のときの既定（見積 − 実績、負にしない）。見積も空なら決まらない
+  // Default when remaining is empty (estimate - actual, never negative). Undefined when the estimate is empty too
   const estNum = Number(form.estimated_hours);
   const actNum = form.actual_hours === '' ? 0 : Number(form.actual_hours);
   const defaultRemaining =
     form.estimated_hours === '' || isNaN(estNum)
       ? null
       : Math.max(Math.round((estNum - (isNaN(actNum) ? 0 : actNum)) * 100) / 100, 0);
-  // 子を持つタスクの進捗は子の積み上げなので、自分の残は入れさせない
+  // Progress of a task with children is the roll-up of its children, so don't let it have its own remaining
   const isParent = !isNew && (task?.has_subtasks ?? false);
 
   return (
@@ -453,7 +453,7 @@ const TaskEdit: React.FC = () => {
             </Box>
           </Box>
 
-          {/* プロジェクト（task #187）。子タスクは親と同じで、ここでは選べない */}
+          {/* Project (task #187). Child tasks follow the parent and can't choose here */}
           <Box>
             <FieldLabel>{t('taskEdit.project')}</FieldLabel>
             {isChild ? (
@@ -467,7 +467,7 @@ const TaskEdit: React.FC = () => {
                 fullWidth size="small" displayEmpty
                 value={form.project_id}
                 onChange={e => changeProject(String(e.target.value))}
-                // 選んだ後は道筋で出す（同じ名前の子プロジェクトが別の枝にあっても取り違えない）
+                // Once chosen, show the full path (so same-named sub-projects on other branches aren't confused)
                 renderValue={(v) => (v === '' ? t('scope.none') : projects.find((p) => String(p.id) === v)?.path ?? '')}
               >
                 <MenuItem value="">{t('scope.none')}</MenuItem>
@@ -480,7 +480,7 @@ const TaskEdit: React.FC = () => {
             )}
           </Box>
 
-          {/* 担当者（task #544）。その木のメンバーから選ぶ */}
+          {/* Assignee (task #544). Chosen from the members of the tree */}
           <Box>
             <FieldLabel>{t('taskEdit.assignee')}</FieldLabel>
             <Select
@@ -512,7 +512,7 @@ const TaskEdit: React.FC = () => {
             <Box sx={{ fontSize: 12, color: ds.textMuted, mt: '4px' }}>{t('taskEdit.assigneeHint')}</Box>
           </Box>
 
-          {/* アサイン比率（task #554、ADR-0058）。子を持つタスクは時間を使わないので出さない */}
+          {/* Allocation (task #554, ADR-0058). Hidden for tasks with children since they don't use time */}
           {!isParent && (
             <Box>
               <FieldLabel>{t('taskEdit.allocation')}</FieldLabel>

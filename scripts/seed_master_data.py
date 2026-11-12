@@ -4,8 +4,8 @@ import os
 import sys
 from pathlib import Path
 
-# スクリプト直接実行(`python scripts/seed_master_data.py`)でも `src` パッケージを
-# 解決できるよう、リポジトリルートを import パスへ加える。
+# Add the repository root to the import path so the `src` package resolves even when
+# the script is run directly (`python scripts/seed_master_data.py`).
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from src.infrastructure.database.connection import init_db  # noqa: E402
@@ -22,7 +22,7 @@ with get_db_session() as session:
         session.add(UserModel(id=1, email=admin_email, display_name="ローカルユーザー"))
         session.commit()
     elif user.email == DEFAULT_EMAIL and admin_email != DEFAULT_EMAIL:
-        # init_db() が投入した既定ユーザーを ADMIN_EMAIL で上書きする
-        # （利用者が変更済みのメールアドレスには触れない）。
+        # Overwrite the default user seeded by init_db() with ADMIN_EMAIL
+        # (an email address the user has already changed is left alone).
         user.email = admin_email
         session.commit()

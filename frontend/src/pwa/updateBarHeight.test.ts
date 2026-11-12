@@ -18,8 +18,8 @@ function fakeRoot() {
   };
 }
 
-describe('帯の高さを貼り付く部品へ渡す', () => {
-  it('出ている間だけ高さを渡し、消えたら外す', () => {
+describe('passing the bar height to sticky components', () => {
+  it('passes the height only while shown and removes it when gone', () => {
     const root = fakeRoot();
     const stop = followUpdateBarHeight({ offsetHeight: 48 }, root, () => null);
 
@@ -30,7 +30,7 @@ describe('帯の高さを貼り付く部品へ渡す', () => {
     expect(root.props.has(UPDATE_BAR_HEIGHT_VAR)).toBe(false);
   });
 
-  it('折り返して高さが変わったら渡し直し、止めたら見張りもやめる', () => {
+  it('re-passes the height when wrapping changes it, and stops observing when stopped', () => {
     const root = fakeRoot();
     const bar = { offsetHeight: 48 };
     let onResize = () => {};

@@ -1,4 +1,4 @@
-"""IdP のディスカバリ文書（``/.well-known/openid-configuration``）の取得。"""
+"""Fetching the IdP discovery document (``/.well-known/openid-configuration``)."""
 
 from __future__ import annotations
 
@@ -10,9 +10,9 @@ import httpx
 from src.domain.exceptions import AuthenticationError
 from src.infrastructure.auth.idp_http import IDP_HEADERS
 
-# 署名アルゴリズムの許可リスト。`none` と対称鍵（HS*）は入れない。
-# JWKS の公開鍵で検証する前提なので、対称鍵を許すと「公開鍵を鍵として HS256 を
-# 検証する」古典的な取り違えの入口になる。
+# Allow list of signature algorithms. `none` and symmetric keys (HS*) are excluded.
+# Verification uses public keys from JWKS, so allowing symmetric keys opens the classic
+# confusion of "verifying HS256 using the public key as the secret".
 SUPPORTED_SIGNING_ALGORITHMS = ("RS256", "RS384", "RS512", "ES256", "ES384", "ES512", "PS256", "PS384", "PS512")
 
 DISCOVERY_CACHE_SECONDS = 3600.0
@@ -35,15 +35,15 @@ class OidcDiscovery:
             alg for alg in self.id_token_signing_alg_values_supported
             if alg in SUPPORTED_SIGNING_ALGORITHMS
         ]
-        # IdP が何も告げない（または対応外しか告げない）場合でも RS256 は必須仕様
+        # Even if the IdP announces nothing (or only unsupported ones), RS256 is mandatory per spec
         return advertised or ["RS256"]
 
 
 class OidcDiscoveryClient:
-    """ディスカバリ文書を取り、しばらく使い回す。
+    """Fetch the discovery document and reuse it for a while.
 
-    毎ログインで取りに行くと IdP の可用性がそのままログインの可用性になるので、
-    既定 1 時間だけ手元に置く。
+    Fetching it on every login would make login availability equal to IdP availability, so
+    it is kept locally for 1 hour by default.
     """
 
     def __init__(self, issuer: str, *, timeout_seconds: float = 10.0,
@@ -59,8 +59,8 @@ class OidcDiscoveryClient:
         return f"{self._issuer}/.well-known/openid-configuration"
 
     def get(self) -> OidcDiscovery:
-        # 経過時間の計測なので壁時計ではなく単調増加時計を使う
-        # （NTP の補正やサマータイムでキャッシュが飛んだり居座ったりしないように）。
+        # Measures elapsed time, so use a monotonic clock rather than wall time
+        # (so NTP adjustments or DST do not drop or prolong the cache).
         now = time.monotonic()
         cache_is_fresh = (
             self._cached is not None
@@ -84,12 +84,12 @@ class OidcDiscoveryClient:
         except ValueError as exc:
             raise AuthenticationError("Identity provider returned a malformed discovery document") from exc
 
-        # 突き合わせは末尾の `/` を無視するが、保持するのは IdP が名乗ったそのままの
-        # 文字列。ID トークンの `iss` は正規化されずに届くので、ここで削ると
-        # 末尾に `/` を含む発行者（Auth0 など）で必ず検証に落ちる。
+        # The comparison ignores a trailing `/`, but what we keep is the exact string the IdP
+        # announced. The ID token's `iss` arrives unnormalized, so trimming it here would
+        # always fail verification for issuers with a trailing `/` (Auth0 etc.).
         advertised_issuer = str(payload.get("issuer", ""))
         if advertised_issuer.rstrip("/") != self._issuer:
-            # ここが食い違うと、後段の ID トークン検証で使う iss がどちらか分からなくなる
+            # If these disagree, it becomes unclear which iss the later ID token verification should use
             raise AuthenticationError(
                 f"Issuer mismatch: configured {self._issuer!r}, discovery says {advertised_issuer!r}"
             )

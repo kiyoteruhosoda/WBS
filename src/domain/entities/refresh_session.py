@@ -1,11 +1,11 @@
-"""ログインごとの控え（ADR-0069 決定 3・ADR-0071）。
+"""Per-sign-in record (ADR-0069 decision 3, ADR-0071).
 
-行が無ければそのログインは終わっている。停止の通知・定期照合・ログアウトは行を消し、
-設定の保存でアクセストークンを出し直すときに行があるかを見る。
+No row means that sign-in has ended. Logout notices, periodic reconciliation and logout delete the row,
+and re-issuing an access token on settings save checks whether the row exists.
 
-⚠ **リフレッシュトークンはもう出さない**（ADR-0071）。SSO で入ったログインはアクセストークン（5 分）だけを持ち、
-切れたら画面が見えない枠で IdP へ問い合わせて続ける。続けるたびにこの行の期限を延ばす。
-表の名前（``refresh_sessions``）は ADR-0069 のときのまま残す。
+⚠ **Refresh tokens are no longer issued** (ADR-0071). An SSO sign-in holds only an access token (5 minutes);
+when it expires the screen asks the IdP in a hidden frame and continues. Each continuation extends this row's expiry.
+The table name (``refresh_sessions``) is kept from ADR-0069.
 """
 
 from __future__ import annotations
@@ -16,7 +16,7 @@ from datetime import datetime
 
 
 def new_identifier() -> str:
-    """控えの番号（列は 32 文字）。"""
+    """Record id (the column is 32 characters)."""
     return secrets.token_hex(16)
 
 
@@ -26,9 +26,9 @@ class RefreshSession:
     user_id: int
     expires_at: datetime
     created_at: datetime
-    #: このログインを始めた（最後に続けた）IdP 側のログイン（ID トークンの ``sid``）。
-    #: ⚠ ``sid`` を出さない IdP では ``None`` になり、停止の通知は**利用者単位**でしか
-    #: 効かせられない（その人のログインがまとめて終わる）。
+    #: The IdP-side sign-in that started (or last continued) this sign-in (the ID token's ``sid``).
+    #: ⚠ With an IdP that does not issue ``sid`` this is ``None``, and logout notices can only
+    #: act **per user** (all of that person's sign-ins end together).
     idp_session_id: str | None = None
 
     def is_expired(self, now: datetime) -> bool:

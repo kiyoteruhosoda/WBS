@@ -1,12 +1,12 @@
-"""予定の分類（予定 / タスク）と、タスクの回の「済み」（task #190 / ADR-0025）
+"""Event kinds (event / task) and "done" for task occurrences (task #190 / ADR-0025)
 
 Revision ID: 0008
 Revises: 0007
 Create Date: 2026-10-01
 
-- ``calendar_events.event_type``: ``EVENT``（予定）/ ``TASK``（タスク）。**既存の予定は EVENT**。
-- ``calendar_event_completions``: タスクの分類の予定の回の済み。回は（候補日, 系列の開始時刻）、
-  単発は両方 NULL。予定を消すと一緒に消える。
+- ``calendar_events.event_type``: ``EVENT`` (event) / ``TASK`` (task). **Existing events are EVENT**.
+- ``calendar_event_completions``: done marks for occurrences of task-kind events. An occurrence is (candidate date, series start time);
+  one-off events have both NULL. Deleted together with the event.
 """
 
 from __future__ import annotations

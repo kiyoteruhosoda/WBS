@@ -1,5 +1,5 @@
-// 月の暦で日を押して休みを切り替える（task #557 / ADR-0059。プロジェクトのカレンダー・人のカレンダー）。
-// 色だけに頼らず、日の下に短い言葉（「休日」「半休」など）を出し、読み上げにも同じ言葉を入れる。
+// Month calendar where clicking a day toggles time off (task #557 / ADR-0059; project and person calendars).
+// Doesn't rely on color alone: a short word (e.g. holiday, half day) is shown under the day and the same word is used for screen readers.
 import React from 'react';
 import { Box, IconButton } from '@mui/material';
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
@@ -8,20 +8,20 @@ import { useI18n } from '../../i18n';
 import { ds } from '../../theme';
 
 export interface DayMark {
-  /** off: 休み（終日）／half: 半日・短い日／work: 稼働日・出勤・残業／inherited: 親・プロジェクトから引き継いだもの／quiet: 稼働しない曜日など */
+  /** off: day off (full day) / half: half or short day / work: working day, work on a day off, overtime / inherited: inherited from parent or project / quiet: non-working weekday etc. */
   tone: 'off' | 'half' | 'work' | 'inherited' | 'quiet';
-  /** 日の下に出す短い言葉 */
+  /** Short word shown under the day */
   label: string;
 }
 
 interface Props {
-  /** 表示する月（1 日） */
+  /** Month to show (its 1st day) */
   month: Date;
   onMonthChange: (month: Date) => void;
   markOf: (day: string) => DayMark | null;
-  /** 押せない日（引き継いだ休みなど）。省くとすべて押せる */
+  /** Days that can't be clicked (e.g. inherited time off). All clickable when omitted */
   isLocked?: (day: string) => boolean;
-  /** 押した日と、押したボタン（小さなメニューを出す場所） */
+  /** The clicked day and the clicked button (where the small menu opens) */
   onPick: (day: string, anchor: HTMLElement) => void;
   disabled?: boolean;
   ariaLabel: string;
@@ -38,7 +38,7 @@ const TONES: Record<DayMark['tone'], { bg: string; fg: string; border: string }>
   quiet: { bg: 'transparent', fg: ds.textMuted, border: ds.borderPale },
 };
 
-// 月曜はじまり（weekdays は日曜はじまりの並び）
+// Weeks start on Monday (weekdays is ordered starting from Sunday)
 const MONDAY_FIRST = [1, 2, 3, 4, 5, 6, 0];
 
 const MonthCalendarPicker: React.FC<Props> = ({

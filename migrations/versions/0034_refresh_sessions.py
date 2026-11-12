@@ -1,11 +1,11 @@
-"""ログインごとの控え refresh_sessions を足し、auth_sessions を消す（task #819 / ADR-0069）
+"""Add the per-sign-in record refresh_sessions and drop auth_sessions (task #819 / ADR-0069)
 
 Revision ID: 0034
 Revises: 0033
 Create Date: 2026-11-02
 
-⚠ auth_sessions の中身（ログイン中のセッション）は捨てる。配った直後に全員が 1 回ログインし直す（持ち主が承知）。
-戻しても中身は戻らない（空の表ができる。全員がもう 1 回ログインし直す）。
+⚠ The contents of auth_sessions (active sessions) are discarded. Right after deploy everyone signs in once more (the owner agreed).
+Downgrading does not restore the contents (an empty table is created; everyone signs in once more).
 """
 
 from __future__ import annotations

@@ -1,4 +1,4 @@
-// 実績の見える化（計画 vs 確定した実績。task #162 / ADR-0017）の応答の形。
+// Response shapes for the actuals visualization (plan vs confirmed actuals. task #162 / ADR-0017).
 import type { Task } from './index';
 
 export type RemainingReviewReason =
@@ -8,11 +8,11 @@ export type RemainingReviewReason =
   | 'stale_remaining';
 
 export interface TaskActualsRow {
-  // 見積・実績・残はタスクの一覧と同じ値
+  // Estimate, actual and remaining are the same values as in the task list
   task: Task;
   actual_first_date: string | null;
   actual_last_date: string | null;
-  // Tracker から直近に届いた締めの期間でこのタスクに入った実績（時間）
+  // Actual hours for this task in the most recent closing period received from Tracker
   latest_closed_hours: number;
   review_reasons: RemainingReviewReason[];
 }
@@ -45,7 +45,7 @@ export interface PeriodReport {
 }
 
 export interface BreakdownGroup {
-  // category:<id> / milestone:<id> / project:<id>（枝の合計）/ none（未分類）
+  // category:<id> / milestone:<id> / project:<id> (branch total) / none (unassigned)
   key: string;
   name: string | null;
   color: string | null;

@@ -1,11 +1,11 @@
-"""project_members と tasks.assignee_user_id: プロジェクトを共有し、タスクに担当者を付ける（task #544 / ADR-0055）
+"""project_members and tasks.assignee_user_id: share projects and assign tasks (task #544 / ADR-0055)
 
 Revision ID: 0024
 Revises: 0023
 Create Date: 2026-10-20
 
-メンバーはいちばん上のプロジェクトにだけ置く。今ある根のプロジェクトは作った人を管理者にし、
-今あるタスクの担当者は作った人にする（消す・書き換えるものは無い）。戻すと表と列が消えて元どおり。
+Members are placed only on top-level projects. Existing root projects get their creator as admin, and
+existing tasks get their creator as assignee (nothing is deleted or rewritten). Downgrading drops the tables and columns, restoring the previous state.
 """
 
 from __future__ import annotations
@@ -45,7 +45,7 @@ def upgrade() -> None:
         batch.create_foreign_key("fk_tasks_assignee_user_id", "users", ["assignee_user_id"], ["id"])
         batch.create_index("ix_tasks_assignee_user_id", ["assignee_user_id"])
 
-    # 今ある根のプロジェクトは作った人を管理者に、今あるタスクの担当者は作った人に（ADR-0055 決定 7）
+    # Existing root projects get their creator as admin, existing tasks their creator as assignee (ADR-0055 decision 7)
     op.execute(
         "INSERT INTO project_members (project_id, user_id, role, created_at) "
         "SELECT id, user_id, 'manager', CURRENT_TIMESTAMP FROM projects WHERE parent_project_id IS NULL"

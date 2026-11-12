@@ -42,8 +42,8 @@ def update_settings(
         timezone=body.timezone,
         language=body.language,
     ))
-    # タイムゾーンと言語はアクセストークンに載っている。出し直さないと、保存した本人の画面が
-    # 寿命（最長 5 分）まで古い値で動く（ADR-0069）。ほかの端末は次に続けたとき（ADR-0071）に揃う
+    # Time zone and language are carried in the access token. Without reissuing it, the saving user's screen
+    # keeps running with the old values until it expires (up to 5 minutes, ADR-0069). Other devices catch up on their next continuation (ADR-0071)
     if auth_settings.sso_enabled:
         token = session_auth.reissue_access(
             token=request.cookies.get(auth_settings.cookie_name), now=utcnow()

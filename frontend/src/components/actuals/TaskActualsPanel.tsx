@@ -1,4 +1,4 @@
-// タスクごとの見積・予定済み・実績・残と、残を見直す促し（task #162、ADR-0017）。
+// Per-task estimate, scheduled, actual and remaining, plus prompts to review remaining (task #162, ADR-0017).
 import React, { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
@@ -29,7 +29,7 @@ const RemainingEditor: React.FC<{ row: TaskActualsRow; onSaved: (ok: boolean) =>
     row.task.remaining_hours_entered != null ? String(row.task.remaining_hours_entered) : '',
   );
   const save = useMutation({
-    // 空にすると手の値を消して既定（見積 − 実績）へ戻す（ADR-0010）
+    // Clearing it removes the manual value and goes back to the default (estimate - actual) (ADR-0010)
     mutationFn: () => patchTask(row.task.id, { remaining_hours: value.trim() === '' ? null : Number(value) }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ACTUALS_KEY });
@@ -51,7 +51,7 @@ const RemainingEditor: React.FC<{ row: TaskActualsRow; onSaved: (ok: boolean) =>
         value={value}
         error={invalid}
         onChange={(e) => setValue(e.target.value)}
-        // 空の箱だけだと何を入れる欄か分からないので、見える名前（残（h））を付ける。空で保存すると既定へ戻る
+        // An empty box alone doesn't say what goes in it, so give it a visible label (remaining (h)). Saving empty goes back to the default
         label={t('actuals.remainingInput')}
         slotProps={{ htmlInput: { min: 0, step: 0.25 } }}
         sx={{ width: 90 }}
@@ -63,7 +63,7 @@ const RemainingEditor: React.FC<{ row: TaskActualsRow; onSaved: (ok: boolean) =>
   );
 };
 
-// 見直しの理由と、残を入れ直す欄（表の最後の列・狭い画面のカードの下）
+// Review reason and the field to re-enter remaining (last table column / bottom of the card on narrow screens)
 const ReviewCell: React.FC<{ row: TaskActualsRow; onSaved: (ok: boolean) => void }> = ({ row, onSaved }) => {
   const { t } = useI18n();
   if (row.review_reasons.length === 0) return null;
@@ -80,7 +80,7 @@ const ReviewCell: React.FC<{ row: TaskActualsRow; onSaved: (ok: boolean) => void
   );
 };
 
-// 狭い画面（sm 未満）は 9 列の表を横に送らないと見直しの欄が見えないので、1 タスク 1 枚のカードにする（task #435）
+// On narrow screens (below sm) the review field of the 9-column table is only reachable by scrolling, so use one card per task (task #435)
 const TaskActualsCards: React.FC<{ rows: TaskActualsRow[]; onSaved: (ok: boolean) => void }> = ({ rows, onSaved }) => {
   const { t } = useI18n();
   const navigate = useNavigate();
@@ -156,7 +156,7 @@ const TaskActualsPanel: React.FC<Props> = ({ reviewOnly, onReviewOnlyChange }) =
         <Box sx={{ fontSize: 13, color: ds.textSub }}>
           {latest ? t('actuals.latestClosed', dateRangeParts(latest.first_day, latest.last_day)) : t('actuals.noClosed')}
         </Box>
-        {/* 全体の進捗（「今日」から寄せた。ADR-0036）。表の範囲に依らず全部のタスク */}
+        {/* Overall progress (moved from "Today". ADR-0036). All tasks regardless of the table's range */}
         <Box sx={{ ml: { sm: 'auto' } }}><OverallProgress /></Box>
       </Box>
       {reviewOnly && <Alert severity="info" sx={{ mb: '12px' }}>{t('actuals.reviewIntro')}</Alert>}
@@ -175,7 +175,7 @@ const TaskActualsPanel: React.FC<Props> = ({ reviewOnly, onReviewOnlyChange }) =
         <TableContainer sx={{ bgcolor: ds.paper, border: `1px solid ${ds.border}`, borderRadius: '10px' }}>
           <Table size="small">
             <TableHead>
-              {/* 見出しは折り返さない（狭い画面で 1 文字ずつ縦に並び、行が 3 倍の高さになる） */}
+              {/* Don't wrap headers (on narrow screens they stack one character per line and rows get 3x taller) */}
               <TableRow sx={{ '& th': { whiteSpace: 'nowrap' } }}>
                 <TableCell>{t('actuals.colTask')}</TableCell>
                 <TableCell align="right">{t('actuals.colEstimate')}</TableCell>
@@ -190,7 +190,7 @@ const TaskActualsPanel: React.FC<Props> = ({ reviewOnly, onReviewOnlyChange }) =
             <TableBody>
               {data.rows.map((row) => {
                 const task = row.task;
-                // 子を持つタスクは子の積み上げ（ADR-0010）。残を入れさせない
+                // Tasks with children roll up their children (ADR-0010). Don't allow entering remaining
                 const actual = task.has_subtasks ? task.rollup_actual_hours : task.actual_hours;
                 const remaining = task.has_subtasks ? task.rollup_remaining_hours : task.remaining_hours;
                 return (

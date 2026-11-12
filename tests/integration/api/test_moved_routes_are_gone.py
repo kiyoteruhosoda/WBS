@@ -1,6 +1,6 @@
-"""Tracker・Scheduler へ移した口と「今日」・週次レビューの口は無い（task #543 AC2 / ADR-0070）。
+"""Routes moved to Tracker and Scheduler, and the "Today" and weekly review routes, are gone (task #543 AC2 / ADR-0070).
 
-移転モードの中継（ADR-0053・0054）も外したので、Bearer で来ても中継せず 404。
+The relocation-mode relay (ADR-0053, 0054) was removed too, so even with a Bearer token nothing is relayed: 404.
 """
 
 from __future__ import annotations
@@ -8,7 +8,7 @@ from __future__ import annotations
 import pytest
 
 GONE = [
-    # 打刻まわり（Tracker の ADR-0053）
+    # Time tracking (Tracker's ADR-0053)
     ("get", "/api/time-entries"),
     ("get", "/api/time-entries/current"),
     ("post", "/api/time-entries/start"),
@@ -24,22 +24,22 @@ GONE = [
     ("get", "/api/closing-periods"),
     ("post", "/api/closing-periods/2026-09-01/close"),
     ("get", "/api/wintrack/releases/RELEASES"),
-    # 予定まわり（Scheduler の ADR-0054）
+    # Schedules (Scheduler's ADR-0054)
     ("get", "/api/calendar/events"),
     ("post", "/api/calendar/events"),
     ("get", "/api/calendar/alarms"),
     ("get", "/api/calendars"),
     ("get", "/api/calendar-view-presets"),
-    # 端末への通知（Web Push）
+    # Device notifications (Web Push)
     ("get", "/api/push/settings"),
     ("post", "/api/push/subscriptions"),
-    # 移転モードの状態
+    # Relocation-mode status
     ("get", "/api/tracker-move"),
     ("get", "/api/scheduler-move"),
-    # 「今日」と週次レビュー
+    # "Today" and weekly review
     ("get", "/api/today"),
     ("get", "/api/reviews/weekly"),
-    # 打刻アプリのログインの戻り先と App Links（wbstimer は Tracker へ移った）
+    # Time-tracking app sign-in return URL and App Links (wbstimer moved to Tracker)
     ("get", "/.well-known/assetlinks.json"),
 ]
 

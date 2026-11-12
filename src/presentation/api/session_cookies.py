@@ -1,11 +1,11 @@
-"""ログインの Cookie の載せ方（ADR-0069・ADR-0071）。属性の付け方をここ 1 か所に集める。
+"""How the login cookies are set (ADR-0069, ADR-0071). Attributes are set in this one place.
 
-⚠ **トークンを応答本文に載せない。** 本文にも返すと、XSS が新しいトークンを読めてしまい、
-``httpOnly`` にした意味が無くなる。
+⚠ **Never put tokens in the response body.** Returning them in the body too lets XSS read the new token
+and defeats the point of ``httpOnly``.
 
-- アクセストークン: 全部の口へ届く。⚠ **Cookie はトークン（5 分）より長く残す**（ADR-0071）。切れた後に
-  画面を出さずに続ける往復が「誰の・どのログインか」を読むため（読むのは署名を確かめてから）
-- リフレッシュトークン・ログアウトの札: **もう出さない**（ADR-0071）。以前のものが手元に残っていれば落とす
+- Access token: sent to every endpoint. ⚠ **The cookie outlives the token (5 minutes)** (ADR-0071), so that after
+    expiry the silent continuation round trip can tell "whose login, which login" (read only after verifying the signature)
+- Refresh token and logout ticket: **no longer issued** (ADR-0071). Old ones still held by the client are cleared
 """
 
 from __future__ import annotations
@@ -19,7 +19,7 @@ from src.infrastructure.auth.auth_settings import (
     AuthSettings,
 )
 
-#: 以前の札の経路（ADR-0069）。落とすときに同じ経路を指さないと消えない
+#: Path of the old tickets (ADR-0069). Clearing must use the same path or they are not removed
 REFRESH_COOKIE_PATH = "/api/auth/refresh"
 LOGOUT_COOKIE_PATH = "/api/auth/logout"
 
@@ -29,18 +29,18 @@ def set_access_cookie(response: Response, settings: AuthSettings, token: str) ->
         key=settings.cookie_name,
         value=token,
         max_age=int(settings.sign_in_carry.total_seconds()),
-        # JavaScript から読めないようにする（XSS でログインを持ち出されない）
+        # Not readable from JavaScript (so XSS cannot carry off the login)
         httponly=True,
-        # 既定は https 前提。localhost の開発時だけ AUTH_COOKIE_SECURE=false にする
+        # Assumes https by default. Set AUTH_COOKIE_SECURE=false only for localhost development
         secure=settings.cookie_secure,
-        # lax なら IdP からのトップレベル遷移では送られ、他サイトの埋め込みでは送られない
+        # With lax, it is sent on top-level navigations from the IdP but not in other sites' embeds
         samesite=settings.cookie_samesite,
         path="/",
     )
 
 
 def set_session_cookies(response: Response, settings: AuthSettings, issued: IssuedSessionDTO) -> None:
-    """ログインが成立した（入った・続けた）。以前の札が残っていれば一緒に落とす。"""
+    """A login was established (signed in or continued). Old tickets, if still present, are cleared too."""
     set_access_cookie(response, settings, issued.access_token)
     _clear(response, settings, ((REFRESH_COOKIE_NAME, REFRESH_COOKIE_PATH), (LOGOUT_COOKIE_NAME, LOGOUT_COOKIE_PATH)))
 

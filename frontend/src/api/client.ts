@@ -6,8 +6,8 @@ import { continueSession, type ContinuationOutcome } from './sessionContinuation
 const client = axios.create({
   baseURL: '/api',
   headers: { 'Content-Type': 'application/json' },
-  // トークンは HttpOnly Cookie。同一オリジン（nginx 経由）なので既定でも送られるが、
-  // 意図を明示しておく。
+  // Tokens are HttpOnly cookies. Same origin (via nginx), so they are sent by default,
+  // but state the intent explicitly.
   withCredentials: true,
 });
 
@@ -16,8 +16,8 @@ type UnauthorizedHandler = () => void;
 let onUnauthorized: UnauthorizedHandler | null = null;
 
 /**
- * ログイン切れ（続けることも断られた 401）を受け取ったときの後始末を登録する。
- * 画面のどこで起きても、ログイン画面へ戻せるようにするための一本道（書きかけは `sessionDraft` が残す）。
+ * Register the cleanup for a session expiry (a 401 where continuing was also refused).
+ * A single path back to the sign-in page wherever it happens (drafts are kept by `sessionDraft`).
  */
 export const setUnauthorizedHandler = (handler: UnauthorizedHandler | null): void => {
   onUnauthorized = handler;
@@ -25,7 +25,7 @@ export const setUnauthorizedHandler = (handler: UnauthorizedHandler | null): voi
 
 const ME_PATH = '/auth/me';
 
-/** 今の Cookie でまだ通るか（ほかのタブが先に続けていたか）。届かなければ投げる。 */
+/** Whether the current cookies still work (another tab may have continued first). Throws when unreachable. */
 const stillSignedIn = async (): Promise<boolean> => {
   try {
     await client.get(ME_PATH, { probe: true } as RetriableConfig);
@@ -40,9 +40,9 @@ const stillSignedIn = async (): Promise<boolean> => {
 let continuing: Promise<ContinuationOutcome> | null = null;
 
 /**
- * ログインを続ける（ADR-0071）。SSO で入ったログインはリフレッシュトークンを持たないので、
- * 見えない枠で IdP へ `prompt=none` で問い合わせる。⚠ **同時に 401 になった要求は 1 本を待つ。**
- * トークンは行きも帰りも Cookie なので、ここでは何も持ち回さない。
+ * Continue the session (ADR-0071). SSO sessions have no refresh token, so
+ * ask the IdP with `prompt=none` in a hidden frame. ⚠ **Concurrent 401 requests wait for a single one.**
+ * Tokens travel as cookies both ways, so nothing is passed around here.
  */
 const tryContinue = (): Promise<ContinuationOutcome> => {
   continuing ??= continueSession({
@@ -61,9 +61,9 @@ const tryContinue = (): Promise<ContinuationOutcome> => {
 };
 
 type RetriableConfig = InternalAxiosRequestConfig & {
-  /** 続けたあとの再試行 */
+  /** Retry after continuing */
   continuedOnce?: boolean;
-  /** 続けるかを確かめる問い合わせ（{@link stillSignedIn}）。答えは呼んだ側が読む */
+  /** The check whether to continue ({@link stillSignedIn}). The caller reads the answer */
   probe?: boolean;
 };
 

@@ -48,7 +48,7 @@ def test_oidc_mode_reads_the_provider_settings(monkeypatch) -> None:
 
 
 def test_a_trailing_slash_on_the_issuer_is_dropped(monkeypatch) -> None:
-    # ディスカバリ文書の iss と文字列比較するので、末尾の / で不一致にしない
+    # Compared as a string with the discovery document's iss, so a trailing / must not cause a mismatch
     _use_oidc(monkeypatch, OIDC_ISSUER="https://idp.example.com/realms/wbs/")
     assert load_auth_settings().issuer == "https://idp.example.com/realms/wbs"
 
@@ -112,7 +112,7 @@ def test_a_lifetime_must_be_positive(monkeypatch) -> None:
 
 @pytest.mark.parametrize("key", ["", "short"])
 def test_sso_does_not_start_without_a_long_enough_signing_key(monkeypatch, key) -> None:
-    """⚠ 起動で落とす。乱数で埋めると、再起動のたびに全員のログインが切れる。"""
+    """⚠ Fail at startup. Filling it with random bytes would sign everyone out on every restart."""
     _use_oidc(monkeypatch, SESSION_SIGNING_KEY=key)
     with pytest.raises(AuthConfigurationError):
         load_auth_settings()
@@ -150,7 +150,7 @@ def test_a_non_numeric_ttl_is_refused(monkeypatch) -> None:
 
 
 def test_machine_readers_are_closed_by_default(monkeypatch) -> None:
-    # 宣言が無ければ、どのアプリの機械のトークンも受け取らない（ADR-0056）
+    # Without a declaration, no app's machine tokens are accepted (ADR-0056)
     _use_oidc(monkeypatch)
     assert load_auth_settings().machine_reader_client_ids == frozenset()
 

@@ -1,12 +1,12 @@
-"""プロジェクト（入れ子。task #187 / ADR-0024）。
+"""Projects (nested. task #187 / ADR-0024).
 
-- ``GET /projects``: 全部（保管したものも）を木の順（親の直後に子）で
-- ``POST /projects/{id}/move``: 親を替える・兄弟の中で並べ替える（自分の下へは 409）
-- ``DELETE /projects/{id}``: 空のものだけ（中身があれば 409。保管は ``PUT`` で ``status``）。いちばん上は管理者だけ
-- ``/projects/{id}/members``: いちばん上のプロジェクトのメンバー（task #544 / ADR-0055）。どの段の id でも根の名簿
-- ``GET /projects/people``: メンバー・担当者に選べる人
-- ``PUT /projects/{id}/members/{user_id}/capacity``: 1 日の工数と従事率（task #554 / ADR-0058）
-- ``/projects/{id}/calendar``: プロジェクトのカレンダー（根の稼働する曜日・自分と先祖の休日）と、メンバーの休み（ADR-0059）
+- ``GET /projects``: all of them (archived too) in tree order (children right after their parent)
+- ``POST /projects/{id}/move``: change the parent / reorder among siblings (409 when moving under itself)
+- ``DELETE /projects/{id}``: empty ones only (409 if it has contents; archive via ``PUT`` with ``status``). Top-level ones are admins only
+- ``/projects/{id}/members``: members of the top-level project (task #544 / ADR-0055). The root's list for an id at any level
+- ``GET /projects/people``: people selectable as members/assignees
+- ``PUT /projects/{id}/members/{user_id}/capacity``: daily hours and allocation rate (task #554 / ADR-0058)
+- ``/projects/{id}/calendar``: the project calendar (the root's working weekdays, holidays of itself and its ancestors) and members' leave (ADR-0059)
 """
 
 from __future__ import annotations
@@ -64,9 +64,9 @@ def create_project(body: ProjectCreateRequest, db: DbDep, current_user: CurrentU
 
 @router.get("/people", response_model=list[PersonResponse])
 def list_people(uc: ProjectMemberUseCasesDep, current_user: CurrentUserDep) -> list[PersonResponse]:
-    """メンバー・担当者に選べる人（WBS に 1 度でもログインし、止まっていない人。ADR-0055 決定 5）。
+    """People selectable as members/assignees (anyone who has logged in to WBS at least once and is not disabled. ADR-0055 decision 5).
 
-    管理者・印のある人には全員、ほかの人には同じ木に居る人だけ（ADR-0067）。
+    Admins and marked users see everyone; others see only people in the same tree (ADR-0067).
     """
     return [PersonResponse.from_person(p) for p in uc.candidates(current_user.user_id)]
 
@@ -81,7 +81,7 @@ def update_project(
     project_id: int, body: ProjectUpdateRequest, db: DbDep, current_user: CurrentUserDep
 ) -> ProjectResponse:
     fields = body.model_dump(exclude_unset=True)
-    # 名前と状態は空にできない（null は「変えない」と読む）
+    # Name and status cannot be emptied (null is read as "unchanged")
     for key in ("name", "status"):
         if fields.get(key) is None:
             fields.pop(key, None)
@@ -120,7 +120,7 @@ def add_member(
     uc: ProjectMemberUseCasesDep,
     current_user: CurrentUserDep,
 ) -> ProjectMembersResponse:
-    """加える（もう居れば役割を書き換える）。管理者だけ（403）。WBS に入ったことのない人は 422。"""
+    """Add (or overwrite the role if already a member). Admins only (403). 422 for someone who has never signed in to WBS."""
     return ProjectMembersResponse.from_view(
         uc.add_member(current_user.user_id, project_id, body.user_id, body.role)
     )
@@ -134,7 +134,7 @@ def change_member_role(
     uc: ProjectMemberUseCasesDep,
     current_user: CurrentUserDep,
 ) -> ProjectMembersResponse:
-    """役割を変える。管理者だけ（403）。最後の管理者を下げると 409。"""
+    """Change the role. Admins only (403). 409 when demoting the last admin."""
     return ProjectMembersResponse.from_view(
         uc.change_role(current_user.user_id, project_id, user_id, body.role)
     )
@@ -144,7 +144,7 @@ def change_member_role(
 def remove_member(
     project_id: int, user_id: int, uc: ProjectMemberUseCasesDep, current_user: CurrentUserDep
 ) -> None:
-    """外す。管理者は誰でも、メンバーは自分だけ（抜ける）。最後の管理者は 409。担当は残る。"""
+    """Remove. Admins can remove anyone, members only themselves (leave). 409 for the last admin. Assignments remain."""
     uc.remove_member(current_user.user_id, project_id, user_id)
 
 
@@ -156,7 +156,7 @@ def change_member_capacity(
     uc: ProjectMemberUseCasesDep,
     current_user: CurrentUserDep,
 ) -> ProjectMembersResponse:
-    """1 日の工数と従事率。管理者は誰のでも、メンバーは自分のだけ（ほかは 403）。"""
+    """Daily hours and allocation rate. Admins for anyone, members only their own (403 otherwise)."""
     return ProjectMembersResponse.from_view(
         uc.change_capacity(current_user.user_id, project_id, user_id, body.daily_hours, body.engagement_percent)
     )
@@ -167,10 +167,10 @@ def get_team_calendar(
     project_id: int,
     db: DbDep,
     current_user: CurrentUserDep,
-    from_date: Annotated[date | None, Query(alias="from", description="この日から（省くと全部）")] = None,
-    to_date: Annotated[date | None, Query(alias="to", description="この日まで（省くと全部）")] = None,
+    from_date: Annotated[date | None, Query(alias="from", description="From this date (omit for all)")] = None,
+    to_date: Annotated[date | None, Query(alias="to", description="Up to this date (omit for all)")] = None,
 ) -> TeamCalendarResponse:
-    """根の稼働する曜日、このプロジェクトと先祖の休日、この木のメンバーの休み（日付と休む割合だけ）。"""
+    """The root's working weekdays, holidays of this project and its ancestors, and leave of this tree's members (dates and leave ratio only)."""
     view = TeamCalendarUseCases(db).view(current_user.user_id, project_id, from_date, to_date)
     return TeamCalendarResponse.from_view(view)
 
@@ -179,7 +179,7 @@ def get_team_calendar(
 def set_team_workdays(
     project_id: int, body: TeamWorkdaysRequest, db: DbDep, current_user: CurrentUserDep
 ) -> TeamCalendarResponse:
-    """稼働する曜日（管理者だけ）。"""
+    """Working weekdays (admins only)."""
     view = TeamCalendarUseCases(db).set_workdays(current_user.user_id, project_id, body.workdays)
     return TeamCalendarResponse.from_view(view)
 
@@ -188,7 +188,7 @@ def set_team_workdays(
 def add_team_day_off(
     project_id: int, body: TeamDayOffRequest, db: DbDep, current_user: CurrentUserDep
 ) -> TeamCalendarResponse:
-    """このプロジェクトに休日を足す（同じ日なら名前を書き換える。下のプロジェクトにも足せる。管理者だけ）。"""
+    """Add a holiday to this project (overwrites the name on the same date; can also be added to lower projects; admins only)."""
     view = TeamCalendarUseCases(db).add_day_off(current_user.user_id, project_id, body.day, body.name)
     return TeamCalendarResponse.from_view(view)
 
@@ -197,7 +197,7 @@ def add_team_day_off(
 def import_japanese_holidays(
     project_id: int, body: JapaneseHolidaysRequest, db: DbDep, current_user: CurrentUserDep
 ) -> TeamCalendarResponse:
-    """その年の日本の祝日をこのプロジェクトの休日に足す（自分か先祖にある日はそのまま。管理者だけ）。"""
+    """Add that year's Japanese public holidays to this project's holidays (dates already on itself or an ancestor are left alone; admins only)."""
     view = TeamCalendarUseCases(db).import_japanese_holidays(current_user.user_id, project_id, body.year)
     return TeamCalendarResponse.from_view(view)
 
@@ -214,7 +214,7 @@ def remove_team_day_off(
 def add_extra_workday(
     project_id: int, body: TeamDayOffRequest, db: DbDep, current_user: CurrentUserDep
 ) -> TeamCalendarResponse:
-    """このプロジェクトに稼働日（稼働しない曜日に働く日）を足す。同じ日の休日は消す（管理者だけ。ADR-0060）。"""
+    """Add a working day (a day worked on a non-working weekday) to this project. Removes a holiday on the same date (admins only. ADR-0060)."""
     view = TeamCalendarUseCases(db).add_extra_workday(current_user.user_id, project_id, body.day, body.name)
     return TeamCalendarResponse.from_view(view)
 
@@ -231,8 +231,8 @@ def remove_extra_workday(
 def add_member_leave(
     project_id: int, user_id: int, body: MemberLeaveRequest, db: DbDep, current_user: CurrentUserDep
 ) -> TeamCalendarResponse:
-    """その人の休みか、その日の稼働時間（hours。残業・短い日・休日出勤）を入れる（同じ日なら書き換える。
-    本人か管理者だけ。プロジェクトをまたいで同じ）。"""
+    """Enter that person's leave, or their working hours for the day (hours: overtime, short days, holiday work) (overwrites the same date.
+    The person themself or admins only. Shared across projects)."""
     view = TeamCalendarUseCases(db).add_leave(
         current_user.user_id, project_id, user_id, body.day, body.off_percent, body.hours
     )

@@ -1,4 +1,4 @@
-"""アプリ内の利用者。IdP 上の本人と紐づく。"""
+"""A user within the app, linked to a person on the IdP."""
 
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ class UserAccount:
     timezone: str = DEFAULT_TIMEZONE
     language: str = DEFAULT_LANGUAGE
     is_active: bool = True
-    #: いちばん上のプロジェクトを作れるか（ADR-0065）。付け外しは scripts/grant_project_creator.py
+    #: Whether they can create top-level projects (ADR-0065). Granted/revoked with scripts/grant_project_creator.py
     can_create_projects: bool = False
     identities: list[FederatedIdentity] = field(default_factory=list)
     created_at: datetime | None = None
@@ -30,11 +30,11 @@ class UserAccount:
         return identity in self.identities
 
     def link_identity(self, identity: FederatedIdentity) -> None:
-        """IdP 上の本人をこの利用者に結び付ける。
+        """Link a person on the IdP to this user.
 
-        同じ発行者の別 ``sub`` を足すのは拒む。IdP を跨いだ複数所属（社内 IdP と
-        取引先 IdP など）は許すが、同じ発行者に本人が 2 つある状態は、どちらの
-        セッションでも同じ画面が出てしまうため取り違えの元になる。
+        Adding a different ``sub`` from the same issuer is refused. Belonging to several IdPs (an in-house IdP
+        and a partner IdP, etc.) is allowed, but two identities for one person at the same issuer would show
+        the same screen in either session and cause mix-ups.
         """
         if self.has_identity(identity):
             return
@@ -46,9 +46,9 @@ class UserAccount:
         self.identities.append(identity)
 
     def apply_profile(self, *, email: str | None, display_name: str | None) -> bool:
-        """IdP 側のプロフィール変更を取り込む。変化があれば True。
+        """Take in profile changes from the IdP. True if anything changed.
 
-        タイムゾーンと言語はアプリ内の設定画面で選ぶものなので上書きしない。
+        Time zone and language are chosen in the app's settings screen, so they are not overwritten.
         """
         changed = False
         if email and email != self.email:

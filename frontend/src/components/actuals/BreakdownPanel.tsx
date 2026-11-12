@@ -1,4 +1,4 @@
-// カテゴリ別・マイルストーン別の積み上げ（task #162、ADR-0017）。期間ごとに横棒 1 本、表も添える。
+// Stacked totals by category and by milestone (task #162, ADR-0017). One horizontal bar per period, plus a table.
 import React, { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
@@ -22,7 +22,7 @@ const BreakdownPanel: React.FC = () => {
   const { t } = useI18n();
   const [range, setRange] = useState<RangeValue>({ unit: 'closing', from: '', to: '' });
   const [groupBy, setGroupBy] = useState<BreakdownGroupBy>('category');
-  // サイドバーで選んだプロジェクト（と子孫）の分だけ。プロジェクト別はその直下の子ごと（task #187、ADR-0024）
+  // Only the project selected in the sidebar (and its descendants). By-project splits by its direct children (task #187, ADR-0024)
   const { scope } = useProjectScope();
   const { data, isLoading, error } = useQuery({
     queryKey: [...ACTUALS_KEY, 'breakdown', range, groupBy, scope],
@@ -30,7 +30,7 @@ const BreakdownPanel: React.FC = () => {
   });
 
   const groups = data?.groups ?? [];
-  // マイルストーン（と色の無いプロジェクト）の色は並び順で決める（同じ並びの中では同じ色）
+  // Colors of milestones (and projects without a color) come from their order (same order, same color)
   const milestoneOrder = new Map(
     groups.filter((g) => g.key.startsWith('milestone:') || g.key.startsWith('project:')).map((g, i) => [g.key, i]),
   );
@@ -66,7 +66,7 @@ const BreakdownPanel: React.FC = () => {
       )}
       {data && groups.length > 0 && (
         <>
-          {/* 凡例（積み上げの順と同じ） */}
+          {/* Legend (same order as the stack) */}
           <Box sx={{ display: 'flex', gap: '14px', flexWrap: 'wrap', mb: '12px', fontSize: 12, color: ds.textSub }}>
             {groups.map((g) => (
               <Box key={g.key} sx={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -109,7 +109,7 @@ const BreakdownPanel: React.FC = () => {
             })}
           </Box>
 
-          {/* 同じ数字を表でも（色だけに頼らない） */}
+          {/* The same numbers as a table too (don't rely on color alone) */}
           <TableContainer sx={{ bgcolor: ds.paper, border: `1px solid ${ds.border}`, borderRadius: '10px' }}>
             <Table size="small">
               <TableHead>

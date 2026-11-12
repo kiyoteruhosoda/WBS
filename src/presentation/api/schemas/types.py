@@ -1,10 +1,10 @@
-"""API スキーマで使う型。
+"""Types used by the API schemas.
 
-`UtcDatetime` は保存値を必ず ``Z`` で終わる ISO 文字列として返すための注釈付き型。
-素の ``datetime`` のまま返すとオフセットが付かず、ブラウザの ``new Date()`` が
-ローカル時刻として読むため表示が 9 時間ずれる（HANDOVER §14）。
+`UtcDatetime` is an annotated type that always returns stored values as ISO strings ending in ``Z``.
+Returning a bare ``datetime`` gives no offset, so the browser's ``new Date()`` reads it
+as local time and the display is off by 9 hours (HANDOVER §14).
 
-レスポンスに時刻を足すときは ``datetime`` ではなくこの型を使う。
+When adding a time to a response, use this type instead of ``datetime``.
 """
 
 from __future__ import annotations

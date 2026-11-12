@@ -1,4 +1,4 @@
-// CSV の書き出し（期間 × 日 × タスク × 確定実績。task #162、ADR-0017）。既定は直前の半月。
+// CSV export (period x day x task x confirmed actuals. task #162, ADR-0017). Defaults to the previous half-month.
 import React, { useState } from 'react';
 import { Box, Button, TextField } from '@mui/material';
 import { exportCsvUrl } from '../../api/actuals';

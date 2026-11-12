@@ -10,21 +10,21 @@ class ProjectRepository(ABC):
     def find_by_id(self, project_id: int) -> Project | None: ...
     @abstractmethod
     def find_by_id_for_user(self, project_id: int, user_id: int) -> Project | None:
-        """利用者に見えるなら返す（根のメンバーなら子孫も見える。ADR-0055）。"""
+        """Return it if visible to the user (members of the root also see descendants. ADR-0055)."""
     @abstractmethod
     def find_all(self, user_id: int) -> list[Project]:
-        """利用者に見えるプロジェクト全部（親子の別なく、兄弟の並び → id の順）。"""
+        """All projects visible to the user (parents and children alike, ordered by sibling order → id)."""
     @abstractmethod
     def subtree_ids(self, user_id: int, project_id: int) -> list[int]:
-        """自分と子孫の id（再帰 CTE で 1 回に引く）。見えないプロジェクトなら空。"""
+        """Ids of the project and its descendants (fetched at once with a recursive CTE). Empty if the project is not visible."""
     @abstractmethod
     def save(self, project: Project) -> Project: ...
     @abstractmethod
     def set_sort_orders(self, ordered_ids: list[int]) -> None:
-        """兄弟の並びを、渡した順に 0 から振り直す。"""
+        """Renumber siblings from 0 in the given order."""
     @abstractmethod
     def delete(self, project_id: int) -> None:
-        """行ごと消す（空であることは呼ぶ側が確かめる）。"""
+        """Delete the row (the caller checks that it is empty)."""
     @abstractmethod
     def has_contents(self, project_id: int) -> bool:
-        """子プロジェクト・消していないタスク・消していないマイルストーンのどれかがあるか。"""
+        """Whether it has any child project, non-deleted task or non-deleted milestone."""

@@ -1,6 +1,6 @@
 #!/usr/bin/env sh
-# コンテナ entrypoint。ランタイム依存は uv が作る /app/.venv 側にのみ入っているため、
-# 素の `python`（システム Python）ではなく必ず venv の Python で実行する。
+# Container entrypoint. Runtime dependencies live only in /app/.venv built by uv, so
+# always run with the venv's Python, never the bare `python` (system Python).
 set -eu
 mode="${1:-app}"
 python=/app/.venv/bin/python

@@ -1,6 +1,6 @@
-"""メンバーや担当者に選べる人を引く口（task #544 / ADR-0055 決定 5）。
+"""The port that looks up people who can be chosen as members or assignees (task #544 / ADR-0055 decision 5).
 
-選べるのは WBS に 1 度でもログインした人（``users`` の行）だけ。招待の仕組みは持たない。
+Only people who have signed in to WBS at least once (rows in ``users``) can be chosen. There is no invitation mechanism.
 """
 
 from __future__ import annotations
@@ -18,11 +18,11 @@ class Person:
 
 class PersonDirectory(Protocol):
     def choosable(self) -> list[Person]:
-        """止めていない人。SSO では assay と結び付いている人だけ（照合で外れた人・初期ユーザーは出ない）。"""
+        """People who are not deactivated. With SSO, only those linked to assay (people unlinked by reconciliation and the initial user are excluded)."""
         ...
 
     def by_ids(self, user_ids: set[int]) -> dict[int, Person]:
-        """名前を引く（止めた人・外れた人も。担当やメンバーに残っていれば名前は出す）。"""
+        """Look up names (deactivated and unlinked people too; names are shown if they remain as assignees or members)."""
         ...
 
 

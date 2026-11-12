@@ -1,4 +1,4 @@
-"""IdP で本人確認できた人を、このアプリに入れてよいかの規則。"""
+"""Rules for whether a person verified by the IdP may enter this app."""
 
 from __future__ import annotations
 
@@ -10,22 +10,22 @@ from src.domain.value_objects.identity_claims import IdentityClaims
 
 @dataclass(frozen=True)
 class ProvisioningPolicy:
-    """初回ログイン時に利用者を自動で作るか、誰を通すかの決めごと。
+    """Whether to create users automatically on first sign-in, and whom to let in.
 
-    IdP で認証が通ることと、このアプリを使ってよいことは別。テナント共用の IdP
-    （Microsoft Entra ID の common エンドポイントなど）では、素通しにすると
-    「認証は成功するので誰でも入れる」状態になる。
+    Passing authentication at the IdP and being allowed to use this app are different things. With a multi-tenant IdP
+    (such as the Microsoft Entra ID common endpoint), letting everyone through would mean
+    "anyone can get in because authentication succeeds".
     """
 
     auto_provision: bool = True
     allowed_email_domains: tuple[str, ...] = ()
     require_verified_email: bool = True
-    #: まだ結び付いていない人を、**同じメールアドレスの既存利用者**へ寄せてよいか。
+    #: Whether a not-yet-linked person may be merged into **an existing user with the same email address**.
     #:
-    #: ⚠ **既定は寄せない。** ``email_verified`` が真でも、それは「IdP がそのアドレスへ
-    #: 到達できることを確かめた」であって「この利用者が本人である」ではない。寄せる形を
-    #: 開けておくと、IdP 側で誰かのアドレスを名乗れた時点で、このアプリの既存の口座
-    #: （＝過去の作業記録）に入れてしまう。結び付けは ``(iss, sub)`` が既に在るときだけ。
+    #: ⚠ **Not merged by default.** Even if ``email_verified`` is true, it means "the IdP confirmed it can
+    #: reach that address", not "this user is that person". Leaving the merge path
+    #: open would let anyone who can claim someone's address on the IdP into that existing account in this app
+    #: (= their past work records). Linking happens only when ``(iss, sub)`` already exists.
     link_by_email: bool = False
 
     def ensure_allowed(self, claims: IdentityClaims) -> None:
@@ -40,10 +40,10 @@ class ProvisioningPolicy:
             raise AccessDeniedError(f"Email domain is not allowed: {claims.email}")
 
     def ensure_can_link_by_email(self, claims: IdentityClaims) -> None:
-        """メールアドレスで既存の利用者へ寄せてよいかを確かめる。
+        """Check whether merging into an existing user by email address is allowed.
 
-        ⚠ **2 つの関門を両方通ること。** 「寄せてよい」と決めてあっても、IdP が
-        検証していないアドレスでは寄せない。
+        ⚠ **Both gates must pass.** Even if merging is enabled, addresses
+        the IdP has not verified are not merged.
         """
         if not self.link_by_email:
             raise AccessDeniedError(
@@ -57,7 +57,7 @@ class ProvisioningPolicy:
             )
 
     def ensure_can_provision(self, claims: IdentityClaims) -> None:
-        """未登録の人を新規に作ってよいか。"""
+        """Whether a new, unregistered person may be created."""
         if not self.auto_provision:
             raise AccessDeniedError(
                 "This account is not registered and automatic provisioning is disabled"

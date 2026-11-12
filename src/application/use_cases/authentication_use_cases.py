@@ -1,18 +1,18 @@
-"""SSO ログインの筋書き。
+"""The SSO login flow.
 
-OIDC の認可コードフロー（PKCE 付き）を 2 つのユースケースに分ける。
+Splits the OIDC authorization code flow (with PKCE) into two use cases.
 
-- ``SsoLoginUseCases``          — IdP との往復（開始・コールバック・IdP 側ログアウト）
-- ``SessionAuthenticationUseCases`` — 発行済みセッションから利用者を引く
+- ``SsoLoginUseCases``          — round trips with the IdP (start, callback, IdP-side logout)
+- ``SessionAuthenticationUseCases`` — resolves the user from an issued session
 
-分けているのは、リクエストごとの本人確認に IdP を要らなくするため。ログイン後の
-毎リクエストは自前のトークンだけで済み、IdP が落ちていても操作を続けられる。
+They are split so that per-request authentication does not need the IdP. After login,
+every request only needs our own token, so work can continue even while the IdP is down.
 
-⚠ **アクセストークンの検証は DB を引かない。** 止める判定は、切れたログインを続ける往復の 1 点に集めてある
-（IdP のログイン状態・利用者が止まっていないか。ADR-0071）。リフレッシュトークンはもう出さない。
+⚠ **Access token verification does not hit the DB.** The decision to stop someone is concentrated in one point: the round trip that continues an expired login
+(the IdP's login state and whether the user is deactivated; ADR-0071). Refresh tokens are no longer issued.
 
-プロトコルの詳細（ディスカバリ・JWKS・署名検証）は ``IdentityProvider`` の向こう側。
-ここが知っているのは「誰を通すか」「誰を作るか」「セッションをどう始めて終えるか」。
+Protocol details (discovery, JWKS, signature verification) live behind ``IdentityProvider``.
+This only knows "whom to let in", "whom to create", and "how to start and end a session".
 """
 
 from __future__ import annotations
@@ -51,7 +51,7 @@ logger = logging.getLogger(__name__)
 
 
 class SessionAuthenticationUseCases:
-    """自前のトークンから利用者を決める・出し直す・ログインを終わらせる（ADR-0069・ADR-0071）。"""
+    """Resolve the user from our own token, reissue it, and end a login (ADR-0069, ADR-0071)."""
 
     def __init__(
         self,
@@ -65,11 +65,11 @@ class SessionAuthenticationUseCases:
         self._tokens = tokens
 
     def authenticate(self, *, token: str | None, now: datetime) -> AuthenticatedUserDTO:
-        """⚠ **DB を引かない。** 止まっている利用者・消えた控えは、ここでは分からない。
-        分かるのは切れて続けるときで、それまでの上限がアクセストークンの寿命になる。
+        """⚠ **Does not hit the DB.** Deactivated users and deleted login records are not detected here.
+        They are detected when an expired login is continued, so the upper bound until then is the access token lifetime.
 
-        ⚠ **この緩さを引き受けられるのは、続ける往復（:meth:`SsoLoginUseCases.complete_renewal`）が
-        IdP と DB で引き締めているからである**（ADR-0071）。
+        ⚠ **This leniency is acceptable only because the continuation round trip (:meth:`SsoLoginUseCases.complete_renewal`)
+        tightens it with the IdP and the DB** (ADR-0071).
         """
         contents = self._tokens.read_access(token, now=now) if token else None
         if contents is None:
@@ -77,10 +77,10 @@ class SessionAuthenticationUseCases:
         return contents.user
 
     def reissue_access(self, *, token: str | None, now: datetime) -> str | None:
-        """利用者の設定を変えた直後に、新しい値でアクセストークンを出し直す。
+        """Reissue the access token with new values right after the user changed their settings.
 
-        ⚠ **新しいトークンを出す経路なので DB を引く。** 引かないと、止められた人が続ける往復を断られた後も
-        設定を保存し続けるだけで入っていられる。
+        ⚠ **This path issues a new token, so it hits the DB.** Otherwise a stopped person, even after the continuation round trip is refused,
+        could stay signed in just by repeatedly saving settings.
         """
         contents = self._tokens.read_access(token, now=now) if token else None
         if contents is None or self._sessions.find(contents.session_id) is None:
@@ -91,13 +91,13 @@ class SessionAuthenticationUseCases:
         return self._tokens.access_token(_to_dto(user), session_id=contents.session_id, now=now)
 
     def continuation_of(self, *, token: str | None, now: datetime) -> ContinuedSignIn | None:
-        """手元に残った（期限切れでもよい）アクセストークンから、続けるログインを読む（ADR-0071）。⚠ 認証ではない。"""
+        """Read the login to continue from a leftover (possibly expired) access token (ADR-0071). ⚠ Not authentication."""
         return self._tokens.continuation_of(token, now=now) if token else None
 
     def revoke(self, *, token: str | None, now: datetime) -> None:
-        """このログインだけを終わらせる（ほかの端末は続く）。読めないトークンは何もしない。
+        """End only this login (other devices continue). Does nothing for an unreadable token.
 
-        アクセストークンが切れていても、控えを残す長さのうちなら読む（ADR-0071。ログアウトの札はもう無い）。
+        Reads the access token even if expired, as long as it is within the login record retention (ADR-0071; the logout ticket no longer exists).
         """
         continued = self.continuation_of(token=token, now=now)
         if continued is None:
@@ -108,17 +108,17 @@ class SessionAuthenticationUseCases:
 
 
 class MachineReaderAuthenticationUseCases:
-    """ほかのアプリのサーバーが、利用者の代わりに読み書きしに来たときの利用者（ADR-0056。Scheduler の ADR-0056 と同じ形）。
+    """The user when another app's server comes to read/write on the user's behalf (ADR-0056; same shape as Scheduler's ADR-0056).
 
-    受け取る条件（どれか 1 つでも外れたら 401）:
+    Acceptance conditions (401 if any one fails):
 
-    - 署名・``typ``・発行者・宛先（``MACHINE_AUDIENCE``）・期限（``IdentityProvider.verify_machine_token``）
-    - ``sub_type`` が**ある**（機械のトークン。人のログインのトークンでは通らない）
-    - ``client_id`` が読んでよいアプリの機械のもの（``MACHINE_READER_CLIENT_IDS``）
+    - Signature, ``typ``, issuer, audience (``MACHINE_AUDIENCE``), expiry (``IdentityProvider.verify_machine_token``)
+    - ``sub_type`` is **present** (a machine token; a human login token does not pass)
+    - ``client_id`` belongs to the machine of an app allowed to read (``MACHINE_READER_CLIENT_IDS``)
 
-    利用者は呼び手が渡す ``(iss, sub)`` で引く。⚠ **ここでも利用者を作らない。** 結び付きが無ければ 404
-    （呼び手は「WBS に一度ログインしてください」と出す）。止めた利用者は 403。
-    宛名も許可リストも空なら閉じる（既定）。
+    The user is looked up by the ``(iss, sub)`` the caller passes. ⚠ **Users are not created here either.** 404 if there is no link
+    (the caller shows "please sign in to WBS once"). 403 for a deactivated user.
+    Closed when both the audience and the allowlist are empty (default).
     """
 
     def __init__(
@@ -139,7 +139,7 @@ class MachineReaderAuthenticationUseCases:
             raise AuthenticationError("Machine readers are not accepted by this deployment")
         claims = self._idp.verify_machine_token(token, audience=self._audience)
         if "sub_type" not in claims:
-            # 人のログインのトークン（宛名が合っても）はこの口を通さない
+            # A human login token (even with a matching audience) does not pass through this endpoint
             raise AuthenticationError("Only machine tokens are accepted here")
         client_id = str(claims.get("client_id") or "")
         if client_id not in self._accepted_client_ids:
@@ -156,7 +156,7 @@ class MachineReaderAuthenticationUseCases:
 
 
 class SsoLoginUseCases:
-    """IdP との認可コードフローを進め、成功したらセッションを発行する。"""
+    """Drive the authorization code flow with the IdP and issue a session on success."""
 
     def __init__(
         self,
@@ -179,25 +179,25 @@ class SsoLoginUseCases:
         self._policy = policy
         self._tokens = tokens
         self._transaction_ttl = transaction_ttl
-        #: ログインの控えを残す長さ（ADR-0071）。続けるたびに延びる
+        #: How long to keep the login record (ADR-0071). Extended on every continuation
         self._sign_in_carry = sign_in_carry
 
     @property
     def provider_name(self) -> str:
         return self._idp.display_name
 
-    # ── 1. ログイン開始 ────────────────────────────────────────────────
+    # ── 1. Login start ────────────────────────────────────────────────
     def start_login(
         self, *, redirect_path: str | None, now: datetime, silent: bool = False
     ) -> StartedLoginDTO:
-        """``silent`` は IdP に画面を出させずに「もう入っているか」を確かめる往復（ADR-0062）。"""
+        """``silent`` is a round trip that checks "already signed in?" without the IdP showing a screen (ADR-0062)."""
         return self._start(RedirectTarget.parse(redirect_path), now=now, silent=silent)
 
     def start_renewal(self, *, continued: ContinuedSignIn | None, now: datetime) -> StartedLoginDTO:
-        """切れたログインを画面を出さずに続ける往復（見えない枠の中。ADR-0071）。常に ``prompt=none``。
+        """A round trip that continues an expired login without showing a screen (inside a hidden frame, ADR-0071). Always ``prompt=none``.
 
-        ``continued`` は手元に残っていた期限切れのトークンから読んだもの。戻ってきた人が同じなら、
-        その控えを引き継ぐ。読めなければ ``None``（新しいログインとして入る）。
+        ``continued`` is what was read from the leftover expired token. If the same person comes back,
+        their login record is carried over. ``None`` if unreadable (enters as a new login).
         """
         return self._start(
             RedirectTarget.parse(None), now=now, silent=True, purpose=LoginPurpose.RENEW, continued=continued
@@ -226,23 +226,23 @@ class SsoLoginUseCases:
             purpose=purpose,
             continued=continued,
         )
-        # 中断されたログイン（コールバックが返ってこなかった往復）を溜めない
+        # Do not accumulate abandoned logins (round trips whose callback never came back)
         self._transactions.delete_expired(now)
         self._transactions.add(transaction)
         request = self._idp.build_authorization_request(
             state=state, nonce=nonce, code_verifier=code_verifier, silent=silent
         )
-        # ``browser_binding`` は Presentation 層が短命な Cookie に載せ、コールバックで
-        # 突き合わせる。DB に state があるだけだと、攻撃者が自分で始めたログインの
-        # コールバック URL を被害者に踏ませて「攻撃者としてログイン済み」の状態に
-        # できてしまう（ログイン CSRF）。
+        # The Presentation layer puts ``browser_binding`` in a short-lived cookie and matches it
+        # on the callback. With only the state in the DB, an attacker could make a victim open the
+        # callback URL of a login the attacker started, leaving the victim "signed in as the
+        # attacker" (login CSRF).
         return StartedLoginDTO(
             authorization_url=request.authorization_url, browser_binding=state
         )
 
-    # ── 2. コールバック ───────────────────────────────────────────────
+    # ── 2. Callback ───────────────────────────────────────────────
     def purpose_of(self, state: str) -> LoginPurpose | None:
-        """戻りをどの後始末に回すか（往復は消さない）。覚えのない ``state`` なら ``None``。"""
+        """Which handling the return goes to (the round trip is not consumed). ``None`` for an unknown ``state``."""
         transaction = self._transactions.find(state)
         return None if transaction is None else transaction.purpose
 
@@ -250,7 +250,7 @@ class SsoLoginUseCases:
         transaction, claims = self._redeem(code=code, state=state, now=now, purpose=LoginPurpose.LOGIN)
         user = self._resolve_user(claims)
         user.ensure_can_sign_in()
-        # 期限の切れた控えはここで掃除する（定期実行を持たない）
+        # Clean up expired login records here (there is no scheduled job)
         self._sessions.delete_expired(now)
         session_id = self._new_sign_in(user.id, claims, now)
         return CompletedLoginDTO(
@@ -261,14 +261,14 @@ class SsoLoginUseCases:
         )
 
     def complete_renewal(self, *, code: str, state: str, now: datetime) -> IssuedSessionDTO | None:
-        """続ける往復の戻り（ADR-0071）。続けられなければ ``None``（画面はログイン画面へ送る）。
+        """Return of the continuation round trip (ADR-0071). ``None`` if it cannot continue (the screen sends to the login page).
 
-        続けないのは: 別の人が戻ってきた（IdP で別の人に入り直していた）・利用者が止まっている・
-        入れる人の決まりに外れた。往復が壊れた・IdP と話せないときは例外（呼ぶ側が ``failed`` にする）。
+        It does not continue when: a different person came back (signed in as someone else at the IdP), the user is deactivated,
+        or the admission rules reject them. A broken round trip or failure to talk to the IdP raises (the caller turns it into ``failed``).
 
-        ⚠ **続けるのは入り直しではない。** 同じ人の控えが残っていれば、それを延ばして引き継ぐ。
-        控えが消えていれば（停止の通知・定期照合・ログアウト）新しい控えを作る ——IdP がまだ入っていると
-        答えたので、新しいログインとして入れてよい。
+        ⚠ **Continuing is not signing in again.** If the same person's login record remains, it is extended and carried over.
+        If the record is gone (stop notification, periodic reconciliation, logout), a new record is created — the IdP answered
+        that they are still signed in, so letting them in as a new login is fine.
         """
         transaction, claims = self._redeem(code=code, state=state, now=now, purpose=LoginPurpose.RENEW)
         try:
@@ -294,7 +294,7 @@ class SsoLoginUseCases:
     ) -> tuple[LoginTransaction, IdentityClaims]:
         transaction = self._transactions.consume(state)
         if transaction is None or transaction.purpose is not purpose:
-            # 覚えのない state。CSRF か、コールバックの二重送信（consume は 1 回きり）。
+            # Unknown state. CSRF, or a duplicate callback submission (consume works only once).
             raise AuthenticationError("Unknown or already used login state")
         if transaction.is_expired(now):
             raise AuthenticationError("Login request has expired; please sign in again")
@@ -313,8 +313,8 @@ class SsoLoginUseCases:
                 user_id=user_id,
                 expires_at=now + self._sign_in_carry,
                 created_at=now,
-                # IdP 側のログイン（``sid``）を覚えておく。停止の通知が「その端末の
-                # ログインだけ」を指して届いたときに、そこだけを終わらせられる。
+                # Remember the IdP-side login (``sid``). When a stop notification arrives targeting
+                # "only that device's login", only that one can be ended.
                 idp_session_id=claims.session_id,
             )
         )
@@ -332,10 +332,10 @@ class SsoLoginUseCases:
         return self._new_sign_in(user_id, claims, now)
 
     def decline_silent_login(self, *, state: str, now: datetime) -> str | None:
-        """黙って確かめた往復に、IdP が「入っていない」と答えた（ADR-0062）。
+        """The IdP answered "not signed in" to a silent check round trip (ADR-0062).
 
-        往復を使い切り、それが黙って確かめた往復なら戻り先を返す（画面はエラー無しで
-        ログイン画面へ戻す）。そうでなければ ``None``（呼ぶ側は今まで通りエラーとして扱う）。
+        Consumes the round trip and, if it was a silent check, returns where to go back to (the screen returns
+        to the login page without an error). Otherwise ``None`` (the caller treats it as an error as before).
         """
         transaction = self._transactions.consume(state)
         if transaction is None or not transaction.silent or transaction.is_expired(now):
@@ -343,7 +343,7 @@ class SsoLoginUseCases:
         return transaction.redirect_target.path
 
     def decline_renewal(self, *, state: str, now: datetime) -> bool:
-        """続ける往復に、IdP が「入っていない」と答えた（ADR-0071）。往復を使い切り、続ける往復だったかを返す。"""
+        """The IdP answered "not signed in" to a continuation round trip (ADR-0071). Consumes the round trip and returns whether it was a continuation."""
         transaction = self._transactions.consume(state)
         return (
             transaction is not None
@@ -351,13 +351,13 @@ class SsoLoginUseCases:
             and not transaction.is_expired(now)
         )
 
-    # ── 3. IdP 側のログアウト ─────────────────────────────────────────
+    # ── 3. IdP-side logout ─────────────────────────────────────────
     def end_session_url(self, *, post_logout_redirect_uri: str | None) -> str | None:
         return self._idp.build_end_session_url(post_logout_redirect_uri=post_logout_redirect_uri)
 
-    # ── 利用者の突き合わせ・作成 ───────────────────────────────────────
+    # ── Matching and creating users ───────────────────────────────────────
     def _resolve_user(self, claims: IdentityClaims) -> UserAccount:
-        """``(iss, sub)`` で引き、無ければメールで既存利用者に結び付け、それも無ければ作る。"""
+        """Look up by ``(iss, sub)``; if missing, link to an existing user by email; if that is missing too, create one."""
         user = self._users.find_by_identity(claims.identity)
         if user is not None:
             if user.apply_profile(email=claims.email, display_name=claims.resolved_display_name()):
@@ -367,10 +367,10 @@ class SsoLoginUseCases:
         if claims.email is not None:
             existing = self._users.find_by_email(claims.email)
             if existing is not None:
-                # SSO 導入前から居る利用者、あるいは別 IdP で入っていた利用者。
-                # ⚠ **メールアドレスは本人の証明ではない**ので、既定では寄せない
-                #   （`ProvisioningPolicy.link_by_email`）。寄せると決めた配備でも、
-                #   検証済みのアドレスでなければ通さない。
+                # A user from before SSO was introduced, or one who signed in with another IdP.
+                # ⚠ **An email address is not proof of identity**, so by default they are not merged
+                #   (`ProvisioningPolicy.link_by_email`). Even on deployments that choose to merge,
+                #   only verified addresses are accepted.
                 self._policy.ensure_can_link_by_email(claims)
                 existing.ensure_can_sign_in()
                 existing.link_identity(claims.identity)

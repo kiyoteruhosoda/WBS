@@ -22,20 +22,20 @@ class Task:
     start_date: date | None = None
     due_date: date | None = None
     estimated_hours: Decimal | None = None
-    # 手で入れた残。空なら「見積 − 実績」を既定に使う（ADR-0010）
+    # Manually entered remaining work. If empty, "estimate − actual" is used by default (ADR-0010)
     remaining_hours: Decimal | None = None
     memo: str | None = None
     parent_task_id: int | None = None
     milestone_id: int | None = None
-    # 属するプロジェクト（空 = 未分類）。⚠ 子タスクは親と同じ値（ADR-0024）
+    # Owning project (empty = unclassified). ⚠ Child tasks carry the same value as their parent (ADR-0024)
     project_id: int | None = None
-    # 担当者（空可。根のプロジェクトのメンバー、未分類なら作った人。ADR-0055）
+    # Assignee (optional; a member of the root project, or the creator if unclassified. ADR-0055)
     assignee_user_id: int | None = None
-    # アサイン比率（%、空可）。入れたタスクは担当者の 1 日の空きのうちこの割合で毎日進む（ADR-0058）
+    # Assignment ratio (%, optional). A task with it advances every day by this share of the assignee's free time per day (ADR-0058)
     allocation_percent: int | None = None
     completed_at: datetime | None = None
     deleted_at: datetime | None = None
-    # アーカイブした時刻（打刻や実績のあるタスクは消さずにアーカイブする。ADR-0046）。一覧・付け替え先に出ない
+    # When it was archived (tasks with time entries or actuals are archived instead of deleted. ADR-0046). Not shown in lists or as a move target
     archived_at: datetime | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None
@@ -57,7 +57,7 @@ class Task:
 
     @property
     def is_open(self) -> bool:
-        """まだ作業できるか（完了・中止でなく、アーカイブもしていない）。"""
+        """Whether work can still be done on it (not done, not cancelled, not archived)."""
         return self.status not in (TaskStatus.DONE, TaskStatus.CANCELLED) and not self.is_archived
 
     @property
@@ -65,19 +65,19 @@ class Task:
         return self.archived_at is not None
 
     def archive(self, at: datetime) -> None:
-        """アーカイブする（冪等）。"""
+        """Archive it (idempotent)."""
         if self.archived_at is None:
             self.archived_at = at
 
     def progress_percent(self, actual_hours: float) -> float | None:
-        # 進捗率 = 実績 ÷（実績 ＋ 残）。子を持つタスクの積み上げは TaskProgressBoard が出す
+        # Progress = actual ÷ (actual + remaining). Roll-ups for tasks with children come from TaskProgressBoard
         return self.work_figures(actual_hours).progress_percent(done=self.status == TaskStatus.DONE)
 
     def work_figures(self, actual_hours: float) -> WorkFigures:
         return WorkFigures(actual_hours=actual_hours, remaining_hours=self.remaining_hours_from(actual_hours))
 
     def remaining_hours_from(self, actual_hours: float) -> float | None:
-        # 残は手で入れた値が優先。空なら「見積 − 実績」（負にしない）を既定にする。DONE は 0
+        # A manually entered remaining value wins. If empty, default to "estimate − actual" (never negative). DONE is 0
         if self.status == TaskStatus.DONE:
             return 0.0
         if self.remaining_hours is not None:

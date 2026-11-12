@@ -1,4 +1,4 @@
-"""ID トークン検証まわり。本物の RSA 鍵で署名して、通す／弾くを確かめる。"""
+"""ID token verification. Sign with a real RSA key and check what passes and what is rejected."""
 
 from datetime import UTC, datetime, timedelta
 
@@ -74,7 +74,7 @@ class StubDiscoveryClient(OidcDiscoveryClient):
 
 
 class OfflineJwksClient(PyJWKClient):
-    """JWKS をネットワークではなく手元の辞書から返す。"""
+    """Return the JWKS from a local dict instead of the network."""
 
     def __init__(self, jwk_set: dict) -> None:
         super().__init__(DISCOVERY.jwks_uri, cache_keys=False, cache_jwk_set=False)
@@ -109,7 +109,7 @@ def _id_token(rsa_key, **claim_overrides) -> str:
     return jwt.encode(claims, rsa_key, algorithm="RS256", headers={"kid": KEY_ID})
 
 
-# ── 認可リクエストの組み立て ───────────────────────────────────────────────
+# ── Building the authorization request ─────────────────────────────────────
 def test_authorization_url_carries_pkce_and_the_one_time_values(jwks) -> None:
     request = _provider(jwks).build_authorization_request(
         state="st", nonce="no", code_verifier="v" * 43
@@ -119,7 +119,7 @@ def test_authorization_url_carries_pkce_and_the_one_time_values(jwks) -> None:
     assert "response_type=code" in url
     assert "code_challenge_method=S256" in url
     assert "state=st" in url and "nonce=no" in url
-    # verifier そのものは URL に出さない
+    # The verifier itself must not appear in the URL
     assert "v" * 43 not in url
 
 
@@ -137,7 +137,7 @@ def test_query_string_on_the_authorization_endpoint_is_preserved(jwks) -> None:
     assert "?tenant=main&" in url
 
 
-# ── ID トークンの検証 ─────────────────────────────────────────────────────
+# ── ID token verification ──────────────────────────────────────────────────
 def test_a_valid_token_yields_the_identity(rsa_key, jwks) -> None:
     claims = _provider(jwks)._verify_id_token(_id_token(rsa_key), nonce=NONCE)
     assert claims["sub"] == "abc-123"
@@ -151,7 +151,7 @@ def test_a_token_signed_by_another_key_is_refused(jwks) -> None:
 
 
 def test_an_unsigned_token_is_refused(rsa_key, jwks) -> None:
-    # alg=none への降格。許可アルゴリズムを絞っているので通ってはいけない。
+    # Downgrade to alg=none. Allowed algorithms are restricted, so it must not pass.
     unsigned = jwt.encode(
         {"iss": ISSUER, "sub": "abc-123", "aud": CLIENT_ID, "nonce": NONCE},
         key=None,
@@ -179,7 +179,7 @@ def test_a_token_from_another_issuer_is_refused(rsa_key, jwks) -> None:
 
 
 def test_a_token_with_a_different_nonce_is_refused(rsa_key, jwks) -> None:
-    # 別のログイン向けに出た（あるいは以前の）トークンの使い回しを止める
+    # Stop reuse of a token issued for another sign-in (or an earlier one)
     with pytest.raises(AuthenticationError):
         _provider(jwks)._verify_id_token(_id_token(rsa_key, nonce="someone-elses"), nonce=NONCE)
 
@@ -201,7 +201,7 @@ def test_a_token_authorised_for_another_client_is_refused(rsa_key, jwks) -> None
 
 def test_required_claims_must_be_present(rsa_key, jwks) -> None:
     token = jwt.encode(
-        {"iss": ISSUER, "aud": CLIENT_ID, "nonce": NONCE},  # sub / exp / iat が無い
+        {"iss": ISSUER, "aud": CLIENT_ID, "nonce": NONCE},  # no sub / exp / iat
         rsa_key,
         algorithm="RS256",
         headers={"kid": KEY_ID},
@@ -210,7 +210,7 @@ def test_required_claims_must_be_present(rsa_key, jwks) -> None:
         _provider(jwks)._verify_id_token(token, nonce=NONCE)
 
 
-# ── アプリのアクセストークン（ADR-0018） ──────────────────────────────────
+# ── App access tokens (ADR-0018) ───────────────────────────────────────────
 def _access_token(rsa_key, *, typ: str = "at+jwt", **claim_overrides) -> str:
     now = datetime.now(UTC)
     claims = {
@@ -234,7 +234,7 @@ def test_a_valid_access_token_yields_its_claims(rsa_key, jwks) -> None:
 
 
 def test_an_id_token_is_not_taken_as_an_access_token(rsa_key, jwks) -> None:
-    # typ が at+jwt でないもの（ID トークン・停止の通知）を Bearer に持ち込ませない
+    # Do not let anything whose typ is not at+jwt (ID tokens, suspension notices) be used as a Bearer
     with pytest.raises(AuthenticationError):
         _provider(jwks).verify_access_token(_id_token(rsa_key))
     with pytest.raises(AuthenticationError):
@@ -266,7 +266,7 @@ def test_garbage_is_refused_without_an_unexpected_error(jwks) -> None:
         _provider(jwks).verify_access_token("not-a-jwt")
 
 
-# ── ログアウト URL ────────────────────────────────────────────────────────
+# ── Logout URL ─────────────────────────────────────────────────────────────
 def test_end_session_url_includes_the_client_and_return_address(jwks) -> None:
     url = _provider(jwks).build_end_session_url(
         post_logout_redirect_uri="https://wbs.example.com/login"
@@ -284,7 +284,7 @@ def test_no_end_session_url_when_the_idp_has_none(jwks) -> None:
     assert provider.build_end_session_url(post_logout_redirect_uri=None) is None
 
 
-# ── コード交換（トークンエンドポイント）──────────────────────────────────
+# ── Code exchange (token endpoint) ─────────────────────────────────────────
 class _FakeResponse:
     def __init__(self, payload: dict, status_code: int = 200) -> None:
         self._payload = payload
@@ -311,7 +311,7 @@ def test_exchange_code_sends_the_verifier_and_returns_the_claims(rsa_key, jwks, 
     assert posted["data"]["grant_type"] == "authorization_code"
     assert posted["data"]["code"] == "the-code"
     assert posted["data"]["code_verifier"] == "the-verifier"
-    # client_secret_basic しか告げない IdP には Authorization ヘッダで送る
+    # Send in the Authorization header to an IdP that only advertises client_secret_basic
     assert posted["auth"] == (CLIENT_ID, "s3cret")
     assert "client_secret" not in posted["data"]
 

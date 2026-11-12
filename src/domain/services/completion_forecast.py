@@ -1,17 +1,17 @@
-"""終わる見込みの日を、残りの時間を担当者の空きに積んで出す（task #555・ADR-0058）。
+"""Forecast finish dates by stacking remaining time onto assignees' free time (task #555, ADR-0058).
 
-担当者 × いちばん上のプロジェクトを 1 つの「枠」（``WorkSeat``）とし、今日から 1 日ずつ進める。
+Each assignee × top-level project is one "seat" (``WorkSeat``), advanced one day at a time from today.
 
-- その日に使える時間 = 1 日の工数 × 従事率（本人の休みの日は休む割合を引く）。本人がその日の稼働時間を決めた日
-  （残業・短い日・休日出勤）は、その時間 × 従事率（ADR-0060）
-- タスクが進むのは、そのタスクのプロジェクトのカレンダーで稼働する日か、本人が稼働時間を決めた日だけ。
-  プロジェクトのカレンダーは根の曜日に、自分と先祖の休日・稼働日を重ねたもの（近いほうが勝つ。ADR-0059・ADR-0060）。
-  進めないタスクの分の時間は、同じ人のほかのタスクへ回る
-- まずアサイン比率のあるタスクへ「比率 × その日の時間」、残った時間を比率の無いタスクへ順番に
-  （期限 → 優先度 → 計画の開始日 → 番号）。依存で待っているものは飛ばす
-- 子を持つタスクは時間を使わず、子孫の葉の見込みを束ねる
+- Hours available on a day = hours per day × allocation (minus the leave ratio on the person's leave days). On days where the person set
+  that day's working hours (overtime, short day, working on a day off), those hours × allocation (ADR-0060)
+- A task advances only on days that are working days in its project's calendar, or days the person set working hours.
+  A project's calendar is the root's weekdays overlaid with the days off and working days of itself and its ancestors (nearest wins. ADR-0059, ADR-0060).
+  Time for tasks that cannot advance goes to the same person's other tasks
+- First "ratio × that day's hours" goes to tasks with an assignment ratio, then the remaining time goes to tasks without a ratio in order
+  (due date → priority → planned start date → number). Tasks waiting on dependencies are skipped
+- Tasks with children use no time; they combine the forecasts of their descendant leaves
 
-外のもの（DB・時計）には触れない。「今日」は呼ぶ側が渡す。
+Touches nothing external (DB, clock). The caller passes "today".
 """
 
 from __future__ import annotations
@@ -31,7 +31,7 @@ from src.domain.value_objects.recurrence import WEEKDAYS_MON_TO_FRI, Weekday
 from src.domain.value_objects.task_status import TaskStatus
 
 HORIZON_DAYS = 3 * 366
-"""見込みの先の限り（今日から）。越えるものは「3 年より先」。"""
+"""Forecast horizon (from today). Anything beyond it is "more than 3 years out"."""
 
 DEFAULT_DAILY_HOURS = 8.0
 DEFAULT_ENGAGEMENT_PERCENT = 100
@@ -39,29 +39,29 @@ DEFAULT_ENGAGEMENT_PERCENT = 100
 _EPSILON = 1e-9
 
 SeatKey = tuple[int, int | None]
-"""枠の鍵 =（担当者の利用者 id, いちばん上のプロジェクトの id。未分類は None）。"""
+"""Seat key = (assignee's user id, top-level project id; None for unclassified)."""
 
 
 class ForecastGap(enum.StrEnum):
-    """見込みを出さない理由。"""
+    """Why no forecast is given."""
 
     FINISHED = "finished"
-    """完了・中止・残 0（終わっている扱い。後のタスクの依存は満たす）。"""
+    """Done, cancelled or remaining 0 (treated as finished; satisfies dependencies of later tasks)."""
     NO_ASSIGNEE = "no_assignee"
     NO_REMAINING = "no_remaining"
-    """残が決まらない（残も見積も空）。"""
+    """Remaining is undetermined (both remaining and estimate empty)."""
     NO_CAPACITY = "no_capacity"
-    """担当者の空きが無い（メンバーでない・1 日の工数か従事率が 0・稼働する曜日が無い）。"""
+    """The assignee has no free time (not a member, hours per day or allocation is 0, no working weekdays)."""
     WAITING = "waiting"
-    """先のタスクに見込みが出ない・依存が輪になっている。"""
+    """A preceding task has no forecast, or the dependencies form a cycle."""
     CHILD_UNFORECAST = "child_unforecast"
-    """子孫の葉に見込みの出ないものがある（子を持つタスク）。"""
+    """A descendant leaf has no forecast (task with children)."""
     BEYOND_HORIZON = "beyond_horizon"
 
 
 @dataclass(frozen=True)
 class TeamCalendar:
-    """プロジェクトのカレンダー: 根の稼働する曜日と、休日・稼働日（稼働しない曜日に働く日）。2 つは重ならない。"""
+    """Project calendar: the root's working weekdays, plus days off and working days (days worked on a non-working weekday). The two never overlap."""
 
     workdays: frozenset[Weekday] = WEEKDAYS_MON_TO_FRI
     days_off: frozenset[date] = frozenset()
@@ -75,15 +75,15 @@ class TeamCalendar:
 
 @dataclass(frozen=True)
 class WorkSeat:
-    """担当者がそのプロジェクトに使える時間（ADR-0058 決定 1・2）。"""
+    """Time the assignee can spend on that project (ADR-0058 decisions 1 and 2)."""
 
     daily_hours: float = DEFAULT_DAILY_HOURS
     engagement_percent: int = DEFAULT_ENGAGEMENT_PERCENT
     calendar: TeamCalendar = field(default_factory=TeamCalendar)
     leave: Mapping[date, int] = field(default_factory=dict)
-    """本人の休みの日 → 休む割合（終日 100・半休 50。プロジェクトをまたいで同じ。ADR-0059 決定 2）。"""
+    """Person's leave day → leave ratio (full day 100, half day 50; the same across projects. ADR-0059 decision 2)."""
     day_hours: Mapping[date, float] = field(default_factory=dict)
-    """本人がその日の稼働時間を決めた日 → 時間（残業・短い日・休日出勤。プロジェクトをまたいで同じ。ADR-0060）。"""
+    """Day the person set working hours → hours (overtime, short day, working on a day off; the same across projects. ADR-0060)."""
 
     @property
     def _engagement(self) -> float:
@@ -101,20 +101,20 @@ class WorkSeat:
         return usual or any(h > _EPSILON for h in self.day_hours.values())
 
     def person_hours(self, day: date) -> float:
-        """その日にこの人がこのプロジェクトに使える時間（稼働する日かどうかは見ない）。"""
+        """Hours this person can spend on this project that day (ignores whether it is a working day)."""
         if day in self.day_hours:
             return max(self.day_hours[day], 0.0) * self._engagement
         off_percent = max(min(self.leave.get(day, 0), 100), 0)
         return self.hours_per_day * (100 - off_percent) / 100
 
     def works_on(self, day: date, calendar: TeamCalendar) -> bool:
-        """その日にそのカレンダーのタスクを進めるか。稼働時間を決めた日は、休日・稼働しない曜日でも進める。"""
+        """Whether tasks of that calendar advance that day. Days with set working hours advance even on days off or non-working weekdays."""
         if self.day_hours.get(day, 0) > _EPSILON:
             return True
         return calendar.is_working_day(day)
 
     def hours_on(self, day: date) -> float:
-        """根のカレンダーでの、その日に使える時間。"""
+        """Hours available that day under the root's calendar."""
         return self.person_hours(day) if self.works_on(day, self.calendar) else 0.0
 
 
@@ -124,9 +124,9 @@ class TaskForecast:
     start: date | None = None
     finish: date | None = None
     gap: ForecastGap | None = None
-    """見込みを出さないときの理由（出すときは None）。"""
+    """Why no forecast is given (None when one is)."""
     overdue_days: int = 0
-    """見込みの終わりが期限を越える暦の日数（越えなければ 0）。"""
+    """Calendar days by which the forecast finish exceeds the due date (0 if it does not)."""
 
     @property
     def is_overdue(self) -> bool:
@@ -137,9 +137,9 @@ class TaskForecast:
 class MilestoneForecast:
     milestone_id: int
     finish: date | None
-    """付いた開いているタスクの見込みの終わりのうち、いちばん遅い日。"""
+    """Latest forecast finish among the attached open tasks."""
     unforecast_count: int
-    """見込みの出ないタスクの数（1 つでもあれば ``finish`` は「少なくとも」）。"""
+    """Number of tasks without a forecast (if any, ``finish`` means "at least")."""
     overdue_days: int = 0
 
 
@@ -149,7 +149,7 @@ class _Leaf:
     seat_key: SeatKey
     remaining: float
     started_before_today: bool
-    #: このタスクのプロジェクトのカレンダー（None なら枠の＝根のカレンダー。ADR-0059 決定 1）
+    #: Calendar of this task's project (None means the seat's = root's calendar. ADR-0059 decision 1)
     calendar: TeamCalendar | None = None
     start: date | None = None
     finish: date | None = None
@@ -163,7 +163,7 @@ class _Constraint:
 
 
 class CompletionForecast:
-    """計算の結果。タスクとマイルストーンの見込みを引く。"""
+    """Result of the computation. Look up forecasts for tasks and milestones."""
 
     def __init__(self, by_task: Mapping[int, TaskForecast], tasks: Iterable[Task]) -> None:
         self._by_task = dict(by_task)
@@ -208,10 +208,10 @@ class CompletionForecaster:
         root_of: Callable[[int | None], int | None],
         project_calendar: Callable[[int | None], TeamCalendar | None] = lambda _: None,
     ) -> CompletionForecast:
-        """``tasks`` は削除・アーカイブを除いた全部（依存と同じ枠のタスクを数えるため、絞らずに渡す）。
+        """``tasks`` is everything except deleted and archived tasks (pass it unfiltered, to count dependencies and tasks in the same seat).
 
-        ``project_calendar`` はプロジェクトの id から、そのプロジェクトのカレンダー（根の曜日に自分と先祖の休日・稼働日を
-        重ねたもの）を返す。None なら担当者の枠のカレンダー（根のもの）を使う。
+        ``project_calendar`` returns, for a project id, that project's calendar (the root's weekdays overlaid with the days off and working days
+        of itself and its ancestors). If None, the assignee's seat calendar (the root's) is used.
         """
         tasks = [t for t in tasks if t.id is not None]
         by_id = {t.id: t for t in tasks}
@@ -241,7 +241,7 @@ class CompletionForecaster:
                 result[task.id] = self._roll_up(task, board, result)
         return CompletionForecast(result, tasks)
 
-    # ---- 分ける -------------------------------------------------------------
+    # ---- Classify -----------------------------------------------------------
 
     def _classify(
         self,
@@ -273,7 +273,7 @@ class CompletionForecaster:
         by_id: Mapping[int, Task],
         board: TaskProgressBoard,
     ) -> dict[int, list[_Constraint]]:
-        """葉ごとの依存。後のタスクが子を持つなら、その子孫の葉それぞれに効かせる。"""
+        """Dependencies per leaf. If the later task has children, apply to each of its descendant leaves."""
         constraints: dict[int, list[_Constraint]] = defaultdict(list)
         for dep in dependencies:
             if dep.predecessor_task_id not in by_id or dep.successor_task_id not in by_id:
@@ -296,7 +296,7 @@ class CompletionForecaster:
         constraints: Mapping[int, list[_Constraint]],
         board: TaskProgressBoard,
     ) -> None:
-        """先のタスクに見込みが出ないなら、後のタスクも出さない（「先のタスク待ち」）。"""
+        """If a preceding task has no forecast, the later task gets none either ("waiting on a preceding task")."""
         changed = True
         while changed:
             changed = False
@@ -319,7 +319,7 @@ class CompletionForecaster:
                 return True
         return False
 
-    # ---- 1 日ずつ進める ---------------------------------------------------------
+    # ---- Advance one day at a time ----------------------------------------------
 
     def _simulate(
         self,
@@ -342,7 +342,7 @@ class CompletionForecaster:
             capacity = dict(left)
             given_today: set[int] = set()
             progressed = True
-            # SS の依存は、先のタスクが同じ日に始まれば同じ日に始められる。始まりが増える間、配り直す
+            # With SS, a task can start the same day its predecessor starts. Re-distribute while new starts keep appearing
             while progressed:
                 progressed = False
                 for key, queue in by_seat.items():
@@ -363,7 +363,7 @@ class CompletionForecaster:
             day += timedelta(days=1)
 
         self._apply_finish_floors(leaves, constraints, board)
-        # 限りまでに終わらないもの: 一度も始まらず依存を満たさないままなら「先のタスク待ち」（輪を含む）
+        # Not finished within the horizon: if never started and dependencies still unmet, it is "waiting on a preceding task" (including cycles)
         after_horizon = self._last_day + timedelta(days=1)
         unfinished = {
             leaf_id: leaf.start is None and any(
@@ -379,7 +379,7 @@ class CompletionForecaster:
 
     @staticmethod
     def _hand_out(ready: list[_Leaf], capacity: float, left: float, day: date, given_today: set[int]) -> float:
-        """比率のあるタスクへ先に「比率 × その日の時間」、残りを比率の無いタスクへ順番に。"""
+        """First "ratio × that day's hours" to tasks with a ratio, then the rest to tasks without a ratio in order."""
         shared = [leaf for leaf in ready if leaf.task.allocation_percent]
         total_percent = sum(leaf.task.allocation_percent or 0 for leaf in shared)
         scale = min(1.0, 100 / total_percent) if total_percent else 1.0
@@ -416,23 +416,23 @@ class CompletionForecaster:
         if c.kind == DependencyType.SS:
             start = self._node_start(c.predecessor_id, leaves, board)
             return start is not None and day >= start + lag
-        # FF・SF は始めるのを止めない（終わりの日の下限だけ。_apply_finish_floors）
+        # FF and SF do not block starting (they only set a lower bound on the finish date. _apply_finish_floors)
         return True
 
     def _node_finish(self, task_id: int, leaves: Mapping[int, _Leaf], board: TaskProgressBoard) -> date | None:
-        """先のタスクの終わり。もう終わっているなら昨日、まだ見込みが無いなら None。"""
+        """Finish of the preceding task. Yesterday if already finished; None if it has no forecast yet."""
         latest = self._today - timedelta(days=1)
         for leaf_id in self._leaf_ids(task_id, board):
             leaf = leaves.get(leaf_id)
             if leaf is None:
-                continue  # 終わっている（見込みの出ないものは _wait_for_unforecast で外した）
+                continue  # Finished (tasks without a forecast were removed in _wait_for_unforecast)
             if leaf.finish is None:
                 return None
             latest = max(latest, leaf.finish)
         return latest
 
     def _node_start(self, task_id: int, leaves: Mapping[int, _Leaf], board: TaskProgressBoard) -> date | None:
-        """先のタスクの始まり。もう始まっている・終わっているなら昨日、まだ始まらないなら None。"""
+        """Start of the preceding task. Yesterday if already started or finished; None if not started yet."""
         earliest: date | None = None
         for leaf_id in self._leaf_ids(task_id, board):
             leaf = leaves.get(leaf_id)
@@ -445,7 +445,7 @@ class CompletionForecaster:
     def _apply_finish_floors(
         self, leaves: dict[int, _Leaf], constraints: Mapping[int, list[_Constraint]], board: TaskProgressBoard,
     ) -> None:
-        """FF は先の終わり、SF は先の始まり（＋ずれ）より前に終わらせない。"""
+        """Do not finish before the predecessor's finish (FF) or the predecessor's start (SF), plus lag."""
         for _ in range(len(leaves) + 1):
             changed = False
             for leaf_id, leaf in leaves.items():
@@ -465,7 +465,7 @@ class CompletionForecaster:
             if not changed:
                 return
 
-    # ---- 束ねる -------------------------------------------------------------
+    # ---- Roll up ------------------------------------------------------------
 
     @staticmethod
     def _roll_up(task: Task, board: TaskProgressBoard, result: Mapping[int, TaskForecast]) -> TaskForecast:
@@ -494,7 +494,7 @@ class CompletionForecaster:
 
 
 def _work(leaf: _Leaf, hours: float, day: date) -> float:
-    """``hours`` まで進め、使った時間を返す。"""
+    """Advance by up to ``hours`` and return the hours used."""
     used = min(max(hours, 0.0), leaf.remaining)
     if used <= _EPSILON:
         return 0.0

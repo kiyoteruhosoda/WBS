@@ -1,4 +1,4 @@
-"""プロジェクトコード（task #187）: 任意。前後の空白を落とし、空は None、32 字まで。"""
+"""Project code (task #187): optional. Surrounding whitespace is stripped, empty becomes None, up to 32 characters."""
 
 from __future__ import annotations
 

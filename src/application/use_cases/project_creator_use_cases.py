@@ -1,6 +1,6 @@
-"""いちばん上のプロジェクトを作れる人の印を付け外しする（task #734 / ADR-0065）。
+"""Grant or revoke the mark for people who can create top-level projects (task #734 / ADR-0065).
 
-画面は持たない（付け外しは scripts/grant_project_creator.py から）。印は ``users.can_create_projects``。
+There is no screen (grant/revoke via scripts/grant_project_creator.py). The mark is ``users.can_create_projects``.
 """
 
 from __future__ import annotations
@@ -17,7 +17,7 @@ class ProjectCreatorUseCases:
         self._users = SqlAlchemyUserAccountRepository(session)
 
     def allow(self, email: str, allowed: bool = True) -> UserAccount:
-        """メールで指した人の印を付ける（``allowed=False`` で外す）。WBS に入ったことの無い人は 404。"""
+        """Grant the mark to the person given by email (revoke with ``allowed=False``). 404 for someone who has never signed in to WBS."""
         user = self._users.find_by_email(email)
         if user is None:
             raise NotFoundError("User", email)

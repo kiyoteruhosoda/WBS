@@ -31,7 +31,7 @@ class WorkLogResponse(BaseModel):
     memo: str | None = None
     source: WorkLogSource = WorkLogSource.MANUAL
     duration_seconds: int | None = None
-    """締めで作った行（``source=closing``）の正確な長さ（秒）。``hours`` は小数 2 桁に収めた値。"""
+    """Exact length (seconds) of a row created by closing (``source=closing``). ``hours`` is the value rounded to 2 decimals."""
     deleted_at: UtcDatetime | None = None
     created_at: UtcDatetime | None = None
     updated_at: UtcDatetime | None = None

@@ -1,12 +1,12 @@
-"""calendar_events の通知の列（task #183 / ADR-0021）
+"""Notification columns of calendar_events (task #183 / ADR-0021)
 
 Revision ID: 0006
 Revises: 0005
 Create Date: 2026-10-01
 
-NolumiaScheduler の ``EventAlarm`` を予定に戻す。``alarm_enabled`` が NULL の行は「通知を持たない」。
-**既存の予定は通知なし**（``alarm_enabled`` は NULL、4 つの列は false）。新しい予定の既定
-（4 つとも入り）は作る口（アプリケーション層）で付ける。
+Brings NolumiaScheduler's ``EventAlarm`` back to events. Rows with NULL ``alarm_enabled`` "have no notification".
+**Existing events have no notification** (``alarm_enabled`` is NULL, the 4 columns are false). The default for new events
+(all 4 on) is applied at the creation entry point (application layer).
 """
 
 from __future__ import annotations

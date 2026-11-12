@@ -1,12 +1,12 @@
-"""ログインの往復に「黙って確かめる」印を足す（task #647 / ADR-0062）
+"""Add a "silent check" flag to the sign-in round trip (task #647 / ADR-0062)
 
 Revision ID: 0029
 Revises: 0028
 Create Date: 2026-10-22
 
-- ``auth_login_transactions`` に ``silent``（``prompt=none`` で送り出した往復か）を足す
+- Add ``silent`` (whether the round trip was sent with ``prompt=none``) to ``auth_login_transactions``
 
-今の行は偽（ふつうの往復）になる。行は 10 分で使い切る一時データなので、戻すと列が消えるだけ。
+Existing rows become false (an ordinary round trip). Rows are temporary data used up within 10 minutes, so downgrading just drops the column.
 """
 
 from __future__ import annotations

@@ -11,8 +11,8 @@ export interface OverallProgressView {
 const count = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) && v >= 0 ? v : null);
 
 /**
- * 全体の進捗の 1 行に出す数。応答の項目が欠けている・数でないときは null を返し、行ごと出さない
- * （「完了 NaN / 全 undefined タスク」を出さない。task #463）。
+ * Numbers for the one-line overall progress. Returns null when response fields are missing or not numbers, hiding the whole line
+ * (never shows "NaN done / undefined tasks". task #463).
  */
 export function overallProgressView(kpi: Partial<DashboardKpi> | null | undefined): OverallProgressView | null {
   if (!kpi || typeof kpi !== 'object') return null;

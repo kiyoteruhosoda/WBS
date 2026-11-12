@@ -14,7 +14,7 @@ class CreateCategoryDTO:
 
 @dataclass
 class UpdateCategoryDTO:
-    # UNSET = 変更しない / None = 明示的にクリアする
+    # UNSET = do not change / None = explicitly clear
     name: str | UnsetType = UNSET
     color: str | None | UnsetType = UNSET
     sort_order: int | UnsetType = UNSET

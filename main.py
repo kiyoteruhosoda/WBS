@@ -52,8 +52,8 @@ def create_app(database_url: str | None = None, db_path: str | None = None) -> F
         if url is None and db_path is not None:
             url = f"sqlite:///{db_path}"
         init_engine(url)
-        # IdP で止まった人を拾い直す定期照合。⚠ **停止の受け口が取りこぼしたぶん**を
-        #   埋めるための 2 段目で、`MACHINE_CLIENT_ID` が無ければ何も起こさない。
+        # Periodic reconciliation that picks up people suspended at the IdP. ⚠ A second line that **fills in what
+        #   the suspension receiver missed**; does nothing without `MACHINE_CLIENT_ID`.
         worker = start_reconciliation_worker(auth_settings)
         try:
             yield
@@ -68,10 +68,10 @@ def create_app(database_url: str | None = None, db_path: str | None = None) -> F
         lifespan=lifespan,
     )
     app.state.build_info = build_info
-    app.state.startup_time = utcnow()  # ops.py が now との差を取るので形を揃える
+    app.state.startup_time = utcnow()  # same shape, since ops.py subtracts it from now
     app.state.auth_settings = auth_settings
-    # IdP アダプタはディスカバリ文書と JWKS を手元に貯めるので、リクエストごとに
-    # 作らず 1 つだけ持つ。SSO 無効時は None（依存が 404 を返す目印になる）。
+    # The IdP adapter caches the discovery document and JWKS, so keep a single one instead of
+    # creating one per request. None when SSO is disabled (the marker for dependencies to return 404).
     app.state.identity_provider = (
         OidcIdentityProvider(auth_settings) if auth_settings.mode is AuthMode.OIDC else None
     )
@@ -98,12 +98,12 @@ def create_app(database_url: str | None = None, db_path: str | None = None) -> F
 
     Instrumentator(excluded_handlers=["/metrics"]).instrument(app).expose(app, include_in_schema=False)
     app.add_middleware(RequestLoggingMiddleware)
-    # /health はコンテナ内部の healthcheck 用、/api/health は nginx プロキシ経由の
-    # 外形監視用（nginx は /api/ プレフィックスを剥がさずそのまま転送する）。
+    # /health is for the in-container healthcheck, /api/health for external monitoring
+    # via the nginx proxy (nginx forwards without stripping the /api/ prefix).
     app.include_router(health.router)
     app.include_router(health.router, prefix="/api")
     app.include_router(ops.router)
-    # フロントエンドは nginx 経由の /api/ しか届かないため、/info 等も /api 配下に公開する
+    # The frontend only reaches /api/ through nginx, so /info etc. are also exposed under /api
     app.include_router(ops.router, prefix="/api")
     app.include_router(admin.router)
     app.include_router(auth.router, prefix="/api")
@@ -118,7 +118,7 @@ def create_app(database_url: str | None = None, db_path: str | None = None) -> F
     app.include_router(gantt.router, prefix="/api")
     app.include_router(actuals.router, prefix="/api")
     app.include_router(settings.router, prefix="/api")
-    # ほかのアプリのサーバー（Tracker）が利用者の代わりに読み書きする口（ADR-0056）
+    # Endpoints where another app's server (Tracker) reads and writes on behalf of the user (ADR-0056)
     app.include_router(machine.router, prefix="/api")
     return app
 

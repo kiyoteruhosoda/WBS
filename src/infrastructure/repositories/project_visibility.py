@@ -1,9 +1,9 @@
-"""だれに何が見えるか（task #544 / ADR-0055）。タスク・プロジェクト・マイルストーン・依存の倉庫が共有する述語。
+"""Who can see what (task #544 / ADR-0055). Predicates shared by the task, project, milestone and dependency repositories.
 
-- プロジェクト: 自分がメンバーになっている根と、その子孫全部（再帰 CTE で 1 回に引く）
-- タスク・マイルストーン: 見えるプロジェクトに入っているもの、または未分類で自分が作ったもの
+- Projects: roots the user is a member of, plus all their descendants (fetched in one go with a recursive CTE)
+- Tasks and milestones: those in a visible project, or uncategorized ones the user created
 
-⚠ **述語はここだけに置く。** 倉庫ごとに書くと、どこか 1 か所の書き漏れで他人の木に届く。
+⚠ **Keep the predicates here only.** Writing them per repository means one omission somewhere reaches other people's trees.
 """
 
 from __future__ import annotations
@@ -19,14 +19,14 @@ from src.infrastructure.database.models import (
     TaskModel,
 )
 
-#: CTE の名前の通し番号。⚠ 1 つの文の中で述語を 2 度使う（依存の両端・再帰の起点と子）と、
-#: 同じ名前の CTE がぶつかって組み立てられない（CompileError）。呼ぶたびに別の名前にする
+#: Sequence number for CTE names. ⚠ Using the predicate twice in one statement (both ends of a dependency, or the
+#: recursion's anchor and child) makes same-named CTEs collide and fail to compile (CompileError). Use a new name per call
 _cte_numbers = count()
 
 
 def visible_project_ids(user_id: int) -> Select[tuple[int]]:
-    """自分に見えるプロジェクトの id（根のメンバー → 子孫）。``IN`` の右辺に使う。"""
-    # UNION（重複を落とす）なので、親子が万一環になっていても止まる
+    """IDs of the projects visible to the user (root memberships -> descendants). Use as the right-hand side of ``IN``."""
+    # UNION (drops duplicates), so it terminates even if parent/child links somehow form a cycle
     base = (
         select(ProjectModel.id)
         .join(ProjectMemberModel, ProjectMemberModel.project_id == ProjectModel.id)
@@ -43,7 +43,7 @@ def project_visible_to(user_id: int) -> ColumnElement[bool]:
 
 
 def task_visible_to(user_id: int, task: type[TaskModel] = TaskModel) -> ColumnElement[bool]:
-    """``task`` は別名（``aliased(TaskModel)``）も渡せる（依存の両端を見るため）。"""
+    """``task`` may also be an alias (``aliased(TaskModel)``), to check both ends of a dependency."""
     return or_(
         task.project_id.in_(visible_project_ids(user_id)),
         and_(task.project_id.is_(None), task.user_id == user_id),

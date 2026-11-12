@@ -46,7 +46,7 @@ def test_apply_profile_reports_whether_anything_changed() -> None:
 def test_apply_profile_keeps_app_side_preferences() -> None:
     user = _user(timezone="Europe/Berlin", language="en")
     user.apply_profile(email="taro@example.com", display_name="Taro Yamada")
-    # タイムゾーンと言語は設定画面で選ぶもの。IdP のログインで戻されては困る。
+    # Time zone and language are chosen in the settings screen. An IdP sign-in must not revert them.
     assert user.timezone == "Europe/Berlin"
     assert user.language == "en"
 

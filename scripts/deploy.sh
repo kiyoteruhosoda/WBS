@@ -18,8 +18,8 @@ usage() {
   cat >&2 <<USAGE
 Usage: $0 <app|migrate|reset>
 
-配置先ディレクトリ名（wbs/stg または wbs/prod）から環境を自動判定します。
-stg / prod をコマンド引数に含める必要はありません。
+The environment is detected automatically from the destination directory name (wbs/stg or wbs/prod).
+There is no need to pass stg / prod as a command argument.
 
 Examples:
   ./scripts/deploy.sh app
@@ -40,8 +40,8 @@ select_environment_profile() {
       DEFAULT_WEB_HOST_PORT=8100
       ;;
     *)
-      echo "[deploy][error] このスクリプトは wbs/stg/scripts/ または wbs/prod/scripts/ に配置して実行してください。" >&2
-      echo "  現在の配置: $SCRIPT_DIR（親ディレクトリ名 '$env_name' が stg / prod ではありません）" >&2
+      echo "[deploy][error] Place and run this script under wbs/stg/scripts/ or wbs/prod/scripts/." >&2
+      echo "  Current location: $SCRIPT_DIR (parent directory name '$env_name' is not stg / prod)" >&2
       usage
       exit 1
       ;;
@@ -188,15 +188,15 @@ elif docker image inspect "$API_IMAGE" >/dev/null 2>&1 && docker image inspect "
   warn "Image tar not found: $IMAGE_TAR — reusing already-loaded $API_IMAGE / $WEB_IMAGE"
 else
   err "Image tar not found: $IMAGE_TAR"
-  echo "  ビルドマシンで './scripts/build.sh --app-version <tag>' を実行し、dist/deploy/image.tar を $IMAGE_TAR へ配置してください。" >&2
+  echo "  On the build machine, run './scripts/build.sh --app-version <tag>' and place dist/deploy/image.tar at $IMAGE_TAR." >&2
   exit 1
 fi
 
 # ===== Sync deploy assets from the loaded image =====
-# 「リポジトリでは修正済みなのに配置先の docker-compose.yml が古いままで、同じ
-# 起動失敗が再発する」事故を防ぐため、api イメージに焼き込まれた
-# /app/docker/deploy/docker-compose.yml をロード直後に取り出し、常にイメージと
-# 同じ版を使う。環境ごとの違い（ポート等）はすべて .env 側で表現する。
+# To prevent the accident where "it is fixed in the repository but the destination docker-compose.yml
+# stays old and the same startup failure recurs", extract the /app/docker/deploy/docker-compose.yml
+# baked into the api image right after loading it, and always use the same version
+# as the image. All per-environment differences (ports etc.) are expressed in .env.
 sync_assets_from_image() {
   local cid
   if ! cid=$(docker create "$API_IMAGE" 2>/dev/null); then
@@ -225,23 +225,23 @@ if [ ! -f "$ENV_FILE" ]; then
 # Auto-generated WBS deploy env (env: $ENV_NAME).
 # Defaults are development-grade. Override before exposing externally.
 
-# --- 環境固有の実値（この環境ディレクトリに閉じた値に固定する）---
-# HOST_DATA_ROOT はこのスクリプトの DATA_PATH（reset 時の削除対象）と
-# compose のバインドマウント先を一致させるため、必ず <環境dir>/mnt にする。
+# --- Environment-specific values (pinned to values confined to this environment directory) ---
+# HOST_DATA_ROOT must be <env dir>/mnt so that this script's DATA_PATH (what reset deletes)
+# matches compose's bind mount target.
 HOST_DATA_ROOT=$BASE_DIR/mnt
-# 外部からの待受ポート（web/nginx。API へは /api/ プロキシ経由で到達する）。
+# External listening port (web/nginx; the API is reached via the /api/ proxy).
 WEB_HOST_PORT=$WEB_HOST_PORT
 
-# --- 上書き推奨（未設定なら開発向け既定値で動作する）---
-# 既定は SQLite（HOST_DATA_ROOT/data 配下）。外部 DB を使う場合のみ指定。
+# --- Override recommended (runs with development defaults when unset) ---
+# Default is SQLite (under HOST_DATA_ROOT/data). Set only when using an external DB.
 # DATABASE_URL=sqlite:////app/data/app.db
-# 初期管理者。外部公開する場合は必ず上書きして再デプロイする。
+# Initial admin. Always override and redeploy before exposing externally.
 # ADMIN_EMAIL=local@example.com
 # ADMIN_PASSWORD=change-me-strong
 
-# --- 認証 / SSO ---
-# 既定の single_user では認証がかからない。外部公開する場合は oidc にして
-# 下記を設定する（詳細は README の「SSO（IdP 連携）」）。
+# --- Auth / SSO ---
+# The default single_user has no auth. When exposing externally, switch to oidc and
+# set the following (see "SSO (IdP integration)" in the README for details).
 # AUTH_MODE=oidc
 # OIDC_ISSUER=https://idp.example.com/realms/wbs
 # OIDC_CLIENT_ID=wbs
@@ -249,11 +249,11 @@ WEB_HOST_PORT=$WEB_HOST_PORT
 # OIDC_REDIRECT_URI=https://wbs.example.com/api/auth/callback
 # OIDC_ALLOWED_EMAIL_DOMAINS=example.com
 
-# --- 任意 ---
-# デプロイ完了判定に使うヘルスチェック URL。
+# --- Optional ---
+# Health check URL used to decide that the deploy finished.
 # HEALTH_URL=http://127.0.0.1:$WEB_HOST_PORT/api/health
-# api コンテナの起動モード（app: 通常 / migrate: スキーマ同期のみ / reset: 破壊的初期化）。
-# 通常は deploy.sh のモード引数を使い、ここでは上書きしない。
+# Startup mode of the api container (app: normal / migrate: schema sync only / reset: destructive init).
+# Normally use deploy.sh's mode argument and do not override it here.
 # APP_MODE=app
 ENVEOF
 fi

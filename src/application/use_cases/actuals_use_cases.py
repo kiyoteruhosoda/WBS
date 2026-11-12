@@ -1,17 +1,17 @@
-"""実績の見える化: 計画 vs 実績（task #162 / ADR-0017）。
+"""Actuals view: plan vs actuals (task #162 / ADR-0017).
 
-確定した実績（``work_logs``。Tracker から届いたもの・手で書いたもの）を計画（タスクの見積・残）へ返す。
-予定（カレンダーの回）と打刻は Scheduler・Tracker へ移したので数えない（task #543 / ADR-0070）。
+Feeds confirmed actuals (``work_logs``: received from Tracker or entered by hand) back into the plan (task estimates and remaining).
+Calendar events and time punches moved to Scheduler and Tracker, so they are not counted (task #543 / ADR-0070).
 
-- タスクごと（``task_board``）: 見積・実績・残を 1 行に。締めの後に**残を見直す**
-  タスクを理由つきで挙げる（残は自動で減らさない。ADR-0010）
-- ガントの実績の帯（``gantt``）: タスクごとの実績の最初と最後の日・日ごとの実績
-- 期間ごと（``periods``）: 確定実績
-- 積み上げ（``breakdown``）: カテゴリ別・マイルストーン別・プロジェクト別（子の枝を積み上げる）
-- 書き出し（``export``）: 期間 × 日 × タスク × 時間
+- Per task (``task_board``): estimate, actual and remaining in one row. After closing, list tasks whose **remaining should be
+  revisited**, with reasons (remaining is never reduced automatically, ADR-0010)
+- Gantt actuals bars (``gantt``): first and last day of actuals per task, and actuals per day
+- Per period (``periods``): confirmed actuals
+- Roll-up (``breakdown``): by category, milestone and project (child branches rolled up)
+- Export (``export``): period x day x task x hours
 
-日付はすべて利用者のタイムゾーン。数えるのは本人の実績だけ。
-どれも ``project_id`` で、そのプロジェクトと子孫のタスクの分だけに絞れる（ADR-0024）。
+All dates are in the user's time zone. Only the user's own actuals are counted.
+Each can be narrowed with ``project_id`` to the tasks of that project and its descendants (ADR-0024).
 """
 
 from __future__ import annotations
@@ -55,10 +55,10 @@ from src.domain.value_objects.report_period import (
 )
 
 DEFAULT_PERIOD_COUNT = 6
-"""範囲を指さないとき、今の期間で終わる何期間を並べるか。"""
+"""When no range is given, how many periods ending with the current one to list."""
 
 MAX_EXPORT_DAYS = 366
-"""書き出しの範囲の上限（日）。"""
+"""Upper limit of the export range (days)."""
 
 
 class ActualsUseCases:
@@ -81,7 +81,7 @@ class ActualsUseCases:
         self._milestones = milestones
         self._projects = projects
 
-    # ── タスクごと ──────────────────────────────────────────────────────
+    # ── Per task ──────────────────────────────────────────────────────
 
     def task_board(
         self,
@@ -91,7 +91,7 @@ class ActualsUseCases:
         project_id: int | None = None,
         unclassified: bool = False,
     ) -> TaskActualsBoard:
-        """タスクごとの見積・実績・残と、残を見直してほしい理由。"""
+        """Estimate, actual and remaining per task, plus reasons to revisit the remaining."""
         filters: dict = {}
         if project_id is not None:
             filters["project_id"] = project_id
@@ -140,7 +140,7 @@ class ActualsUseCases:
             )
         return TaskActualsBoard(latest_closed=latest, rows=rows)
 
-    # ── ガント ──────────────────────────────────────────────────────────
+    # ── Gantt ──────────────────────────────────────────────────────────
 
     def gantt(
         self,
@@ -150,7 +150,7 @@ class ActualsUseCases:
         project_id: int | None = None,
         unclassified: bool = False,
     ) -> list[GanttActualSpan]:
-        """タスクごとの実績の帯（確定した実績から）。日ごとの塗りは ``first_day``〜``last_day`` だけ。"""
+        """Actuals bars per task (from confirmed actuals). Per-day fill only for ``first_day``-``last_day``."""
         if first_day is not None and last_day is not None and last_day < first_day:
             raise ValidationError("the end of the range must not be before its start")
         scope = self._task_scope(user_id, project_id, unclassified, self._owned_tasks(user_id))
@@ -171,7 +171,7 @@ class ActualsUseCases:
             for task_id, (first, last) in sorted(ledger.span_by_task().items())
         ]
 
-    # ── 期間ごと ────────────────────────────────────────────────────────
+    # ── Per period ────────────────────────────────────────────────────────
 
     def periods(
         self,
@@ -182,7 +182,7 @@ class ActualsUseCases:
         project_id: int | None = None,
         unclassified: bool = False,
     ) -> PeriodReport:
-        """期間ごとの確定実績。"""
+        """Confirmed actuals per period."""
         periods = self._resolve_periods(user_id, unit, first_day, last_day)
         owned = self._owned_tasks(user_id)
         scope = self._task_scope(user_id, project_id, unclassified, owned)
@@ -195,7 +195,7 @@ class ActualsUseCases:
             ],
         )
 
-    # ── 積み上げ ────────────────────────────────────────────────────────
+    # ── Roll-up ────────────────────────────────────────────────────────
 
     def breakdown(
         self,
@@ -207,10 +207,10 @@ class ActualsUseCases:
         project_id: int | None = None,
         unclassified: bool = False,
     ) -> Breakdown:
-        """期間ごとの時間を、カテゴリ別・マイルストーン別・プロジェクト別に積み上げる。
+        """Roll up hours per period by category, milestone and project.
 
-        プロジェクト別は**枝ごと**: ``project_id`` を指さなければ最上位のプロジェクトごと、
-        指せばその直下の子ごと（それぞれ孫より下の分も積む）と、そのプロジェクトに直に付いた分。
+        By project is **per branch**: without ``project_id``, per top-level project;
+        with it, per direct child (each including everything below it) plus what is attached directly to that project.
         """
         periods = self._resolve_periods(user_id, unit, first_day, last_day)
         owned = self._owned_tasks(user_id)
@@ -218,7 +218,7 @@ class ActualsUseCases:
         ledger = self._ledger(user_id, periods[0].first_day, periods[-1].last_day, scope)
         tree = ProjectTree(self._projects.find_all(user_id))
 
-        # 並びはリポジトリの順（カテゴリは並び順、マイルストーンは期限の近い順、プロジェクトは木の順）
+        # Ordered as the repositories return them (categories by position, milestones by nearest due date, projects in tree order)
         if group_by is BreakdownGroupBy.CATEGORY:
             known = [
                 BreakdownGroup(key=f"category:{c.id}", name=c.name, color=c.color)
@@ -265,7 +265,7 @@ class ActualsUseCases:
             periods=rows,
         )
 
-    # ── 書き出し ────────────────────────────────────────────────────────
+    # ── Export ────────────────────────────────────────────────────────
 
     def export(
         self,
@@ -275,7 +275,7 @@ class ActualsUseCases:
         project_id: int | None = None,
         unclassified: bool = False,
     ) -> list[ExportRow]:
-        """期間（半月）× 日 × タスク × 時間。日の順・タスクの順。"""
+        """Period (half month) x day x task x hours. Ordered by day, then task."""
         if last_day < first_day:
             raise ValidationError("the end of the range must not be before its start")
         if (last_day - first_day).days + 1 > MAX_EXPORT_DAYS:
@@ -312,7 +312,7 @@ class ActualsUseCases:
             )
         return rows
 
-    # ── 内側 ────────────────────────────────────────────────────────────
+    # ── Internals ────────────────────────────────────────────────────────────
 
     def _resolve_periods(
         self, user_id: int, unit: ReportPeriodUnit, first_day: date | None, last_day: date | None
@@ -331,7 +331,7 @@ class ActualsUseCases:
     def _task_scope(
         self, user_id: int, project_id: int | None, unclassified: bool, owned: dict[int, Task]
     ) -> set[int] | None:
-        """``project_id`` と子孫のプロジェクト（``unclassified`` なら未分類）のタスクの id。絞らないなら None。"""
+        """Task ids of ``project_id`` and its descendant projects (unclassified if ``unclassified``). None if not narrowed."""
         if unclassified:
             return {task_id for task_id, task in owned.items() if task.project_id is None}
         if project_id is None:
@@ -344,9 +344,9 @@ class ActualsUseCases:
     def _ledger(
         self, user_id: int, first_day: date, last_day: date, scope: set[int] | None = None
     ) -> DailyLedger:
-        """``first_day``〜``last_day``（利用者の日付）の確定実績を（タスク, 日）ごとに。
+        """Confirmed actuals for ``first_day``-``last_day`` (user's dates) per (task, day).
 
-        ``scope`` があれば、その中のタスクの分だけ。
+        If ``scope`` is given, only the tasks within it.
         """
         ledger = ScopedLedger(scope)
         for log in self._work_logs.find_for_user(user_id, first_day, last_day):
@@ -355,7 +355,7 @@ class ActualsUseCases:
 
 
 def _latest_closed(logs: list[WorkLog]) -> tuple[ClosedPeriod | None, list[WorkLog]]:
-    """Tracker から直近に届いた締めの期間と、その実績の行（ADR-0056。届いていなければ None と空）。"""
+    """The closed period most recently received from Tracker and its actuals rows (ADR-0056; None and empty if none received)."""
     delivered = [log for log in logs if log.tracker_first_day is not None]
     if not delivered:
         return None, []
@@ -375,7 +375,7 @@ def _latest_closed(logs: list[WorkLog]) -> tuple[ClosedPeriod | None, list[WorkL
 
 
 class ScopedLedger(DailyLedger):
-    """絞り込みの外のタスク（とタスク外の時間）を足さない帳簿。``scope`` が None なら全部足す。"""
+    """A ledger that does not add tasks outside the filter (or time outside tasks). Adds everything if ``scope`` is None."""
 
     def __init__(self, scope: set[int] | None) -> None:
         super().__init__()

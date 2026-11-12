@@ -1,19 +1,19 @@
-// タスク一覧（/tasks）をプロジェクトで見る・移す（task #187、ADR-0030）。画面に依らない計算だけを置く
-// （並べ方・束ね方・まとめて移すときの分け方・API の呼び出し）。
+// Viewing and moving the task list (/tasks) by project (task #187, ADR-0030). Holds only UI-independent logic
+// (sorting, grouping, splitting a bulk move, and the API call).
 import type { Project, Task } from '../types';
 import type { ProjectNode, ProjectScope } from './projectScope';
 import { flattenTree, toTree } from './projectScope';
 
-// ── 並べ替え ────────────────────────────────────────────────────────────
+// ── Sorting ────────────────────────────────────────────────────────────
 
 export type TaskSortKey = 'priority_score' | 'title' | 'due_date' | 'project';
 
-/** プロジェクトの木の順（id → 何番目か）。 */
+/** Project tree order (id → position). */
 export const projectOrder = (projects: readonly Project[]): Map<number, number> =>
   new Map(flattenTree(toTree(projects)).map((n, i) => [n.project.id, i]));
 
 /**
- * プロジェクトで比べる: 木の順 → 一覧に無いプロジェクト（道筋の順）→ 未分類。同じプロジェクトの中はタスク名。
+ * Compare by project: tree order → projects missing from the list (by path) → unassigned. Within a project, by task name.
  */
 const compareProject = (a: Task, b: Task, order: ReadonlyMap<number, number>): number => {
   const rank = (t: Task): [number, number, string] => {
@@ -40,7 +40,7 @@ export const compareTasks = (
   return b.priority_score - a.priority_score;
 };
 
-/** 並べる（降順は昇順を裏返す。sort は安定）。 */
+/** Sort (descending reverses ascending; sort is stable). */
 export const sortTasks = (
   tasks: readonly Task[], key: TaskSortKey, desc: boolean, projects: readonly Project[],
 ): Task[] => {
@@ -49,24 +49,24 @@ export const sortTasks = (
   return desc ? sorted.reverse() : sorted;
 };
 
-// ── プロジェクトで束ねる ────────────────────────────────────────────────
+// ── Grouping by project ────────────────────────────────────────────────
 
 export interface TaskGroupNode {
-  /** `project:<id>` か `none`（未分類） */
+  /** `project:<id>` or `none` (unassigned) */
   key: string;
   projectId: number | null;
-  /** 見出し（プロジェクト名。未分類・一覧に無いものは null → 画面で決める） */
+  /** Heading (project name; null for unassigned or missing from list → decided by the UI) */
   name: string | null;
-  /** 道筋（「親 / 子」）。未分類は null */
+  /** Path ("parent / child"). null for unassigned */
   path: string | null;
   color: string | null;
   depth: number;
   archived: boolean;
-  /** このプロジェクトに直に付いたタスク（渡した順のまま） */
+  /** Tasks attached directly to this project (in the given order) */
   tasks: Task[];
-  /** 子孫まで含めたタスクの数 */
+  /** Task count including descendants */
   total: number;
-  /** 子孫まで含めた残の合計（済み・中止は数えない。残の決まらないものも数えない） */
+  /** Total remaining including descendants (excludes done/cancelled and undetermined remaining) */
   remainingHours: number;
   children: TaskGroupNode[];
 }
@@ -74,13 +74,13 @@ export interface TaskGroupNode {
 const isOpen = (t: Task): boolean => t.status !== 'DONE' && t.status !== 'CANCELLED';
 const remainingOf = (tasks: readonly Task[]): number =>
   tasks.reduce((sum, t) => sum + (isOpen(t) && t.remaining_hours != null ? t.remaining_hours : 0), 0);
-/** 足し算の端数（0.1 + 0.2）を丸める。 */
+/** Round away float error from addition (0.1 + 0.2). */
 const round2 = (n: number): number => Math.round(n * 100) / 100;
 
 /**
- * 束ねる。プロジェクトの木の見出しの下にタスク、子プロジェクトは入れ子。タスクの無い枝は出さない。
- * 範囲でプロジェクトを選んでいれば、そのプロジェクトを最上位にする（祖先の見出しは出さない）。
- * 一覧に無いプロジェクト（読み込みの行き違い）のタスクは道筋で 1 段の束に。未分類は最後。
+ * Group: tasks under project tree headings, child projects nested. Branches without tasks are omitted.
+ * If a project is selected as scope, it becomes the top level (ancestor headings are not shown).
+ * Tasks of projects missing from the list (load race) go into one flat group by path. Unassigned comes last.
  */
 export const groupTasksByProject = (
   tasks: readonly Task[], projects: readonly Project[], scope: ProjectScope = 'all',
@@ -128,7 +128,7 @@ export const groupTasksByProject = (
   return groups;
 };
 
-/** 束の中のタスクの id（子の束も含む）。見出しのチェックで束ごと選ぶ。 */
+/** Task ids in a group (including child groups). Checking a heading selects the whole group. */
 export const groupTaskIds = (group: TaskGroupNode): number[] => [
   ...group.tasks.map((t) => t.id),
   ...group.children.flatMap(groupTaskIds),
@@ -136,12 +136,12 @@ export const groupTaskIds = (group: TaskGroupNode): number[] => [
 
 export type TaskListRow =
   | { kind: 'group'; group: TaskGroupNode }
-  /** `depth` は束の深さ、`level` は子タスクの深さ（親タスクの下に字下げする） */
+  /** `depth` is the group depth, `level` the subtask depth (indented under the parent task) */
   | { kind: 'task'; task: Task; depth: number; level: number };
 
 /**
- * 子タスクを親の直後へ（兄弟の間は渡した順のまま）。親が一覧に居ない子は、その場所に最上位として残す。
- * ⚠ 壊れた環があっても、全部のタスクを 1 回ずつ出す。
+ * Put subtasks right after their parent (siblings keep the given order). A child whose parent is not in the list stays in place as top level.
+ * ⚠ Emits every task exactly once even if there is a broken cycle.
  */
 export const nestBySubtask = (tasks: readonly Task[]): { task: Task; level: number }[] => {
   const ids = new Set(tasks.map((t) => t.id));
@@ -166,7 +166,7 @@ export const nestBySubtask = (tasks: readonly Task[]): { task: Task; level: numb
   return out;
 };
 
-/** 束を表の行に（見出し → 直のタスク（子タスクは親の下）→ 子の束）。畳んだ束の中身は出さない。 */
+/** Turn groups into table rows (heading → direct tasks (subtasks under their parent) → child groups). Collapsed group contents are not emitted. */
 export const groupRows = (groups: readonly TaskGroupNode[], collapsed: ReadonlySet<string> = new Set()): TaskListRow[] =>
   groups.flatMap((g) => [
     { kind: 'group' as const, group: g },
@@ -178,22 +178,22 @@ export const groupRows = (groups: readonly TaskGroupNode[], collapsed: ReadonlyS
       ]),
   ]);
 
-// ── まとめて移す ────────────────────────────────────────────────────────
+// ── Bulk move ────────────────────────────────────────────────────────
 
 export interface ProjectMovePlan {
-  /** 移すタスク（親の無いもの）。送るのはこれだけ */
+  /** Tasks to move (those without a parent). Only these are sent */
   roots: number[];
-  /** 祖先と一緒に移る、選んだ子タスク */
+  /** Selected subtasks that move with an ancestor */
   followers: number[];
-  /** 祖先を選んでいない子タスク。親に従うので移さない */
+  /** Subtasks whose ancestors are not selected. Not moved, as they follow their parent */
   stranded: number[];
-  /** 選んでいないが、親と一緒に移る子孫の数 */
+  /** Number of unselected descendants that move with their parent */
   carried: number;
 }
 
 /**
- * 選んだタスクを分ける（サーバの `TaskBranchSelection` と同じ決まり。ADR-0024 の 4・ADR-0030）。
- * `tasks` は消していないタスク（範囲の全部。子孫の数を数えるのに使う）。親が一覧に居ない子は根として扱う。
+ * Split the selected tasks (same rules as the server's `TaskBranchSelection`; ADR-0024 item 4, ADR-0030).
+ * `tasks` are the non-deleted tasks (the whole scope; used to count descendants). A child whose parent is not in the list is treated as a root.
  */
 export const planProjectMove = (selected: Iterable<number>, tasks: readonly Task[]): ProjectMovePlan => {
   const parentOf = new Map(tasks.map((t) => [t.id, t.parent_task_id ?? null]));
@@ -217,7 +217,7 @@ export const planProjectMove = (selected: Iterable<number>, tasks: readonly Task
     else plan.stranded.push(id);
   }
 
-  // 根の子孫のうち、選んでいないもの
+  // Descendants of the roots that are not selected
   const children = new Map<number, number[]>();
   for (const t of tasks) {
     if (t.parent_task_id != null) children.set(t.parent_task_id, [...(children.get(t.parent_task_id) ?? []), t.id]);
@@ -236,7 +236,7 @@ export const planProjectMove = (selected: Iterable<number>, tasks: readonly Task
   return plan;
 };
 
-/** 子孫が親と一緒に移る（選んだ親の下にある）タスクの id。表で「親と一緒」と見せる。 */
+/** Ids of tasks that move with their parent (under a selected parent). Shown as "with parent" in the table. */
 export const followingIds = (selected: Iterable<number>, tasks: readonly Task[]): Set<number> => {
   const chosen = new Set(selected);
   const parentOf = new Map(tasks.map((t) => [t.id, t.parent_task_id ?? null]));
@@ -259,7 +259,7 @@ export interface MoveToProjectRequest {
   body: { task_ids: number[]; project_id: number | null };
 }
 
-/** まとめて移す呼び出し（根だけを送る。移すものが無ければ null）。`projectId` が null なら未分類へ。 */
+/** Bulk move call (sends only the roots; null if nothing to move). `projectId` null moves to unassigned. */
 export const moveToProjectRequest = (plan: ProjectMovePlan, projectId: number | null): MoveToProjectRequest | null =>
   plan.roots.length === 0
     ? null

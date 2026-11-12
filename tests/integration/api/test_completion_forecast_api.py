@@ -1,7 +1,7 @@
-"""終わる見込みの日を API で返す（task #555 / ADR-0058）。
+"""Return the forecast finish date via the API (task #555 / ADR-0058).
 
-タスクの一覧・1 件・ガント・マイルストーンに見込みが載り、残・従事率・休み・比率・依存を直すと
-次に読んだときに変わる（保存しない）ことを見る。「今日」は 2026-11-02（月）に固定する。
+Check that the forecast appears on the task list, a single task, the Gantt and milestones, and that fixing remaining hours, allocation, days off, ratios or dependencies
+changes it on the next read (it is not stored). "Today" is fixed to 2026-11-02 (Monday).
 """
 
 from __future__ import annotations
@@ -67,7 +67,7 @@ def _by_title(client, **params) -> dict[str, dict]:
 
 
 def test_adr_example_through_the_api(client, other_id) -> None:
-    """ADR-0058 の計算の例を、画面と同じ API で入れて読む。"""
+    """Enter and read the ADR-0058 calculation example through the same API as the screen."""
     root = _project(client)
     pid = root["id"]
     client.post(f"/api/projects/{pid}/members", json={"user_id": other_id})
@@ -111,7 +111,7 @@ def test_adr_example_through_the_api(client, other_id) -> None:
 
 def test_editing_the_remaining_changes_the_forecast_at_once(client) -> None:
     task = _task(client, "見積", remaining_hours=8)
-    assert task["forecast_finish"] == "2026-11-02"  # 作った応答にも載る
+    assert task["forecast_finish"] == "2026-11-02"  # also included in the create response
     res = client.put(f"/api/tasks/{task['id']}", json={"remaining_hours": 24})
     assert res.json()["forecast_finish"] == "2026-11-04"
     assert client.get(f"/api/tasks/{task['id']}").json()["forecast_finish"] == "2026-11-04"
@@ -136,7 +136,7 @@ def test_engagement_and_workdays_are_used(client) -> None:
     client.put(f"/api/projects/{pid}/members/{SINGLE_USER_ID}/capacity", json={"daily_hours": 4, "engagement_percent": 100})
     client.put(f"/api/projects/{pid}/calendar/workdays", json={"workdays": ["MO", "WE"]})
     task = _task(client, "週 2 日", project_id=pid, remaining_hours=8)
-    assert task["forecast_finish"] == "2026-11-04"  # 月 4h・水 4h
+    assert task["forecast_finish"] == "2026-11-04"  # Mon 4h, Wed 4h
 
 
 def test_a_member_seen_by_another_member_has_the_same_forecast(client, other_id) -> None:
@@ -151,24 +151,24 @@ def test_a_member_seen_by_another_member_has_the_same_forecast(client, other_id)
 
 
 def test_project_and_person_calendars_move_the_forecast(client) -> None:
-    """ADR-0059: 下のプロジェクトの休日はそのプロジェクトのタスクだけ止め、半休はその日を半分にする。"""
+    """ADR-0059: a lower project's holiday stops only that project's tasks, and a half day off halves that day."""
     root = _project(client)
     child = client.post("/api/projects", json={"name": "子", "parent_project_id": root["id"]}).json()
     grandchild = client.post("/api/projects", json={"name": "孫", "parent_project_id": child["id"]}).json()
     _task(client, "根の", project_id=root["id"], remaining_hours=16)
     _task(client, "孫の", project_id=grandchild["id"], remaining_hours=8, due_date="2026-11-01")
-    # 孫のタスクが先（期限が早い）: 月に 8 時間で終わる。根のタスクは火・水
+    # The grandchild's task comes first (earlier deadline): done with 8 hours on Monday. The root's task gets Tue and Wed
     tasks = _by_title(client)
     assert tasks["孫の"]["forecast_finish"] == "2026-11-02"
     assert tasks["根の"]["forecast_finish"] == "2026-11-04"
 
-    # 子に休日を足すと孫が引き継ぎ、月は根のタスクへ回る
+    # Adding a holiday to the child is inherited by the grandchild, and Monday goes to the root's task
     client.post(f"/api/projects/{child['id']}/calendar/days-off", json={"day": "2026-11-02"})
     tasks = _by_title(client)
     assert tasks["孫の"]["forecast_finish"] == "2026-11-03"
-    assert tasks["根の"]["forecast_finish"] == "2026-11-04"  # 月 8・(火は孫へ)・水 8
+    assert tasks["根の"]["forecast_finish"] == "2026-11-04"  # Mon 8, (Tue to the grandchild), Wed 8
 
-    # 本人の半休（水）で根のタスクが後ろへずれる
+    # The person's half day off (Wed) pushes the root's task back
     res = client.post(
         f"/api/projects/{root['id']}/members/{SINGLE_USER_ID}/leave", json={"day": "2026-11-04", "off_percent": 50}
     )
@@ -178,24 +178,24 @@ def test_project_and_person_calendars_move_the_forecast(client) -> None:
 
 
 def test_working_hours_and_extra_workdays_move_the_forecast(client) -> None:
-    """ADR-0060: 残業・短い日・休日出勤と、プロジェクトの稼働日。今日 = 11/2（月）。"""
+    """ADR-0060: overtime, short days, holiday work, and project working days. Today = 11/2 (Mon)."""
     root = _project(client)
     pid = root["id"]
     _task(client, "T", project_id=pid, remaining_hours=40)
     leave = f"/api/projects/{pid}/members/{SINGLE_USER_ID}/leave"
-    assert _by_title(client)["T"]["forecast_finish"] == "2026-11-06"  # 月〜金の 8 時間 × 5
-    # 月に 16 時間の残業で、木に終わる
+    assert _by_title(client)["T"]["forecast_finish"] == "2026-11-06"  # 8 hours × 5, Mon to Fri
+    # With 16 hours of overtime on Monday, it finishes on Thursday
     client.post(leave, json={"day": "2026-11-02", "hours": 16})
     assert _by_title(client)["T"]["forecast_finish"] == "2026-11-05"
-    # 火を 0 時間にすると金に戻る
+    # Setting Tuesday to 0 hours moves it back to Friday
     client.post(leave, json={"day": "2026-11-03", "hours": 0})
     assert _by_title(client)["T"]["forecast_finish"] == "2026-11-06"
-    # 残りを増やし、土に休日出勤 8 時間で月まで延びずに土で終わる
+    # Increase remaining; with 8 hours of holiday work on Saturday it finishes on Saturday instead of slipping to Monday
     client.put(f"/api/tasks/{_by_title(client)['T']['id']}", json={"remaining_hours": 48})
     assert _by_title(client)["T"]["forecast_finish"] == "2026-11-09"
     client.post(leave, json={"day": "2026-11-07", "hours": 8})
     assert _by_title(client)["T"]["forecast_finish"] == "2026-11-07"
-    # 本人の休日出勤をやめ、プロジェクトの稼働日にしても土で終わる
+    # Drop the person's holiday work and make it a project working day instead: still finishes on Saturday
     client.delete(f"{leave}/2026-11-07")
     client.post(f"/api/projects/{pid}/calendar/extra-workdays", json={"day": "2026-11-07"})
     assert _by_title(client)["T"]["forecast_finish"] == "2026-11-07"

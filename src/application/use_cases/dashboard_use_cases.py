@@ -22,7 +22,7 @@ class DashboardUseCases:
         today = self._user_today(user_id)
         week_start = today - timedelta(days=today.weekday())
         week_end = week_start + timedelta(days=6)
-        # 週の区切りは利用者の日付。保存値は UTC なので UTC の半開区間へ直す。
+        # Week boundaries follow the user's dates. Stored values are UTC, so convert to a half-open UTC interval.
         week_from, week_until = self._clock.utc_window(user_id, week_start, week_end)
         total = self._session.execute(
             select(func.count()).where(TaskModel.user_id == user_id, TaskModel.deleted_at.is_(None), TaskModel.archived_at.is_(None))

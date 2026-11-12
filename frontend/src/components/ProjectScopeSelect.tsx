@@ -1,6 +1,6 @@
-// サイドバーの「表示するプロジェクト」（task #187、ADR-0024）。タスク・ガント・カレンダーの期限・
-// 実績・マイルストーンが、選んだプロジェクト（と子孫）に絞られる。タスク一覧の上にも同じものを置く
-// （`inline`。状態は 1 つなので、どちらで替えてももう一方が付いてくる。ADR-0030）。
+// The sidebar's "displayed project" (task #187, ADR-0024). Tasks, Gantt, calendar due dates,
+// actuals and milestones are filtered to the selected project (and its descendants). The same control is also placed above the task list
+// (`inline`. There is one state, so changing either one updates the other. ADR-0030).
 import React from 'react';
 import { Box, MenuItem, TextField } from '@mui/material';
 import { useI18n } from '../i18n';
@@ -9,7 +9,7 @@ import { pickableProjects, type ProjectScope } from '../projects/projectScope';
 import { useProjectScope } from '../projects/useProjectScope';
 
 interface Props {
-  /** タスク一覧のツールバーに置く（余白を持たない・幅を決める） */
+  /** Placed in the task list toolbar (no margin, fixed width) */
   inline?: boolean;
 }
 
@@ -17,7 +17,7 @@ const ProjectScopeSelect: React.FC<Props> = ({ inline = false }) => {
   const { t } = useI18n();
   const { scope, setScope, projects } = useProjectScope();
   const options = pickableProjects(projects, typeof scope === 'number' ? scope : null);
-  // 一覧の上では道筋で見せる（「設計」だけでは、どの案件のものか分からない）
+  // Above the list, show the full path (a bare name like "Design" doesn't tell which project it belongs to)
   const pathOf = (v: unknown): string => {
     if (v === 'all') return t('scope.all');
     if (v === 'none') return t('scope.none');

@@ -13,7 +13,7 @@ class MilestoneCreateRequest(BaseModel):
     name: str
     due_date: date | None = None
     description: str | None = None
-    # 空 = 未分類（どのタスクにも付けられる）。プロジェクトのものは、そのプロジェクトと子孫のタスクに付く
+    # Empty = uncategorized (can be attached to any task). A project's milestone attaches to tasks of that project and its descendants
     project_id: int | None = None
 
 
@@ -21,7 +21,7 @@ class MilestoneUpdateRequest(BaseModel):
     name: str | None = None
     due_date: date | None = None
     description: str | None = None
-    # null で未分類へ。移した先の外のタスクからは、このマイルストーンが外れる（ADR-0024）
+    # null makes it uncategorized. Tasks outside the new destination lose this milestone (ADR-0024)
     project_id: int | None = None
 
 
@@ -35,8 +35,8 @@ class MilestoneResponse(BaseModel):
     deleted_at: UtcDatetime | None = None
     created_at: UtcDatetime | None = None
     updated_at: UtcDatetime | None = None
-    # 終わる見込み（ADR-0058）: 付いた開いているタスクの見込みの終わりのうち、いちばん遅い日。
-    # 見込みの出ないタスクが forecast_unforecast_count 件あれば「少なくとも」の意味
+    # Expected finish (ADR-0058): the latest forecast end among the open tasks attached to it.
+    # If forecast_unforecast_count tasks have no forecast, it means "at least"
     forecast_finish: date | None = None
     forecast_unforecast_count: int = 0
     forecast_overdue_days: int = 0

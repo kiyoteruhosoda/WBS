@@ -1,11 +1,11 @@
-"""work_logs.tracker_first_day: Tracker で締めた時間を受け取る（task #540 / ADR-0056）
+"""work_logs.tracker_first_day: receive hours closed in Tracker (task #540 / ADR-0056)
 
 Revision ID: 0025
 Revises: 0024
 Create Date: 2026-10-20
 
-Tracker から受け取った行（``source=tracker``）は、Tracker の締めの期間（利用者 × 初日）ごとに置き換え、取り消しで消す。
-今までの行は空（手で書いた行・WBS 自身の締めの行）。
+Rows received from Tracker (``source=tracker``) are replaced per Tracker closing period (user x first day) and deleted on cancellation.
+Existing rows are empty (hand-written rows and rows from WBS's own closing).
 """
 
 from __future__ import annotations

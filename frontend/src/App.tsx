@@ -20,7 +20,7 @@ import AppUpdatePrompt from './components/AppUpdatePrompt';
 import { watchForUpdate } from './pwa/appUpdate';
 import { isNetworkFailure, noteRequestOutcome } from './pwa/connectivity';
 
-// 取得の成否で「オフラインです」を出し消しする（task #192 / ADR-0028）。応答なしで落ちたらオフライン、何か取れたら戻す
+// Show/hide "offline" based on fetch results (task #192 / ADR-0028). Offline when a fetch fails with no response, back once anything succeeds
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, staleTime: 30_000 } },
   queryCache: new QueryCache({
@@ -33,19 +33,19 @@ const queryClient = new QueryClient({
   }),
 });
 
-/** ログインの内側の画面（SSO 有効なら未ログインでログイン画面を出す）。 */
+/** Screens behind sign-in (with SSO enabled, signed-out users get the sign-in page). */
 const SignedInApp: React.FC = () => (
   <AuthProvider>
     <I18nProvider>
       <Routes>
         <Route path="/" element={<Layout />}>
-          {/* 最初の画面はタスク（「今日」は外した。task #543・ADR-0070） */}
+          {/* The first screen is tasks ("today" was removed. task #543, ADR-0070) */}
           <Route index element={<Navigate to="/tasks" replace />} />
           <Route path="tasks" element={<TaskList />} />
           <Route path="tasks/new" element={<TaskEdit />} />
           <Route path="tasks/:id" element={<TaskEdit />} />
           <Route path="gantt" element={<GanttPage />} />
-          {/* 実績の見える化。/actuals/review は Tracker の締めが届いた後に「残を見直す」（task #162） */}
+          {/* Actuals visualization. /actuals/review is "review remaining" after Tracker's closing arrives (task #162) */}
           <Route path="actuals" element={<ActualsPage />} />
           <Route path="actuals/:view" element={<ActualsPage />} />
           <Route path="inbox" element={<Inbox />} />
@@ -53,9 +53,9 @@ const SignedInApp: React.FC = () => (
           <Route path="categories" element={<CategoriesPage />} />
           <Route path="milestones" element={<MilestonesPage />} />
           <Route path="settings" element={<Settings />} />
-          {/* ログイン済みで /login に来た場合（コールバック後の戻り先など）は最初の画面へ */}
+          {/* Signed-in visits to /login (e.g. return after callback) go to the first screen */}
           <Route path="login" element={<Navigate to="/" replace />} />
-          {/* 外した画面（今日・カレンダー・締め・規則など）の古いブックマークは最初の画面へ */}
+          {/* Old bookmarks of removed screens (today, calendar, closing, rules, etc.) go to the first screen */}
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
       </Routes>
@@ -67,8 +67,8 @@ const App: React.FC = () => (
   <QueryClientProvider client={queryClient}>
     <ThemeProvider theme={theme}>
       <CssBaseline />
-      {/* 新しい版の知らせはどの画面でもいちばん上の帯に出す（ADR-0072）。ログイン画面でも出す。
-          帯がヘッダーの上に来るよう、画面より前に置く */}
+      {/* The new-version notice is shown as the topmost bar on every screen (ADR-0072), including the sign-in page.
+          Placed before the screens so the bar sits above the header */}
       <AppUpdatePrompt watch={watchForUpdate} />
       <BrowserRouter>
         <SignedInApp />

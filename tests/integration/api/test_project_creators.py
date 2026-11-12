@@ -1,9 +1,9 @@
-"""いちばん上のプロジェクトを作れるのは印のある人だけ（task #734 / ADR-0065）。
+"""Only marked users can create top-level projects (task #734 / ADR-0065).
 
-だれでも根を作って管理者になれると、WBS に入ったことのある人を同意なしにメンバーへ足し、その人の休み・稼働時間を
-読み書きできた（休みは人に付くので、その人の別のチームの見込みまで動く）。管理者ができることは変えず、
-管理者になれる人を絞る。ここでは、印の無い人が根を作れないこと、管理者にならないまま他人を足したり
-他人の休みを読み書きしたりできないこと、印の付け外しを見る。
+If anyone could create a root and become its admin, they could add anyone who had ever used WBS as a member without consent and
+read and write that person's days off and working hours (days off belong to the person, so even forecasts of their other teams moved). Admin powers are unchanged;
+we restrict who can become an admin. Here we check that an unmarked user cannot create a root, cannot add others or
+read/write others' days off without becoming an admin, and that the mark can be granted and removed.
 """
 
 from __future__ import annotations
@@ -25,7 +25,7 @@ OTHER_EMAIL = "outsider@example.com"
 
 
 def allow_project_creation(database_path: str, email: str) -> None:
-    """SSO で入った人に印を付ける（他の試験から借りる。運用では scripts/grant_project_creator.py）。"""
+    """Mark a user who signed in via SSO (borrowed by other tests; in operation use scripts/grant_project_creator.py)."""
     engine = create_engine(f"sqlite:///{database_path}")
     try:
         with Session(engine) as session:
@@ -58,7 +58,7 @@ def db(client) -> Iterator:
 
 @pytest.fixture
 def other_id(db) -> int:
-    # 印の無い人（WBS に入ったことはある）
+    # An unmarked user (who has used WBS before)
     user = UserModel(email=OTHER_EMAIL, display_name="外の人", timezone="Asia/Tokyo")
     db.add(user)
     db.flush()
@@ -97,14 +97,14 @@ def test_the_default_user_has_the_mark(client) -> None:
 
 
 def test_without_the_mark_nobody_can_be_added_or_have_their_leave_read(client, as_, other_id) -> None:
-    """AC1: 印の無い人は、自分の根に他人を足して、その人の休みを読むことができない。"""
-    # 自分（印あり）が自分の根で休みを入れておく
+    """AC1: An unmarked user cannot add others to their own root and read their days off."""
+    # I (marked) enter a day off in my own root
     mine = _project(client, "自分のチーム").json()
     client.post(f"/api/projects/{mine['id']}/members/{SINGLE_USER_ID}/leave", json={"day": "2026-12-24"})
 
     as_.other()
     assert _project(client, "外の人の根").status_code == 403
-    # 根が無いので、足す先も読む先も無い。人のチームは見えない
+    # No root, so nothing to add to or read from. Other people's teams are not visible
     assert client.get(f"/api/projects/{mine['id']}/calendar").status_code == 404
     assert client.post(
         f"/api/projects/{mine['id']}/members", json={"user_id": other_id}
@@ -112,8 +112,8 @@ def test_without_the_mark_nobody_can_be_added_or_have_their_leave_read(client, a
 
 
 def test_a_member_without_the_mark_cannot_rewrite_someone_elses_leave(client, as_, other_id) -> None:
-    """AC2: 印の無い人は、メンバーとして入った木でも、管理者にならないまま他人の休みを書き換えられない。
-    下のプロジェクトを根へ出しても管理者にはならない（元の木のメンバーと役割がそのまま写る）。"""
+    """AC2: An unmarked user cannot rewrite others' days off in a tree they joined as a member, without becoming an admin.
+    Moving a lower project out to a root does not make them admin (the original tree's members and roles are copied as is)."""
     team = _project(client, "チーム").json()
     client.post(f"/api/projects/{team['id']}/members", json={"user_id": other_id})
     other_team = _project(client, "別のチーム").json()
@@ -129,7 +129,7 @@ def test_a_member_without_the_mark_cannot_rewrite_someone_elses_leave(client, as
         f"/api/projects/{team['id']}/members/{SINGLE_USER_ID}/leave/2026-12-24"
     ).status_code == 403
 
-    # 下のものを根へ出しても、自分はメンバーのまま（他人を足せない・他人の休みを書けない）
+    # Even after moving a lower project out to a root, I remain a member (cannot add others or write their days off)
     moved = client.post(f"/api/projects/{part.json()['id']}/move", json={"parent_project_id": None})
     assert moved.status_code == 200, moved.text
     assert moved.json()["my_role"] == "member"
@@ -156,7 +156,7 @@ def test_the_mark_is_granted_and_revoked(client, db, as_) -> None:
 
     assert ProjectCreatorUseCases(db).allow(OTHER_EMAIL, allowed=False).can_create_projects is False
     assert _project(client, "もう一つ").status_code == 403
-    # 外しても、作った根の管理者のまま
+    # Even after removal, they remain admin of the roots they created
     assert client.get(f"/api/projects/{created.json()['id']}").json()["my_role"] == "manager"
 
 

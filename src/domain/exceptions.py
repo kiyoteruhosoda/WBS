@@ -25,32 +25,32 @@ class InvalidStatusTransitionError(ValidationError):
         super().__init__(f"Invalid status transition: {from_status} -> {to_status}")
 
 class AuthenticationError(DomainException):
-    """本人が確かめられない（未ログイン・セッション切れ・IdP 応答の不備）。"""
+    """The person cannot be verified (not signed in, session expired, bad IdP response)."""
 
 class AccessDeniedError(DomainException):
-    """本人は確かめられたが、このアプリを使わせない（無効化・所属外）。"""
+    """The person was verified but is not allowed to use this app (disabled, outside the organization)."""
 
 class IdentityProviderUnavailableError(DomainException):
-    """IdP に聞けなかった（届かない・5xx・応答が読めない）。
+    """Could not ask the IdP (unreachable, 5xx, unreadable response).
 
-    ⚠ **「誰も居ない」と混ぜない。** 空の名簿として扱うと、IdP が不調なだけで
-    全員を止めてしまう。聞けなかったときは何も変えずに見送る。
+    ⚠ **Do not confuse this with "nobody is there".** Treating it as an empty roster would stop
+    everyone just because the IdP is having trouble. When the IdP cannot be asked, change nothing and skip.
     """
 
 class MachineNotBoundToApplicationError(DomainException):
-    """名乗ったサービスアカウントが、まだ IdP 側でアプリに結び付いていない。
+    """The service account that identified itself is not yet linked to the app on the IdP side.
 
-    ⚠ **障害ではなく準備待ち。** 結び付けるまで毎周回ここへ来るので、警告にしない。
+    ⚠ **Not a failure but pending setup.** Every cycle comes here until it is linked, so do not warn.
     """
 
 class ProjectCycleError(ConflictError):
-    """プロジェクトを自分か自分の子孫の下へ移そうとした（通すと枝がどこからも辿れなくなる）。"""
+    """Tried to move a project under itself or one of its descendants (doing so would leave the branch unreachable)."""
 
     def __init__(self) -> None:
         super().__init__("a project cannot be moved under itself or its own sub-project")
 
 class ProjectNotEmptyError(ConflictError):
-    """中にタスク・子プロジェクト・マイルストーンがあるプロジェクトは消さない（保管を使う）。"""
+    """A project containing tasks, child projects or milestones is not deleted (use archiving)."""
 
     def __init__(self) -> None:
         super().__init__(
@@ -59,21 +59,21 @@ class ProjectNotEmptyError(ConflictError):
 
 
 class ProjectManagerRequiredError(AccessDeniedError):
-    """管理者だけができる操作（メンバーの出し入れ・いちばん上のプロジェクトを消す・他の下へ移す）。ADR-0055。"""
+    """Operations only admins can do (adding/removing members, deleting the top-level project or moving it under another). ADR-0055."""
 
     def __init__(self) -> None:
         super().__init__("only a manager of the top project can do this")
 
 
 class ProjectCreatorRequiredError(AccessDeniedError):
-    """いちばん上のプロジェクトを作れるのは印のある人だけ（ADR-0065）。"""
+    """Only people with the mark can create top-level projects (ADR-0065)."""
 
     def __init__(self) -> None:
         super().__init__("only people allowed to create projects can create a top project")
 
 
 class LastProjectManagerError(ConflictError):
-    """最後の管理者を外す・メンバーに下げると、だれもメンバーを出し入れできなくなる（ADR-0055）。"""
+    """Removing the last admin or demoting them to member would leave nobody able to add or remove members (ADR-0055)."""
 
     def __init__(self) -> None:
         super().__init__("a top project needs at least one manager")

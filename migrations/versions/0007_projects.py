@@ -1,14 +1,14 @@
-"""projects: 入れ子のプロジェクトと、タスク・マイルストーンの所属（task #187 / ADR-0024）
+"""projects: nested projects, and the project of tasks and milestones (task #187 / ADR-0024)
 
 Revision ID: 0007
 Revises: 0006
 Create Date: 2026-10-01
 
-- 表 ``projects``: 利用者ごと。``parent_project_id`` で何段でも入れ子にできる（隣接リスト。
-  環はアプリ側で断る）。名前・色・説明・状態（``active`` / ``archived``）・兄弟の中の並び
-- ``tasks.project_id`` / ``milestones.project_id``: 空 = 未分類
+- Table ``projects``: per user. Nestable to any depth via ``parent_project_id`` (adjacency list;
+  cycles are rejected by the app). Name, color, description, status (``active`` / ``archived``), order among siblings
+- ``tasks.project_id`` / ``milestones.project_id``: empty = uncategorized
 
-⚠ **既存のタスクとマイルストーンは未分類のまま**（この移行はプロジェクトを 1 つも作らない）。
+⚠ **Existing tasks and milestones stay uncategorized** (this migration creates no projects).
 """
 
 from __future__ import annotations
@@ -46,7 +46,7 @@ def upgrade() -> None:
             ["parent_project_id"], ["projects.id"], name="fk_projects_parent_project_id"
         ),
         sa.PrimaryKeyConstraint("id"),
-        # 消したプロジェクトの id を使い回さない（古い画面が、同じ id の別のプロジェクトへ書かないように）
+        # Do not reuse deleted project ids (so a stale screen cannot write to a different project with the same id)
         sqlite_autoincrement=True,
     )
     op.create_index(

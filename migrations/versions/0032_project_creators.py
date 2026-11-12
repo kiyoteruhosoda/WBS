@@ -1,14 +1,14 @@
-"""いちばん上のプロジェクトを作れる人の印を足す（task #734 / ADR-0065）
+"""Add the flag for people who can create top-level projects (task #734 / ADR-0065)
 
 Revision ID: 0032
 Revises: 0031
 Create Date: 2026-10-30
 
-- ``users`` に ``can_create_projects``（いちばん上のプロジェクトを作れるか）を足す
-- 今いちばん上のプロジェクトの管理者である人と、既定の利用者（id=1。SSO を使わない配備の 1 人）は真にする。
-  ほかの人は偽（作れなくなるのはいちばん上だけで、メンバーになっている木の中では今までどおり作れる）
+- Add ``can_create_projects`` (whether the user can create top-level projects) to ``users``
+- True for current admins of a top-level project and for the default user (id=1, the single user of deployments without SSO).
+  False for everyone else (only top-level creation is blocked; inside trees they are members of, they can create as before)
 
-戻すと列が消えるだけ（だれでも作れる元の形に戻る）。
+Downgrading just drops the column (back to the original form where anyone can create).
 """
 
 from __future__ import annotations

@@ -78,7 +78,7 @@ const Sidebar: React.FC<{ onNavigate?: () => void }> = ({ onNavigate }) => {
         <AppMark size={30} />
         <Box sx={{ fontFamily: headingFont, fontSize: 15, fontWeight: 900, color: ds.text }}>{t('app.name')}</Box>
       </Box>
-      {/* 表示するプロジェクト（task #187）。タスク・ガント・カレンダーの期限・実績・マイルストーンが従う */}
+      {/* Displayed project (task #187). Tasks, Gantt, calendar due dates, actuals and milestones follow it */}
       <ProjectScopeSelect />
       <Box sx={{ pt: '4px', flex: 1, overflowY: 'auto' }}>
         {navItems.map((item) => (
@@ -95,7 +95,7 @@ const Sidebar: React.FC<{ onNavigate?: () => void }> = ({ onNavigate }) => {
   );
 };
 
-/** 右上のアカウント。SSO 有効時はここからログアウトする。 */
+/** Account at the top right. Logs out from here when SSO is enabled. */
 const AccountButton: React.FC = () => {
   const { user, ssoEnabled, signOut } = useAuth();
   const { t } = useI18n();
@@ -112,7 +112,7 @@ const AccountButton: React.FC = () => {
     </Box>
   );
 
-  // SSO を使わない配備にはログアウトの行き先が無いので、飾りのまま出す
+  // Deployments without SSO have no logout destination, so show it as decoration only
   if (!ssoEnabled) return avatar;
 
   return (
@@ -139,10 +139,10 @@ const AccountButton: React.FC = () => {
   );
 };
 
-/** プロジェクトの絞り込みに従う画面（ここで絞り込み中と出す。task #187） */
+/** Screens that follow the project filter (the filter indicator is shown on them. task #187) */
 const SCOPED_PATHS = /^\/(tasks|gantt|actuals|milestones)(\/|$)/;
 
-/** 絞り込み中の印。外すと全部に戻る。 */
+/** Filter indicator. Clearing it goes back to all. */
 const ScopeBadge: React.FC = () => {
   const { t } = useI18n();
   const location = useLocation();
@@ -159,7 +159,7 @@ const ScopeBadge: React.FC = () => {
       onDelete={() => setScope('all')}
       title={t('scope.clear')}
       sx={{
-        // スマホ幅では縮む（390px に収める。task #639）
+        // Shrinks on phone widths (fits in 390px. task #639)
         maxWidth: { xs: 140, sm: 320 }, minWidth: 0, flexShrink: 1, bgcolor: ds.primaryPale, color: ds.primary, fontWeight: 600,
         '& .MuiChip-label': { overflow: 'hidden', textOverflow: 'ellipsis' },
       }}
@@ -184,7 +184,7 @@ const Layout: React.FC = () => {
           component="nav"
           sx={{
             width: SIDEBAR_WIDTH, flexShrink: 0, borderRight: `1px solid ${ds.border}`,
-            // 新しい版の知らせ（帯）が出ている間は、その真下に付く（ADR-0072）
+            // While the new-version bar is shown, sit right below it (ADR-0072)
             position: 'sticky', top: BELOW_UPDATE_BAR, height: `calc(100svh - ${BELOW_UPDATE_BAR})`,
           }}
         >
@@ -204,7 +204,7 @@ const Layout: React.FC = () => {
             height: TOPBAR_HEIGHT, flexShrink: 0, bgcolor: ds.paper,
             borderBottom: `1px solid ${ds.border}`,
             display: 'flex', alignItems: 'center', gap: { xs: 1, sm: 2 }, px: { xs: '8px', sm: '20px' },
-            // 新しい版の知らせ（帯）が出ている間は、その真下に付く（ADR-0072）
+            // While the new-version bar is shown, sit right below it (ADR-0072)
             position: 'sticky', top: BELOW_UPDATE_BAR, zIndex: 10,
           }}
         >
@@ -213,7 +213,7 @@ const Layout: React.FC = () => {
               <MenuIcon />
             </IconButton>
           )}
-          {/* スマホ幅では題名を出さない（題名は左のメニューで分かる） */}
+          {/* No title on phone widths (the left menu shows where you are) */}
           <Box sx={{
             display: { xs: 'none', sm: 'block' },
             fontFamily: headingFont, fontSize: 16, fontWeight: 700, color: ds.text, whiteSpace: 'nowrap',
@@ -245,7 +245,7 @@ const Layout: React.FC = () => {
         </Box>
 
         <Box component="main" sx={{ flex: 1, p: { xs: '16px', md: '24px' } }}>
-          {/* つながっていない（task #192 / ADR-0028）。殻は出ているがデータは読めない */}
+          {/* Offline (task #192 / ADR-0028). The shell is shown but data can't be loaded */}
           <OfflineNotice />
           <Outlet />
         </Box>

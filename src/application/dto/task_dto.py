@@ -22,12 +22,12 @@ class CreateTaskDTO:
     memo: str | None = None
     parent_task_id: int | None = None
     milestone_id: int | None = None
-    # 空 = 未分類。⚠ 親を持つタスクは親のプロジェクトに入る（違う値は 422。ADR-0024）
+    # Empty = unclassified. ⚠ A task with a parent goes into the parent's project (a different value is 422, ADR-0024)
     project_id: int | None = None
-    # 担当者。送られなければ作った人（ADR-0055）。null を送れば担当なし
+    # Assignee. If not sent, the creator (ADR-0055). Sending null means unassigned
     assignee_user_id: int | None = None
     assignee_user_id_given: bool = False
-    # アサイン比率（%、空可。ADR-0058）
+    # Allocation rate (%, may be empty, ADR-0058)
     allocation_percent: int | None = None
 
 @dataclass
@@ -40,19 +40,19 @@ class UpdateTaskDTO:
     start_date: date | None = None
     due_date: date | None = None
     estimated_hours: Decimal | None = None
-    # 残は空へ戻せる（空 = 見積 − 実績を既定に使う）ので、「送られたか」を別に持つ
+    # Remaining can be reset to empty (empty = estimate - actual is used as the default), so keep "was it sent" separately
     remaining_hours: Decimal | None = None
     remaining_hours_given: bool = False
     memo: str | None = None
     parent_task_id: int | None = None
     milestone_id: int | None = None
-    # マイルストーン・プロジェクトは空へ戻せるので、「送られたか」を別に持つ
+    # Milestone and project can be reset to empty, so keep "was it sent" separately
     milestone_id_given: bool = False
     project_id: int | None = None
     project_id_given: bool = False
-    # 担当者は空へ戻せる（ADR-0055）
+    # Assignee can be reset to empty (ADR-0055)
     assignee_user_id: int | None = None
     assignee_user_id_given: bool = False
-    # アサイン比率は空へ戻せる（ADR-0058）
+    # Allocation rate can be reset to empty (ADR-0058)
     allocation_percent: int | None = None
     allocation_percent_given: bool = False

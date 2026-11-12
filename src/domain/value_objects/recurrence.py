@@ -1,7 +1,7 @@
-"""繰り返しの規則（移植元 docs/time-model.md §10-2・§10-4）。
+"""Recurrence rules (ported from docs/time-model.md §10-2, §10-4).
 
-規則は RFC 5545 の RRULE 文字列ではなく構造体で持つ。営業日シフト
-（``AdjustmentRule``）は利用者ごとの祝日カレンダーに依存し、RRULE では表せないため。
+Rules are held as structures, not RFC 5545 RRULE strings, because business-day shifting
+(``AdjustmentRule``) depends on each user's holiday calendar and cannot be expressed in RRULE.
 """
 
 from __future__ import annotations
@@ -13,11 +13,11 @@ from datetime import date
 from src.domain.exceptions import ValidationError
 
 NO_END_DATE = date.max
-"""「終了日なし」は 9999-12-31 で持つ（移植元と同じ）。"""
+"""An end date of 9999-12-31 means "no end date" (same as the system it was ported from)."""
 
 
 class Weekday(enum.StrEnum):
-    """曜日。値は iCalendar の略号（移植元の JSON と同じ綴り）。"""
+    """Weekday. Values are iCalendar abbreviations (same spelling as the original's JSON)."""
 
     MONDAY = "MO"
     TUESDAY = "TU"
@@ -29,7 +29,7 @@ class Weekday(enum.StrEnum):
 
     @property
     def iso_index(self) -> int:
-        """月曜 0 〜 日曜 6（``date.weekday()`` と同じ数え方）。"""
+        """Monday 0 to Sunday 6 (same counting as ``date.weekday()``)."""
         return _ISO_ORDER.index(self)
 
     @classmethod
@@ -57,7 +57,7 @@ class RecurrenceType(enum.StrEnum):
 
 
 def _check_week_index(week_index: int) -> None:
-    # 1〜5 が「第 n」、-1 が「最終」。0 は無い。
+    # 1–5 mean "the nth", -1 means "the last". There is no 0.
     if week_index == 0 or week_index < -1 or week_index > 5:
         raise ValidationError("week_index must be 1..5 or -1 (last)")
 
@@ -79,14 +79,14 @@ class WeeklyRule:
     def __post_init__(self) -> None:
         if not self.weekdays:
             raise ValidationError("at least one weekday is required")
-        # 同じ曜日の重複は落とし、月曜始まりの順に揃える（展開の順序を安定させる）。
+        # Drop duplicate weekdays and sort Monday-first (keeps expansion order stable).
         normalized = tuple(sorted(set(self.weekdays), key=lambda w: w.iso_index))
         object.__setattr__(self, "weekdays", normalized)
 
 
 @dataclass(frozen=True)
 class DayOfMonthMonthlyRule:
-    """毎月 n 日。その月に n 日が無ければ（例: 2 月 30 日）その月は発生しない。"""
+    """Day n of every month. If the month has no day n (e.g. Feb 30), nothing occurs that month."""
 
     day: int
 
@@ -96,7 +96,7 @@ class DayOfMonthMonthlyRule:
 
 @dataclass(frozen=True)
 class NthWeekdayMonthlyRule:
-    """毎月 第 n ○曜日（``week_index = -1`` は最終○曜日）。"""
+    """The nth <weekday> of every month (``week_index = -1`` is the last <weekday>)."""
 
     week_index: int
     weekday: Weekday
@@ -107,7 +107,7 @@ class NthWeekdayMonthlyRule:
 
 @dataclass(frozen=True)
 class LastDayOfMonthMonthlyRule:
-    """毎月末日（28〜31 日）。"""
+    """Last day of every month (28th–31st)."""
 
 
 MonthlyRule = DayOfMonthMonthlyRule | NthWeekdayMonthlyRule | LastDayOfMonthMonthlyRule
@@ -115,7 +115,7 @@ MonthlyRule = DayOfMonthMonthlyRule | NthWeekdayMonthlyRule | LastDayOfMonthMont
 
 @dataclass(frozen=True)
 class DayOfMonthYearlyRule:
-    """毎年 m 月 d 日。その年に無い日（2 月 29 日の平年）は発生しない。"""
+    """Month m, day d every year. Days missing in a year (Feb 29 in a common year) do not occur."""
 
     month: int
     day: int
@@ -127,7 +127,7 @@ class DayOfMonthYearlyRule:
 
 @dataclass(frozen=True)
 class NthWeekdayYearlyRule:
-    """毎年 m 月の第 n ○曜日。"""
+    """The nth <weekday> of month m every year."""
 
     month: int
     week_index: int
@@ -143,9 +143,9 @@ YearlyRule = DayOfMonthYearlyRule | NthWeekdayYearlyRule
 
 class AdjustmentCondition(enum.StrEnum):
     HOLIDAY = "HOLIDAY"
-    """候補日が休みの日（「休みとして数える」層の日）のときだけ寄せる。"""
+    """Shift only when the candidate date is a day off (a day in the "counted as off" layers)."""
     ALWAYS = "ALWAYS"
-    """祝日かどうかに関わらず寄せる（例: 「15 日の 3 営業日前」）。"""
+    """Shift regardless of holidays (e.g. "3 business days before the 15th")."""
 
 
 class AdjustmentShiftUnit(enum.StrEnum):
@@ -156,14 +156,14 @@ class AdjustmentShiftUnit(enum.StrEnum):
 class AdjustmentAction(enum.StrEnum):
     SHIFT = "SHIFT"
     CANCEL = "CANCEL"
-    """条件に当たった回は寄せずに取りやめる。"""
+    """Occurrences that meet the condition are cancelled instead of shifted."""
 
 
 @dataclass(frozen=True)
 class AdjustmentRule:
-    """営業日シフト。``shift_amount`` が負なら前倒し、正なら後ろ倒し。
+    """Business-day shift. Negative ``shift_amount`` moves earlier, positive moves later.
 
-    営業日・休みの日は利用者の休みの 4 層で決まる（ADR-0029）。カレンダーは名指ししない（ADR-0032）。
+    Business days and days off are decided by the user's 4 layers of days off (ADR-0029). No calendar is named (ADR-0032).
     """
 
     condition: AdjustmentCondition
@@ -173,18 +173,18 @@ class AdjustmentRule:
 
     @classmethod
     def previous_business_day_on_holiday(cls) -> AdjustmentRule:
-        """休みの日なら前の営業日へ（移植元の ``AdjustmentRule(Backward)``）。"""
+        """On a day off, move to the previous business day (the original's ``AdjustmentRule(Backward)``)."""
         return cls(AdjustmentCondition.HOLIDAY, AdjustmentShiftUnit.BUSINESS_DAY, -1)
 
     @classmethod
     def next_business_day_on_holiday(cls) -> AdjustmentRule:
-        """休みの日なら次の営業日へ（移植元の ``AdjustmentRule(Forward)``）。"""
+        """On a day off, move to the next business day (the original's ``AdjustmentRule(Forward)``)."""
         return cls(AdjustmentCondition.HOLIDAY, AdjustmentShiftUnit.BUSINESS_DAY, 1)
 
 
 @dataclass(frozen=True)
 class RecurrenceRule:
-    """繰り返しの本体。種別に対応する下位規則を 1 つだけ持つ。"""
+    """The recurrence itself. Holds exactly one sub-rule matching its type."""
 
     rule_type: RecurrenceType
     interval: int

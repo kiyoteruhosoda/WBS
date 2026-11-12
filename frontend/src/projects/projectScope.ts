@@ -1,10 +1,10 @@
-// プロジェクトの木と絞り込み（task #187、ADR-0024）。画面に依らない計算だけを置く。
+// Project tree and filtering (task #187, ADR-0024). Holds only UI-independent logic.
 import type { Project } from '../types';
 
-/** 画面で選んでいる範囲: 全部 / 未分類だけ / あるプロジェクトとその子孫。 */
+/** Scope selected in the UI: all / unassigned only / a project and its descendants. */
 export type ProjectScope = 'all' | 'none' | number;
 
-/** 一覧の API に渡す絞り込み（サーバが子孫を含めて絞る）。 */
+/** Filter passed to the list API (the server includes descendants). */
 export interface ProjectFilterParams {
   project_id?: number;
   unclassified?: boolean;
@@ -16,7 +16,7 @@ export const scopeParams = (scope: ProjectScope): ProjectFilterParams => {
   return { project_id: scope };
 };
 
-/** 保存した値を読む（壊れていたら全部）。 */
+/** Read the saved value (all when corrupt). */
 export const parseScope = (raw: string | null): ProjectScope => {
   if (raw === 'none') return 'none';
   const id = Number(raw);
@@ -25,13 +25,13 @@ export const parseScope = (raw: string | null): ProjectScope => {
 
 export const scopeToString = (scope: ProjectScope): string => String(scope);
 
-/** 選んでいるプロジェクトが消えたら全部へ戻す。 */
+/** Fall back to all when the selected project disappears. */
 export const validScope = (scope: ProjectScope, projects: readonly Project[] | undefined): ProjectScope => {
   if (typeof scope !== 'number' || projects === undefined) return scope;
   return projects.some((p) => p.id === scope) ? scope : 'all';
 };
 
-/** 自分と子孫の id。⚠ 壊れた環があっても止まる。 */
+/** Ids of self and descendants. ⚠ Terminates even with a broken cycle. */
 export const subtreeIds = (projects: readonly Project[], rootId: number): Set<number> => {
   const children = new Map<number, number[]>();
   for (const p of projects) {
@@ -50,7 +50,7 @@ export const subtreeIds = (projects: readonly Project[], rootId: number): Set<nu
   return found;
 };
 
-/** その範囲に入るか（タスク・マイルストーンの project_id で見る。画面の側で絞るとき用）。 */
+/** Whether it falls within the scope (by the task/milestone project_id; for client-side filtering). */
 export const inScope = (
   projectId: number | null, scope: ProjectScope, projects: readonly Project[],
 ): boolean => {
@@ -59,7 +59,7 @@ export const inScope = (
   return projectId !== null && subtreeIds(projects, scope).has(projectId);
 };
 
-/** 自分から根までの id（自分が先頭）。 */
+/** Ids from self up to the root (self first). */
 export const ancestorsOrSelf = (projects: readonly Project[], id: number | null): number[] => {
   const byId = new Map(projects.map((p) => [p.id, p]));
   const chain: number[] = [];
@@ -71,15 +71,15 @@ export const ancestorsOrSelf = (projects: readonly Project[], id: number | null)
   return chain;
 };
 
-/** 自分か祖先が保管されているか（保管した枝は選び先に出さない）。 */
+/** Whether self or an ancestor is archived (archived branches are not offered as choices). */
 export const isEffectivelyArchived = (projects: readonly Project[], id: number): boolean => {
   const byId = new Map(projects.map((p) => [p.id, p]));
   return ancestorsOrSelf(projects, id).some((i) => byId.get(i)?.status === 'archived');
 };
 
 /**
- * タスクにそのマイルストーンを付けられるか（サーバと同じ決まり。ADR-0024）。
- * 未分類のマイルストーンはどこにでも付く。プロジェクトのものは、そのプロジェクトと子孫のタスクにだけ。
+ * Whether the milestone can be attached to the task (same rule as the server. ADR-0024).
+ * Unassigned milestones attach anywhere; a project's milestones only to tasks of that project and its descendants.
  */
 export const milestoneReachable = (
   projects: readonly Project[], milestoneProjectId: number | null, taskProjectId: number | null,
@@ -92,7 +92,7 @@ export interface ProjectNode {
   children: ProjectNode[];
 }
 
-/** 親子に組み直す（兄弟は並び順）。⚠ 親が一覧に居なければ最上位として置く（見失わせない）。 */
+/** Rebuild parent/child structure (siblings by sort order). ⚠ If the parent is missing from the list, place it at top level (so it is not lost). */
 export const toTree = (projects: readonly Project[]): ProjectNode[] => {
   const known = new Set(projects.map((p) => p.id));
   const byParent = new Map<number | null, Project[]>();
@@ -112,18 +112,18 @@ export const toTree = (projects: readonly Project[]): ProjectNode[] => {
   return build(null, 0);
 };
 
-/** 木の順に平らにする（選び先の一覧・字下げ付き）。 */
+/** Flatten in tree order (for choice lists, with indentation). */
 export const flattenTree = (nodes: readonly ProjectNode[]): ProjectNode[] =>
   nodes.flatMap((n) => [n, ...flattenTree(n.children)]);
 
 /**
- * 選び先に出すプロジェクト（木の順）。保管した枝は出さない。ただし `keep` は（保管していても）残す
- * ——いま付いているものが選び先から消えると、保存しただけで外れてしまう。
+ * Projects offered as choices (tree order). Archived branches are omitted, but `keep` stays (even if archived)
+ * —— if the current value vanished from the choices, merely saving would detach it.
  */
 export const pickableProjects = (projects: readonly Project[], keep: number | null = null): ProjectNode[] =>
   flattenTree(toTree(projects)).filter((n) => n.project.id === keep || !isEffectivelyArchived(projects, n.project.id));
 
-/** 親の付け替え先に出せるもの（自分と自分の子孫は除く。環になる）。 */
+/** Possible new parents (excluding self and own descendants, which would form a cycle). */
 export const parentCandidates = (projects: readonly Project[], movingId: number): ProjectNode[] => {
   const excluded = subtreeIds(projects, movingId);
   return flattenTree(toTree(projects)).filter((n) => !excluded.has(n.project.id));

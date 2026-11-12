@@ -1,7 +1,7 @@
 import client from './client';
 import type { Person, Project, ProjectMembers, ProjectRole, ProjectStatus, TeamCalendar, WeekdayCode } from '../types';
 
-/** プロジェクト（task #187、ADR-0024）。書いたらタスク・マイルストーンも読み直させる（道筋が変わる）。 */
+/** Projects (task #187, ADR-0024). Writes also invalidate tasks and milestones (their paths change). */
 export const PROJECTS_KEY = ['projects'] as const;
 
 export const getProjects = async (): Promise<Project[]> => {
@@ -29,7 +29,7 @@ export const updateProject = async (id: number, payload: ProjectInput): Promise<
   return data;
 };
 
-/** 親を替える・兄弟の中の位置を変える（position を省くと末尾）。自分の下へは 409。 */
+/** Change the parent or position among siblings (omitting position = last). 409 when moving under itself. */
 export const moveProject = async (
   id: number, parentProjectId: number | null, position?: number,
 ): Promise<Project> => {
@@ -39,12 +39,12 @@ export const moveProject = async (
   return data;
 };
 
-/** 空のプロジェクトだけ消せる（中身があると 409）。 */
+/** Only empty projects can be deleted (409 if not empty). */
 export const deleteProject = async (id: number): Promise<void> => {
   await client.delete(`/projects/${id}`);
 };
 
-/** メンバー・担当者に選べる人（WBS に 1 度でもログインした人。ADR-0055）。 */
+/** People selectable as member or assignee (anyone who has signed in to WBS at least once. ADR-0055). */
 export const PEOPLE_KEY = ['projects', 'people'] as const;
 
 export const getPeople = async (): Promise<Person[]> => {
@@ -52,7 +52,7 @@ export const getPeople = async (): Promise<Person[]> => {
   return data;
 };
 
-/** その木（いちばん上のプロジェクト）のメンバー。どの段の id で聞いても根の名簿が返る。 */
+/** Members of the tree (topmost project). Any level's id returns the root's roster. */
 export const projectMembersKey = (projectId: number) => ['projects', projectId, 'members'] as const;
 
 export const getProjectMembers = async (projectId: number): Promise<ProjectMembers> => {
@@ -60,7 +60,7 @@ export const getProjectMembers = async (projectId: number): Promise<ProjectMembe
   return data;
 };
 
-/** 加える（もう居れば役割を書き換える）。管理者だけ（403）。 */
+/** Add (or update the role if already a member). Admins only (403). */
 export const addProjectMember = async (
   projectId: number, userId: number, role: ProjectRole,
 ): Promise<ProjectMembers> => {
@@ -68,7 +68,7 @@ export const addProjectMember = async (
   return data;
 };
 
-/** 役割を変える。最後の管理者を下げると 409。 */
+/** Change the role. 409 when demoting the last admin. */
 export const changeProjectMemberRole = async (
   projectId: number, userId: number, role: ProjectRole,
 ): Promise<ProjectMembers> => {
@@ -76,12 +76,12 @@ export const changeProjectMemberRole = async (
   return data;
 };
 
-/** 外す（自分なら抜ける）。最後の管理者は 409。担当は残る。 */
+/** Remove (leave, if self). 409 for the last admin. Assignments remain. */
 export const removeProjectMember = async (projectId: number, userId: number): Promise<void> => {
   await client.delete(`/projects/${projectId}/members/${userId}`);
 };
 
-/** 1 日の工数と従事率（ADR-0058）。管理者は誰のでも、メンバーは自分のだけ（403）。 */
+/** Daily hours and engagement rate (ADR-0058). Admins for anyone, members only their own (403). */
 export const changeProjectMemberCapacity = async (
   projectId: number, userId: number, dailyHours: number, engagementPercent: number,
 ): Promise<ProjectMembers> => {
@@ -91,7 +91,7 @@ export const changeProjectMemberCapacity = async (
   return data;
 };
 
-/** プロジェクトのカレンダー（根の曜日・自分と先祖の休日）と、メンバーの休み（ADR-0058・ADR-0059）。 */
+/** Project calendar (root's weekdays, holidays of self and ancestors) and members' time off (ADR-0058, ADR-0059). */
 export const teamCalendarKey = (projectId: number) => ['projects', projectId, 'calendar'] as const;
 
 export const getTeamCalendar = async (projectId: number): Promise<TeamCalendar> => {
@@ -99,13 +99,13 @@ export const getTeamCalendar = async (projectId: number): Promise<TeamCalendar> 
   return data;
 };
 
-/** 稼働する曜日（管理者だけ。1 つ以上）。 */
+/** Working weekdays (admins only; at least one). */
 export const setTeamWorkdays = async (projectId: number, workdays: WeekdayCode[]): Promise<TeamCalendar> => {
   const { data } = await client.put<TeamCalendar>(`/projects/${projectId}/calendar/workdays`, { workdays });
   return data;
 };
 
-/** そのプロジェクトに休日を足す（同じ日なら名前を書き換える。下のプロジェクトにも足せる。管理者だけ）。 */
+/** Add a holiday to the project (renames it on the same day; can be added to sub-projects too; admins only). */
 export const addTeamDayOff = async (projectId: number, day: string, name: string | null): Promise<TeamCalendar> => {
   const { data } = await client.post<TeamCalendar>(`/projects/${projectId}/calendar/days-off`, { day, name });
   return data;
@@ -116,7 +116,7 @@ export const removeTeamDayOff = async (projectId: number, day: string): Promise<
   return data;
 };
 
-/** そのプロジェクトに稼働日（稼働しない曜日に働く日）を足す。同じ日の休日は消える（管理者だけ。ADR-0060）。 */
+/** Add a working day (work on a non-working weekday) to the project. A holiday on the same day is removed (admins only. ADR-0060). */
 export const addExtraWorkday = async (projectId: number, day: string, name: string | null): Promise<TeamCalendar> => {
   const { data } = await client.post<TeamCalendar>(`/projects/${projectId}/calendar/extra-workdays`, { day, name });
   return data;
@@ -127,15 +127,15 @@ export const removeExtraWorkday = async (projectId: number, day: string): Promis
   return data;
 };
 
-/** その年の日本の祝日を足す（すでにある日はそのまま。管理者だけ）。 */
+/** Add Japan's public holidays for the year (existing days unchanged; admins only). */
 export const importTeamJapaneseHolidays = async (projectId: number, year: number): Promise<TeamCalendar> => {
   const { data } = await client.post<TeamCalendar>(`/projects/${projectId}/calendar/days-off/japan`, { year });
   return data;
 };
 
 /**
- * その人のその日（休み・半休は offPercent、稼働時間を決めるなら hours。同じ日なら書き換える）。
- * 本人か管理者だけ。プロジェクトをまたいで同じ（ADR-0059・ADR-0060）。
+ * That person's day (offPercent for day off / half day, hours to set working hours; overwrites the same day).
+ * Only the person or an admin. Shared across projects (ADR-0059, ADR-0060).
  */
 export const addMemberLeave = async (
   projectId: number, userId: number, day: string, offPercent = 100, hours: number | null = null,

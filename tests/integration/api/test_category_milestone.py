@@ -1,7 +1,7 @@
-"""カテゴリ・マイルストーンの登録／編集 API のテスト。
+"""Tests for the category and milestone create/edit API.
 
-特に「明示的な null でフィールドをクリアできる」ことと
-「未指定フィールドは変更されない」ことを検証する。
+In particular, verify that "an explicit null clears a field" and
+"fields not specified are left unchanged".
 """
 
 
@@ -25,14 +25,14 @@ def test_update_category_clears_color_with_explicit_null(client) -> None:
     assert res.status_code == 200
     assert res.json()["color"] is None
 
-    # 再取得してもクリアが永続化されている
+    # The cleared value is persisted when fetched again
     assert client.get(f"/api/categories/{cat_id}").json()["color"] is None
 
 
 def test_update_category_omitted_field_is_unchanged(client) -> None:
     cat_id = client.post("/api/categories", json={"name": "学習", "color": "#B26C00"}).json()["id"]
 
-    # color を送らなければ既存の色は維持される
+    # If color is not sent, the existing color is kept
     res = client.put(f"/api/categories/{cat_id}", json={"name": "学習(改)"})
     assert res.status_code == 200
     body = res.json()
@@ -49,7 +49,7 @@ def test_create_and_update_milestone_clears_optional_fields(client) -> None:
     assert created["due_date"] == "2026-08-01"
     assert created["description"] == "初回リリース"
 
-    # 期日・説明を明示的な null でクリア
+    # Clear the due date and description with an explicit null
     res = client.put(
         f"/api/milestones/{mid}",
         json={"name": "v1リリース", "due_date": None, "description": None},
@@ -70,7 +70,7 @@ def test_update_milestone_omitted_fields_are_unchanged(client) -> None:
         json={"name": "設計完了", "due_date": "2026-09-15", "description": "設計フェーズ"},
     ).json()["id"]
 
-    # name のみ変更、他は未指定 → 期日・説明は維持
+    # Only name changes, others unspecified → due date and description are kept
     res = client.put(f"/api/milestones/{mid}", json={"name": "設計完了(改)"})
     assert res.status_code == 200
     body = res.json()

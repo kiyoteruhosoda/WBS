@@ -1,11 +1,11 @@
-"""プロジェクトのカレンダー（稼働する曜日・休日）と、各人の休みを見る・入れる（ADR-0058 決定 2・ADR-0059）。
+"""View and edit a project's calendar (working weekdays, holidays) and each person's days off (ADR-0058 decision 2, ADR-0059).
 
-- 稼働する曜日はいちばん上のプロジェクトに付く。どの段の id で呼んでも根のものを扱う
-- 休日・稼働日（稼働しない曜日に働く日。ADR-0060）は呼んだプロジェクトに付く。見せるのは自分と先祖（根まで）のもの
-  （下のプロジェクトは親のものを引き継ぐ。同じ日は近いほうが勝つ）
-- 曜日と休日を入れられるのは根の管理者だけ
-- 各人の休み・その日の稼働時間は人に付く（プロジェクトをまたいで同じ）。この木のメンバーのものを見せ、
-  入れられるのは本人と管理者だけ
+- Working weekdays belong to the top-level project. Whichever level's id is passed, the root's are used
+- Holidays and extra working days (days worked on a non-working weekday, ADR-0060) belong to the project they are added to. Shown are those of the project itself and its ancestors (up to the root)
+  (lower projects inherit their parents'. On the same day the nearer one wins)
+- Only the root's admins can edit weekdays and holidays
+- Personal days off and that day's working hours belong to the person (the same across projects). Those of this tree's members are shown;
+  only the person themselves and admins can edit them
 """
 
 from __future__ import annotations
@@ -40,18 +40,18 @@ from src.infrastructure.repositories.team_calendar_repository import (
 
 @dataclass(frozen=True)
 class TeamCalendarView:
-    #: 開いたプロジェクト（休日を足す先）
+    #: The opened project (where holidays are added)
     project_id: int
-    #: 曜日が付いているいちばん上のプロジェクト
+    #: The top-level project that holds the weekdays
     root_project_id: int
-    #: 自分がこの木で管理者か（曜日・休日と、だれの休みでも入れられる）
+    #: Whether the caller is an admin in this tree (can edit weekdays, holidays, and anyone's days off)
     can_manage: bool
     workdays: list[Weekday]
-    #: 自分と先祖の休日（``project_id`` が自分でないものは引き継いだもの）
+    #: Holidays of the project and its ancestors (those whose ``project_id`` is not this one are inherited)
     days_off: list[TeamDayOff]
-    #: 自分と先祖の稼働日（稼働しない曜日に働く日。同上）
+    #: Extra working days of the project and its ancestors (days worked on a non-working weekday; likewise)
     extra_workdays: list[TeamExtraWorkday]
-    #: この木のメンバーの休みと、その日の稼働時間（日付と割合・時間だけ）
+    #: Days off of this tree's members and that day's working hours (date, ratio and hours only)
     leave: list[MemberDayOff]
 
 
@@ -98,23 +98,23 @@ class TeamCalendarUseCases:
         return self.view(user_id, project_id)
 
     def add_day_off(self, user_id: int, project_id: int, day: date, name: str | None) -> TeamCalendarView:
-        """開いたプロジェクトに休日を足す（同じ日があれば名前を書き換える）。"""
+        """Add a holiday to the opened project (if the same day exists, rename it)."""
         self._managed_root(user_id, project_id)
-        # 同じプロジェクトの同じ日に休日と稼働日を並べない
+        # Do not keep both a holiday and an extra working day on the same day of the same project
         self._calendar.remove_extra_workday(project_id, day)
         self._calendar.add_team_day_off(TeamDayOff(project_id=project_id, day=day, name=team_day_off_name(name)))
         self._session.commit()
         return self.view(user_id, project_id)
 
     def remove_day_off(self, user_id: int, project_id: int, day: date) -> TeamCalendarView:
-        """開いたプロジェクト自身の休日だけ消せる（親から引き継いだものは親で消す）。"""
+        """Only the opened project's own holidays can be deleted (inherited ones are deleted on the parent)."""
         self._managed_root(user_id, project_id)
         self._calendar.remove_team_day_off(project_id, day)
         self._session.commit()
         return self.view(user_id, project_id)
 
     def add_extra_workday(self, user_id: int, project_id: int, day: date, name: str | None) -> TeamCalendarView:
-        """開いたプロジェクトに稼働日（稼働しない曜日に働く日）を足す。同じ日の休日は消す（ADR-0060）。"""
+        """Add an extra working day (a day worked on a non-working weekday) to the opened project. Removes a holiday on the same day (ADR-0060)."""
         self._managed_root(user_id, project_id)
         self._calendar.remove_team_day_off(project_id, day)
         self._calendar.add_extra_workday(
@@ -124,14 +124,14 @@ class TeamCalendarUseCases:
         return self.view(user_id, project_id)
 
     def remove_extra_workday(self, user_id: int, project_id: int, day: date) -> TeamCalendarView:
-        """開いたプロジェクト自身の稼働日だけ消せる。"""
+        """Only the opened project's own extra working days can be deleted."""
         self._managed_root(user_id, project_id)
         self._calendar.remove_extra_workday(project_id, day)
         self._session.commit()
         return self.view(user_id, project_id)
 
     def import_japanese_holidays(self, user_id: int, project_id: int, year: int) -> TeamCalendarView:
-        """開いたプロジェクトに、その年の日本の祝日・振替休日・国民の休日を足す（自分か先祖にすでにある日はそのまま）。"""
+        """Add that year's Japanese national holidays, substitute holidays and citizens' holidays to the opened project (days already present on it or an ancestor are left as is)."""
         self._managed_root(user_id, project_id)
         lineage = self._membership.tree(user_id).ancestors_or_self(project_id)
         existing = {d.day for d in self._calendar.team_days_off(lineage, date(year, 1, 1), date(year, 12, 31))}
@@ -152,8 +152,8 @@ class TeamCalendarUseCases:
         off_percent: int = FULL_DAY_OFF_PERCENT,
         hours: float | None = None,
     ) -> TeamCalendarView:
-        """各人の休みか、その日の稼働時間（``hours``。残業・短い日・休日出勤）を入れる（同じ日なら書き換える）。
-        本人か、この木の管理者だけ（相手はこの木のメンバー）。"""
+        """Set a personal day off, or that day's working hours (``hours``: overtime, short day, holiday work) (overwrites the same day).
+        Only the person themselves or an admin of this tree (the target must be a member of this tree)."""
         self._leave_editable(user_id, project_id, member_user_id)
         self._calendar.add_member_day_off(
             MemberDayOff(user_id=member_user_id, day=day, off_percent=off_percent, hours=hours)
@@ -168,7 +168,7 @@ class TeamCalendarUseCases:
         return self.view(user_id, project_id)
 
     def _root_of(self, user_id: int, project_id: int) -> int:
-        self._membership.visible_project(user_id, project_id)  # 見えなければ 404
+        self._membership.visible_project(user_id, project_id)  # 404 if not visible
         return self._membership.tree(user_id).root_of(project_id)
 
     def _managed_root(self, user_id: int, project_id: int) -> int:

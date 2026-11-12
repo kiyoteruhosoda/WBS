@@ -14,7 +14,7 @@ from src.domain.value_objects.project_status import ProjectStatus
 from src.domain.value_objects.recurrence import Weekday
 from src.presentation.api.schemas.types import UtcDatetime
 
-# 色は #rrggbb（カテゴリと同じ形）
+# Color is #rrggbb (same format as categories)
 COLOR_PATTERN = r"^#[0-9A-Fa-f]{6}$"
 
 
@@ -22,24 +22,24 @@ class ProjectCreateRequest(BaseModel):
     name: str = Field(min_length=1, max_length=200)
     parent_project_id: int | None = None
     color: str | None = Field(default=None, pattern=COLOR_PATTERN)
-    # 任意。前後の空白を落とし、空は null（長さの上限はドメインで見る）
+    # Optional. Leading/trailing whitespace is stripped, empty becomes null (the domain checks the max length)
     code: str | None = None
     description: str | None = None
 
 
 class ProjectUpdateRequest(BaseModel):
-    """送った欄だけ変える（null は空へ戻す）。親と並びは ``POST /projects/{id}/move``。"""
+    """Change only the fields sent (null clears). Parent and order are via ``POST /projects/{id}/move``."""
 
     name: str | None = Field(default=None, min_length=1, max_length=200)
     color: str | None = Field(default=None, pattern=COLOR_PATTERN)
-    # 任意。前後の空白を落とし、空は null（長さの上限はドメインで見る）
+    # Optional. Leading/trailing whitespace is stripped, empty becomes null (the domain checks the max length)
     code: str | None = None
     description: str | None = None
     status: ProjectStatus | None = None
 
 
 class ProjectMoveRequest(BaseModel):
-    """新しい親（null = 最上位）と、新しい兄弟の中の位置（0 = 先頭。省く・範囲外は末尾）。"""
+    """New parent (null = top level) and the position among the new siblings (0 = first; omitted or out of range = last)."""
 
     parent_project_id: int | None = None
     position: int | None = Field(default=None, ge=0)
@@ -53,12 +53,12 @@ class ProjectResponse(BaseModel):
     color: str | None = None
     code: str | None = None
     description: str | None = None
-    # active（進行中）/ archived（保管）
+    # active (in progress) / archived
     status: str
     sort_order: int
-    # 表示用の道筋（「親 / 子」）
+    # Display path ("parent / child")
     path: str
-    # メンバーが付いているいちばん上のプロジェクトと、そこでの自分の役割（manager / member。ADR-0055）
+    # The top-level project that has the members, and the user's role there (manager / member. ADR-0055)
     root_project_id: int
     my_role: ProjectRole | None = None
     created_at: UtcDatetime | None = None
@@ -86,7 +86,7 @@ class ProjectResponse(BaseModel):
 
 
 class PersonResponse(BaseModel):
-    """メンバー・担当者に選べる人（WBS に 1 度でもログインした人。ADR-0055）。"""
+    """People selectable as members/assignees (anyone who has logged in to WBS at least once. ADR-0055)."""
 
     id: int
     display_name: str
@@ -107,7 +107,7 @@ class ProjectMemberRoleRequest(BaseModel):
 
 
 class ProjectMemberCapacityRequest(BaseModel):
-    """1 日の工数と従事率（ADR-0058）。この人がこのプロジェクトに 1 日に使える時間 = 1 日の工数 × 従事率。"""
+    """Daily hours and allocation rate (ADR-0058). Time this person can spend on this project per day = daily hours x allocation rate."""
 
     daily_hours: Decimal = Field(ge=0, le=24, decimal_places=2)
     engagement_percent: int = Field(ge=0, le=100)
@@ -118,17 +118,17 @@ class ProjectMemberResponse(BaseModel):
     display_name: str
     email: str
     role: ProjectRole
-    # 聞いた本人か
+    # Whether this is the requesting user
     is_you: bool
-    # 1 日の工数（時間）と従事率（%）。ADR-0058
+    # Daily hours (hours) and allocation rate (%). ADR-0058
     daily_hours: float
     engagement_percent: int
 
 
 class ProjectMembersResponse(BaseModel):
-    # メンバーが付いているいちばん上のプロジェクト（どの段の id で聞いてもここの名簿が返る）
+    # The top-level project that has the members (the same list is returned for an id at any level)
     root_project_id: int
-    # 自分が管理者か（メンバーの出し入れ・役割の変更ができるか）
+    # Whether the user is an admin (can add/remove members and change roles)
     can_manage: bool
     members: list[ProjectMemberResponse]
 
@@ -153,7 +153,7 @@ class ProjectMembersResponse(BaseModel):
 
 
 class TeamWorkdaysRequest(BaseModel):
-    workdays: list[Weekday] = Field(min_length=1, description="稼働する曜日（MO〜SU）")
+    workdays: list[Weekday] = Field(min_length=1, description="Working weekdays (MO-SU)")
 
 
 class TeamDayOffRequest(BaseModel):
@@ -167,19 +167,19 @@ class JapaneseHolidaysRequest(BaseModel):
 
 class MemberLeaveRequest(BaseModel):
     day: date
-    off_percent: int = Field(default=100, ge=1, le=100, description="休む割合（終日 100・半休 50）")
+    off_percent: int = Field(default=100, ge=1, le=100, description="Leave ratio (100 for a full day, 50 for half)")
     hours: float | None = Field(
         default=None, ge=0, le=24,
-        description="その日の稼働時間（入れれば休む割合は見ない。残業・短い日・稼働しない日なら休日出勤）",
+        description="Working hours for that day (if set, the leave ratio is ignored; overtime, a short day, or holiday work on a non-working day)",
     )
 
 
 class TeamDayOffResponse(BaseModel):
     day: date
     name: str | None
-    # 休日が付いているプロジェクト
+    # The project the holiday belongs to
     project_id: int
-    # 親（先祖）から引き継いだものか（開いたプロジェクトでは消せない）
+    # Whether it is inherited from a parent (ancestor) (cannot be deleted from the opened project)
     inherited: bool
 
 
@@ -194,22 +194,22 @@ class MemberLeaveResponse(BaseModel):
     user_id: int
     day: date
     off_percent: int
-    # その日の稼働時間（入っていれば off_percent は見ない）
+    # Working hours for that day (if set, off_percent is ignored)
     hours: float | None
 
 
 class TeamCalendarResponse(BaseModel):
-    """プロジェクトのカレンダー（稼働する曜日・休日）と、メンバーの休み（ADR-0058 決定 2・ADR-0059）。"""
+    """The project calendar (working weekdays, holidays) and members' leave (ADR-0058 decision 2, ADR-0059)."""
 
-    # 開いたプロジェクト（休日を足す先）
+    # The opened project (where holidays are added)
     project_id: int
-    # 曜日が付いているいちばん上のプロジェクト
+    # The top-level project that has the weekdays
     root_project_id: int
-    # 自分が管理者か（曜日・休日と、だれの休みでも入れられる。メンバーは自分の休みだけ）
+    # Whether the user is an admin (can enter weekdays, holidays and anyone's leave; members only their own leave)
     can_manage: bool
     workdays: list[Weekday]
     days_off: list[TeamDayOffResponse]
-    # 稼働しない曜日に働く日（ADR-0060。同じ日の休日とは重ならない。近いプロジェクトのものが勝つ）
+    # Days worked on non-working weekdays (ADR-0060. Never overlaps a holiday on the same date; the nearest project's wins)
     extra_workdays: list[TeamExtraWorkdayResponse]
     leave: list[MemberLeaveResponse]
 

@@ -3,7 +3,7 @@ import type { ThemeOptions } from '@mui/material/styles';
 import { calendarPalettes } from './calendar/calendarColors';
 import type { CalendarPalette } from './calendar/calendarColors';
 
-// カレンダーの色（明暗）をテーマに載せる。部品は `theme.palette.calendar` から読む。
+// Put the calendar colors (light/dark) on the theme. Components read `theme.palette.calendar`.
 declare module '@mui/material/styles' {
   interface Palette {
     calendar: CalendarPalette;
@@ -13,7 +13,7 @@ declare module '@mui/material/styles' {
   }
 }
 
-// デジタル庁デザインシステム準拠トークン（design handoff README 参照）
+// Tokens following the Digital Agency design system (see the design handoff README)
 export const ds = {
   primary: '#0017C1',
   primaryHover: '#000EA5',
@@ -52,20 +52,20 @@ export const ds = {
   ganttLateTrack: '#FBE0E0',
 } as const;
 
-// カテゴリ色（API の color 未設定時のフォールバック）。⚠ 並びと数を変えない
-// ——色を付けていないカテゴリは id からこの 5 色を割り当てるので、増やすと既存の色が変わる。
+// Category colors (fallback when the API color is unset). ⚠ Do not change order or count
+// —— uncolored categories get one of these 5 colors by id, so adding more changes existing colors.
 const fallbackPalette = ['#0017C1', '#1E8E4E', '#B26C00', '#6B7280', '#6B46C1'] as const;
 
-// カテゴリ・プロジェクトで選べる色。オレンジ系を足した（2026-10-02 持ち主の依頼）。
-// どれも白い文字を載せて読める濃さにしてある。
+// Colors selectable for categories and projects. Orange shades added (2026-10-02, owner's request).
+// All are dark enough to read white text on.
 export const categoryPalette = [
   ...fallbackPalette,
-  '#E8590C', // オレンジ
-  '#D9480F', // 濃いオレンジ
-  '#F08C00', // 山吹
-  '#C92A2A', // 赤
-  '#C2255C', // 紅
-  '#0C8599', // 青緑
+  '#E8590C', // orange
+  '#D9480F', // dark orange
+  '#F08C00', // amber
+  '#C92A2A', // red
+  '#C2255C', // crimson
+  '#0C8599', // teal
 ] as const;
 
 export const categoryColor = (categoryId: number | null | undefined, apiColor?: string | null): string => {
@@ -75,7 +75,7 @@ export const categoryColor = (categoryId: number | null | undefined, apiColor?: 
 };
 
 export const fontFamily = "'Noto Sans JP', system-ui, sans-serif";
-// WBS の字（task #639・ADR-0061）: 見出しは太い角ゴシック、WBS 番号と日付は等幅（桁がそろう）。本文は Noto Sans JP のまま
+// WBS fonts (task #639, ADR-0061): headings in bold gothic, WBS codes and dates monospaced (digits align). Body text stays Noto Sans JP
 export const headingFont = "'Zen Kaku Gothic New', 'Noto Sans JP', system-ui, sans-serif";
 export const codeFont = "'IBM Plex Mono', ui-monospace, Menlo, monospace";
 
@@ -148,8 +148,8 @@ export const theme = createTheme({
   },
 });
 
-// 暗いテーマ（カレンダーの部品は `palette.calendar` の暗い側で描ける）。いまは使う画面が無い。
-// 他の画面は `ds` の明るい色を直に書いているので、アプリ全体を暗くするのは別の課題。
+// Dark theme (calendar components can render with the dark side of `palette.calendar`). No screen uses it yet.
+// Other screens hard-code the light `ds` colors, so darkening the whole app is a separate task.
 export const darkTheme = createTheme({
   palette: {
     mode: 'dark',

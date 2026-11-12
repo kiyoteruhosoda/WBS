@@ -1,10 +1,10 @@
-"""予定（calendar_events と例外・移動）と営業日カレンダー（business_calendars と祝日）
+"""Events (calendar_events with exceptions and moves) and business-day calendars (business_calendars and holidays)
 
 Revision ID: 0003
 Revises: 0002
 Create Date: 2026-10-01
 
-task #156 の第 2 段（ADR-0009）。
+Stage 2 of task #156 (ADR-0009).
 """
 
 from __future__ import annotations
@@ -47,7 +47,7 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(["task_id"], ["tasks.id"]),
         sa.ForeignKeyConstraint(["user_id"], ["users.id"]),
         sa.PrimaryKeyConstraint("id"),
-        # 消した id を使い回さない（古い画面が同じ id の別の予定を直さないように）
+        # Do not reuse deleted ids (so a stale screen cannot edit a different event with the same id)
         sqlite_autoincrement=True,
     )
     op.create_index(

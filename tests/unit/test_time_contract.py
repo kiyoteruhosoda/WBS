@@ -1,12 +1,12 @@
-"""時刻の契約（HANDOVER §14）。
+"""The time contract (HANDOVER §14).
 
-保存・比較・ログは UTC、ローカルタイムへ直すのは画面だけ。
-ここでは 2 つを固定する。
+Storage, comparison and logs are UTC; only the screen converts to local time.
+Two things are pinned here.
 
-1. `clock` の出力: 「今」は aware な UTC、境界へ出す文字列は必ず `Z` で終わる
-2. ソースの書き方: プロセスのタイムゾーンに依存する呼び方が混ざっていないこと
+1. `clock` output: "now" is aware UTC, and strings handed across boundaries always end in `Z`
+2. How source is written: no calls that depend on the process time zone
 
-2 は AST で見るので、コメントや docstring の中の記述には反応しない。
+2 is checked via the AST, so mentions inside comments or docstrings do not trigger it.
 """
 
 from __future__ import annotations
@@ -25,20 +25,20 @@ JST = timezone(timedelta(hours=9))
 _ROOT = Path(__file__).resolve().parents[2]
 
 _MESSAGES = {
-    "now": "datetime.now() はコンテナのローカル時刻。src.shared.clock.utcnow() を使う",
-    "utcnow": "datetime.utcnow() は naive かつ非推奨。src.shared.clock.utcnow() を使う",
-    "today": "date.today() はサーバのローカル日付。UserClock.today(user_id) を使う",
-    "astimezone": "引数なしの astimezone() はローカルへ変換する。出す先の TZ を明示する",
-    "fromtimestamp": "fromtimestamp() は tz を渡さないとローカル解釈になる。tz=UTC を渡す",
+    "now": "datetime.now() is the container's local time. Use src.shared.clock.utcnow()",
+    "utcnow": "datetime.utcnow() is naive and deprecated. Use src.shared.clock.utcnow()",
+    "today": "date.today() is the server's local date. Use UserClock.today(user_id)",
+    "astimezone": "astimezone() without arguments converts to local time. Name the target TZ explicitly",
+    "fromtimestamp": "fromtimestamp() without tz is interpreted as local time. Pass tz=UTC",
 }
 
 
 def test_utcnow_is_naive_utc() -> None:
-    """保存値と同じ形（naive な UTC）で返す。
+    """Returns the same shape as stored values (naive UTC).
 
-    DB の DATETIME はタイムゾーンを持たず、書いた値は naive で返る。生成側だけ
-    aware にすると「入れたばかりの値は aware・読み直した値は naive」となり、
-    比べた瞬間に TypeError で落ちる。
+    DB DATETIME has no time zone, and written values come back naive. Making only the producer
+    aware means "a freshly inserted value is aware, a re-read value is naive",
+    and the moment they are compared it crashes with TypeError.
     """
     now = utcnow()
     assert now.tzinfo is None
@@ -74,13 +74,13 @@ def test_response_field_renders_with_a_trailing_z() -> None:
 
 def _source_files() -> list[Path]:
     files = [p for p in (_ROOT / "src").rglob("*.py") if "__pycache__" not in p.parts]
-    files.append(_ROOT / "main.py")  # 合成ルートも契約の対象
-    assert files, "走査対象のソースが見つからない"
+    files.append(_ROOT / "main.py")  # the composition root is also covered by the contract
+    assert files, "no source files found to scan"
     return files
 
 
 def _is_clock_receiver(node: ast.Attribute) -> bool:
-    """``datetime.now`` のように標準の日時型に生えているものか（自前の Clock は対象外）。"""
+    """Whether it hangs off the standard date/time types, like ``datetime.now`` (our own Clock is excluded)."""
     return ast.unparse(node.value).endswith(("datetime", "date"))
 
 
@@ -88,7 +88,7 @@ def _violations(tree: ast.AST) -> list[tuple[int, str]]:
     found: list[tuple[int, str]] = []
     called: set[int] = set()
 
-    # (1) 呼び出しの形。tz を渡していれば明示的なので見逃す。
+    # (1) The call form. Passing tz is explicit, so let it through.
     for node in ast.walk(tree):
         if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute):
             continue
@@ -99,19 +99,19 @@ def _violations(tree: ast.AST) -> list[tuple[int, str]]:
         if attr in {"now", "utcnow", "today", "fromtimestamp"} and not _is_clock_receiver(node.func):
             continue
         if attr in {"now", "today", "astimezone"} and (node.args or node.keywords):
-            continue  # tz を渡している
+            continue  # tz is passed
         if attr == "fromtimestamp" and len(node.args) + len(node.keywords) > 1:
-            continue  # tz を渡している
+            continue  # tz is passed
         found.append((node.lineno, _MESSAGES[attr]))
 
-    # (2) 関数参照として渡す形（``default=datetime.utcnow``）。呼び出しではないので
-    #     (1) では拾えない。渡した先が呼ぶので、結果はローカル時計と同じ。
+    # (2) The form passed as a function reference (``default=datetime.utcnow``). Not a call, so
+    #     (1) misses it. The receiver calls it, so the result is the same as the local clock.
     for node in ast.walk(tree):
         if not isinstance(node, ast.Attribute) or id(node) in called:
             continue
         if node.attr not in {"now", "utcnow", "today"} or not _is_clock_receiver(node):
             continue
-        found.append((node.lineno, _MESSAGES[node.attr] + "（関数参照として渡す形も同じ）"))
+        found.append((node.lineno, _MESSAGES[node.attr] + " (same when passed as a function reference)"))
 
     return found
 
@@ -125,12 +125,12 @@ def test_source_does_not_take_the_local_clock(path: Path) -> None:
 
 
 def test_the_clock_is_the_only_place_that_reads_the_wall_clock() -> None:
-    """「今」を作るのは `src/shared/clock.py` だけ。
+    """Only `src/shared/clock.py` creates "now".
 
-    `datetime.now(UTC)` は tz を渡しているので上の検査は通ってしまうが、
-    あちこちで呼ばれると生成口が増える。実際、ops のヘルスと main.py の
-    startup_time が別々に `datetime.now(UTC)` を呼んでいて、片方だけ形を
-    変えると差分の計算が TypeError になる状態だった。
+    `datetime.now(UTC)` passes the check above since it passes tz, but
+    calling it all over the place multiplies the producers. In fact, the ops health check and main.py's
+    startup_time each called `datetime.now(UTC)` separately, and changing the shape of only one
+    would have made the difference calculation raise TypeError.
     """
     offenders: list[str] = []
     for path in _source_files():
@@ -145,4 +145,4 @@ def test_the_clock_is_the_only_place_that_reads_the_wall_clock() -> None:
                 and _is_clock_receiver(node.func)
             ):
                 offenders.append(f"{path.relative_to(_ROOT)}:{node.lineno}")
-    assert not offenders, "src.shared.clock.utcnow() を使う: " + ", ".join(offenders)
+    assert not offenders, "use src.shared.clock.utcnow(): " + ", ".join(offenders)

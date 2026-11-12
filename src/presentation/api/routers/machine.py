@@ -1,12 +1,12 @@
-"""ほかのアプリのサーバーが、利用者の代わりに読み書きする口（ADR-0056）。
+"""Endpoints another app's server uses to read/write on a user's behalf (ADR-0056).
 
-- 担当タスク: ``GET /machine/assigned-tasks``（Tracker のタスクを選ぶ欄。task #539）
-- 見えるプロジェクト: ``GET /machine/projects``（Tracker でタスクを足すときのプロジェクトを選ぶ欄）
-- 締めた時間: ``PUT`` / ``DELETE /machine/closed-periods/{first_day}``（Tracker の締めの確定・取り消し。task #540）
+- Assigned tasks: ``GET /machine/assigned-tasks`` (the task picker in Tracker. task #539)
+- Visible projects: ``GET /machine/projects`` (the project picker when adding a task in Tracker)
+- Closed time: ``PUT`` / ``DELETE /machine/closed-periods/{first_day}`` (confirming/cancelling a Tracker closing. task #540)
 
-⚠ **機械のトークン（``Authorization: Bearer``）だけ**を受ける。宛名は ``MACHINE_AUDIENCE``、
-読み書きしてよいアプリは ``MACHINE_READER_CLIENT_IDS``。利用者は ``issuer`` と ``subject`` で渡す。
-書く口は ``machine_operation_logs`` に残し、読む口はアプリログまで（task #802 / ADR-0068）。
+⚠ Accepts **only machine tokens (``Authorization: Bearer``)**. The audience is ``MACHINE_AUDIENCE``,
+apps allowed to read/write are ``MACHINE_READER_CLIENT_IDS``. The user is passed as ``issuer`` and ``subject``.
+Write endpoints are recorded in ``machine_operation_logs``; read endpoints only in the app log (task #802 / ADR-0068).
 """
 
 from __future__ import annotations
@@ -27,13 +27,13 @@ router = APIRouter(prefix="/machine", tags=["machine"])
 
 
 class AssignedTaskResponse(BaseModel):
-    """担当タスクの 1 件（Tracker はこれでタスクの写しを足す・直す）。"""
+    """One assigned task (Tracker uses it to add/update its copy of the task)."""
 
-    id: int = Field(description="WBS のタスクの id（Tracker の写しの wbs_task_id）")
+    id: int = Field(description="WBS task id (wbs_task_id of the Tracker copy)")
     title: str
-    project_path: str | None = Field(description="プロジェクトの道筋（「親 / 子」）。未分類は null")
+    project_path: str | None = Field(description="Project path ('parent / child'). null if uncategorized")
     project_id: int | None = Field(
-        default=None, description="WBS のプロジェクトの id（Tracker の写しの wbs_project_id。task #711）。未分類は null"
+        default=None, description="WBS project id (wbs_project_id of the Tracker copy. task #711). null if uncategorized"
     )
     updated_at: UtcDatetime | None = None
 
@@ -44,10 +44,10 @@ class AssignedTasksResponse(BaseModel):
 
 @router.get("/assigned-tasks", response_model=AssignedTasksResponse)
 def list_assigned_tasks(user: MachineReaderUserDep, uc: TaskUseCasesDep) -> AssignedTasksResponse:
-    """担当が本人で、本人に見えて、まだ作業できる（完了・中止・アーカイブでない）タスク（ADR-0056 決定 2）。
+    """Tasks assigned to the user, visible to them, and still workable (not done, cancelled or archived) (ADR-0056 decision 2).
 
-    ここに無い写しは、Tracker が閉じる（担当が外れた・終わった）。利用者が WBS に居なければ 404、
-    止めた利用者は 403。トークンが合わなければ 401。
+    Copies not listed here are closed by Tracker (unassigned or finished). 404 if the user is not in WBS,
+    403 for a disabled user. 401 if the token does not match.
     """
     return AssignedTasksResponse(
         tasks=[
@@ -64,23 +64,23 @@ def list_assigned_tasks(user: MachineReaderUserDep, uc: TaskUseCasesDep) -> Assi
 
 
 class MachineProjectResponse(BaseModel):
-    """プロジェクトの 1 件（Tracker・Scheduler はこの id で結び、道筋を名前として見せる）。"""
+    """One project (Tracker and Scheduler link by this id and show the path as its name)."""
 
-    id: int = Field(description="WBS のプロジェクトの id")
-    path: str = Field(description="プロジェクトの道筋（「親 / 子」）")
-    code: str | None = Field(description="プロジェクトのコード（任意・一意ではない）")
+    id: int = Field(description="WBS project id")
+    path: str = Field(description="Project path ('parent / child')")
+    code: str | None = Field(description="Project code (optional, not unique)")
 
 
 class MachineProjectsResponse(BaseModel):
-    projects: list[MachineProjectResponse] = Field(description="木の順")
+    projects: list[MachineProjectResponse] = Field(description="In tree order")
 
 
 @router.get("/projects", response_model=MachineProjectsResponse)
 def list_projects(user: MachineReaderUserDep, uc: TaskUseCasesDep) -> MachineProjectsResponse:
-    """本人に見えて、保管していないプロジェクト（ADR-0056 決定 4）。
+    """Projects visible to the user and not archived (ADR-0056 decision 4).
 
-    Tracker と Scheduler がプロジェクトを選ぶ欄に出す。利用者が WBS に居なければ 404、
-    止めた利用者は 403。トークンが合わなければ 401。
+    Shown in the project pickers of Tracker and Scheduler. 404 if the user is not in WBS,
+    403 for a disabled user. 401 if the token does not match.
     """
     return MachineProjectsResponse(
         projects=[
@@ -97,15 +97,15 @@ class ClosedTimeEntryRequest(BaseModel):
 
 
 class ClosedPeriodRequest(BaseModel):
-    """Tracker の締めの期間 1 つぶん（この期間に受け取った行をまるごと置き換える）。"""
+    """One Tracker closing period (replaces all rows received for this period)."""
 
     last_day: dt.date
     entries: list[ClosedTimeEntryRequest]
 
 
 class ClosedPeriodResponse(BaseModel):
-    stored: int = Field(description="入れた行の数（同じタスク・同じ日はまとめる）")
-    unknown_task_ids: list[int] = Field(description="WBS に無い・消したタスク（受け取らなかった）")
+    stored: int = Field(description="Number of rows stored (same task and same day are merged)")
+    unknown_task_ids: list[int] = Field(description="Tasks missing from WBS or deleted (not accepted)")
 
 
 class ClosedPeriodRemovedResponse(BaseModel):
@@ -116,9 +116,9 @@ class ClosedPeriodRemovedResponse(BaseModel):
 def put_closed_period(
     first_day: dt.date, body: ClosedPeriodRequest, user: MachineReaderUserDep, db: DbDep
 ) -> ClosedPeriodResponse:
-    """Tracker で確定した期間の時間を受け取る（ADR-0056 決定 3）。何度送っても同じ結果になる。
+    """Receive the time of a period confirmed in Tracker (ADR-0056 decision 3). Sending it again gives the same result.
 
-    同じ期間の、WBS 自身の締めの行（Tracker へ移る前のもの）は退ける。
+    WBS's own closing rows for the same period (from before the move to Tracker) are removed.
     """
     receipt = TrackerClosedTimeUseCases(db, client_id=user.machine_client_id or "").replace(
         user.user_id,
@@ -133,6 +133,6 @@ def put_closed_period(
 def delete_closed_period(
     first_day: dt.date, user: MachineReaderUserDep, db: DbDep
 ) -> ClosedPeriodRemovedResponse:
-    """Tracker で締めを開け直した期間の時間を退ける。受け取っていなければ 0（何度送ってもよい）。"""
+    """Remove the time of a period whose closing was reopened in Tracker. 0 if nothing was received (safe to resend)."""
     use_cases = TrackerClosedTimeUseCases(db, client_id=user.machine_client_id or "")
     return ClosedPeriodRemovedResponse(removed=use_cases.remove(user.user_id, first_day))

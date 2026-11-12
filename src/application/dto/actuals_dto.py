@@ -1,4 +1,4 @@
-"""実績の見える化（計画 vs 確定した実績。task #162 / ADR-0017。予定と打刻は task #543 / ADR-0070 で外した）の結果。"""
+"""Results of the actuals view (plan vs confirmed actuals; task #162 / ADR-0017. Calendar events and time punches were removed in task #543 / ADR-0070)."""
 
 from __future__ import annotations
 
@@ -14,31 +14,31 @@ class BreakdownGroupBy(StrEnum):
     CATEGORY = "category"
     MILESTONE = "milestone"
     PROJECT = "project"
-    """プロジェクトの枝ごと（子孫の分を積み上げる。ADR-0024）。"""
+    """Per project branch (descendants rolled up, ADR-0024)."""
 
 
 UNGROUPED_GROUP = "none"
-"""タスクはあるが、カテゴリ（マイルストーン・プロジェクト）が無い・消えた。"""
+"""The task exists, but its category (milestone/project) is missing or deleted."""
 
 
 @dataclass(frozen=True)
 class TaskActualsRow:
-    """タスク 1 行: タスクの応答（見積・実績・残）に、実績の帯と見直しの理由を足したもの。"""
+    """One task row: the task response (estimate, actual, remaining) plus the actuals bar and reasons to revisit."""
 
     task: dict
     actual_first_date: date | None
     actual_last_date: date | None
     latest_closed_hours: float
-    """Tracker から直近に届いた締めの期間でこのタスクに入った実績（時間）。"""
+    """Actual hours logged on this task during the closed period most recently received from Tracker."""
     review_reasons: list[RemainingReviewReason]
 
 
 @dataclass(frozen=True)
 class ClosedPeriod:
-    """Tracker から直近に届いた締めの期間（ADR-0056）。
+    """The closed period most recently received from Tracker (ADR-0056).
 
-    ``first_day`` は Tracker の期間の初日、``last_day`` は届いた実績の最後の日、
-    ``closed_at`` は届いた瞬間（naive な UTC）。
+    ``first_day`` is the first day of the Tracker period, ``last_day`` the last day of the received actuals,
+    ``closed_at`` the moment it was received (naive UTC).
     """
 
     first_day: date
@@ -60,7 +60,7 @@ class GanttActualDay:
 
 @dataclass(frozen=True)
 class GanttActualSpan:
-    """ガントの実績の帯。最初と最後の日は全期間から、日ごとの塗りは問うた範囲だけ。"""
+    """Actuals bar on the Gantt chart. First and last days come from the whole period; per-day fill only within the queried range."""
 
     task_id: int
     first_date: date
@@ -84,7 +84,7 @@ class PeriodReport:
 @dataclass(frozen=True)
 class BreakdownGroup:
     key: str
-    """``category:<id>`` / ``milestone:<id>`` / ``project:<id>`` / ``none`` / ``unassigned``。"""
+    """``category:<id>`` / ``milestone:<id>`` / ``project:<id>`` / ``none`` / ``unassigned``."""
     name: str | None
     color: str | None
 
@@ -106,7 +106,7 @@ class Breakdown:
 
 @dataclass(frozen=True)
 class ExportRow:
-    """書き出しの 1 行（期間 × 日 × タスク）。"""
+    """One export row (period x day x task)."""
 
     period: ReportPeriod
     work_date: date

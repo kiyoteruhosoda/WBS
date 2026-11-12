@@ -13,13 +13,13 @@ const steps = (overrides: Partial<ContinuationSteps> = {}): ContinuationSteps =>
 });
 
 describe('continueSession', () => {
-  it('IdP が続けてよいと答えたら続ける', async () => {
+  it('continues when the IdP allows it', async () => {
     const given = steps();
     expect(await continueSession(given)).toEqual({ kind: 'continued' });
     expect(given.onRenewed).toHaveBeenCalled();
   });
 
-  it('サインアウトした後は問い合わせない', async () => {
+  it('does not ask after sign-out', async () => {
     const renew = vi.fn(async (): Promise<RenewalResult> => 'renewed');
     expect(await continueSession(steps({ signedOutHere: () => true, renewInFrame: renew }))).toEqual({
       kind: 'ended',
@@ -27,7 +27,7 @@ describe('continueSession', () => {
     expect(renew).not.toHaveBeenCalled();
   });
 
-  it('待っている間にほかのタブが続けていれば、枠を開かない', async () => {
+  it('does not open the frame when another tab continued while waiting', async () => {
     const renew = vi.fn(async (): Promise<RenewalResult> => 'renewed');
     expect(await continueSession(steps({ stillSignedIn: async () => true, renewInFrame: renew }))).toEqual({
       kind: 'continued',
@@ -35,19 +35,19 @@ describe('continueSession', () => {
     expect(renew).not.toHaveBeenCalled();
   });
 
-  it('断られたら終わり、このタブでは黙った確かめを重ねない', async () => {
+  it('ends on refusal and does not repeat the silent check in this tab', async () => {
     const given = steps({ renewInFrame: async () => 'declined' });
     expect(await continueSession(given)).toEqual({ kind: 'ended' });
     expect(given.onDeclined).toHaveBeenCalled();
   });
 
-  it('往復が壊れたら終わる（黙った確かめの印は付けない）', async () => {
+  it('ends when the round trip breaks (without setting the silent-check marker)', async () => {
     const given = steps({ renewInFrame: async () => 'failed' });
     expect(await continueSession(given)).toEqual({ kind: 'ended' });
     expect(given.onDeclined).not.toHaveBeenCalled();
   });
 
-  it('サーバーに届かないときはログアウト扱いにしない', async () => {
+  it('does not treat an unreachable server as signed out', async () => {
     const offline = new Error('Network Error');
     const outcome = await continueSession(
       steps({
@@ -59,7 +59,7 @@ describe('continueSession', () => {
     expect(outcome).toEqual({ kind: 'unavailable', error: offline });
   });
 
-  it('1 本ずつの順番の中で確かめる', async () => {
+  it('checks within the one-at-a-time queue', async () => {
     const order: string[] = [];
     await continueSession(
       steps({

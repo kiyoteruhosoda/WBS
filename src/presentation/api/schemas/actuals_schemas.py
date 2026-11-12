@@ -1,4 +1,4 @@
-"""実績の見える化の応答（task #162 / ADR-0017）。時間は秒（整数）か時間（小数 2 桁）で返す。"""
+"""Responses for the actuals visualization (task #162 / ADR-0017). Durations are returned in seconds (int) or hours (2 decimals)."""
 
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ from src.presentation.api.schemas.types import UtcDatetime
 
 
 class ClosedPeriodResponse(BaseModel):
-    """Tracker から直近に届いた締めの期間（初日・届いた実績の最後の日・届いた時刻）。"""
+    """The most recent closing period received from Tracker (first day, last day of the received actuals, time received)."""
 
     first_day: date
     last_day: date
@@ -25,10 +25,10 @@ class ClosedPeriodResponse(BaseModel):
 
 
 class TaskActualsRowResponse(BaseModel):
-    """タスク 1 行。見積・実績・残は ``task`` の欄（タスクの一覧と同じ値）。
+    """One task row. Estimate, actual and remaining are the ``task`` fields (same values as the task list).
 
-    ``review_reasons``: 残を見直してほしい理由（``over_estimate`` / ``no_remaining`` /
-    ``unknown_remaining`` / ``stale_remaining``）。空なら見直さなくてよい。
+    ``review_reasons``: why the remaining time should be reviewed (``over_estimate`` / ``no_remaining`` /
+    ``unknown_remaining`` / ``stale_remaining``). Empty means no review is needed.
     """
 
     task: TaskResponse
@@ -88,7 +88,7 @@ class GanttActualSpanResponse(BaseModel):
 
 
 class PeriodComparisonResponse(BaseModel):
-    """1 期間の確定実績（秒）。"""
+    """Confirmed actuals for one period (seconds)."""
 
     first_day: date
     last_day: date
@@ -117,8 +117,8 @@ class PeriodReportResponse(BaseModel):
 
 
 class BreakdownGroupResponse(BaseModel):
-    """``key`` は ``category:<id>`` / ``milestone:<id>`` / ``project:<id>`` / ``none``（未分類）。
-    プロジェクトは枝ごとの合計（子孫の分を含む）。"""
+    """``key`` is ``category:<id>`` / ``milestone:<id>`` / ``project:<id>`` / ``none`` (uncategorized).
+    Projects are per-branch totals (including descendants)."""
 
     key: str
     name: str | None

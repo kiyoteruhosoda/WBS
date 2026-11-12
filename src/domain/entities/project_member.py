@@ -1,6 +1,6 @@
-"""プロジェクトのメンバー（task #544 / ADR-0055）。
+"""Project member (task #544 / ADR-0055).
 
-⚠ **いちばん上のプロジェクトにだけ付く。** その下のプロジェクト・タスク・マイルストーンは根のメンバー全員に見える。
+⚠ **Attached only to top-level projects.** Projects, tasks and milestones below are visible to all members of the root.
 """
 
 from __future__ import annotations
@@ -20,13 +20,13 @@ MAX_DAILY_HOURS = Decimal(24)
 @dataclass
 class ProjectMember:
     id: int | None
-    #: いちばん上のプロジェクト
+    #: Top-level project
     project_id: int
     user_id: int
     role: ProjectRole = ProjectRole.MEMBER
-    #: 1 日の工数（時間）。見込みの計算で「1 日の工数 × 従事率」をこのプロジェクトに使える時間とする（ADR-0058）
+    #: Work hours per day. Forecasts treat "hours per day × allocation" as the time available to this project (ADR-0058)
     daily_hours: Decimal = DEFAULT_DAILY_HOURS
-    #: 従事率（%）。その人がこのプロジェクトに割く割合
+    #: Allocation (%). The share of the person's time given to this project
     engagement_percent: int = DEFAULT_ENGAGEMENT_PERCENT
     created_at: datetime | None = None
 

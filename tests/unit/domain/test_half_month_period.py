@@ -1,4 +1,4 @@
-"""締めの期間の割り方（task #163）: 1〜15 日 / 16 日〜末日、月末・閏年・タイムゾーンの 0:00。"""
+"""How closing periods are split (task #163): days 1-15 / 16-end of month, month ends, leap years, 0:00 in the time zone."""
 
 from __future__ import annotations
 
@@ -19,11 +19,11 @@ from src.domain.value_objects.half_month_period import HalfMonthPeriod, local_da
         (date(2026, 10, 16), date(2026, 10, 16), date(2026, 10, 31)),
         (date(2026, 10, 31), date(2026, 10, 16), date(2026, 10, 31)),
         (date(2026, 9, 30), date(2026, 9, 16), date(2026, 9, 30)),
-        # 閏年の 2 月は 29 日まで、平年は 28 日まで
+        # February has 29 days in leap years, 28 in common years
         (date(2028, 2, 29), date(2028, 2, 16), date(2028, 2, 29)),
         (date(2028, 2, 16), date(2028, 2, 16), date(2028, 2, 29)),
         (date(2027, 2, 20), date(2027, 2, 16), date(2027, 2, 28)),
-        (date(2100, 2, 28), date(2100, 2, 16), date(2100, 2, 28)),  # 100 で割れて 400 で割れない
+        (date(2100, 2, 28), date(2100, 2, 16), date(2100, 2, 28)),  # divisible by 100 but not by 400
         (date(2000, 2, 17), date(2000, 2, 16), date(2000, 2, 29)),
     ],
 )
@@ -61,7 +61,7 @@ def test_a_made_up_range_is_not_a_period() -> None:
 
 def test_utc_window_is_midnight_in_the_users_time_zone() -> None:
     period = HalfMonthPeriod.starting_on(date(2026, 10, 1))
-    # JST の 10/1 0:00 は UTC の 9/30 15:00。終わりは 10/16 0:00 JST（含まない）
+    # 10/1 0:00 JST is 9/30 15:00 UTC. The end is 10/16 0:00 JST (exclusive)
     assert period.utc_window(ZoneInfo("Asia/Tokyo")) == (
         datetime(2026, 9, 30, 15, 0),
         datetime(2026, 10, 15, 15, 0),
@@ -73,7 +73,7 @@ def test_utc_window_is_midnight_in_the_users_time_zone() -> None:
 
 
 def test_utc_window_follows_daylight_saving_time() -> None:
-    # 米国太平洋時間は 2026-11-01 に夏時間が終わる（-7h → -8h）
+    # US Pacific time leaves daylight saving on 2026-11-01 (-7h -> -8h)
     period = HalfMonthPeriod.starting_on(date(2026, 10, 16))
     assert period.utc_window(ZoneInfo("America/Los_Angeles")) == (
         datetime(2026, 10, 16, 7, 0),

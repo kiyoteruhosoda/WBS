@@ -28,7 +28,7 @@ from src.infrastructure.repositories.task_repository import SqlAlchemyTaskReposi
 
 
 def _forecast_fields(forecast: CompletionForecast, task: Task) -> dict:
-    """終わる見込み（ADR-0058）。見込みを出さないときは ``forecast_gap`` に理由。"""
+    """Forecast completion (ADR-0058). When no forecast is given, ``forecast_gap`` holds the reason."""
     f = forecast.task(task.id or 0)
     return {
         "forecast_start": f.start,
@@ -54,15 +54,15 @@ class TaskUseCases:
             members=SqlAlchemyProjectMemberRepository(session),
         )
         self._session = session
-        # 担当者の名前を引くだけ（候補の絞りは使わない）
+        # Only used to look up assignee names (candidate filtering is not used)
         self._people = SqlAlchemyPersonDirectory(session, require_identity=False)
         self._clock = clock or UserClock(session)
         self._forecasts = CompletionForecastUseCases(session, self._clock)
 
     def list_tasks(self, user_id: int, filters: dict) -> list[dict]:
-        """``filters`` の ``project_id`` は**子孫のプロジェクトも含めて**絞る（ADR-0024）。
+        """``project_id`` in ``filters`` filters **including descendant projects** (ADR-0024).
 
-        アーカイブしたタスク（ADR-0046）は出さない。
+        Archived tasks (ADR-0046) are not returned.
         """
         filters = self.resolve_project_filter(user_id, filters)
         tasks = [t for t in self._repo.find_all(user_id, filters) if not t.is_archived]
@@ -73,18 +73,18 @@ class TaskUseCases:
         return [self._enrich(t, board, tree, names, forecast) for t in tasks]
 
     def assigned_open_tasks(self, user_id: int) -> list[tuple[Task, str | None]]:
-        """担当が自分で、自分に見えて、まだ作業できるタスクと、その道筋（ADR-0056。Tracker の選ぶ欄へ渡す）。
+        """Tasks assigned to the caller, visible to them and still workable, with their paths (ADR-0056; passed to Tracker's picker).
 
-        ⚠ メンバーから外れた人の担当は残っている（ADR-0055 決定 4）が、見えないのでここには出ない。
+        ⚠ Assignments of people removed from members remain (ADR-0055 decision 4), but they are not visible so they do not appear here.
         """
         tree = self._membership.tree(user_id)
         tasks = self._repo.find_all(user_id, {"assignee_user_id": user_id})
         return [(t, tree.path(t.project_id)) for t in tasks if t.is_open]
 
     def open_projects(self, user_id: int) -> list[tuple[Project, str]]:
-        """自分に見えて保管していないプロジェクトと、その道筋（ADR-0056 決定 4。Tracker・Scheduler の選ぶ欄へ渡す）。
+        """Projects visible to the caller and not archived, with their paths (ADR-0056 decision 4; passed to Tracker's and Scheduler's pickers).
 
-        木の順（親の直後に子、兄弟は並び順）。保管した枝の下は丸ごと出さない。
+        In tree order (children right after their parent, siblings by position). Everything under an archived branch is omitted.
         """
         tree = self._membership.tree(user_id)
         found: list[tuple[Project, str]] = []
@@ -102,7 +102,7 @@ class TaskUseCases:
         return found
 
     def resolve_project_filter(self, user_id: int, filters: dict) -> dict:
-        """``project_id`` を、そのプロジェクトと子孫の id の一覧（``project_ids``）に置き換える。"""
+        """Replace ``project_id`` with the list of ids of that project and its descendants (``project_ids``)."""
         if filters.get("project_id") is None:
             return filters
         resolved = {k: v for k, v in filters.items() if k != "project_id"}
@@ -110,7 +110,7 @@ class TaskUseCases:
         return resolved
 
     def progress_board(self, user_id: int) -> TaskProgressBoard:
-        # 親の進捗は子孫の積み上げなので、絞り込みに関わらず利用者のタスク全部から作る
+        # A parent's progress is rolled up from its descendants, so build from all the user's tasks regardless of filters
         return TaskProgressBoard(
             self._repo.find_all(user_id, {}),
             self._repo.get_actual_hours_by_task(user_id),
@@ -126,7 +126,7 @@ class TaskUseCases:
         project_id = dto.project_id
         if dto.parent_task_id is not None:
             parent = self._owned_task(dto.parent_task_id, dto.user_id)
-            # 子タスクは親のプロジェクトに入る（ADR-0024）。空で送られたら親に揃える
+            # A child task goes into its parent's project (ADR-0024). If sent empty, align it with the parent
             if project_id is not None and project_id != parent.project_id:
                 raise ValidationError("a subtask belongs to the project of its parent task")
             project_id = parent.project_id
@@ -169,7 +169,7 @@ class TaskUseCases:
         if dto.title is not None:
             task.title = dto.title
         if dto.category_id is not None:
-            # 選び直したときだけ確かめる。チームのタスクには付けた人の分類が付いたままのことがある
+            # Check only when re-selected. A team task may still carry the category of whoever set it
             if dto.category_id != task.category_id:
                 self.check_category(user_id, dto.category_id)
             task.category_id = dto.category_id
@@ -194,29 +194,29 @@ class TaskUseCases:
         if dto.parent_task_id is not None and dto.parent_task_id != task.parent_task_id:
             self._owned_task(dto.parent_task_id, user_id)
             if dto.parent_task_id in self._repo.subtree_ids(user_id, task_id):
-                # 自分か自分の子孫を親にすると、その枝がどこからも辿れなくなる
+                # Making itself or its own descendant the parent would make that branch unreachable
                 raise ConflictError("a task cannot be placed under itself or its own subtask")
             task.parent_task_id = dto.parent_task_id
 
         previous_project = task.project_id
         task.project_id = self._project_for_update(task, user_id, dto)
         if task.project_id != previous_project:
-            # 別の木へ持ち出すのは、元と先の両方の管理者だけ（ADR-0066）。親を替えて移すときも同じ
+            # Only admins of both the source and target trees may take it to another tree (ADR-0066). Same when moving by changing the parent
             self._membership.require_manager_to_cross(user_id, previous_project, task.project_id)
         previous_milestone = task.milestone_id
         if dto.milestone_id_given or dto.milestone_id is not None:
             task.milestone_id = dto.milestone_id
-        # 自分で選び直したマイルストーンが届かないなら断る。前から付いていたものは下で外す
+        # Reject a milestone the caller re-selected if it cannot be reached. Previously attached ones are detached below
         if task.milestone_id is not None and task.milestone_id != previous_milestone:
             self._check_milestone(user_id, task.milestone_id, task.project_id)
-        # 担当者は選び直したときだけ確かめる。前からの担当は、外れた人でも消さずに残す（ADR-0055 決定 4）
+        # Check the assignee only when re-selected. An existing assignee is kept even if removed from members (ADR-0055 decision 4)
         if dto.assignee_user_id_given and dto.assignee_user_id != task.assignee_user_id:
             task.assignee_user_id = dto.assignee_user_id
             self._check_assignee(user_id, task)
 
         saved = self._repo.save(task)
         if task.project_id != previous_project:
-            # 親を移すと子孫も移る（子だけ別のプロジェクトにはしない。ADR-0024）
+            # Moving a parent moves its descendants too (a child alone never goes to a different project, ADR-0024)
             self._repo.set_project(self._repo.subtree_ids(user_id, task_id), task.project_id)
             self._membership.detach_unreachable_milestones(user_id)
             self._session.expire_all()
@@ -227,11 +227,11 @@ class TaskUseCases:
         )
 
     def move_to_project(self, user_id: int, task_ids: list[int], project_id: int | None) -> dict:
-        """選んだタスクをまとめて別のプロジェクトへ（``None`` で未分類へ）。ADR-0030。
+        """Move the selected tasks to another project at once (to unclassified with ``None``). ADR-0030.
 
-        子タスクは親に従う（ADR-0024 の 4）ので、書くのは枝の根だけで、子孫は根と一緒に移る。
-        祖先が一緒に選ばれていない子タスクを含めば、何も変えずに 422（子だけ別のプロジェクトにはしない）。
-        自分のタスクでない id・他人のプロジェクトは 404。届かなくなったマイルストーンは外す。
+        Child tasks follow their parent (ADR-0024 point 4), so only branch roots are written and descendants move along with them.
+        If it includes a child task whose ancestor is not selected along with it, 422 without changing anything (a child alone never goes to a different project).
+        Ids that are not the caller's tasks and other people's projects are 404. Milestones that can no longer be reached are detached.
         """
         if project_id is not None:
             self._membership.visible_project(user_id, project_id)
@@ -248,7 +248,7 @@ class TaskUseCases:
                 f"(task ids: {', '.join(str(i) for i in selection.stranded)})"
             )
         for root in selection.roots:
-            # 別の木へ持ち出すのは、元と先の両方の管理者だけ（ADR-0066）。1 つでも断れば何も変えない
+            # Only admins of both the source and target trees may take them to another tree (ADR-0066). If any one is refused, nothing changes
             if live[root].project_id != project_id:
                 self._membership.require_manager_to_cross(user_id, live[root].project_id, project_id)
         moved: list[int] = []
@@ -267,8 +267,8 @@ class TaskUseCases:
         }
 
     def _project_for_update(self, task: Task, user_id: int, dto: UpdateTaskDTO) -> int | None:
-        """更新の後に属するプロジェクト。親があれば親のもの（違う値を送られたら 422）。"""
-        # ⚠ 親を消した（論理削除）子は、根として扱う（親が見つからないだけで直せなくしない）
+        """The project it belongs to after the update. If it has a parent, the parent's (422 if a different value is sent)."""
+        # ⚠ A child whose parent was deleted (soft delete) is treated as a root (don't make it uneditable just because the parent is missing)
         parent = (
             self._repo.find_by_id_for_user(task.parent_task_id, user_id)
             if task.parent_task_id is not None
@@ -285,7 +285,7 @@ class TaskUseCases:
         return dto.project_id
 
     def check_category(self, user_id: int, category_id: int) -> None:
-        """分類は作った本人のもの（task #762）。ほかの人の分類は無いものとして断る。"""
+        """Categories belong to their creator (task #762). Someone else's category is rejected as if it did not exist."""
         owned_by(
             self._categories.find_by_id(category_id), user_id,
             resource="Category", resource_id=category_id,
@@ -302,7 +302,7 @@ class TaskUseCases:
         return {pid: p.display_name for pid, p in self._people.by_ids(ids).items()}
 
     def _check_assignee(self, user_id: int, task: Task) -> None:
-        """担当者に付けられるのは、根のプロジェクトのメンバー（未分類なら作った人）だけ（ADR-0055 決定 4）。"""
+        """Only members of the root project (the creator, if unclassified) can be assignees (ADR-0055 decision 4)."""
         if task.assignee_user_id is None:
             return
         if task.project_id is None:
@@ -314,7 +314,7 @@ class TaskUseCases:
             raise ValidationError("the assignee must be a member of the top project of this task")
 
     def _check_milestone(self, user_id: int, milestone_id: int, project_id: int | None) -> None:
-        """見えるマイルストーンで、そのプロジェクト（か祖先・未分類）のものか（ADR-0024・ADR-0055）。"""
+        """Whether the milestone is visible and belongs to that project (or an ancestor, or is unclassified) (ADR-0024, ADR-0055)."""
         milestone = self._milestones.find_by_id_for_user(milestone_id, user_id)
         if milestone is None:
             raise NotFoundError("Milestone", milestone_id)
@@ -333,7 +333,7 @@ class TaskUseCases:
         forecast: CompletionForecast | None = None,
     ) -> dict:
         if forecast is None:
-            # 1 件でも、見込みは同じ枠のタスク全部を積んで出す（ADR-0058）
+            # Even for a single task, the forecast is computed by stacking all tasks in the same capacity (ADR-0058)
             forecast = self._forecasts.forecast(task.user_id)
         if names is None:
             names = self._assignee_names([task])
@@ -343,10 +343,10 @@ class TaskUseCases:
             tree = self._membership.tree(task.user_id)
         actual = board.actual_hours(task.id)
         remaining = task.remaining_hours_from(actual)
-        # 進捗率の式に入れる実績と残（子を持つなら子孫の積み上げ。ADR-0010）
+        # Actual and remaining fed into the progress formula (rolled up from descendants if it has children, ADR-0010)
         figures = board.figures(task)
-        # 期限の近さは利用者の日付で決まる。サーバ（UTC）の today を使うと
-        # JST の利用者にとって 0:00〜9:00 のあいだ「今日」が前日にずれる。
+        # How close the due date is depends on the user's date. Using the server's (UTC) today
+        # shifts "today" to the previous day between 0:00 and 9:00 for a JST user.
         today = self._clock.today(task.user_id)
         priority_score = task.priority_score(today)
         return {
@@ -380,7 +380,7 @@ class TaskUseCases:
             "assignee_name": (
                 names.get(task.assignee_user_id) if task.assignee_user_id is not None else None
             ),
-            # 表示用の道筋（「親 / 子」）。未分類は null
+            # Display path ("parent / child"). null if unclassified
             "project_path": tree.path(task.project_id),
             "completed_at": task.completed_at,
             "archived_at": task.archived_at,

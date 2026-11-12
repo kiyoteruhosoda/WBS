@@ -1,7 +1,7 @@
-"""プロジェクト（task #187 / ADR-0024）。
+"""Project (task #187 / ADR-0024).
 
-⚠ **多段に入れ子にできる**（深さに決まりは無い）。親は ``parent_project_id``（隣接リスト）で持ち、
-子孫は再帰 CTE で引く（nolumiatask の ADR-0046 と同じ形）。環は作らせない（``ProjectTree``）。
+⚠ **Can be nested to any depth** (no depth limit). The parent is held in ``parent_project_id`` (adjacency list),
+and descendants are fetched with a recursive CTE (same shape as nolumiatask ADR-0046). Cycles are not allowed (``ProjectTree``).
 """
 
 from __future__ import annotations
@@ -17,7 +17,7 @@ CODE_MAX_LENGTH = 32
 
 
 def project_name(raw: str) -> str:
-    """前後の空白を落とした名前。空・長すぎるものは断る。"""
+    """The name with surrounding whitespace stripped. Rejects empty or too-long names."""
     name = raw.strip()
     if not name:
         raise ValidationError("a project needs a name")
@@ -27,9 +27,9 @@ def project_name(raw: str) -> str:
 
 
 def project_code(raw: str | None) -> str | None:
-    """プロジェクトコード（任意。名前の横に出す短い札）。前後の空白を落とし、空なら None。長すぎるものは断る。
+    """Project code (optional; a short tag shown next to the name). Strips surrounding whitespace; None if empty. Rejects too-long codes.
 
-    一意にはしない（今の用途は表示だけ）。
+    Not unique (currently used only for display).
     """
     if raw is None:
         return None
@@ -46,14 +46,14 @@ class Project:
     id: int | None
     user_id: int
     name: str
-    #: None = 最上位
+    #: None = top level
     parent_project_id: int | None = None
     color: str | None = None
-    #: 任意の短いコード（表示だけ。一意ではない）
+    #: Optional short code (display only; not unique)
     code: str | None = None
     description: str | None = None
     status: ProjectStatus = ProjectStatus.ACTIVE
-    #: 兄弟の中の並び（0 から。動かすと兄弟ごと振り直す）
+    #: Order among siblings (from 0; moving one renumbers all siblings)
     sort_order: int = 0
     created_at: datetime | None = None
     updated_at: datetime | None = None

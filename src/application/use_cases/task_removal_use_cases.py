@@ -1,10 +1,10 @@
-"""タスクを消す・アーカイブする（task #388 / ADR-0046。画面の言葉は #394 で「アーカイブ」）。
+"""Delete or archive tasks (task #388 / ADR-0046; the on-screen word became "archive" in #394).
 
-確定した実績（``work_logs``）のあるタスクを消すと、実績の表から名前が消える。
-なので**実績の無いタスクだけを消し**、あるタスクは消さずに**アーカイブする**（一覧と付け替え先に出ない。
-実績の表には名前ごと残る）。子タスクは今までどおり残る（親を消しても子は消えない）。
+Deleting a task that has confirmed actuals (``work_logs``) makes its name disappear from the actuals tables.
+So **only tasks without actuals are deleted**; tasks with actuals are **archived** instead (hidden from lists and reassignment targets,
+but kept with their name in the actuals tables). Child tasks stay as before (deleting the parent does not delete children).
 
-打刻と WinTrack の規則は Tracker へ移したので、ここでは見ない（task #543 / ADR-0070）。
+Time punch and WinTrack rules moved to Tracker, so they are not checked here (task #543 / ADR-0070).
 """
 
 from __future__ import annotations
@@ -33,7 +33,7 @@ class TaskRemovalUseCases:
         self._now = now
 
     def preview(self, task_id: int, user_id: int) -> TaskRemovalPreview:
-        """消すとどうなるか（確認の窓に出す）。"""
+        """What happens when deleting (shown in the confirmation dialog)."""
         task = self._owned(task_id, user_id)
         work_log_hours = self._tasks.get_actual_hours(task_id)
         return TaskRemovalPreview(
@@ -47,7 +47,7 @@ class TaskRemovalUseCases:
         )
 
     def delete(self, task_id: int, user_id: int) -> None:
-        """実績の無いタスクを消す。あれば 409（アーカイブする）。"""
+        """Delete a task without actuals. 409 if it has some (archive it instead)."""
         preview = self.preview(task_id, user_id)
         if preview.action is not TaskRemovalAction.DELETE:
             raise ConflictError("the task has work logs; archive it instead of deleting it")
@@ -55,7 +55,7 @@ class TaskRemovalUseCases:
         self._uow.commit()
 
     def archive(self, task_id: int, user_id: int) -> None:
-        """アーカイブする（冪等）。実績が無いタスクもアーカイブできる。"""
+        """Archive (idempotent). Tasks without actuals can be archived too."""
         task = self._owned(task_id, user_id)
         task.archive(self._now())
         self._tasks.save(task)

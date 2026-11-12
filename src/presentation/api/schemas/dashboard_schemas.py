@@ -1,4 +1,4 @@
-"""ダッシュボードの応答（KPI だけ。今日のタスクは ``/api/today``、ADR-0015）。"""
+"""Dashboard response (KPIs only. Today's tasks are in ``/api/today``, ADR-0015)."""
 
 from __future__ import annotations
 

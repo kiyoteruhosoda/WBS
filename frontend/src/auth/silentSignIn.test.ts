@@ -13,7 +13,7 @@ const at = (url: string) => {
   return { pathname: parsed.pathname, search: parsed.search };
 };
 
-/** 試験は node で走るので、ブラウザの保存領域を Map で代える */
+/** Tests run in node, so browser storage is replaced with a Map */
 const fakeStorage = (): Pick<Storage, 'getItem' | 'setItem' | 'removeItem'> => {
   const values = new Map<string, string>();
   return {
@@ -28,52 +28,52 @@ beforeEach(() => {
   vi.stubGlobal('localStorage', fakeStorage());
 });
 
-describe('IdP で入っているかを黙って確かめるか（ADR-0062）', () => {
+describe('whether to silently check the IdP sign-in (ADR-0062)', () => {
 
-  it('初めて開いたログイン画面・保護された画面では試す', () => {
+  it('tries on a freshly opened sign-in page or protected page', () => {
     expect(shouldTrySilently(at('/login'))).toBe(true);
     expect(shouldTrySilently(at('/login?next=%2Fgantt'))).toBe(true);
     expect(shouldTrySilently(at('/tasks?project=3'))).toBe(true);
   });
 
-  it('同じタブでは 1 回だけ', () => {
+  it('only once per tab', () => {
     expect(markSilentAttempt()).toBe(true);
     expect(shouldTrySilently(at('/login'))).toBe(false);
   });
 
-  it('サインアウトした後は、次に入るまで試さない', () => {
+  it('does not try after sign-out until the next sign-in', () => {
     rememberSignedOut();
     expect(shouldTrySilently(at('/login'))).toBe(false);
     forgetSilentMarks();
     expect(shouldTrySilently(at('/login'))).toBe(true);
   });
 
-  it('保存領域が使えなければ試さない（1 回だけの印が置けずループになる）', () => {
+  it('does not try without storage (the one-shot marker cannot be stored, which would loop)', () => {
     vi.stubGlobal('sessionStorage', undefined);
     expect(shouldTrySilently(at('/login'))).toBe(false);
     expect(markSilentAttempt()).toBe(false);
   });
 
-  it('ログイン画面にエラーや断られた印が付いていたら試さない', () => {
+  it('does not try when the sign-in page carries an error or refusal marker', () => {
     expect(shouldTrySilently(at('/login?error=access_denied'))).toBe(false);
     expect(shouldTrySilently(at('/login?sso_silent=1&next=%2Fgantt'))).toBe(false);
   });
 
-  it('断られた後でも、本人が再読み込みしたらもう 1 回試す（ADR-0063）', () => {
+  it('tries once more after a refusal when the user reloads (ADR-0063)', () => {
     expect(markSilentAttempt()).toBe(true);
     expect(shouldTrySilently(at('/login?sso_silent=1&next=%2Fgantt'), true)).toBe(true);
     expect(shouldTrySilently(at('/login?sso_silent=1'), true)).toBe(true);
   });
 
-  it('再読み込みでも、エラーが付いている・サインアウトした後は試さない', () => {
+  it('does not try on reload with an error or after sign-out', () => {
     expect(shouldTrySilently(at('/login?error=access_denied'), true)).toBe(false);
     rememberSignedOut();
     expect(shouldTrySilently(at('/login?sso_silent=1'), true)).toBe(false);
   });
 });
 
-describe('ログイン後に戻る先', () => {
-  it('ログイン画面なら next、それ以外は今の画面', () => {
+describe('return target after sign-in', () => {
+  it('next on the sign-in page, otherwise the current page', () => {
     expect(returnPathOf(at('/login?sso_silent=1&next=%2Fgantt%3Fp%3D1'))).toBe('/gantt?p=1');
     expect(returnPathOf(at('/login'))).toBe('/');
     expect(returnPathOf(at('/login?next=%2F%2Fevil.example'))).toBe('/');
@@ -81,8 +81,8 @@ describe('ログイン後に戻る先', () => {
   });
 });
 
-describe('サインアウトした印（ADR-0071。切れたログインを続ける問い合わせもしない）', () => {
-  it('サインアウトするまでは無く、入り直すと消える', () => {
+describe('signed-out marker (ADR-0071; also skips the session continuation request)', () => {
+  it('absent until sign-out, cleared on signing in again', () => {
     expect(signedOutHere()).toBe(false);
     rememberSignedOut();
     expect(signedOutHere()).toBe(true);
@@ -90,7 +90,7 @@ describe('サインアウトした印（ADR-0071。切れたログインを続�
     expect(signedOutHere()).toBe(false);
   });
 
-  it('読めなければ、した扱い（問い合わせない）', () => {
+  it('treated as signed out when unreadable (no request)', () => {
     vi.stubGlobal('localStorage', {
       getItem: () => {
         throw new Error('blocked');

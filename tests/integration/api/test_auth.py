@@ -1,7 +1,7 @@
-"""SSO を有効にしたアプリを、HTTP の入口から通しで確かめる。
+"""Check an SSO-enabled app end to end from the HTTP entry point.
 
-IdP だけは差し替える（``get_identity_provider`` を上書き）。それ以外——Cookie の
-発行、セッションの永続化、認可の掛かり方——は本番と同じ経路を通す。
+Only the IdP is swapped out (overriding ``get_identity_provider``). Everything else (cookie
+issuance, session persistence, how authorization applies) goes through the same path as production.
 """
 
 import asyncio
@@ -24,7 +24,7 @@ from src.presentation.api.dependencies import get_identity_provider
 
 ISSUER = "https://idp.example.com/realms/wbs"
 COOKIE = "wbs_access_token"
-# 認可コードフロー 1 往復のあいだだけ生きる、ブラウザ結び付け用の Cookie
+# Cookie binding the browser, alive only for one round trip of the authorization code flow
 STATE_COOKIE = "sso_login_state"
 
 OIDC_ENV = {
@@ -34,16 +34,16 @@ OIDC_ENV = {
     "OIDC_CLIENT_SECRET": "s3cret",
     "OIDC_REDIRECT_URI": "https://wbs.example.com/api/auth/callback",
     "SESSION_SIGNING_KEY": "test-signing-key-test-signing-key-0123",
-    # TestClient は http で話すので、Secure 付きの Cookie は保持されない
+    # TestClient speaks http, so cookies with Secure are not kept
     "AUTH_COOKIE_SECURE": "false",
 }
 
 
 class FakeIdentityProvider(IdentityProvider):
-    """認可コードごとに、その人のクレームを返す IdP。
+    """An IdP that returns that person's claims for each authorization code.
 
-    停止の通知（``logout_token``）は「``<sub>|<sid>|<jti>``」という綴りで受ける。
-    **署名の検証はインフラ層の責任**なので、ここではそこを模さない。
+    Stop notifications (``logout_token``) are received in the spelling "``<sub>|<sid>|<jti>``".
+    **Signature verification is the infrastructure layer's responsibility**, so it is not mocked here.
     """
 
     def __init__(self) -> None:
@@ -64,9 +64,9 @@ class FakeIdentityProvider(IdentityProvider):
             ),
         }
         self.rejected: set[str] = set()
-        # アプリのアクセストークン（ADR-0018）。綴り → クレーム。署名の検証はインフラ層の責任
+        # The app's access tokens (ADR-0018). Spelling → claims. Signature verification is the infrastructure layer's responsibility
         self.access_tokens: dict[str, dict] = {}
-        # 機械のトークン（ADR-0056）。綴り → クレーム（``aud`` を宛名と照らす）
+        # Machine tokens (ADR-0056). Spelling → claims (``aud`` is matched against the audience)
         self.machine_tokens: dict[str, dict] = {}
 
     @property
@@ -127,10 +127,10 @@ class FakeIdentityProvider(IdentityProvider):
 
 @pytest.fixture
 def sso_provider():
-    """この試験で使う IdP を 1 つだけ作る。
+    """Create just one IdP for this test.
 
-    ⚠ **リクエストごとに作り直さない。** 作り直すと、試験が「この IdP は次の
-    トークンを断る」と仕込んでも、実際に呼ばれるのは別の個体になる（断らない）。
+    ⚠ **Don't recreate it per request.** If recreated, even when a test sets up "this IdP rejects the next
+    token", a different instance is actually called (and does not reject).
     """
     return FakeIdentityProvider()
 
@@ -148,17 +148,17 @@ def sso_client(database_path, monkeypatch, sso_provider):
 
 
 def sign_in(client: TestClient, code: str = "taro-code") -> None:
-    """ログイン開始 → IdP → コールバック、をブラウザの代わりになぞる。"""
+    """Walk sign-in start → IdP → callback in place of a browser."""
     started = client.get("/api/auth/login", follow_redirects=False)
     state = started.headers["location"].split("state=")[1].split("&")[0]
     client.get(f"/api/auth/callback?code={code}&state={state}", follow_redirects=False)
 
 
 def sign_in_alive(client: TestClient) -> bool:
-    """手元のアクセストークンが指すログインの控えが、まだ残っているか（ADR-0071）。
+    """Whether the sign-in record that the access token in hand points to still exists (ADR-0071).
 
-    アクセストークンは DB を引かないので寿命まで通る。止まったかは控えの行で見る（行が無ければ、
-    設定の出し直しもログアウトも効かず、切れたら IdP へ問い合わせ直すことになる）。
+    Access tokens don't hit the DB, so they stay valid until they expire. Whether it stopped is judged by the record row (with no row,
+    re-issuing settings and logging out don't work, and once it expires the screen asks the IdP again).
     """
     token = client.cookies.get(COOKIE)
     if not token:
@@ -171,9 +171,9 @@ def sign_in_alive(client: TestClient) -> bool:
     return row is not None
 
 
-# ── 設定の公開 ─────────────────────────────────────────────────────────────
+# ── Publishing settings ─────────────────────────────────────────────────────
 def test_config_advertises_sso_without_a_session(sso_client) -> None:
-    # ログイン画面を描くための情報なので、未ログインでも読めなければならない
+    # This is information for drawing the sign-in screen, so it must be readable without signing in
     response = sso_client.get("/api/auth/config")
     assert response.status_code == 200
     assert response.json() == {
@@ -190,7 +190,7 @@ def test_config_reports_single_user_mode(client) -> None:
     assert body["sso_enabled"] is False
 
 
-# ── 認可が掛かっていること ─────────────────────────────────────────────────
+# ── Authorization is applied ────────────────────────────────────────────────
 @pytest.mark.parametrize(
     "method,path",
     [
@@ -217,11 +217,11 @@ def test_a_forged_cookie_is_refused(sso_client) -> None:
 
 
 def test_health_stays_open(sso_client) -> None:
-    # 外形監視は認証を通せない
+    # External monitoring cannot pass authentication
     assert sso_client.get("/api/health").status_code == 200
 
 
-# ── ログインの往復 ─────────────────────────────────────────────────────────
+# ── Sign-in round trip ──────────────────────────────────────────────────────
 def test_login_sends_the_browser_to_the_idp(sso_client) -> None:
     response = sso_client.get("/api/auth/login", follow_redirects=False)
     assert response.status_code == 302
@@ -229,7 +229,7 @@ def test_login_sends_the_browser_to_the_idp(sso_client) -> None:
 
 
 def test_login_in_single_user_mode_is_not_found(client) -> None:
-    # SSO を切っている配備では、この入口自体が無い（401 だと画面が往復する）
+    # In a deployment with SSO off, this entry point does not exist at all (a 401 would make the screen loop)
     assert client.get("/api/auth/login", follow_redirects=False).status_code == 404
 
 
@@ -316,9 +316,9 @@ def test_signing_in_twice_keeps_the_same_account(sso_client) -> None:
     assert sso_client.get("/api/auth/me").json()["user_id"] == first
 
 
-# ── コールバックの失敗 ─────────────────────────────────────────────────────
+# ── Callback failures ───────────────────────────────────────────────────────
 def test_an_unknown_state_goes_back_to_the_login_page(sso_client) -> None:
-    # ブラウザ結び付けは通し、サーバ側に覚えのない state であることだけを見る
+    # Pass the browser binding, and check only that the state is unknown to the server
     sso_client.cookies.set(STATE_COOKIE, "never-issued")
     response = sso_client.get(
         "/api/auth/callback?code=taro-code&state=never-issued", follow_redirects=False
@@ -329,14 +329,14 @@ def test_an_unknown_state_goes_back_to_the_login_page(sso_client) -> None:
 
 
 def test_a_callback_from_another_browser_is_refused(sso_client) -> None:
-    """ログイン CSRF。攻撃者が自分で始めた往復のコールバックを他人に踏ませる手口。
+    """Login CSRF: tricking someone else into hitting the callback of a round trip the attacker started.
 
-    state はサーバに実在するので、それだけでは止まらない。始めたブラウザにしか
-    無い Cookie と突き合わせて初めて弾ける。
+    The state really exists on the server, so that alone does not stop it. It can only be rejected by matching it
+    against the cookie that only the starting browser has.
     """
     started = sso_client.get("/api/auth/login", follow_redirects=False)
     state = started.headers["location"].split("state=")[1].split("&")[0]
-    sso_client.cookies.delete(STATE_COOKIE)  # 別のブラウザ（＝Cookie を持たない）から
+    sso_client.cookies.delete(STATE_COOKIE)  # from another browser (= without the cookie)
 
     response = sso_client.get(
         f"/api/auth/callback?code=taro-code&state={state}", follow_redirects=False
@@ -347,7 +347,7 @@ def test_a_callback_from_another_browser_is_refused(sso_client) -> None:
 
 
 def test_a_login_started_in_another_tab_still_completes(sso_client) -> None:
-    # 別タブで 2 回目のログインを始めても、先に始めた往復が締め出されない
+    # Starting a second sign-in in another tab does not lock out the round trip started first
     first = sso_client.get("/api/auth/login", follow_redirects=False)
     first_state = first.headers["location"].split("state=")[1].split("&")[0]
     sso_client.get("/api/auth/login", follow_redirects=False)
@@ -364,8 +364,8 @@ def test_a_state_cannot_be_used_twice(sso_client) -> None:
     state = started.headers["location"].split("state=")[1].split("&")[0]
     sso_client.get(f"/api/auth/callback?code=taro-code&state={state}", follow_redirects=False)
 
-    # 一時 Cookie は 1 回目で消えている。サーバ側でも使い切られていることを見たいので、
-    # Cookie は戻したうえで再送する。
+    # The temporary cookie was deleted by the first one. We want to see that it is also used up on the server side,
+    # so we put the cookie back and resend.
     sso_client.cookies.set(STATE_COOKIE, state)
     replay = sso_client.get(
         f"/api/auth/callback?code=taro-code&state={state}", follow_redirects=False
@@ -386,7 +386,7 @@ def test_a_callback_without_a_code_goes_back_to_the_login_page(sso_client) -> No
     assert response.headers["location"].startswith("/login?error=invalid_request")
 
 
-# ── 黙って確かめる（prompt=none。ADR-0062） ────────────────────────────────
+# ── Silent check (prompt=none, ADR-0062) ────────────────────────────────────
 def _start_silently(client: TestClient, next_path: str | None = None) -> str:
     query = "silent=1" + (f"&next={next_path}" if next_path else "")
     started = client.get(f"/api/auth/login?{query}", follow_redirects=False)
@@ -413,7 +413,7 @@ def test_a_silent_check_signs_in_like_an_ordinary_login(sso_client) -> None:
     ["login_required", "consent_required", "interaction_required", "account_selection_required"],
 )
 def test_not_being_signed_in_to_the_idp_is_not_an_error(sso_client, error) -> None:
-    """黙って確かめて「入っていない」と返ってきたら、エラーを付けずにログイン画面へ戻す。"""
+    """If the silent check returns "not signed in", go back to the sign-in screen without an error."""
     state = _start_silently(sso_client, "/gantt")
     response = sso_client.get(
         f"/api/auth/callback?error={error}&state={state}", follow_redirects=False
@@ -447,7 +447,7 @@ def test_login_required_on_an_ordinary_login_is_still_an_error(sso_client) -> No
 
 
 def test_a_silent_decline_from_another_browser_is_still_an_error(sso_client) -> None:
-    """このブラウザが始めた往復でなければ、黙って戻さない。"""
+    """If the round trip was not started by this browser, don't return silently."""
     state = _start_silently(sso_client)
     sso_client.cookies.delete(STATE_COOKIE)
     response = sso_client.get(
@@ -456,17 +456,17 @@ def test_a_silent_decline_from_another_browser_is_still_an_error(sso_client) -> 
     assert response.headers["location"].startswith("/login?error=login_required")
 
 
-# ── ログアウト ─────────────────────────────────────────────────────────────
+# ── Logout ──────────────────────────────────────────────────────────────────
 def test_logout_ends_the_session_and_offers_the_idp_logout(sso_client) -> None:
     sign_in(sso_client)
     response = sso_client.post("/api/auth/logout")
     assert response.status_code == 200
     assert response.json()["end_session_url"] == f"{ISSUER}/logout"
-    # Cookie が消えている（控えの確かめは test_sign_in_sessions）。
+    # The cookie is gone (checking the record is in test_sign_in_sessions).
     assert sso_client.get("/api/tasks").status_code == 401
 
 
-# ── 他人のデータに ID で届かないこと ───────────────────────────────────────
+# ── Other users' data is not reachable by ID ────────────────────────────────
 def _sign_in_as_other_user(client: TestClient) -> None:
     client.post("/api/auth/logout")
     client.cookies.clear()
@@ -478,7 +478,7 @@ def test_another_users_task_is_not_found(sso_client) -> None:
     task_id = sso_client.post("/api/tasks", json={"title": "太郎のタスク"}).json()["id"]
 
     _sign_in_as_other_user(sso_client)
-    # 403 ではなく 404。403 だと「その ID は存在する」ことを教えてしまう。
+    # 404, not 403. A 403 would reveal that "the ID exists".
     assert sso_client.get(f"/api/tasks/{task_id}").status_code == 404
     assert sso_client.put(f"/api/tasks/{task_id}", json={"title": "乗っ取り"}).status_code == 404
     assert sso_client.delete(f"/api/tasks/{task_id}").status_code == 404
@@ -495,7 +495,7 @@ def test_another_users_category_is_not_found(sso_client) -> None:
 
 
 def test_another_users_category_cannot_be_put_on_a_task(sso_client) -> None:
-    """作る・直す・メモから作るのどれも、ほかの人の分類は無いものとして断る（task #762）。"""
+    """Creating, editing and creating from a memo all reject another user's category as if it did not exist (task #762)."""
     sign_in(sso_client, "taro-code")
     theirs = sso_client.post("/api/categories", json={"name": "太郎の分類"}).json()["id"]
 
@@ -505,7 +505,7 @@ def test_another_users_category_cannot_be_put_on_a_task(sso_client) -> None:
 
     task = sso_client.post("/api/tasks", json={"title": "x", "category_id": mine}).json()
     assert sso_client.put(f"/api/tasks/{task['id']}", json={"category_id": theirs}).status_code == 404
-    # 選び直していなければ通る
+    # Passes if the category was not re-selected
     assert sso_client.put(f"/api/tasks/{task['id']}", json={"category_id": mine}).status_code == 200
 
     item = sso_client.post("/api/inbox", json={"title": "メモ"}).json()["id"]
@@ -544,7 +544,7 @@ def test_work_logs_on_another_users_task_are_not_reachable(sso_client) -> None:
     assert sso_client.get(f"/api/work-logs/{work_log_id}").status_code == 404
     assert sso_client.put(f"/api/work-logs/{work_log_id}", json={"hours": 99}).status_code == 404
     assert sso_client.delete(f"/api/work-logs/{work_log_id}").status_code == 404
-    # 他人のタスクに実績を積めない
+    # Cannot log actuals on another user's task
     posted = sso_client.post(
         "/api/work-logs", json={"task_id": task_id, "work_date": "2026-08-30", "hours": 1}
     )
@@ -562,7 +562,7 @@ def test_dependencies_on_another_users_task_are_not_reachable(sso_client) -> Non
     assert sso_client.post(
         f"/api/tasks/{first}/dependencies", json={"predecessor_task_id": second}
     ).status_code == 404
-    # 自分のタスクから他人のタスクへも繋げない
+    # Cannot link from my task to another user's task either
     assert sso_client.post(
         f"/api/tasks/{own}/dependencies", json={"predecessor_task_id": first}
     ).status_code == 404
@@ -571,7 +571,7 @@ def test_dependencies_on_another_users_task_are_not_reachable(sso_client) -> Non
 
 @pytest.fixture
 def access_lines():
-    """アクセスログの行。⚠ アプリを作ると持ち手が消えるので、試験の引数では ``sso_client`` の後に書く。"""
+    """Access log lines. ⚠ Creating the app removes the handler, so put this after ``sso_client`` in the test arguments."""
     lines: list[logging.LogRecord] = []
 
     class Collect(logging.Handler):

@@ -1,9 +1,9 @@
-"""タスクをまとめて別のプロジェクトへ移す（task #187 / ADR-0030）。
+"""Move tasks to another project in bulk (task #187 / ADR-0030).
 
-- 書くのは枝の根だけ。子孫は根と一緒に移る（ADR-0024 の 4）
-- 祖先を一緒に選んでいない子タスクを含めば、何も変えずに 422
-- 届かなくなったマイルストーンは外す
-- 他人のタスク・プロジェクトは 404（何も変えない）
+- Only branch roots are written. Descendants move with their root (ADR-0024 item 4)
+- If it includes a child task whose ancestor was not selected too, 422 without changing anything
+- Milestones that become unreachable are detached
+- Other users' tasks and projects are 404 (nothing changes)
 """
 
 from __future__ import annotations
@@ -61,7 +61,7 @@ def test_moving_parents_carries_their_subtasks(client) -> None:
 
     assert res.status_code == 200, res.text
     body = res.json()
-    # 選んでいない子も親と一緒に移る。もともと私用のものは数えない
+    # Unselected children move with their parent. Items already in the personal project are not counted
     assert body["moved_task_ids"] == sorted([parent["id"], child["id"], grandchild["id"], loose["id"]])
     assert body["detached_milestone_task_ids"] == []
     for t in (parent, child, grandchild, loose, already):

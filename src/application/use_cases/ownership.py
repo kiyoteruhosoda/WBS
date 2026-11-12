@@ -1,12 +1,12 @@
-"""持ち主の確認。
+"""Ownership checks.
 
-複数の利用者が同じ API を使うようになった以上、ID を指定して取る／書き換える
-操作は「その ID が自分のものか」を必ず見る。見ないと、連番の ID を変えるだけで
-他人のデータに届く。
+Now that several users share the same API, every operation that reads or modifies by ID
+must check "is this ID mine". Without it, just changing a sequential ID
+reaches other people's data.
 
-見つからない場合と他人のものだった場合は、どちらも ``NotFoundError`` にする。
-403 で返し分けると「その ID は存在する」ことを教えてしまい、総当たりで他人の
-データの有無を数えられる。
+Both not found and owned by someone else become ``NotFoundError``.
+Answering 403 separately would reveal that "the ID exists", letting a brute-force attack count
+whether other people's data exists.
 """
 
 from __future__ import annotations
@@ -17,7 +17,7 @@ from src.domain.exceptions import NotFoundError
 
 
 class OwnedRecord(Protocol):
-    """利用者に属するレコード。"""
+    """A record that belongs to a user."""
 
     user_id: int
 

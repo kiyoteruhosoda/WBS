@@ -1,32 +1,32 @@
 import type { Task, TaskStatus } from '../types';
 
-// ユーザー設定のタイムゾーン。「今日」の判定に使う（未設定時はブラウザのローカル）。
-// I18nProvider が設定読み込み時に反映する。
+// User-configured time zone. Used to decide "today" (browser local when unset).
+// I18nProvider applies it when settings are loaded.
 let activeTimeZone: string | null = null;
 
 export const setActiveTimeZone = (tz: string | null): void => {
   activeTimeZone = tz;
 };
 
-// 設定タイムゾーンでの「今日」を、ローカル日付（時刻0時）として返す
+// Returns "today" in the configured time zone as a local date (at midnight)
 export const todayDate = (): Date => {
   const now = new Date();
   if (activeTimeZone) {
     try {
-      // en-CA ロケールは YYYY-MM-DD 形式を返す
+      // The en-CA locale returns YYYY-MM-DD
       const ymd = new Intl.DateTimeFormat('en-CA', { timeZone: activeTimeZone }).format(now);
       const [y, m, d] = ymd.split('-').map(Number);
       return new Date(y, m - 1, d);
     } catch {
-      // 不正なタイムゾーンはローカルにフォールバック
+      // Fall back to local for an invalid time zone
     }
   }
   return new Date(now.getFullYear(), now.getMonth(), now.getDate());
 };
 
-// APIの日付文字列をローカル日付として解釈する。
-// `YYYY-MM-DD` を new Date() に渡すと UTC 深夜扱いになり、UTCより西のタイムゾーンで前日にずれるため、
-// 日付のみの文字列は明示的にローカルの年月日で構築する。
+// Parse an API date string as a local date.
+// Passing `YYYY-MM-DD` to new Date() treats it as UTC midnight, which shifts to the previous day in time zones west of UTC,
+// so date-only strings are built explicitly from local year/month/day.
 export const parseDate = (dateStr: string | null | undefined): Date | null => {
   if (!dateStr) return null;
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateStr);
@@ -34,10 +34,10 @@ export const parseDate = (dateStr: string | null | undefined): Date | null => {
   return isNaN(d.getTime()) ? null : d;
 };
 
-// ── 日付の書き方（ADR-0020）─────────────────────────────────────────
-// 文の中・表の中の日付は `M/D`（ゼロ埋めしない）。今年（利用者のタイムゾーンの「今日」の年）でなければ
-// `YYYY/M/D`。期間は `M/D〜M/D` の形で、年は初日が今年でないときだけ初日に、末日の年が初日と違うときだけ末日に付ける。
-// 例外（ここを通さない）: カレンダーの見出し（移植元の書式）・締めの画面の見出し（年を常に出す）・ガントの日の軸。
+// ── Date format (ADR-0020) ─────────────────────────────────────────
+// Dates in text and tables are `M/D` (no zero padding). If not this year (the year of "today" in the user's time zone),
+// `YYYY/M/D`. Ranges are `M/D〜M/D`; the year goes on the start only when it is not this year, and on the end only when it differs from the start's year.
+// Exceptions (not routed through here): calendar headings (ported format), closing screen headings (always show the year), and the Gantt day axis.
 
 type DateInput = string | Date | null | undefined;
 
@@ -45,7 +45,7 @@ const toDate = (value: DateInput): Date | null => (value instanceof Date ? value
 
 const monthDay = (d: Date): string => `${d.getMonth() + 1}/${d.getDate()}`;
 
-/** 日付 1 つ。今年なら `9/30`、ほかの年なら `2025/9/30`。無ければ「—」。 */
+/** A single date. `9/30` this year, `2025/9/30` otherwise. "—" when missing. */
 export const formatDate = (value: DateInput): string => {
   const d = toDate(value);
   if (!d) return '—';
@@ -53,8 +53,8 @@ export const formatDate = (value: DateInput): string => {
 };
 
 /**
- * 期間の両端。並べ方（`{from}〜{to}`）は翻訳の側（`common.dateRange` など）。
- * 初日は `formatDate` と同じ。末日は初日と同じ年なら年を省く（`2025/12/16〜12/31`、`2025/12/16〜2026/1/15`）。
+ * Both ends of a range. The arrangement (`{from}〜{to}`) is up to the translations (`common.dateRange` etc.).
+ * The start is as `formatDate`. The end omits the year when it equals the start's (`2025/12/16〜12/31`, `2025/12/16〜2026/1/15`).
  */
 export const dateRangeParts = (from: DateInput, to: DateInput): { from: string; to: string } => {
   const a = toDate(from);
@@ -64,31 +64,31 @@ export const dateRangeParts = (from: DateInput, to: DateInput): { from: string; 
   return { from: formatDate(a), to: sameYear ? monthDay(b) : `${b.getFullYear()}/${monthDay(b)}` };
 };
 
-// ── 時間の書き方（ADR-0020）─────────────────────────────────────────
-// 工数（見積・予定・残・実績の合計・確定実績・差）は時間の小数 `1.5h`（小数 2 桁まで、末尾の 0 は落とす）。
-// 打刻を見て直す場面（今日・締め・タイマー）の量は時刻と並べて読むので `H:MM`（走っている経過と正確な長さは `H:MM:SS`）。
-// 締めの表の 15 分丸め（`formatQuarterHours`）も `H:MM` の側。
+// ── Duration format (ADR-0020) ─────────────────────────────────────────
+// Effort (estimate, planned, remaining, actual totals, confirmed actuals, differences) is decimal hours `1.5h` (up to 2 decimals, trailing zeros dropped).
+// Amounts on screens where time entries are reviewed (today, closing, timer) are read next to clock times, so `H:MM` (`H:MM:SS` for running elapsed time and exact lengths).
+// The 15-minute rounding in the closing table (`formatQuarterHours`) also uses `H:MM`.
 
-/** 工数の時間（`1.5h`）。null は「—」。 */
+/** Effort hours (`1.5h`). null → "—". */
 export const formatHours = (hours: number | null | undefined): string =>
   hours == null ? '—' : `${Number(hours.toFixed(2))}h`;
 
-/** 秒で来る工数を `1.5h` に。 */
+/** Effort given in seconds as `1.5h`. */
 export const formatSecondsAsHours = (seconds: number): string => formatHours(seconds / 3600);
 
-/** 差（打刻 − 予定）。正なら「+」を付ける。 */
+/** Difference (tracked − planned). Prefixed with "+" when positive. */
 export const formatSignedSecondsAsHours = (seconds: number): string => {
   if (seconds === 0) return '±0h';
   return `${seconds > 0 ? '+' : '−'}${formatSecondsAsHours(Math.abs(seconds))}`;
 };
 
-/** 打刻の長さの `H:MM`（秒は切り捨て）。 */
+/** Time entry length as `H:MM` (seconds truncated). */
 export const formatClockDuration = (seconds: number): string => {
   const total = Math.max(0, Math.floor(seconds / 60));
   return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`;
 };
 
-/** 打刻の正確な長さ・走っている経過の `H:MM:SS`（端数の秒は切り捨て、負は 0）。 */
+/** Exact time entry length or running elapsed time as `H:MM:SS` (fractional seconds truncated, negative → 0). */
 export const formatExactDuration = (seconds: number): string => {
   const total = Math.max(0, Math.floor(seconds));
   const h = Math.floor(total / 3600);
@@ -99,10 +99,10 @@ export const formatExactDuration = (seconds: number): string => {
 
 export type PriorityBand = 'high' | 'mid' | 'low';
 
-// priority 1〜5 を 高/中/低 の3段階に丸める
+// Map priority 1–5 to three bands: high/mid/low
 export const priorityBand = (p: number): PriorityBand => (p >= 4 ? 'high' : p === 3 ? 'mid' : 'low');
 
-// 高/中/低 選択時に保存する priority 値
+// priority value saved when high/mid/low is chosen
 export const priorityBandValue: Record<PriorityBand, number> = { high: 5, mid: 3, low: 1 };
 
 const dateOnly = (d: Date): Date => new Date(d.getFullYear(), d.getMonth(), d.getDate());
@@ -120,7 +120,7 @@ export const isDueToday = (task: Pick<Task, 'due_date'>): boolean => {
   return dateOnly(due).getTime() === todayDate().getTime();
 };
 
-// 表示用ステータス（遅延を含む）
+// Display status (including late)
 export type DisplayStatus = TaskStatus | 'LATE';
 
 export const displayStatus = (task: Pick<Task, 'due_date' | 'status'>): DisplayStatus =>

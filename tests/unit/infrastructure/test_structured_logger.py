@@ -1,4 +1,4 @@
-"""ログの設定（task #495）。通信の道具の標準の行で、問い合わせ先の URL（秘密を含みうる）をログに出さない。"""
+"""Logging setup (task #495). Standard lines from HTTP client libraries must not log the request URL (it may contain secrets)."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ import pytest
 
 from src.infrastructure.logging.structured_logger import QUIET_URL_LOGGERS, setup_logging
 
-# Google の「iCal 形式の非公開アドレス」の形（private- の部分を知っていれば誰でも読める）
+# The shape of Google's "secret address in iCal format" (anyone who knows the private- part can read it)
 SECRET_PATH = "/calendar/ical/someone%40example.com/private-0123456789abcdef/basic.ics"
 SECRET_QUERY = "token=s3cr3t"
 URL = f"https://93.184.216.34{SECRET_PATH}?{SECRET_QUERY}"

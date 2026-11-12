@@ -6,9 +6,9 @@ on:
     tags-ignore: ["v*"]
   pull_request:
 
-# 同じ枝（PR）へ続けて push したら、古い実行は取り消して最新の commit だけを検査する。
-# ⚠ **main も取り消す**（2026-09-28 の決定）。間の commit には合否が残らない代わりに、
-#   main への push が続いた日に古い検査がランナーの列を塞がない。副作用のある workflow には当てない。
+# When pushing again to the same branch (PR), cancel the older run and check only the latest commit.
+# ⚠ **main is cancelled too** (decided 2026-09-28). Intermediate commits get no verdict, but in exchange
+#   old checks do not block the runner queue on days with many pushes to main. Do not apply this to workflows with side effects.
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
@@ -16,36 +16,36 @@ concurrency:
 jobs:
   test:
     name: Lint & Test (Python)
-    # ⚠ **自前の台で回す**（forge へ移したとき変えた）。
+    # ⚠ **Runs on our own runners** (changed when moving to forge).
     runs-on: [self-hosted, nolumialab]
     env:
-      # uv が入れる Python も forge から（既定は GitHub の python-build-standalone）。
-      # 版を上げて落ちたら、その tag のファイルを astral-sh/python-build-standalone のリリースに足す。
+      # Python installed by uv also comes from forge (the default is GitHub's python-build-standalone).
+      # If a version bump fails, add that tag's files to the astral-sh/python-build-standalone release.
       UV_PYTHON_INSTALL_MIRROR: "https://git.nolumia.com/astral-sh/python-build-standalone/releases/download"
 
     steps:
       - uses: actions/checkout@v6
 
-      - name: Python の版が本番のイメージと揃っているか
-        # ⚠ **試験の Python は `.python-version` の版**（uv が読む）。本番のイメージ（Dockerfile の
-        #   `FROM python:X.Y`）とずれたら落とす。Renovate は両方を 1 本の PR で上げる（task #461）。
-        #   CI だけ 3.12 のまま、本番だけ 3.14 に上がっていた。
+      - name: Python version matches the production image
+        # ⚠ **The test Python is the version in `.python-version`** (read by uv). Fail if it drifts from the production image
+        #   (`FROM python:X.Y` in the Dockerfile). Renovate bumps both in one PR (task #461).
+        #   CI once stayed on 3.12 while only production moved to 3.14.
         run: |
           want="$(tr -d '[:space:]' < .python-version)"
           got="$(git ls-files 'Dockerfile' '*/Dockerfile' | xargs grep -hoE '^FROM +python:[0-9]+\.[0-9]+' | sed -E 's/^FROM +python://' | sort -u)"
           echo ".python-version: ${want} / Dockerfile: ${got//$'\n'/ }"
           if [ -z "$got" ] || [ "$got" != "$want" ]; then
-            echo "::error::.python-version（${want}）と Dockerfile の FROM python（${got//$'\n'/ }）が揃っていない"
+            echo "::error::.python-version (${want}) and the Dockerfile FROM python (${got//$'\n'/ }) do not match"
             exit 1
           fi
 
       - name: Set up uv
-        # ⚠ **鏡に無いので自前の鏡を完全な URL で指す**（forge へ移したため）。
+        # ⚠ **Not on the mirror, so point at our own mirror with a full URL** (since moving to forge).
         uses: https://git.nolumia.com/astral-sh/setup-uv@v6
         with:
-          # 版は書かない: manifest-file の一覧（forge の写し・毎週取り込み）の最新を使う。manifest-file があれば GitHub の API へは行かない（2026-10-27）。
-          # ⚠ **本体は forge から取る**（GitHub に依存しない）。置き場は astral-sh/uv の
-          #   リリース、その一覧が version-manifest.json。一覧は host/astral-mirror が毎週取り込む。
+          # No version here: use the latest in the manifest-file list (forge's copy, imported weekly). With manifest-file it never calls the GitHub API (2026-10-27).
+          # ⚠ **The binary comes from forge** (no GitHub dependency). It lives in the astral-sh/uv
+          #   releases, listed by version-manifest.json. host/astral-mirror imports the list weekly.
           manifest-file: "https://git.nolumia.com/astral-sh/uv/raw/branch/main/version-manifest.json"
 
       - name: Install dependencies
@@ -55,7 +55,7 @@ jobs:
         run: uv run ruff check src/ tests/
 
       - name: Migrations (alembic CLI)
-        # 空の DB に head → base → head、そのあとモデルとの差が無いこと（autogenerate）を見る。
+        # On an empty DB go head -> base -> head, then check there is no diff against the models (autogenerate).
         env:
           DATABASE_URL: sqlite:///${{ runner.temp }}/alembic-check.db
         run: |
@@ -69,7 +69,7 @@ jobs:
 
   frontend:
     name: Frontend
-    # ⚠ **自前の台で回す**。台の既定のジョブイメージ（node 入り）で走る。`container:` は書かない。
+    # ⚠ **Runs on our own runners**, in the runner's default job image (with node). Do not write `container:`.
     runs-on: [self-hosted, nolumialab]
     timeout-minutes: 25
     defaults:
@@ -79,11 +79,11 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      # ⚠ **既定の鏡（data.forgejo.org）に在るので完全な URL にしない**。
-      #   自前の鏡（git.nolumia.com）には setup-node は無い（setup-uv とは事情が違う）。
-      # ⚠ **node-version は書かない**。書くと setup-node は鏡を指しても先に api.github.com の
-      #   一覧を引く（GitHub に依存する）。台の像（node:24-bookworm）の Node 24 をそのまま使う。
-      #   本番の像（frontend/Dockerfile）も node:24-alpine に揃えてある（2026-10-01、task #151）。
+      # ⚠ **It is on the default mirror (data.forgejo.org), so do not use a full URL**.
+      #   Our own mirror (git.nolumia.com) has no setup-node (unlike setup-uv).
+      # ⚠ **Do not set node-version**. If set, setup-node first fetches the list from api.github.com
+      #   even when pointed at a mirror (a GitHub dependency). Use Node 24 from the runner image (node:24-bookworm) as is.
+      #   The production image (frontend/Dockerfile) is also aligned on node:24-alpine (2026-10-01, task #151).
       - uses: actions/setup-node@v6
         with:
           cache: npm
@@ -93,15 +93,15 @@ jobs:
         id: install
         run: npm ci
 
-      - name: TypeScript (型検査)
+      - name: TypeScript (type check)
         run: npx tsc -b
 
-      - name: oxlint (静的解析)
-        # 型検査が落ちても lint と build の結果は見たい。依存が入らなかったときだけ止める。
+      - name: oxlint (static analysis)
+        # Even if the type check fails we want lint and build results. Stop only when dependencies failed to install.
         if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         run: npm run lint
 
-      - name: vitest (純関数の試験)
+      - name: vitest (pure function tests)
         if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         run: npm run test
 

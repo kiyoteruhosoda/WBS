@@ -1,4 +1,4 @@
-"""``version.json`` から版を読む（task #168、ADR-0011）。"""
+"""Read the version from ``version.json`` (task #168, ADR-0011)."""
 
 import json
 
@@ -38,7 +38,7 @@ def test_without_the_file_it_says_dev(tmp_path) -> None:
 
     assert info.git_sha == "dev"
     assert info.build_time == "unknown"
-    assert info.version  # パッケージの版か 0.0.0。空にはしない
+    assert info.version  # the package version or 0.0.0; never empty
 
 
 @pytest.mark.parametrize("body", ["", "{not json", "[]", '{"commit_hash": 1}'])

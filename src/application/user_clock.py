@@ -1,12 +1,12 @@
-"""利用者から見た「今日」。
+"""The user's "today".
 
-日付の境目は利用者のタイムゾーンで決まる。サーバは UTC で動くので、
-`date.today()` を使うと UTC の日付になり、JST の利用者にとっては毎日
-0:00〜9:00 のあいだ「今日」が前日にずれる。
+Where a day starts depends on the user's time zone. The server runs in UTC, so
+`date.today()` gives the UTC date, and for a JST user "today" is shifted to the
+previous day every day between 0:00 and 9:00.
 
-保存・比較は UTC のまま（契約 HANDOVER §14）。ここで扱うのは「画面に見せる
-区切り」としての日付だけ。利用者の日付で切った区間を UTC の保存値と突き合わせる
-ときは `utc_window()` を通す。
+Storage and comparisons stay in UTC (contract HANDOVER §14). This only handles dates as
+"boundaries shown on screen". When matching a range cut by the user's dates against
+stored UTC values, go through `utc_window()`.
 """
 
 from __future__ import annotations
@@ -22,7 +22,7 @@ from src.shared.clock import utcnow
 
 
 class UserClock:
-    """利用者のタイムゾーンで日付を出す。1 リクエスト内は引き直さない。"""
+    """Gives dates in the user's time zone. Not re-read within one request."""
 
     def __init__(self, session: Session) -> None:
         self._session = session
@@ -30,7 +30,7 @@ class UserClock:
         self._today: dict[int, date] = {}
 
     def zone(self, user_id: int) -> tzinfo:
-        """利用者のタイムゾーン。未設定・不正な値は UTC に倒す。"""
+        """The user's time zone. Unset or invalid values fall back to UTC."""
         cached = self._zones.get(user_id)
         if cached is not None:
             return cached
@@ -48,7 +48,7 @@ class UserClock:
         return resolved
 
     def zone_name(self, user_id: int) -> str:
-        """利用者のタイムゾーンの IANA 名（``zone`` が UTC に倒したときは ``"UTC"``）。"""
+        """IANA name of the user's time zone (``"UTC"`` when ``zone`` fell back to UTC)."""
         zone = self.zone(user_id)
         return zone.key if isinstance(zone, ZoneInfo) else "UTC"
 
@@ -56,20 +56,20 @@ class UserClock:
         cached = self._today.get(user_id)
         if cached is not None:
             return cached
-        # utcnow() は保存値と同じ naive な UTC。付け直してから利用者の TZ へ。
+        # utcnow() is naive UTC like the stored values. Attach the zone, then convert to the user's TZ.
         resolved = utcnow().replace(tzinfo=UTC).astimezone(self.zone(user_id)).date()
         self._today[user_id] = resolved
         return resolved
 
     def utc_window(self, user_id: int, first_day: date, last_day: date) -> tuple[datetime, datetime]:
-        """利用者の ``first_day`` 0:00 から ``last_day`` の終わりまでを UTC で返す。
+        """Return the span from 0:00 of the user's ``first_day`` to the end of ``last_day`` in UTC.
 
-        戻りは ``[開始, 終了)`` の半開区間（保存値と同じ UTC naive）。
+        Returns a half-open interval ``[start, end)`` (naive UTC, like the stored values).
 
-        保存値は UTC なので、利用者のタイムゾーンで切った日付をそのまま DATETIME 列と
-        比べると境目が時差の分ずれる。JST なら月曜 0:00〜9:00 にできた行が前の週にも
-        今の週にも入らず、どこからも数えられなくなる。日付をそのまま渡すと終端が
-        「最終日の 0:00」になってしまう取りこぼしも、ここで半開区間にして防ぐ。
+        Stored values are UTC, so comparing dates cut in the user's time zone directly with DATETIME columns
+        shifts the boundary by the time difference. With JST, rows created Monday 0:00-9:00 would fall into
+        neither the previous week nor this week and never be counted. Passing dates as is would also make the end
+        "0:00 of the last day" and drop that day; the half-open interval here prevents that too.
         """
         zone = self.zone(user_id)
         start = datetime.combine(first_day, time.min, tzinfo=zone)

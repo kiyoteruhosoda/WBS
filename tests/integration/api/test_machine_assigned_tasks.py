@@ -1,7 +1,7 @@
-"""Tracker のサーバーが機械として、利用者の担当タスクを読む（task #539 / ADR-0056）。
+"""The Tracker server, as a machine, reads a user's assigned tasks (task #539 / ADR-0056).
 
-IdP は差し替える（署名の検証はインフラ層の試験で見る）。ここで確かめるのは、
-**どのトークンを通すか**と、**だれの・どのタスクを返すか**である。
+The IdP is swapped out (signature verification is covered by the infrastructure-layer tests). What we check here is
+**which tokens are accepted** and **whose and which tasks are returned**.
 """
 
 from __future__ import annotations
@@ -10,7 +10,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from src.presentation.api.dependencies import get_identity_provider
-from tests.integration.api.test_auth import (  # noqa: F401 - fixture を借りる
+from tests.integration.api.test_auth import (  # noqa: F401 - borrow fixtures
     ISSUER,
     OIDC_ENV,
     sign_in,
@@ -57,7 +57,7 @@ def client(database_path, monkeypatch, sso_provider):  # noqa: F811
             "tracker": _machine_claims(),
             "other-machine": _machine_claims(client_id="someone-else", sub="someone-else"),
             "wrong-audience": _machine_claims(aud="api://nolumiascheduler"),
-            # 人のログインのトークン（sub_type が無い）は宛名が合っても通さない
+            # A human sign-in token (no sub_type) is rejected even if the audience matches
             "person": {k: v for k, v in _machine_claims(sub="taro").items() if k != "sub_type"},
         }
     )
@@ -89,7 +89,7 @@ def test_returns_open_tasks_assigned_to_the_user(client, database_path) -> None:
     assert set(rows) == {mine["id"], loose["id"]}
     assert rows[mine["id"]]["title"] == "画面"
     assert rows[mine["id"]]["project_path"] == "案件 / 設計"
-    assert rows[mine["id"]]["project_id"] == child["id"]  # Tracker は id で結ぶ（task #711）
+    assert rows[mine["id"]]["project_id"] == child["id"]  # Tracker links by id (task #711)
     assert rows[loose["id"]]["project_path"] is None
     assert rows[loose["id"]]["project_id"] is None
 

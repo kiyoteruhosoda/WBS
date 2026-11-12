@@ -61,11 +61,11 @@ class SqlAlchemyUserAccountRepository(UserAccountRepository):
         return self._to_entity(model)
 
     def _sync_identities(self, user_id: int, identities: list[FederatedIdentity]) -> None:
-        """エンティティ側で増えた紐付けだけを足す（既存は消さない）。
+        """Add only the links newly added on the entity (existing ones are not removed).
 
-        紐付けの削除は管理操作としてのみ行う想定なので、ログインの筋道からは
-        取り外さない。「IdP が sub を返さなくなった＝解除」と読むと、IdP 側の
-        一時的な不調で全員の紐付けが飛ぶ。
+        Links are meant to be removed only by admin operations, so the login path
+        does not remove them. Reading "the IdP no longer returns the sub = unlinked" would let
+        a temporary IdP problem wipe everyone's links.
         """
         stmt = select(FederatedIdentityModel).where(FederatedIdentityModel.user_id == user_id)
         known = {(m.issuer, m.subject) for m in self._session.scalars(stmt)}

@@ -9,12 +9,12 @@ RUN uv sync --frozen --no-dev
 
 COPY . .
 
-# 版（src/infrastructure/version.json）は **ビルドの前に生成してコンテキストへ入れる**。
-# deck の build の「版を刻む」段（build-matrix の pre_build）が scripts/generate_version.sh を
-# 実行し、その出力が上の COPY で入ってくる（ADR-0011）。この RUN は「無かったときに dev と
-# 印を付ける」だけで、既にある内容は書き換えない。イメージには .git が入らない（.dockerignore）。
-# ⚠ **ビルド情報を受け取る ARG を足さない。** 渡す側と名前がずれて、本番の git_sha が
-#   unknown のままになった（task #168）。
+# The version (src/infrastructure/version.json) is **generated before the build and put in the context**.
+# The "stamp the version" step of deck's build (build-matrix pre_build) runs scripts/generate_version.sh,
+# and its output comes in via the COPY above (ADR-0011). This RUN only "marks it as dev when
+# missing" and never rewrites existing content. .git is not in the image (.dockerignore).
+# ⚠ **Do not add ARGs that receive build info.** The names drifted from the sender, and the prod git_sha
+#   stayed unknown (task #168).
 RUN bash scripts/generate_version.sh
 
 # Structured logs written here – mount as a volume in production

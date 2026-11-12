@@ -16,16 +16,16 @@ export const logout = async (): Promise<LogoutResult> => {
   return data;
 };
 
-/** IdP のログイン画面へ送り出す。戻り先に今いる画面を渡す。 */
+/** Send the user to the IdP sign-in page, passing the current page as the return target. */
 export const startLogin = (config: AuthConfig, nextPath: string): void => {
   if (!config.login_path) return;
   window.location.href = `${config.login_path}?next=${encodeURIComponent(nextPath)}`;
 };
 
 /**
- * IdP でもう入っているかを、画面を出させずに確かめに行く（ADR-0062）。
- * 入っていれば `startLogin` と同じ道で戻り、入っていなければ `/login?sso_silent=1`（`next` 付き）へ戻る。
- * 履歴に残さない（「戻る」でまた確かめに行かないように）。
+ * Check whether the user is already signed in at the IdP without showing any UI (ADR-0062).
+ * If so, returns via the same path as `startLogin`; otherwise back to `/login?sso_silent=1` (with `next`).
+ * Not kept in history (so "back" doesn't trigger the check again).
  */
 export const startSilentLogin = (config: AuthConfig, nextPath: string): void => {
   if (!config.login_path) return;

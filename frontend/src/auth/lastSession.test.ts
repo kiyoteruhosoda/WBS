@@ -6,12 +6,12 @@ const session = {
   user: { user_id: 7, email: 'a@example.com', display_name: 'A', timezone: 'Asia/Tokyo', language: 'ja' },
 };
 
-describe('最後にログインしていた人の控え', () => {
-  it('控えた形なら読める', () => {
+describe('saved copy of the last signed-in user', () => {
+  it('reads data in the saved shape', () => {
     expect(parseLastSession(JSON.stringify(session))).toEqual(session);
   });
 
-  it('無い・壊れている・形が違うものは無いことにする', () => {
+  it('treats missing, corrupt or wrong-shaped data as absent', () => {
     expect(parseLastSession(null)).toBeNull();
     expect(parseLastSession('')).toBeNull();
     expect(parseLastSession('{not json')).toBeNull();

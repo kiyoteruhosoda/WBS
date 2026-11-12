@@ -1,4 +1,4 @@
-"""``PersonDirectory`` の実装（task #544 / ADR-0055）。"""
+"""Implementation of ``PersonDirectory`` (task #544 / ADR-0055)."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from src.infrastructure.database.models import FederatedIdentityModel, UserModel
 class SqlAlchemyPersonDirectory:
     def __init__(self, session: Session, *, require_identity: bool) -> None:
         self._session = session
-        # SSO（AUTH_MODE=oidc）では assay の結び付きのある人だけを候補にする
+        # With SSO (AUTH_MODE=oidc), only people linked in assay are candidates
         self._require_identity = require_identity
 
     def choosable(self) -> list[Person]:

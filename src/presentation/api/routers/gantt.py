@@ -21,7 +21,7 @@ def get_gantt(
     db: DbDep,
     current_user: CurrentUserDep,
     project_id: Annotated[
-        int | None, Query(description="このプロジェクトと、その子孫のプロジェクトのタスクだけ")
+        int | None, Query(description="Only tasks in this project and its descendant projects")
     ] = None,
 ) -> list[dict]:
     uc = GanttUseCases(
@@ -29,6 +29,6 @@ def get_gantt(
         dependencies=SqlAlchemyTaskDependencyRepository(db),
         projects=SqlAlchemyProjectRepository(db),
     )
-    # 終わる見込みは読むたびに出す（ADR-0058 決定 4）
+    # The expected finish is computed on every read (ADR-0058 decision 4)
     forecast = CompletionForecastUseCases(db).forecast(current_user.user_id)
     return uc.get_gantt_data(current_user.user_id, project_id, forecast)

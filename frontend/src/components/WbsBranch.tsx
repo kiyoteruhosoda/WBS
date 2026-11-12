@@ -4,7 +4,7 @@ import type { SxProps, Theme } from '@mui/material';
 import type { TreeGuide } from '../projects/wbsCode';
 import { codeFont, ds } from '../theme';
 
-// 枝の罫線（task #639・ADR-0061）。親の下に縦の線、子へ短い横の線。字ではない飾りなので読み上げない
+// Branch lines (task #639, ADR-0061). A vertical line under the parent and a short horizontal line to the child. Decorative, not text, so hidden from screen readers
 const RAIL = `1px solid ${ds.primary}`;
 const RAIL_OPACITY = 0.55;
 
@@ -12,13 +12,13 @@ type Offset = number | { xs: number; sm: number };
 
 interface BranchProps {
   guide: TreeGuide;
-  /** 深さ k の縦の線の左端（行の左端から） */
+  /** Left edge of the vertical line at depth k (from the row's left edge) */
   railX: (k: number) => Offset;
-  /** 横の線の長さ */
+  /** Length of the horizontal line */
   tick: Offset;
 }
 
-/** 行（position: relative）の中に、深さに応じた枝の罫線を重ねる。深さ 0 は何も出さない。 */
+/** Overlays branch lines for the depth inside a row (position: relative). Depth 0 renders nothing. */
 export const WbsBranch: React.FC<BranchProps> = ({ guide, railX, tick }) => {
   if (guide.level === 0) return null;
   const line = (sx: Record<string, unknown>, key: string) => (
@@ -33,7 +33,7 @@ export const WbsBranch: React.FC<BranchProps> = ({ guide, railX, tick }) => {
   );
 };
 
-/** WBS 番号（1.3.2）。等幅で、主色の字 */
+/** WBS number (1.3.2). Monospace, in the primary color */
 export const WbsCode: React.FC<{ code: string | undefined }> = ({ code }) => (code ? (
   <Box component="span" data-testid="wbs-code" sx={{
     fontFamily: codeFont, fontWeight: 600, fontSize: 11, letterSpacing: '-0.02em', color: ds.primary,

@@ -1,7 +1,7 @@
-"""ユースケースの区切り（トランザクションの確定）。
+"""Boundary of a use case (committing the transaction).
 
-SQLAlchemy の ``Session`` はそのままこの形を満たす。1 つのユースケースで 2 つの予定を
-書く操作（この回を切り出す・以降を分ける）は、最後に 1 度だけ確定する。
+SQLAlchemy's ``Session`` satisfies this shape as is. Operations that write two events in one use case
+(splitting off this occurrence, splitting the following ones) commit only once at the end.
 """
 
 from __future__ import annotations

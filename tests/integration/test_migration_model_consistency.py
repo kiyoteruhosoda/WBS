@@ -1,6 +1,6 @@
-"""Alembic のリビジョンとモデル（models.py）が同じ形を作ることの確かめ。
+"""Check that the Alembic revisions and the models (models.py) build the same schema.
 
-⚠ モデルを変えたのにリビジョンを足し忘れると、ここが落ちる（足し方は migrations/README）。
+⚠ If you change a model but forget to add a revision, this fails (how to add one: migrations/README).
 """
 
 from __future__ import annotations
@@ -13,15 +13,15 @@ from src.infrastructure.database.schema_migration import describe_schema, upgrad
 
 
 def _create_with_legacy_path(engine: sa.Engine) -> None:
-    """Alembic 導入前の session.init_engine がしていたこと（比べるためだけに残す）。"""
+    """What session.init_engine did before Alembic was introduced (kept only for comparison)."""
     Base.metadata.create_all(engine)
     inspector = inspect(engine)
     user_columns = {c["name"] for c in inspector.get_columns("users")}
     if "language" not in user_columns:
         with engine.begin() as conn:
             conn.execute(text("ALTER TABLE users ADD COLUMN language VARCHAR(8) NOT NULL DEFAULT 'ja'"))
-    # 手書きの列補完は tasks.remaining_hours を落としていたが、0004 で列として戻した（ADR-0010）。
-    # create_all はいまのモデルから作るので、ここでは落とさない。
+    # The hand-written column backfill used to drop tasks.remaining_hours, but 0004 restored it as a column (ADR-0010).
+    # create_all builds from the current models, so we don't drop it here.
 
 
 def test_upgrade_head_matches_create_all(tmp_path):

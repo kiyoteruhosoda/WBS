@@ -10,7 +10,7 @@ const p = (id: number, name: string, parent: number | null = null, extra: Partia
   sort_order: 0, path: name, root_project_id: id, my_role: 'manager', ...extra,
 });
 
-// 仕事(1) ─ 案件 A(2) ─ 設計(3) / 仕事 ─ 案件 B(4) / 私用(5)
+// Tree: 仕事(1) ─ 案件 A(2) ─ 設計(3) / 仕事 ─ 案件 B(4) / 私用(5)
 const projects: Project[] = [
   p(1, '仕事'), p(2, '案件 A', 1), p(3, '設計', 2), p(4, '案件 B', 1, { sort_order: 1 }), p(5, '私用', null, { sort_order: 1 }),
 ];

@@ -1,7 +1,7 @@
-"""定期照合を、DB を通して確かめる。
+"""Check the periodic reconciliation through the DB.
 
-IdP の名簿だけを差し替える。⚠ **確かめたいのは「本当にセッションが終わるか」**で、
-判断そのものの網羅は ``tests/unit/application/test_reconcile_federated_users.py``。
+Only the IdP's roster is swapped out. ⚠ **What we want to check is "does the session really end"**;
+full coverage of the decision itself is in ``tests/unit/application/test_reconcile_federated_users.py``.
 """
 
 import pytest
@@ -10,7 +10,7 @@ from src.domain.exceptions import MachineNotBoundToApplicationError
 from src.domain.value_objects.roster import Roster, RosterEntry, RosterState
 from src.infrastructure.auth.auth_settings import load_auth_settings
 from src.presentation.api.reconciliation import reconcile_once
-from tests.integration.api.test_auth import (  # noqa: F401 - fixture を借りる
+from tests.integration.api.test_auth import (  # noqa: F401 - borrow fixtures
     ISSUER,
     sign_in,
     sign_in_alive,
@@ -38,7 +38,7 @@ class FakeRoster:
 
 @pytest.fixture
 def machine_settings(monkeypatch):
-    """機械としての名乗りがある配備の設定。⚠ 名乗りが無ければ照合は走らない。"""
+    """Settings for a deployment that has a machine identity. ⚠ Without one, reconciliation does not run."""
     monkeypatch.setenv("MACHINE_CLIENT_ID", "wbs-machine")
     return load_auth_settings()
 
@@ -52,8 +52,8 @@ def test_a_blocked_person_is_signed_out_at_the_next_round(sso_client, machine_se
     assert outcome is not None
     assert (outcome.checked, outcome.revoked, outcome.unlinked) == (1, 1, 0)
     assert not sign_in_alive(sso_client)
-    # ⚠ **入り直せる。** 止めたのはセッションだけで、利用者は止めていない
-    #   （IdP で戻れば、こちらでは何もしなくてよい）。
+    # ⚠ **They can sign in again.** Only the sessions were stopped, not the user
+    #   (if they come back at the IdP, nothing needs to be done here).
     sign_in(sso_client)
     assert sign_in_alive(sso_client)
 
@@ -77,7 +77,7 @@ def test_an_allowed_person_keeps_working(sso_client, machine_settings) -> None: 
 
 
 def test_a_machine_that_is_not_bound_yet_changes_nothing(sso_client, machine_settings) -> None:  # noqa: F811
-    """⚠ **結び付けるまで毎時ここへ来る。** 準備待ちであって障害ではない。"""
+    """⚠ **Comes here every hour until bound.** This is waiting for setup, not a failure."""
     sign_in(sso_client)
     outcome = reconcile_once(
         machine_settings,
@@ -89,7 +89,7 @@ def test_a_machine_that_is_not_bound_yet_changes_nothing(sso_client, machine_set
 
 
 def test_without_a_machine_name_the_round_does_not_run(sso_client, monkeypatch) -> None:  # noqa: F811
-    """``MACHINE_CLIENT_ID`` が空なら、聞きに行く相手が決まらない。"""
+    """If ``MACHINE_CLIENT_ID`` is empty, there is no one to ask."""
     monkeypatch.delenv("MACHINE_CLIENT_ID", raising=False)
     sign_in(sso_client)
 
@@ -98,9 +98,9 @@ def test_without_a_machine_name_the_round_does_not_run(sso_client, monkeypatch) 
 
 
 def test_the_issuer_is_the_spelling_the_login_stored(sso_client, machine_settings) -> None:  # noqa: F811
-    """⚠ **綴りが 1 文字ずれると 0 件になり、「異常なし」で終わる。**
+    """⚠ **If the spelling is off by one character, it finds 0 rows and ends as "no anomalies".**
 
-    設定は末尾の ``/`` を落とし、結び付きも同じ綴りで保存する。照合はその綴りで引く。
+    The setting drops the trailing ``/`` and the binding is stored with the same spelling. Reconciliation looks it up by that spelling.
     """
     sign_in(sso_client)
     assert machine_settings.issuer == ISSUER

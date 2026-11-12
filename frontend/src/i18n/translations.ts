@@ -1,7 +1,7 @@
 export type Lang = 'ja' | 'en';
 
-// UI文言の辞書。キーは「画面.用途」で命名する。
-// 文中の {name} はパラメータとして t() の第2引数で置換される。
+// Dictionary of UI text. Keys are named "screen.purpose".
+// {name} in a text is a parameter replaced via the second argument of t().
 const ja = {
   'app.name': 'WBS',
 
@@ -230,7 +230,7 @@ const ja = {
   'category.deleteConfirm': '「{name}」を削除しますか？この操作は取り消せません。',
   'category.deleteError': 'カテゴリの削除に失敗しました',
 
-  // プロジェクト（task #187、ADR-0024）
+  // Projects (task #187, ADR-0024)
   'nav.projects': 'プロジェクト',
   'scope.label': '表示するプロジェクト',
   'scope.all': 'すべて',
@@ -318,7 +318,7 @@ const ja = {
   'taskEdit.milestoneCleared': 'プロジェクトを変更したため、選べなくなったマイルストーンを解除しました',
   'taskEdit.milestoneHint': '選べるのは、このプロジェクトと上位のプロジェクト、および未分類のマイルストーンです',
   'taskList.project': 'プロジェクト',
-  // タスク一覧をプロジェクトで見る・移す（task #187、ADR-0030）
+  // Viewing and moving the task list by project (task #187, ADR-0030)
   'taskList.view': '表示',
   'taskList.viewGrouped': 'プロジェクト別',
   'taskList.viewFlat': '一覧',
@@ -385,7 +385,7 @@ const ja = {
   'offline.noSession': 'オフラインです。オンラインに戻ってから開き直してください',
   'offline.retry': '再読み込み',
 
-  // 一覧の入力・プロジェクトのカレンダー・人のカレンダー（task #557 / ADR-0059）
+  // In-list editing, project calendar, person calendar (task #557 / ADR-0059)
   'grid.readOnly': 'このセルは直せません。',
   'grid.invalid': '「{column}」に入れられない値です。直すか Esc でやめてください。',
   'grid.saveFailed': '保存できませんでした。赤いセルを直してください。',
@@ -428,7 +428,7 @@ const ja = {
   'gantt.start': '開始',
   'gantt.due': '期限',
   'gantt.forecastFinish': '見込みの終わり',
-  // 休日出勤・その日の稼働時間・プロジェクトの稼働日（task #558 / ADR-0060）
+  // Working on a day off, that day's working hours, project working days (task #558 / ADR-0060)
   'projectCalendar.inheritedOff': '親から（休日）',
   'projectCalendar.inheritedWork': '親から（稼働日）',
   'projectCalendar.extraWorkday': '稼働日',
@@ -829,7 +829,7 @@ const en: Record<TranslationKey, string> = {
   'offline.noSession': 'You are offline. Please open the app again once you are back online',
   'offline.retry': 'Reload',
 
-  // 一覧の入力・プロジェクトのカレンダー・人のカレンダー（task #557 / ADR-0059）
+  // In-list editing, project calendar, person calendar (task #557 / ADR-0059)
   'grid.readOnly': 'This cell cannot be changed.',
   'grid.invalid': 'That value does not fit "{column}". Fix it or press Esc to cancel.',
   'grid.saveFailed': 'Could not save. Fix the red cells.',
@@ -872,7 +872,7 @@ const en: Record<TranslationKey, string> = {
   'gantt.start': 'Start',
   'gantt.due': 'Due',
   'gantt.forecastFinish': 'Forecast finish',
-  // 休日出勤・その日の稼働時間・プロジェクトの稼働日（task #558 / ADR-0060）
+  // Working on a day off, that day's working hours, project working days (task #558 / ADR-0060)
   'projectCalendar.inheritedOff': 'From parent (day off)',
   'projectCalendar.inheritedWork': 'From parent (workday)',
   'projectCalendar.extraWorkday': 'Workday',
@@ -895,7 +895,7 @@ export type TranslationKey = keyof typeof ja;
 
 export const translations: Record<Lang, Record<TranslationKey, string>> = { ja, en };
 
-// 週の各曜日の短縮表示（日曜始まり）
+// Short weekday names (starting on Sunday)
 export const weekdayShort: Record<Lang, string[]> = {
   ja: ['日', '月', '火', '水', '木', '金', '土'],
   en: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'],

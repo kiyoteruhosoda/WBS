@@ -218,5 +218,5 @@ __marimo__/
 # Streamlit
 .streamlit/secrets.toml
 
-# 版の刻印。ビルドの直前に scripts/generate_version.sh が作る（ADR-0011）。コミットしない。
+# Version stamp. scripts/generate_version.sh writes it right before the build (ADR-0011). Do not commit.
 src/infrastructure/version.json

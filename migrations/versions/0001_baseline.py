@@ -1,14 +1,14 @@
-"""baseline: Alembic 導入前の create_all + 手書きの列補完が作っていた形
+"""baseline: the shape produced by create_all + hand-written column backfills before Alembic was introduced
 
 Revision ID: 0001
 Revises:
 Create Date: 2026-10-01
 
-⚠ **この形は 2026-10-01 時点の ``Base.metadata.create_all`` と一致させてある**
-（列の型・NULL 可否・主キー・一意制約・外部キー・索引の名前まで）。
-既存の DB（表はあるが ``alembic_version`` が無い）はこのリビジョンへ ``stamp`` される
-（``src/infrastructure/database/schema_migration.py``）。ここを書き換えると、
-stamp された本番の DB と食い違う。**形を変えるときは新しいリビジョンを足す。**
+⚠ **This shape matches ``Base.metadata.create_all`` as of 2026-10-01**
+(down to column types, nullability, primary keys, unique constraints, foreign keys and index names).
+Existing DBs (tables present but no ``alembic_version``) are ``stamp``ed at this revision
+(``src/infrastructure/database/schema_migration.py``). Rewriting this would diverge from
+the stamped prod DB. **To change the shape, add a new revision.**
 """
 
 from __future__ import annotations

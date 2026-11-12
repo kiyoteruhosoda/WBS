@@ -1,7 +1,7 @@
-"""Tracker で締めた時間を受け取る（task #540 / ADR-0056）。
+"""Receive the hours closed in Tracker (task #540 / ADR-0056).
 
-確かめるのは、期間ごとの置き換え・取り消しで実績（タスクの ``actual_hours``）が増え・元に戻ることと、
-WBS 自身の締めの行を二重に数えないこと。
+We check that replacing and cancelling per period increases and restores the actuals (the task's ``actual_hours``),
+and that WBS's own closing rows are not counted twice.
 """
 
 from __future__ import annotations
@@ -46,7 +46,7 @@ def test_closing_adds_actuals_and_reopening_takes_them_back(client) -> None:  # 
     assert res.json() == {"stored": 2, "unknown_task_ids": []}
     assert _actual(client, task_id) == 1.5
 
-    # 送り直すと置き換わる（足し込まない）
+    # Sending again replaces (does not add)
     _put(client, [{"wbs_task_id": task_id, "work_date": "2026-10-16", "seconds": 7200}])
     assert _actual(client, task_id) == 2.0
 
@@ -54,7 +54,7 @@ def test_closing_adds_actuals_and_reopening_takes_them_back(client) -> None:  # 
     assert res.status_code == 200, res.text
     assert res.json() == {"removed": 1}
     assert _actual(client, task_id) == 0.0
-    # 取り消しは何度送ってもよい
+    # Cancelling may be sent any number of times
     assert client.delete(URL, **_as("tracker")).json() == {"removed": 0}
 
 
@@ -78,7 +78,7 @@ def test_wbs_own_closings_in_the_period_are_retired(client) -> None:  # noqa: F8
     session = next(client.app.dependency_overrides.get(get_db, get_db)())
     try:
         owner = session.get(TaskModel, task_id).user_id
-        # Tracker へ移る前に WBS 自身が締めた行（同じ日）
+        # A row WBS itself closed before moving to Tracker (same day)
         session.add(WorkLogModel(
             user_id=owner, task_id=task_id, work_date=date(2026, 10, 16), hours=1,
             source="closing", duration_seconds=3600,
@@ -88,7 +88,7 @@ def test_wbs_own_closings_in_the_period_are_retired(client) -> None:  # noqa: F8
         session.close()
     assert _actual(client, task_id) == 1.0
     _put(client, [{"wbs_task_id": task_id, "work_date": "2026-10-16", "seconds": 3600}])
-    # 二重に数えない（Tracker の値に置き換わる）
+    # Not counted twice (replaced by Tracker's value)
     assert _actual(client, task_id) == 1.0
 
 
@@ -105,7 +105,7 @@ def _operation_logs(database_path) -> list[tuple]:
 
 
 def test_writes_leave_the_client_and_the_operation_in_the_log(client, database_path) -> None:  # noqa: F811
-    """どのアプリが・誰の分を・何を、が同じ表で引ける（task #802 / ADR-0068）。"""
+    """Which app, for whom, and what can be looked up in the same table (task #802 / ADR-0068)."""
     task_id = _task(client, "設計")
 
     assert _put(client, [{"wbs_task_id": task_id, "work_date": "2026-10-16", "seconds": 60}]).status_code == 200

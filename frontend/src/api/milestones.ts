@@ -21,7 +21,7 @@ export const deleteMilestone = async (id: number): Promise<void> => {
   await client.delete(`/milestones/${id}`);
 };
 
-/** プロジェクトで絞った一覧（子孫のプロジェクトのものも含む。ADR-0024）。 */
+/** List filtered by project (including descendant projects. ADR-0024). */
 export const getScopedMilestones = async (params: ProjectFilterParams): Promise<Milestone[]> => {
   const { data } = await client.get('/milestones', { params });
   return data;

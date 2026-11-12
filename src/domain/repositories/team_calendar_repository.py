@@ -9,15 +9,15 @@ from src.domain.value_objects.recurrence import Weekday
 
 
 class TeamCalendarRepository(ABC):
-    """稼働する曜日（根のプロジェクトごと）・休日（どのプロジェクトにも）と、各人の休み（ADR-0058 決定 2・ADR-0059）。"""
+    """Working weekdays (per root project), days off (on any project) and each person's leave (ADR-0058 decision 2, ADR-0059)."""
 
     @abstractmethod
     def workdays(self, project_id: int) -> frozenset[Weekday] | None:
-        """根の稼働する曜日。入れていなければ None（月〜金）。"""
+        """The root's working weekdays. None if not set (Mon–Fri)."""
 
     @abstractmethod
     def workdays_by_project(self, project_ids: Iterable[int]) -> dict[int, frozenset[Weekday]]:
-        """入れてある根だけ。"""
+        """Only roots that have it set."""
 
     @abstractmethod
     def set_workdays(self, project_id: int, workdays: frozenset[Weekday]) -> None: ...
@@ -26,11 +26,11 @@ class TeamCalendarRepository(ABC):
     def team_days_off(
         self, project_ids: Iterable[int], from_date: date | None = None, to_date: date | None = None,
     ) -> list[TeamDayOff]:
-        """日付の順。"""
+        """In date order."""
 
     @abstractmethod
     def add_team_day_off(self, day_off: TeamDayOff) -> None:
-        """同じ日があれば名前を書き換える。"""
+        """If the same day exists, overwrite its name."""
 
     @abstractmethod
     def remove_team_day_off(self, project_id: int, day: date) -> None: ...
@@ -39,28 +39,28 @@ class TeamCalendarRepository(ABC):
     def extra_workdays(
         self, project_ids: Iterable[int], from_date: date | None = None, to_date: date | None = None,
     ) -> list[TeamExtraWorkday]:
-        """稼働しない曜日に働く日（ADR-0060）。日付の順。"""
+        """Days worked on a non-working weekday (ADR-0060). In date order."""
 
     @abstractmethod
     def add_extra_workday(self, workday: TeamExtraWorkday) -> None:
-        """同じ日があれば名前を書き換える。"""
+        """If the same day exists, overwrite its name."""
 
     @abstractmethod
     def remove_extra_workday(self, project_id: int, day: date) -> None: ...
 
     @abstractmethod
     def forget_workdays(self, project_id: int) -> None:
-        """根でなくなるときに曜日を消す（休日はそのプロジェクト自身の休日として残す）。"""
+        """Delete the weekdays when it stops being a root (days off remain as that project's own days off)."""
 
     @abstractmethod
     def member_days_off(
         self, user_ids: Iterable[int], from_date: date | None = None, to_date: date | None = None,
     ) -> list[MemberDayOff]:
-        """日付の順。"""
+        """In date order."""
 
     @abstractmethod
     def add_member_day_off(self, day_off: MemberDayOff) -> None:
-        """同じ日があれば休む割合と稼働時間を書き換える。"""
+        """If the same day exists, overwrite the leave ratio and working hours."""
 
     @abstractmethod
     def remove_member_day_off(self, user_id: int, day: date) -> None: ...

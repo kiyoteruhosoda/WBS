@@ -18,7 +18,7 @@ class CreateProjectDTO:
 
 @dataclass
 class UpdateProjectDTO:
-    # UNSET = 変更しない / None = 明示的にクリアする。親と並びは移動の口（MoveProjectDTO）で変える
+    # UNSET = do not change / None = explicitly clear. Parent and position are changed via the move endpoint (MoveProjectDTO)
     name: str | UnsetType = UNSET
     color: str | None | UnsetType = UNSET
     code: str | None | UnsetType = UNSET
@@ -28,7 +28,7 @@ class UpdateProjectDTO:
 
 @dataclass
 class MoveProjectDTO:
-    #: 新しい親（None = 最上位）
+    #: New parent (None = top level)
     parent_project_id: int | None
-    #: 新しい兄弟の中の位置（0 = 先頭。None・範囲外は末尾）
+    #: New position among siblings (0 = first; None or out of range = last)
     position: int | None = None

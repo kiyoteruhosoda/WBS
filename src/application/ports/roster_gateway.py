@@ -1,4 +1,4 @@
-"""IdP に「いま誰がこのアプリを使ってよいか」を聞く口（ポート）。実装はインフラ層。"""
+"""The port that asks the IdP "who may use this app right now". Implemented in the infrastructure layer."""
 
 from __future__ import annotations
 
@@ -10,14 +10,14 @@ from src.domain.value_objects.roster import Roster
 class RosterGateway(ABC):
     @abstractmethod
     def fetch(self, *, issuer: str, subjects: tuple[str, ...]) -> Roster:
-        """名指しで聞く。
+        """Ask by name.
 
-        ⚠ **候補の一覧では足りない。** 「向こうに居ない（消えた）」は、こちらが
-        名前を挙げて聞いて初めて分かる。
+        ⚠ **A candidate list is not enough.** "Not there (gone)" is only known once we
+        ask by naming them.
 
-        ⚠ **引けなかったら例外で止めること。** 空の名簿として返すと、呼び出し側は
-        「全員辞めた」と読む（``IdentityProviderUnavailableError`` /
-        ``MachineNotBoundToApplicationError``）。
+        ⚠ **If it cannot be fetched, stop with an exception.** Returning an empty roster makes the caller
+        read it as "everyone left" (``IdentityProviderUnavailableError`` /
+        ``MachineNotBoundToApplicationError``).
         """
 
 

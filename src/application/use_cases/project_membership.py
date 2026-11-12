@@ -1,8 +1,8 @@
-"""タスク・マイルストーンがどのプロジェクトに属するか・だれに見えるかの決まり（task #187 / ADR-0024・task #544 / ADR-0055）。
+"""Rules for which project a task or milestone belongs to and who can see it (task #187 / ADR-0024, task #544 / ADR-0055).
 
-- 絞り込みは**子孫を含む**（プロジェクトを指すと、その下の全部の枝のものが出る）
-- マイルストーンは、そのプロジェクトか子孫のタスクにだけ付く（未分類のマイルストーンはどこにでも付く）。
-  プロジェクトが替わって届かなくなったタスクからは**外す**
+- Filtering **includes descendants** (pointing at a project returns everything in all branches below it)
+- A milestone can only be attached to tasks of its project or descendants (unclassified milestones can be attached anywhere).
+  It is **detached** from tasks that can no longer reach it after their project changed
 """
 
 from __future__ import annotations
@@ -36,25 +36,25 @@ class ProjectMembership:
         return ProjectTree(self._projects.find_all(user_id))
 
     def visible_project(self, user_id: int, project_id: int) -> Project:
-        """利用者に見えるプロジェクト（根のメンバーなら子孫も。ADR-0055）。見えない・無いものは 404。"""
+        """A project visible to the user (descendants too if a member of the root, ADR-0055). 404 if not visible or missing."""
         project = self._projects.find_by_id_for_user(project_id, user_id)
         if project is None:
             raise NotFoundError("Project", project_id)
         return project
 
     def member_ids(self, root_project_id: int) -> set[int]:
-        """いちばん上のプロジェクトのメンバーの利用者 id（ADR-0055）。"""
+        """User ids of the members of the top-level project (ADR-0055)."""
         return {m.user_id for m in self._members.find_by_project(root_project_id)}
 
     def roles_of(self, user_id: int) -> dict[int, ProjectRole]:
-        """その人がメンバーになっている根ごとの役割。"""
+        """The person's role per root they are a member of."""
         return {m.project_id: m.role for m in self._members.find_by_user(user_id)}
 
     def make_manager(self, user_id: int, root_project_id: int) -> None:
         self._members.save(ProjectMember(id=None, project_id=root_project_id, user_id=user_id, role=ProjectRole.MANAGER))
 
     def copy_members(self, from_root_id: int, to_project_id: int) -> None:
-        """下のプロジェクトを根へ出すとき、元の木のメンバーをそのまま写す（見える人を変えない。ADR-0055 決定 6）。"""
+        """When moving a lower project out to a root, copy the old tree's members as is (who can see it does not change, ADR-0055 decision 6)."""
         for member in self._members.find_by_project(from_root_id):
             self._members.save(
                 ProjectMember(
@@ -64,11 +64,11 @@ class ProjectMembership:
             )
 
     def forget_members(self, project_id: int) -> None:
-        """根でなくなったプロジェクトの行を消す（移った先の木のメンバーに見える）。"""
+        """Delete the rows of a project that is no longer a root (it becomes visible to the target tree's members)."""
         self._members.delete_all(project_id)
 
     def require_manager(self, user_id: int, root_project_id: int) -> None:
-        """管理者でなければ 403（見えていることは呼ぶ側が確かめる）。"""
+        """403 unless an admin (the caller checks that it is visible)."""
         member = self._members.find(root_project_id, user_id)
         if member is None or not member.is_manager:
             raise ProjectManagerRequiredError()
@@ -76,9 +76,9 @@ class ProjectMembership:
     def require_manager_to_cross(
         self, user_id: int, from_project_id: int | None, to_project_id: int | None
     ) -> None:
-        """木（根）をまたいで移すなら、元と先の両方の根の管理者でなければ 403（ADR-0066）。
+        """When moving across trees (roots), 403 unless an admin of both the source and target roots (ADR-0066).
 
-        同じ木の中の移動はメンバーのまま。未分類（``None``）は自分のものなので、その側は確かめない。
+        Moving within the same tree only needs membership. Unclassified (``None``) belongs to the caller, so that side is not checked.
         """
         tree = self.tree(user_id)
         from_root = None if from_project_id is None else tree.root_of(from_project_id)
@@ -90,14 +90,14 @@ class ProjectMembership:
                 self.require_manager(user_id, root)
 
     def scope_ids(self, user_id: int, project_id: int) -> list[int]:
-        """絞り込みに使う id（自分と子孫）。見えない・無いプロジェクトは 404。"""
+        """Ids used for filtering (the project and its descendants). 404 for a project that is not visible or missing."""
         ids = self._projects.subtree_ids(user_id, project_id)
         if not ids:
             raise NotFoundError("Project", project_id)
         return ids
 
     def detach_unreachable_milestones(self, user_id: int) -> list[int]:
-        """付いているマイルストーンへ届かなくなったタスクから外す。外したタスクの id を返す。"""
+        """Detach milestones from tasks that can no longer reach them. Returns the ids of the detached tasks."""
         tree = self.tree(user_id)
         milestone_projects = {
             m.id: m.project_id for m in self._milestones.find_all(user_id) if m.id is not None

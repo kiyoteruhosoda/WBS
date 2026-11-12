@@ -11,7 +11,7 @@ def test_display_name_falls_back_through_the_available_claims() -> None:
     assert IdentityClaims(identity=IDENTITY, display_name="Taro").resolved_display_name() == "Taro"
     assert IdentityClaims(identity=IDENTITY, preferred_username="taro").resolved_display_name() == "taro"
     assert IdentityClaims(identity=IDENTITY, email="t@example.com").resolved_display_name() == "t@example.com"
-    # 何も無ければ sub。名前無しの利用者を作れないと、ログイン自体が通らなくなる。
+    # With nothing else, sub. If a user without a name could not be created, sign-in itself would fail.
     assert IdentityClaims(identity=IDENTITY).resolved_display_name() == "abc"
 
 
