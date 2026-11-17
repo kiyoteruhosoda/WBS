@@ -81,8 +81,13 @@ function EditableGrid<R>({
 
   const focusGrid = () => containerRef.current?.focus({ preventScroll: true });
 
-  // Scroll the selected cell into view
+  // Scroll the selected cell into view when the selection moves.
+  // ⚠ Not on mount: the first cell is selected by default, and pulling the page up to it would undo the
+  //   position restored on back/forward (ADR-0073) when the rows are drawn at once from the cache.
+  const shownSelection = useRef(active);
   useEffect(() => {
+    if (shownSelection.current === active) return;
+    shownSelection.current = active;
     document.getElementById(cellId(active.row, active.col))?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
   }, [active]);
 

@@ -19,6 +19,7 @@ import { AuthProvider } from './auth/AuthProvider';
 import AppUpdatePrompt from './components/AppUpdatePrompt';
 import { watchForUpdate } from './pwa/appUpdate';
 import { isNetworkFailure, noteRequestOutcome } from './pwa/connectivity';
+import { useHistoryScroll } from './hooks/useHistoryScroll';
 
 // Show/hide "offline" based on fetch results (task #192 / ADR-0028). Offline when a fetch fails with no response, back once anything succeeds
 const queryClient = new QueryClient({
@@ -63,6 +64,12 @@ const SignedInApp: React.FC = () => (
   </AuthProvider>
 );
 
+/** Back/forward returns to where the reader was, on every screen (ADR-0073). Rendered once, inside the router. */
+const HistoryScroll: React.FC = () => {
+  useHistoryScroll();
+  return null;
+};
+
 const App: React.FC = () => (
   <QueryClientProvider client={queryClient}>
     <ThemeProvider theme={theme}>
@@ -71,6 +78,7 @@ const App: React.FC = () => (
           Placed before the screens so the bar sits above the header */}
       <AppUpdatePrompt watch={watchForUpdate} />
       <BrowserRouter>
+        <HistoryScroll />
         <SignedInApp />
       </BrowserRouter>
     </ThemeProvider>
