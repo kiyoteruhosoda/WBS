@@ -12,6 +12,7 @@ vi.mock('../auth/silentRenewal', () => ({
 }));
 
 import client, { setUnauthorizedHandler } from './client';
+import { currentOutage, resetOutageForTests } from '../pwa/maintenance';
 
 type Answer = number | 'no-response';
 
@@ -142,5 +143,43 @@ describe('continuing via a hidden frame on 401 (ADR-0071)', () => {
     const calls = fake({ '/tasks': [500] });
     await expect(client.get('/tasks')).rejects.toMatchObject({ response: { status: 500 } });
     expect(calls).toEqual(['/tasks']);
+  });
+});
+
+describe("the edge's maintenance 503 (ADR-0075)", () => {
+  const answerWith = (status: number, data: unknown) => {
+    client.defaults.adapter = (config) => {
+      const response = { data, status, statusText: '', headers: {}, config } as AxiosResponse;
+      if (status < 400) return Promise.resolve(response);
+      const error = new Error(`status ${status}`) as AxiosError;
+      error.isAxiosError = true;
+      error.config = config;
+      error.response = response;
+      return Promise.reject(error);
+    };
+  };
+  afterEach(() => {
+    resetOutageForTests();
+  });
+
+  it('reports the outage and still rejects', async () => {
+    answerWith(503, { error: 'service_unavailable', reason: 'maintenance', title: 'Down', until: '2026-11-20T10:00:00Z' });
+    await expect(client.get('/tasks')).rejects.toMatchObject({ response: { status: 503 } });
+    expect(currentOutage()).toMatchObject({ reason: 'maintenance', title: 'Down', until: '2026-11-20T10:00:00Z' });
+  });
+
+  it("does not treat the app's own 503 as an outage", async () => {
+    answerWith(503, { detail: { error: 'service_unavailable' } });
+    await expect(client.get('/tasks')).rejects.toBeDefined();
+    expect(currentOutage()).toBeNull();
+  });
+
+  it('clears the outage once any answer comes back', async () => {
+    answerWith(503, { error: 'service_unavailable', reason: 'stopped' });
+    await expect(client.get('/tasks')).rejects.toBeDefined();
+    expect(currentOutage()).not.toBeNull();
+    answerWith(200, []);
+    await client.get('/tasks');
+    expect(currentOutage()).toBeNull();
   });
 });

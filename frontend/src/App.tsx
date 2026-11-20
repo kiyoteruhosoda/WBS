@@ -20,6 +20,7 @@ import AppUpdatePrompt from './components/AppUpdatePrompt';
 import { watchForUpdate } from './pwa/appUpdate';
 import { isNetworkFailure, noteRequestOutcome } from './pwa/connectivity';
 import { useHistoryScroll } from './hooks/useHistoryScroll';
+import { currentOutage, subscribeOutage } from './pwa/maintenance';
 
 // Show/hide "offline" based on fetch results (task #192 / ADR-0028). Offline when a fetch fails with no response, back once anything succeeds
 const queryClient = new QueryClient({
@@ -32,6 +33,11 @@ const queryClient = new QueryClient({
     onError: (error) => noteRequestOutcome(isNetworkFailure(error)),
     onSuccess: () => noteRequestOutcome(false),
   }),
+});
+
+// When the edge opens again, fetch everything again: screens opened while closed hold only failures (ADR-0075)
+subscribeOutage(() => {
+  if (!currentOutage()) void queryClient.invalidateQueries();
 });
 
 /** Screens behind sign-in (with SSO enabled, signed-out users get the sign-in page). */

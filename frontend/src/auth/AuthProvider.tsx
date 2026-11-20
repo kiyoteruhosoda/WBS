@@ -12,6 +12,7 @@ import { setUnauthorizedHandler } from '../api/client';
 import LoginPage from '../pages/LoginPage';
 import { translate } from '../i18n';
 import { isNetworkFailure, isServerFailure } from '../pwa/connectivity';
+import { currentOutage } from '../pwa/maintenance';
 import { forgetSession, lastSession, rememberSession } from './lastSession';
 import { clearSessionDrafts } from './sessionDraft';
 import {
@@ -142,7 +143,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     window.location.href = result.end_session_url ?? '/login';
   }, [queryClient]);
 
-  if (configPending) {
+  // Opened while the edge is closed: the maintenance screen covers this. Do not guess "no SSO" from the failed config;
+  // the config is fetched again when the edge opens (ADR-0075)
+  if (configPending || (!config && currentOutage())) {
     return <Centered><CircularProgress /></Centered>;
   }
 
