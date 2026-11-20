@@ -2,6 +2,7 @@ import axios, { type AxiosError, type InternalAxiosRequestConfig } from 'axios';
 import { oneAtATime, renewInFrame } from '../auth/silentRenewal';
 import { forgetSilentMarks, markSilentAttempt, signedOutHere } from '../auth/silentSignIn';
 import { continueSession, type ContinuationOutcome } from './sessionContinuation';
+import { currentOutage, outageFrom, reportOutage, reportReopened } from '../pwa/maintenance';
 
 const client = axios.create({
   baseURL: '/api',
@@ -68,8 +69,19 @@ type RetriableConfig = InternalAxiosRequestConfig & {
 };
 
 client.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    // An answer came back = the edge is open (puts the maintenance screen away if it is up; ADR-0075)
+    if (currentOutage()) reportReopened();
+    return response;
+  },
   async (error: AxiosError) => {
+    // The edge's "closed" 503 switches the whole app to the maintenance screen (ADR-0075).
+    // The error is still thrown, so the caller stops as before
+    const outage = outageFrom(error.response?.status, error.response?.data);
+    if (outage) {
+      reportOutage(outage);
+      throw error;
+    }
     const config = error.config as RetriableConfig | undefined;
     if (error.response?.status !== 401) throw error;
     if (config?.probe) throw error;

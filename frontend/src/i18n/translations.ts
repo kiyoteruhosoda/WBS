@@ -385,6 +385,16 @@ const ja = {
   'offline.noSession': 'オフラインです。オンラインに戻ってから開き直してください',
   'offline.retry': '再読み込み',
 
+  // In-app maintenance screen while the edge is closed (task #655 / ADR-0075)
+  'maintenance.title': 'メンテナンス中です',
+  'maintenance.body': '予定したメンテナンスのため、いまは使えません。終わると元の画面に戻ります。',
+  'maintenance.stoppedTitle': '停止中です',
+  'maintenance.stoppedBody': 'いまはサービスが止まっていて使えません。動き出すと元の画面に戻ります。',
+  'maintenance.reason': '理由: {reason}',
+  'maintenance.until': '{time} ごろに戻る見込みです',
+  'maintenance.autoCheck': '1 分ごとに確かめ直しています。',
+  'maintenance.checkNow': 'いま確かめる',
+
   // In-list editing, project calendar, person calendar (task #557 / ADR-0059)
   'grid.readOnly': 'このセルは直せません。',
   'grid.invalid': '「{column}」に入れられない値です。直すか Esc でやめてください。',
@@ -828,6 +838,15 @@ const en: Record<TranslationKey, string> = {
   'offline.notice': 'You are offline. Data cannot be loaded',
   'offline.noSession': 'You are offline. Please open the app again once you are back online',
   'offline.retry': 'Reload',
+
+  'maintenance.title': 'Under maintenance',
+  'maintenance.body': 'This service is down for scheduled maintenance. This screen goes back to where you were once it is over.',
+  'maintenance.stoppedTitle': 'Service stopped',
+  'maintenance.stoppedBody': 'This service is not running right now. This screen goes back to where you were once it is running again.',
+  'maintenance.reason': 'Reason: {reason}',
+  'maintenance.until': 'Expected back around {time}',
+  'maintenance.autoCheck': 'Checking again every minute.',
+  'maintenance.checkNow': 'Check now',
 
   // In-list editing, project calendar, person calendar (task #557 / ADR-0059)
   'grid.readOnly': 'This cell cannot be changed.',
